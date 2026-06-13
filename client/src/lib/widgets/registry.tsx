@@ -30,8 +30,10 @@ import Zone from './meters/Zone';
 import Spacer from './meters/Spacer';
 import Timer from './meters/Timer';
 import Recyclebin from './meters/Recyclebin';
+import StickyNote from './meters/StickyNote';
 import AudioSwitcherHost from './AudioSwitcherHost';
 import VolumeHost from './VolumeHost';
+import ImageHost from './ImageHost';
 
 export type { MeterComponent };
 export { asMeter };
@@ -62,7 +64,9 @@ const components: Record<string, MeterComponent> = {
 	timer: asMeter(Timer),
 	recyclebin: asMeter(Recyclebin),
 	audioswitch: asMeter(AudioSwitcherHost),
-	volume: asMeter(VolumeHost)
+	volume: asMeter(VolumeHost),
+	image: asMeter(ImageHost),
+	note: asMeter(StickyNote)
 };
 
 /** Back-compat alias used by WidgetHost (`registry[instance.type]`). */

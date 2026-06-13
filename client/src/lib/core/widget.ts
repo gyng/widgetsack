@@ -889,6 +889,49 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		configFields: [color('color', 'accent')]
 	},
 	{
+		// Image (binds:'none'): a static picture from a URL or the wallpapers/ folder. Bespoke wiring
+		// (resolving a filename → asset URL) lives in ImageHost; the meter draws the <img>.
+		type: 'image',
+		description:
+			'A static image / photo from a URL (https / data) or a filename in your wallpapers folder, with a fit mode.',
+		binds: 'none',
+		label: 'Image',
+		category: 'Utility',
+		defaultSize: { w: 200, h: 150 },
+		defaultConfig: { src: '', fit: 'contain', alt: '' },
+		configFields: [
+			text('src', 'source', {
+				help: 'an image URL (https:// or data:), or a filename in your wallpapers folder'
+			}),
+			{
+				key: 'fit',
+				label: 'fit',
+				kind: 'select',
+				options: ['contain', 'cover', 'fill', 'none'],
+				help: 'how the image fills the box (contain = whole image, cover = fill + crop)'
+			},
+			text('alt', 'alt text', { help: 'accessible description (screen readers)' })
+		]
+	},
+	{
+		// Sticky Note / scratchpad (binds:'none', interactive): an editable textarea persisted in
+		// localStorage by widget id (survives restarts, syncs studio↔overlay). Read-only in edit mode so
+		// the widget stays draggable; type on the live overlay.
+		type: 'note',
+		description:
+			'A sticky note / scratchpad: editable text that persists across restarts. Type on the live overlay; arrange it in the studio.',
+		binds: 'none',
+		interactive: true,
+		label: 'Sticky Note',
+		category: 'Utility',
+		defaultSize: { w: 200, h: 140 },
+		defaultConfig: { placeholder: 'Notes…' },
+		configFields: [
+			text('placeholder', 'placeholder', { help: 'shown when the note is empty' }),
+			color('color', 'accent', { help: 'the note’s left edge accent' })
+		]
+	},
+	{
 		// Spacer: an invisible, space-occupying widget — pure whitespace in a flow/grid that pushes its
 		// neighbours apart. binds:none, no sensor, no config; shown only as a faint outline while editing.
 		type: 'spacer',

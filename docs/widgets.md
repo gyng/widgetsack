@@ -422,6 +422,36 @@ System master volume: a slider + mute toggle controlling the default output devi
 | --- | --- | --- | --- | --- |
 | `color` | color |  |  |  |
 
+### Image — `image`
+
+![Image widget](img/widgets/image.png)
+
+A static image / photo from a URL (https / data) or a filename in your wallpapers folder, with a fit mode.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×150
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `src` | text | "" |  | an image URL (https:// or data:), or a filename in your wallpapers folder |
+| `fit` | select | "contain" | `contain`, `cover`, `fill`, `none` | how the image fills the box (contain = whole image, cover = fill + crop) |
+| `alt` | text | "" |  | accessible description (screen readers) |
+
+### Sticky Note — `note`
+
+![Sticky Note widget](img/widgets/note.png)
+
+A sticky note / scratchpad: editable text that persists across restarts. Type on the live overlay; arrange it in the studio.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×140
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `placeholder` | text | "Notes…" |  | shown when the note is empty |
+| `color` | color |  |  | the note’s left edge accent |
+
 ### Spacer — `spacer`
 
 ![Spacer widget](img/widgets/spacer.png)
