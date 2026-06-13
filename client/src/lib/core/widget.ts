@@ -6,6 +6,7 @@
 // `registerWidget`). Co-located vitest tests in widget.test.ts.
 
 import type { WidgetInstance } from './layout';
+import { topProcessSensors } from './topProcess';
 
 // A typed config field, so the inspector can render a real input instead of raw JSON. `help` is a
 // one-line description surfaced in the inspector; `default` is the field's own reset value (falls
@@ -558,6 +559,32 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				kind: 'toggle',
 				help: 'append used/total bytes after the percent'
 			},
+			color('color', 'accent')
+		]
+	},
+	{
+		// The busiest process by CPU / RAM / disk I/O / GPU VRAM — "what's eating my machine".
+		// Multi-sensor (binds:'none'): the `sensors` map derives proc.<by>.top.{name,value} from the
+		// chosen metric. The backend only samples a metric while its widget is mounted (per-metric
+		// demand gating), and GPU additionally needs NVML — no metric is paid for unless shown.
+		type: 'topproc',
+		description:
+			'The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my machine". Each metric is sampled only while shown.',
+		binds: 'none',
+		sensors: (config) => topProcessSensors(String(config.by ?? 'cpu')),
+		label: 'Top Process',
+		category: 'Meters',
+		defaultSize: { w: 200, h: 44 },
+		defaultConfig: { by: 'cpu' },
+		configFields: [
+			{
+				key: 'by',
+				label: 'rank by',
+				kind: 'select',
+				options: ['cpu', 'mem', 'disk', 'gpu'],
+				help: 'CPU %, RAM, disk I/O, or GPU VRAM (GPU needs NVIDIA/NVML)'
+			},
+			text('label', 'label', { help: 'header (defaults to "Top CPU" etc.)' }),
 			color('color', 'accent')
 		]
 	},

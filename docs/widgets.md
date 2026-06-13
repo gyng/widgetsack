@@ -249,6 +249,21 @@ Storage usage: one bar per volume (used %, used/total), auto-discovering your dr
 | `showBytes` | toggle | true |  | append used/total bytes after the percent |
 | `color` | color |  |  |  |
 
+### Top Process — `topproc`
+
+![Top Process widget](img/widgets/topproc.png)
+
+The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my machine". Each metric is sampled only while shown.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×44
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `by` | select | "cpu" | `cpu`, `mem`, `disk`, `gpu` | CPU %, RAM, disk I/O, or GPU VRAM (GPU needs NVIDIA/NVML) |
+| `label` | text |  |  | header (defaults to "Top CPU" etc.) |
+| `color` | color |  |  |  |
+
 ### Spectrum — `spectrum`
 
 ![Spectrum widget](img/widgets/spectrum.png)

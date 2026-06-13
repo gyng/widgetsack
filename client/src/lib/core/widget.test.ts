@@ -59,6 +59,7 @@ describe('meta registry', () => {
 			'battery',
 			'gpu',
 			'disks',
+			'topproc',
 			'spectrum',
 			'iframe',
 			'zone',
