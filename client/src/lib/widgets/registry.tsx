@@ -15,6 +15,9 @@ import AnalogClock from './meters/AnalogClock';
 import Bar from './meters/Bar';
 import Button from './meters/Button';
 import Cpu from './meters/Cpu';
+import Battery from './meters/Battery';
+import GpuPanel from './meters/GpuPanel';
+import Disks from './meters/Disks';
 import Spectrum from './meters/Spectrum';
 import Iframe from './meters/Iframe';
 import Zone from './meters/Zone';
@@ -34,6 +37,9 @@ const components: Record<string, MeterComponent> = {
 	bar: asMeter(Bar),
 	button: asMeter(Button),
 	cpu: asMeter(Cpu),
+	battery: asMeter(Battery),
+	gpu: asMeter(GpuPanel),
+	disks: asMeter(Disks),
 	spectrum: asMeter(Spectrum),
 	iframe: asMeter(Iframe),
 	zone: asMeter(Zone),

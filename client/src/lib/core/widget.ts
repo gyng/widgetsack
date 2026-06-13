@@ -488,6 +488,80 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		]
 	},
 	{
+		// Battery indicator (laptops). Multi-sensor (binds:'none') — reads the battery.* family via the
+		// `sensors` map; WidgetHost resolves it (useSensorMap) and passes a props-only `sensors` snapshot.
+		// A desktop with no battery emits no battery.* samples, so it shows "—".
+		type: 'battery',
+		description:
+			'A battery indicator: charge icon, percent, and charging / time-remaining status (laptops; a desktop without a battery shows "—").',
+		binds: 'none',
+		sensors: () => ({ percent: 'battery.percent', state: 'battery.state', time: 'battery.time' }),
+		label: 'Battery',
+		category: 'Meters',
+		defaultSize: { w: 150, h: 44 },
+		defaultConfig: { showStatus: true },
+		configFields: [
+			{
+				key: 'showStatus',
+				label: 'status line',
+				kind: 'toggle',
+				help: 'show charging / time-remaining under the percent'
+			},
+			color('color', 'fill colour')
+		]
+	},
+	{
+		// GPU panel: card name + a prominent utilisation %, plus whatever NVML reports (temp / VRAM /
+		// power / clock / fan). Multi-sensor (binds:'none') — reads the gpu.* family via the `sensors`
+		// map. No NVIDIA/NVML → no gpu.* samples, so it shows "—".
+		type: 'gpu',
+		description:
+			'A GPU panel: card name, utilisation %, and the reported temp / VRAM / power / clock / fan (NVIDIA NVML; non-NVIDIA shows "—").',
+		binds: 'none',
+		sensors: () => ({
+			util: 'gpu.util',
+			name: 'gpu.name',
+			temp: 'gpu.temp',
+			vramUsed: 'gpu.vram.used',
+			vramTotal: 'gpu.vram.total',
+			power: 'gpu.power',
+			clock: 'gpu.clock.core',
+			fan: 'gpu.fan'
+		}),
+		label: 'GPU',
+		category: 'Meters',
+		defaultSize: { w: 200, h: 96 },
+		defaultConfig: { showName: true },
+		configFields: [
+			{ key: 'showName', label: 'card name', kind: 'toggle', help: 'show the GPU model header' },
+			text('label', 'name override', { help: 'replace the detected card name' }),
+			color('color', 'accent')
+		]
+	},
+	{
+		// Self-sourcing storage panel (binds:'none'): a usage bar per volume. Discovers the dynamic
+		// `disk.<letter>.*` ids from the hub at runtime (like Cpu's per-core discovery) and signals the
+		// demand-gated per-disk enumeration via a `disk._probe` sentinel. Capacity only — bind a
+		// Sparkline to `disk.<letter>.read`/`.write` for I/O graphs.
+		type: 'disks',
+		description:
+			'Storage usage: one bar per volume (used %, used/total), auto-discovering your drives. Near-full volumes warn.',
+		binds: 'none',
+		label: 'Disks',
+		category: 'Meters',
+		defaultSize: { w: 200, h: 80 },
+		defaultConfig: { showBytes: true },
+		configFields: [
+			{
+				key: 'showBytes',
+				label: 'show used / total',
+				kind: 'toggle',
+				help: 'append used/total bytes after the percent'
+			},
+			color('color', 'accent')
+		]
+	},
+	{
 		// Self-sourcing audio spectrum (binds:'none'): WASAPI loopback → real FFT in Rust, streamed
 		// over a Channel and drawn on a <canvas>. The display bar count is independent of the capture
 		// band count (the meter groups bands down), so changing it never reconfigures capture.

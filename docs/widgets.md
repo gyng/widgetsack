@@ -206,6 +206,49 @@ Self-sourcing CPU widget: a per-core sparkline grid or one combined gauge.
 | `label` | text |  |  |  |
 | `color` | color |  |  |  |
 
+### Battery — `battery`
+
+![Battery widget](img/widgets/battery.png)
+
+A battery indicator: charge icon, percent, and charging / time-remaining status (laptops; a desktop without a battery shows "—").
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 150×44
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showStatus` | toggle | true |  | show charging / time-remaining under the percent |
+| `color` | color |  |  |  |
+
+### GPU — `gpu`
+
+![GPU widget](img/widgets/gpu.png)
+
+A GPU panel: card name, utilisation %, and the reported temp / VRAM / power / clock / fan (NVIDIA NVML; non-NVIDIA shows "—").
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×96
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showName` | toggle | true |  | show the GPU model header |
+| `label` | text |  |  | replace the detected card name |
+| `color` | color |  |  |  |
+
+### Disks — `disks`
+
+![Disks widget](img/widgets/disks.png)
+
+Storage usage: one bar per volume (used %, used/total), auto-discovering your drives. Near-full volumes warn.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×80
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showBytes` | toggle | true |  | append used/total bytes after the percent |
+| `color` | color |  |  |  |
+
 ### Spectrum — `spectrum`
 
 ![Spectrum widget](img/widgets/spectrum.png)

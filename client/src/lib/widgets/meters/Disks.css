@@ -1,0 +1,56 @@
+/* Disks / storage — one usage bar per volume. Themeable via --np-* tokens; --disk-* overrides. */
+.disks {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	gap: var(--disk-gap, 6px);
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.disk-empty {
+	color: var(--np-label, rgba(255, 255, 255, 0.5));
+	text-align: center;
+}
+
+.disk-row {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: center;
+	gap: 8px;
+	min-width: 0;
+}
+
+.disk-label {
+	font-size: var(--disk-label-size, 0.85em);
+	font-weight: 600;
+	color: var(--np-label, rgba(255, 255, 255, 0.7));
+}
+
+.disk-bar {
+	height: var(--disk-bar-h, 6px);
+	border-radius: 3px;
+	background: var(--np-track, rgba(255, 255, 255, 0.15));
+	overflow: hidden;
+}
+.disk-fill {
+	display: block;
+	height: 100%;
+	width: var(--disk-pct, 0%);
+	background: var(--disk-accent, var(--np-accent, rgb(119, 196, 211)));
+	transition: width 0.4s ease;
+}
+/* Near-full volumes warn. */
+.disk-row[data-level='full'] .disk-fill {
+	background: var(--disk-warn, rgb(225, 95, 90));
+}
+
+.disk-meta {
+	font-size: var(--disk-meta-size, 0.72em);
+	white-space: nowrap;
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
+}

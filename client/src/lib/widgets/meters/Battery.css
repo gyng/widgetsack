@@ -1,0 +1,80 @@
+/* Battery indicator — a fill icon + percent + status. Themeable via --np-* tokens; --bat-* overrides
+   per instance via the editable css. */
+.battery {
+	display: flex;
+	align-items: center;
+	gap: var(--bat-gap, 8px);
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.bat-icon {
+	position: relative;
+	flex: 0 0 auto;
+	width: var(--bat-w, 44px);
+	height: var(--bat-h, 20px);
+	padding: 2px;
+	box-sizing: border-box;
+	border: 2px solid var(--np-label, rgba(255, 255, 255, 0.55));
+	border-radius: 3px;
+}
+/* The battery terminal nub on the right. */
+.bat-icon::after {
+	content: '';
+	position: absolute;
+	right: -5px;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 3px;
+	height: 40%;
+	border-radius: 0 2px 2px 0;
+	background: var(--np-label, rgba(255, 255, 255, 0.55));
+}
+
+.bat-fill {
+	display: block;
+	height: 100%;
+	width: var(--bat-pct, 0%);
+	border-radius: 1px;
+	background: var(--bat-accent, var(--np-accent, rgb(119, 196, 211)));
+	transition: width 0.4s ease;
+}
+.battery[data-level='low'] .bat-fill {
+	background: var(--bat-warn, rgb(230, 180, 90));
+}
+.battery[data-level='critical'] .bat-fill {
+	background: var(--bat-crit, rgb(225, 95, 90));
+}
+
+.bat-bolt {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 0.8em;
+	/* difference blend keeps the bolt legible over any fill colour / empty track. */
+	color: #fff;
+	mix-blend-mode: difference;
+}
+
+.bat-text {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.1;
+}
+.bat-pct {
+	font-size: var(--bat-pct-size, 1em);
+	font-weight: 600;
+}
+.bat-status {
+	font-size: var(--bat-status-size, 0.72em);
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
