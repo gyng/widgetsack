@@ -1,0 +1,77 @@
+/* Volume — a mute glyph button, a level slider, and a % readout. Themeable via --np-* / --vol-* tokens. */
+.volume {
+	display: flex;
+	align-items: center;
+	gap: var(--vol-gap, 8px);
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.vol-mute {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	border: 0;
+	padding: 2px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	line-height: 1;
+}
+.vol-icon {
+	font-size: var(--vol-icon-size, 1.2em);
+}
+.volume[data-muted] .vol-icon {
+	opacity: 0.5;
+}
+
+.vol-slider {
+	flex: 1 1 0;
+	min-width: 0;
+	height: 4px;
+	-webkit-appearance: none;
+	appearance: none;
+	border-radius: 2px;
+	cursor: pointer;
+	/* Filled portion (--vol-fill set inline) in the accent, the rest a faint track. */
+	background: linear-gradient(
+		to right,
+		var(--vol-accent, var(--np-accent, rgb(119, 196, 211))) 0 var(--vol-fill, 0%),
+		var(--np-label, rgba(255, 255, 255, 0.2)) var(--vol-fill, 0%) 100%
+	);
+}
+.volume[data-muted] .vol-slider {
+	filter: grayscale(1) opacity(0.6);
+}
+.vol-slider::-webkit-slider-thumb {
+	-webkit-appearance: none;
+	appearance: none;
+	width: 12px;
+	height: 12px;
+	border-radius: 50%;
+	background: var(--vol-accent, var(--np-accent, rgb(119, 196, 211)));
+	cursor: pointer;
+}
+.vol-slider::-moz-range-thumb {
+	width: 12px;
+	height: 12px;
+	border: 0;
+	border-radius: 50%;
+	background: var(--vol-accent, var(--np-accent, rgb(119, 196, 211)));
+	cursor: pointer;
+}
+
+.vol-pct {
+	flex: 0 0 auto;
+	min-width: 2.6em;
+	text-align: right;
+	font-size: var(--vol-pct-size, 0.8em);
+	font-variant-numeric: tabular-nums;
+	color: var(--np-label, rgba(255, 255, 255, 0.7));
+}

@@ -854,6 +854,21 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		]
 	},
 	{
+		// System master volume (binds:'none', interactive): a mute toggle + level slider. Bespoke wiring
+		// lives in VolumeHost (Core Audio commands); the meter is props-only. interactive:true so the
+		// slider/button work on the passive overlay.
+		type: 'volume',
+		description:
+			'System master volume: a slider + mute toggle controlling the default output device. Windows.',
+		binds: 'none',
+		interactive: true,
+		label: 'Volume',
+		category: 'Utility',
+		defaultSize: { w: 190, h: 36 },
+		defaultConfig: {},
+		configFields: [color('color', 'accent')]
+	},
+	{
 		// Spacer: an invisible, space-occupying widget — pure whitespace in a flow/grid that pushes its
 		// neighbours apart. binds:none, no sensor, no config; shown only as a faint outline while editing.
 		type: 'spacer',

@@ -68,6 +68,7 @@ describe('meta registry', () => {
 			'zone',
 			'audioswitch',
 			'recyclebin',
+			'volume',
 			'spacer',
 			'countdown',
 			'timer'

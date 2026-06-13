@@ -98,6 +98,9 @@ export const COMMANDS = {
 	listAudioOutputs: 'list_audio_outputs',
 	defaultAudioOutput: 'default_audio_output',
 	setDefaultAudioOutput: 'set_default_audio_output',
+	getAudioVolume: 'get_audio_volume',
+	setAudioVolume: 'set_audio_volume',
+	setAudioMute: 'set_audio_mute',
 	// Home Assistant proxy (ha.rs)
 	haConnect: 'ha_connect',
 	haDisconnect: 'ha_disconnect',

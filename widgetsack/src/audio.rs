@@ -455,6 +455,90 @@ pub fn set_default_audio_output(_id: String) -> Result<(), String> {
     Err("setting the default audio output is only supported on Windows".into())
 }
 
+// --- System master volume + mute (the Volume widget) --------------------------------------------
+// The documented Core Audio path: MMDeviceEnumerator → default render endpoint → IAudioEndpointVolume
+// (scalar 0..1 master level + mute). Callable from any window (a widget control, not a studio setting).
+
+/// The default render endpoint's master volume + mute. Mirrors `AudioVolume` in
+/// `client/src/lib/audio/volume.ts`. camelCase on the wire.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct AudioVolume {
+    /// Master level, 0.0..=1.0 (scalar — perceptually even, matching the Windows volume slider).
+    pub level: f32,
+    pub muted: bool,
+}
+
+/// Acquire the default render endpoint's `IAudioEndpointVolume`. COM is initialised MTA on the calling
+/// (pool) thread; `RPC_E_CHANGED_MODE` if already up in another mode is harmless.
+#[cfg(target_os = "windows")]
+fn endpoint_volume() -> windows::core::Result<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume>
+{
+    use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+
+    // SAFETY: standard COM create/activate; every interface is released on drop.
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+        let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
+        device.Activate(CLSCTX_ALL, None)
+    }
+}
+
+/// Read the system master volume + mute. `None` on failure / non-Windows.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn get_audio_volume() -> Option<AudioVolume> {
+    // SAFETY: standard Core Audio read; all interfaces are released on drop.
+    unsafe {
+        let vol = endpoint_volume().ok()?;
+        let level = vol.GetMasterVolumeLevelScalar().ok()?;
+        let muted = vol.GetMute().ok()?.as_bool();
+        Some(AudioVolume { level, muted })
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn get_audio_volume() -> Option<AudioVolume> {
+    None
+}
+
+/// Set the system master volume (scalar 0..1, clamped). No-op error off Windows.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn set_audio_volume(level: f32) -> Result<(), String> {
+    // SAFETY: writes the master scalar level; eventcontext is null (no callback correlation needed).
+    unsafe {
+        let vol = endpoint_volume().map_err(|e| e.to_string())?;
+        vol.SetMasterVolumeLevelScalar(level.clamp(0.0, 1.0), std::ptr::null())
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn set_audio_volume(_level: f32) -> Result<(), String> {
+    Err("setting the volume is only supported on Windows".into())
+}
+
+/// Set the system mute state. No-op error off Windows.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn set_audio_mute(muted: bool) -> Result<(), String> {
+    // SAFETY: writes the mute flag; eventcontext is null.
+    unsafe {
+        let vol = endpoint_volume().map_err(|e| e.to_string())?;
+        vol.SetMute(muted, std::ptr::null()).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn set_audio_mute(_muted: bool) -> Result<(), String> {
+    Err("muting is only supported on Windows".into())
+}
+
 /// Spawn the dedicated capture thread (Windows only; elsewhere there is no loopback backend, so
 /// clear the flag immediately so the state doesn't claim to be running).
 #[cfg(target_os = "windows")]

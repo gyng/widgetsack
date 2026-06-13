@@ -114,6 +114,10 @@ windows = { version = "0.61", features = [
     "Win32_Graphics_Dwm",
     "Media",
     "Media_Control",
+    # System master volume + mute (audio.rs Volume widget): IMMDeviceEnumerator/IMMDevice in
+    # Win32_Media_Audio, IAudioEndpointVolume in Win32_Media_Audio_Endpoints.
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
     "Foundation",
     "Foundation_Collections",
 ] }

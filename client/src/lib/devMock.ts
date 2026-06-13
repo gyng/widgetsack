@@ -130,6 +130,11 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 				return 'dev-speakers';
 			case COMMANDS.setDefaultAudioOutput:
 				return undefined;
+			case COMMANDS.getAudioVolume:
+				return { level: 0.5, muted: false };
+			case COMMANDS.setAudioVolume:
+			case COMMANDS.setAudioMute:
+				return undefined;
 
 			// --- stocks proxy: not configured (mirrors HA/MQTT; shape = StocksStatus). ---
 			case COMMANDS.stocksConnect:

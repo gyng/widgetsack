@@ -393,6 +393,20 @@ Recycle Bin contents: how many items and how much space they take, with a "needs
 | `warnGb` | number | 0 | min 0, step 1 | highlight when the bin reaches this many GB (0 = never) |
 | `color` | color |  |  |  |
 
+### Volume — `volume`
+
+![Volume widget](img/widgets/volume.png)
+
+System master volume: a slider + mute toggle controlling the default output device. Windows.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 190×36
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `color` | color |  |  |  |
+
 ### Spacer — `spacer`
 
 ![Spacer widget](img/widgets/spacer.png)
