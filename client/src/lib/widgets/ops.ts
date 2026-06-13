@@ -63,6 +63,7 @@ export type LayoutOp =
 	| { op: 'patchGroup'; id: string; patch: Partial<Group> } // group name / params / css
 	| { op: 'setDefCss'; defId: string; css: string } // a def's css (7d)
 	| { op: 'setToken'; key: string; value: string } // a global token override (7d, '' clears)
+	| { op: 'setTokens'; tokens: Record<string, string> } // apply a whole map at once (wallpaper auto-theme)
 	| { op: 'clearTokens' } // drop ALL global token overrides at once (the panel's "Clear" button)
 	// Set (or clear, when undefined) the current monitor's full-screen background/wallpaper layer.
 	| { op: 'setBackground'; spec?: BackgroundSpec }

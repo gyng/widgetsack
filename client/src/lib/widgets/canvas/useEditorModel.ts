@@ -73,6 +73,7 @@ import {
 	setNodeBasis,
 	setSolvedForFloat,
 	setToken,
+	setTokens,
 	setWidgetToken,
 	splitNode,
 	ungroupSelected,
@@ -691,6 +692,9 @@ export function useEditorModel(studio: boolean, seedFloating: Leaf[]): EditorMod
 					return;
 				case 'setToken':
 					commitOp((s) => setToken(s, op.key, op.value));
+					return;
+				case 'setTokens':
+					commitOp((s) => setTokens(s, op.tokens));
 					return;
 				case 'clearTokens':
 					commitOp((s) => clearTokens(s));

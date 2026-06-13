@@ -763,6 +763,19 @@ export function setToken(s: EditorState, key: string, value: string): Patch {
 	return { tokenOverrides: next };
 }
 
+// Apply a whole map of global token overrides at once (the wallpaper auto-theme). Merges over the
+// existing overrides — a key with an empty value clears it. Empty map → {} (no undo entry).
+export function setTokens(s: EditorState, tokens: Record<string, string>): Patch {
+	const keys = Object.keys(tokens);
+	if (keys.length === 0) return {};
+	const next = { ...s.tokenOverrides };
+	for (const k of keys) {
+		if (tokens[k]) next[k] = tokens[k];
+		else delete next[k];
+	}
+	return { tokenOverrides: next };
+}
+
 // Drop every global token override in one op (the panel's "Clear overrides" button). Returns an
 // empty patch when there's nothing to clear so it doesn't push a no-op entry onto the undo history.
 export function clearTokens(s: EditorState): Patch {

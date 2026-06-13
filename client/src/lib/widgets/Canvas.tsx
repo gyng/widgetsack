@@ -2855,6 +2855,9 @@ export default function Canvas({ studio = false }: Props) {
 										patchBg={patchBg}
 										setBgKind={setBgKind}
 										clearBg={clearBg}
+										resolveWallpaper={resolveWallpaper}
+										onAutoTheme={(tokens) => handleOp({ op: 'setTokens', tokens })}
+										onClearTokens={() => handleOp({ op: 'clearTokens' })}
 									/>
 								)}
 								{navSection === 'sacks' && !designing && (
