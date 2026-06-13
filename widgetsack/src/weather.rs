@@ -195,6 +195,7 @@ pub async fn run_weather_client<R: Runtime>(app: AppHandle<R>, cfg: WeatherConfi
     let url = open_meteo_url(cfg.latitude, cfg.longitude, &cfg.unit);
     let letter = unit_letter(&cfg.unit);
     let located = has_location(&cfg);
+    let timings = app.state::<crate::timings::SubsystemTimings>();
 
     let mut idle = true;
     let mut fails: u32 = 0;
@@ -210,9 +211,13 @@ pub async fn run_weather_client<R: Runtime>(app: AppHandle<R>, cfg: WeatherConfi
         }
         match fetch_forecast(&client, &url).await {
             Ok(json) => {
-                let batch = weather_to_samples(&json, letter, now_ms());
-                if !batch.is_empty() {
-                    let _ = app.emit(TELEMETRY_EVENT, &batch);
+                {
+                    // Time the CPU work (parse + emit) only — the fetch above is network wait.
+                    let _t = timings.start("plugin.weather");
+                    let batch = weather_to_samples(&json, letter, now_ms());
+                    if !batch.is_empty() {
+                        let _ = app.emit(TELEMETRY_EVENT, &batch);
+                    }
                 }
                 emit_status(&app, "connected");
                 fails = 0;

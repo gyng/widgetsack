@@ -17,13 +17,16 @@ import { formatBytes } from '../core/format';
 import { formatDuration } from '../core/timer';
 import {
 	getProcessDiagnostics,
+	getSubsystemTimings,
 	listenDiagReports,
 	listWindowLabels,
 	openDevtoolsFor,
 	reloadWindow,
 	requestDiagnostics,
+	setSubsystemProfiling,
 	setWindowInteractive,
-	type ProcessDiag
+	type ProcessDiag,
+	type SubsystemTiming
 } from '../diag';
 import { widgetCosts, resetWidgetProfile, type WidgetCost } from './canvas/widgetProfile';
 import './DiagnosticsPanel.css';
@@ -44,6 +47,8 @@ export default function DiagnosticsPanel() {
 	const [interactive, setInteractive] = useState<Record<string, boolean>>({});
 	// This (studio) window's per-widget render cost, from the <Profiler>s Canvas wraps each widget in.
 	const [costs, setCosts] = useState<WidgetCost[]>([]);
+	// Per-subsystem backend CPU timing (Rust). Demand-gated: enabled only while this panel is open.
+	const [timings, setTimings] = useState<SubsystemTiming[]>([]);
 
 	useEffect(() => {
 		let alive = true;
@@ -63,20 +68,30 @@ export default function DiagnosticsPanel() {
 			void listWindowLabels().then((l) => {
 				if (alive && l.length) setLabels(l);
 			});
+		// Turn ON the backend per-subsystem timing while this panel is mounted (demand-gated — it's
+		// inert otherwise), and poll it alongside the rest.
+		void setSubsystemProfiling(true);
+		const pollTimings = () =>
+			void getSubsystemTimings().then((t) => {
+				if (alive) setTimings(t);
+			});
 		requestDiagnostics();
 		pollProc();
 		pollLabels();
 		setCosts(widgetCosts());
+		pollTimings();
 		const poll = window.setInterval(() => {
 			requestDiagnostics();
 			pollProc();
 			pollLabels();
 			setCosts(widgetCosts());
+			pollTimings();
 		}, POLL_MS);
 		return () => {
 			alive = false;
 			void offReports.then((un) => un());
 			clearInterval(poll);
+			void setSubsystemProfiling(false);
 		};
 	}, []);
 
@@ -110,6 +125,30 @@ export default function DiagnosticsPanel() {
 						<span title="How long the host process has been running">
 							up {formatDuration(proc.uptimeSecs)}
 						</span>
+					</div>
+				</div>
+			)}
+			{timings.length > 0 && (
+				<div className="diag-win diag-cost">
+					<div className="diag-win-hd">
+						<span className="diag-label">backend CPU by subsystem</span>
+						<span className="dim">Rust host · ms/s · avg</span>
+					</div>
+					<div className="diag-cost-list">
+						{timings.slice(0, 10).map((t) => (
+							<div className="diag-cost-row" key={t.key} data-hot={t.msPerSec >= 5 || undefined}>
+								<span className="diag-cost-name" title={`${t.samples} runs`}>
+									{t.key}
+								</span>
+								<span title="CPU load: ms of work per second (avg × runs/sec) — the real cost">
+									{t.msPerSec.toFixed(1)} ms/s
+								</span>
+								<span title="average time per run">{t.avgMs.toFixed(2)}ms</span>
+								<span className="dim" title="how often it runs">
+									{t.perSec.toFixed(1)}/s
+								</span>
+							</div>
+						))}
 					</div>
 				</div>
 			)}

@@ -85,6 +85,8 @@ export const COMMANDS = {
 	reloadWindow: 'reload_window',
 	logDiag: 'log_diag',
 	processDiagnostics: 'process_diagnostics',
+	setSubsystemProfiling: 'set_subsystem_profiling',
+	subsystemTimings: 'subsystem_timings',
 	getLogs: 'get_logs',
 	// fonts (command.rs)
 	systemFonts: 'system_fonts',

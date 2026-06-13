@@ -308,6 +308,7 @@ pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig)
     // `idle` re-emits a fresh "connecting" when a ticker (re)mounts after an idle gap; `fails` drives
     // exponential backoff on consecutive fetch failures so a rate-limited / down provider isn't
     // hammered every interval.
+    let timings = app.state::<crate::timings::SubsystemTimings>();
     let mut idle = true;
     let mut fails: u32 = 0;
     loop {
@@ -337,6 +338,8 @@ pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig)
             match fetch_chart(&client, symbol).await {
                 Ok(json) => {
                     fetched = true;
+                    // Time the CPU work (parse + emit) only — the fetch above is network wait.
+                    let _t = timings.start("plugin.stocks");
                     let batch = quote_to_samples(symbol, &json, now_ms());
                     if !batch.is_empty() {
                         let _ = app.emit(TELEMETRY_EVENT, &batch);

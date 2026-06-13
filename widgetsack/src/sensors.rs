@@ -724,12 +724,18 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
     let mut latest: HashMap<String, SensorValue> = HashMap::new();
     let mut snap_tick: u32 = 0;
 
+    // Opt-in per-subsystem CPU timing for the Diagnostics panel (inert unless the panel enabled it).
+    let timings = app.state::<crate::timings::SubsystemTimings>();
+
     let mut ticker = tokio::time::interval(Duration::from_millis(INTERVAL_MS));
     loop {
         ticker.tick().await;
-        sys.refresh_cpu_usage();
-        sys.refresh_memory();
-        networks.refresh(true);
+        {
+            let _t = timings.start("sensors.base");
+            sys.refresh_cpu_usage();
+            sys.refresh_memory();
+            networks.refresh(true);
+        }
 
         let ts = now_ms();
 
@@ -819,6 +825,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         }
 
         if want_procs || want_proctop {
+            let _t = timings.start("sensors.process");
             let n = sys.refresh_processes(ProcessesToUpdate::All, true);
             if want_procs {
                 batch.push(SensorSample::scalar("host.procs", ts, n as f64));
@@ -877,6 +884,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         }
 
         if want_disks || want_disk_io {
+            let _t = timings.start("sensors.disk");
             disks.refresh(true);
             for disk in disks.list() {
                 let Some(letter) = disk_letter(disk.mount_point()) else {
@@ -906,6 +914,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         }
 
         if want_gpu && let Some(device) = &gpu {
+            let _t = timings.start("sensors.gpu");
             if let Ok(util) = device.utilization_rates() {
                 batch.push(SensorSample::scalar("gpu.util", ts, f64::from(util.gpu)));
                 batch.push(SensorSample::scalar("gpu.mem.util", ts, f64::from(util.memory)));
@@ -972,12 +981,15 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         }
 
         if want_perf {
+            let _t = timings.start("sensors.perf");
             batch.extend(perf_info_samples(ts));
         }
         if want_cpufreq {
+            let _t = timings.start("sensors.cpufreq");
             batch.extend(cpu_freq_samples(ts, logical_cores));
         }
         if want_netlink {
+            let _t = timings.start("sensors.netlink");
             batch.extend(net_link_samples(ts));
         }
         // Battery is cheap + presence-gated (empty on desktops), like host.idle — always-on.
