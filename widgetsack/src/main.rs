@@ -17,6 +17,7 @@ use crate::command::get_initial_sessions;
 use crate::event::emit_to_bridge;
 use crate::state::updater;
 
+pub mod agenda;
 pub mod audio;
 pub mod bridge;
 pub mod clickthrough;
@@ -165,6 +166,7 @@ async fn main() -> Result<(), ()> {
         .manage(stocks::StocksState::default())
         .manage(weather::WeatherState::default())
         .manage(rss::RssState::default())
+        .manage(agenda::AgendaState::default())
         .manage(timings::SubsystemTimings::default())
         .manage(sensors::ActiveSensors::default())
         .manage(audio::SpectrumState::default())
@@ -247,6 +249,10 @@ async fn main() -> Result<(), ()> {
             rss::rss_config_status,
             rss::rss_connect,
             rss::rss_disconnect,
+            agenda::save_agenda_config,
+            agenda::agenda_config_status,
+            agenda::agenda_connect,
+            agenda::agenda_disconnect,
             timings::set_subsystem_profiling,
             timings::subsystem_timings,
             llm::save_llm_config,

@@ -131,6 +131,11 @@ export const COMMANDS = {
 	rssConfigStatus: 'rss_config_status',
 	rssConnect: 'rss_connect',
 	rssDisconnect: 'rss_disconnect',
+	// Agenda / ICS source (agenda.rs)
+	saveAgendaConfig: 'save_agenda_config',
+	agendaConfigStatus: 'agenda_config_status',
+	agendaConnect: 'agenda_connect',
+	agendaDisconnect: 'agenda_disconnect',
 	// AI provider + agent control (llm.rs, control.rs)
 	saveLlmConfig: 'save_llm_config',
 	llmConfigStatus: 'llm_config_status',

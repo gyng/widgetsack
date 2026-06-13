@@ -218,6 +218,15 @@ export function seedHub(hub: TelemetryHub): void {
 	scalar(hub, 'recyclebin.items', 23);
 	scalar(hub, 'recyclebin.bytes', 3_400_000_000);
 
+	// Agenda (ICS) — upcoming events relative to the frozen Mon 2026-06-08 clock.
+	json(hub, 'agenda.list', [
+		{ summary: 'Design review', start: '2026-06-08T15:00:00', allDay: false, location: 'Room 2' },
+		{ summary: 'Dentist', start: '2026-06-09T11:00:00', allDay: false, location: '' },
+		{ summary: 'Team offsite', start: '2026-06-10', allDay: true, location: 'HQ' },
+		{ summary: '1:1 with Sam', start: '2026-06-12T14:00:00', allDay: false, location: '' },
+		{ summary: 'Conference', start: '2026-07-01', allDay: true, location: 'Berlin' }
+	]);
+
 	// RSS headlines (the RSS widget reads rss.list).
 	json(hub, 'rss.list', [
 		{ title: 'Open-source desktop widgets gain momentum', link: 'https://ex.com/1' },

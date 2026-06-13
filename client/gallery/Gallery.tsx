@@ -14,6 +14,7 @@ import { registerMqttPlugin } from '../src/lib/widgets/plugins/mqtt';
 import { registerStocksPlugin } from '../src/lib/widgets/plugins/stocks';
 import { registerWeatherPlugin } from '../src/lib/widgets/plugins/weather';
 import { registerRssPlugin } from '../src/lib/widgets/plugins/rss';
+import { registerAgendaPlugin } from '../src/lib/widgets/plugins/agenda';
 import { TelemetryHubContext } from '../src/lib/widgets/telemetryContext';
 import { SpectrumContext } from '../src/lib/widgets/spectrumContext';
 import WidgetHost from '../src/lib/widgets/WidgetHost';
@@ -33,6 +34,7 @@ registerMqttPlugin();
 registerStocksPlugin();
 registerWeatherPlugin();
 registerRssPlugin();
+registerAgendaPlugin();
 
 const hub: TelemetryHub = makeHub();
 
@@ -53,6 +55,7 @@ const OVERRIDES: Record<string, { sensor?: string; config?: Record<string, unkno
 	// Event countdown to a fixed future date (the frozen clock is 2026-06-08, so this reads "~206d …").
 	countdown: { config: { mode: 'event', target: '2026-12-31T00:00', label: 'New Year' } },
 	rss: { config: { title: 'Headlines' } },
+	agenda: { config: { title: 'Agenda' } },
 	'ha.sensor': { sensor: 'demo.temperature' },
 	'ha.light': { sensor: 'demo.light' },
 	'ha.climate': { sensor: 'demo.climate' }

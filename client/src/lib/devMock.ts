@@ -157,6 +157,13 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.rssConfigStatus:
 				return { configured: false, url: '', count: 8, title: '', pollSeconds: 900 };
 
+			// --- Agenda / ICS proxy: the source connects at boot; just ack (no feed → it idles). ---
+			case COMMANDS.agendaConnect:
+			case COMMANDS.agendaDisconnect:
+				return undefined;
+			case COMMANDS.agendaConfigStatus:
+				return { configured: false, url: '', title: '', pollSeconds: 1800 };
+
 			// --- AI provider: not configured (shape = LlmStatus). `llm_complete` returns canned layout
 			// ops so the layout assistant is exercisable under Playwright without a real model. ---
 			case COMMANDS.llmConfigStatus:
