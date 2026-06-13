@@ -1,0 +1,57 @@
+/* Agenda — an optional title + a list of upcoming events (when · summary). Themeable via --np-* / --ag-*. */
+.agenda {
+	display: flex;
+	flex-direction: column;
+	gap: var(--ag-gap, 4px);
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.ag-head {
+	flex: 0 0 auto;
+}
+.ag-title {
+	font-size: var(--ag-title-size, 0.68em);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--np-label, rgba(255, 255, 255, 0.5));
+}
+
+.ag-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--ag-row-gap, 3px);
+	min-height: 0;
+	overflow: hidden;
+}
+.ag-row {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	font-size: var(--ag-row-size, 0.86em);
+	line-height: 1.25;
+}
+.ag-when {
+	flex: 0 0 auto;
+	min-width: var(--ag-when-w, 5.2em);
+	font-variant-numeric: tabular-nums;
+	color: var(--ag-accent, var(--np-accent, rgb(119, 196, 211)));
+}
+.ag-summary {
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.ag-empty {
+	color: var(--np-label, rgba(255, 255, 255, 0.4));
+	font-size: 0.86em;
+}
