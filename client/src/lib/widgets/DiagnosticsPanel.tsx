@@ -25,6 +25,7 @@ import {
 	setWindowInteractive,
 	type ProcessDiag
 } from '../diag';
+import { widgetCosts, resetWidgetProfile, type WidgetCost } from './canvas/widgetProfile';
 import './DiagnosticsPanel.css';
 
 const POLL_MS = 1500;
@@ -41,6 +42,8 @@ export default function DiagnosticsPanel() {
 	// Local mirror of the click-through toggle we last sent each overlay (the overlay owns the truth;
 	// this just reflects the control state).
 	const [interactive, setInteractive] = useState<Record<string, boolean>>({});
+	// This (studio) window's per-widget render cost, from the <Profiler>s Canvas wraps each widget in.
+	const [costs, setCosts] = useState<WidgetCost[]>([]);
 
 	useEffect(() => {
 		let alive = true;
@@ -63,10 +66,12 @@ export default function DiagnosticsPanel() {
 		requestDiagnostics();
 		pollProc();
 		pollLabels();
+		setCosts(widgetCosts());
 		const poll = window.setInterval(() => {
 			requestDiagnostics();
 			pollProc();
 			pollLabels();
+			setCosts(widgetCosts());
 		}, POLL_MS);
 		return () => {
 			alive = false;
@@ -108,6 +113,55 @@ export default function DiagnosticsPanel() {
 					</div>
 				</div>
 			)}
+			<div className="diag-win diag-cost">
+				<div className="diag-win-hd">
+					<span className="diag-label">widget render cost</span>
+					<span className="dim">this studio · re-renders/s · render ms</span>
+					{costs.length > 0 && (
+						<button
+							type="button"
+							className="diag-cost-reset"
+							title="Clear the captured render stats and start fresh"
+							onClick={() => {
+								resetWidgetProfile();
+								setCosts([]);
+							}}
+						>
+							reset
+						</button>
+					)}
+				</div>
+				{costs.length === 0 ? (
+					<div className="rp-stub">
+						No renders captured yet — open a layout in the studio (each widget is profiled here).
+					</div>
+				) : (
+					<div className="diag-cost-list">
+						{costs.slice(0, 8).map((c) => (
+							<div className="diag-cost-row" key={c.id} data-hot={c.perSec >= 2 || undefined}>
+								<span className="diag-cost-name" title={c.id}>
+									{c.type}
+								</span>
+								<span title="re-renders per second — a high steady number is churn (re-rendering when nothing changed)">
+									{c.perSec.toFixed(1)}/s
+								</span>
+								<span title="average render (React reconcile) time — not paint/GPU">
+									{c.avgMs.toFixed(2)}ms
+								</span>
+								<span className="dim" title="commits captured">
+									×{c.commits}
+								</span>
+							</div>
+						))}
+					</div>
+				)}
+			</div>
+			<div className="rp-stub diag-note">
+				“Widget render cost” measures how often + how long each widget RE-RENDERS in this studio
+				window (React Profiler). A high steady re-renders/s is churn; the ms is React reconcile
+				time, not paint or GPU — use Devtools below for those. The heap / DOM rows are per overlay
+				window.
+			</div>
 			{rows.length === 0 ? (
 				<div className="rp-stub">Polling windows…</div>
 			) : (

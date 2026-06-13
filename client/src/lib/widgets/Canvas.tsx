@@ -6,6 +6,7 @@
 // core/layoutEdit. React port of Canvas.svelte (behaviour parity is paramount).
 import {
 	lazy,
+	Profiler,
 	Suspense,
 	useCallback,
 	useEffect,
@@ -141,6 +142,7 @@ import { useBackground } from './canvas/useBackground';
 import { useDefEditor } from './canvas/useDefEditor';
 import { useSplitters } from './canvas/useSplitters';
 import { useStudioInit } from './canvas/useStudioInit';
+import { recordWidgetRender } from './canvas/widgetProfile';
 import type { EditorState, Extra, MonitorOption } from './canvas/types';
 import type { SettingsTab } from './StudioSettingsPanel';
 import mascotUrl from '../../assets/mascot.png';
@@ -2084,36 +2086,47 @@ export default function Canvas({ studio = false }: Props) {
 
 	// One WidgetHost per renderable — shared by the studio (absolute, solver-positioned) and the
 	// overlay's floating layer. `flow` slot-mode hosts come from renderFlowLeaf via FlowNode instead.
-	const renderHost = (r: (typeof renderables)[number], flow: boolean) => (
-		<WidgetHost
-			key={r.id}
-			flow={flow}
-			hub={hub}
-			instance={r.instance}
-			rect={r.rect}
-			movable={r.movable}
-			selectId={r.selectId}
-			domId={r.id}
-			defId={r.defId}
-			groupId={r.groupId}
-			editMode={editMode && !previewing}
-			selected={r.selectId === selectedId || selectedSet.has(r.selectId)}
-			multi={multiSelected && (r.selectId === selectedId || selectedSet.has(r.selectId))}
-			highlighted={hoverId !== null && r.selectId === hoverId}
-			grid={GRID}
-			scale={studio ? zoom : 1}
-			onChange={onChange}
-			onCommit={onCommit}
-			onSelect={onSelect}
-			onDragOver={onDragOver}
-			onDrop={onDrop}
-			onContextMenu={onWidgetContextMenu}
-			onControl={onWidgetControl}
-			onHover={editMode ? setHoverId : undefined}
-			onSuppressContextMenu={armSuppressCtx}
-			suppressContextMenu={consumeSuppressCtx}
-		/>
-	);
+	// In the STUDIO each host is wrapped in a <Profiler> feeding the Diagnostics "widget render cost"
+	// panel (renders/sec + ms per widget — surfaces a churning meter); the overlay skips it (no panel).
+	const renderHost = (r: (typeof renderables)[number], flow: boolean) => {
+		const host = (
+			<WidgetHost
+				key={r.id}
+				flow={flow}
+				hub={hub}
+				instance={r.instance}
+				rect={r.rect}
+				movable={r.movable}
+				selectId={r.selectId}
+				domId={r.id}
+				defId={r.defId}
+				groupId={r.groupId}
+				editMode={editMode && !previewing}
+				selected={r.selectId === selectedId || selectedSet.has(r.selectId)}
+				multi={multiSelected && (r.selectId === selectedId || selectedSet.has(r.selectId))}
+				highlighted={hoverId !== null && r.selectId === hoverId}
+				grid={GRID}
+				scale={studio ? zoom : 1}
+				onChange={onChange}
+				onCommit={onCommit}
+				onSelect={onSelect}
+				onDragOver={onDragOver}
+				onDrop={onDrop}
+				onContextMenu={onWidgetContextMenu}
+				onControl={onWidgetControl}
+				onHover={editMode ? setHoverId : undefined}
+				onSuppressContextMenu={armSuppressCtx}
+				suppressContextMenu={consumeSuppressCtx}
+			/>
+		);
+		return studio ? (
+			<Profiler key={r.id} id={r.id} onRender={recordWidgetRender}>
+				{host}
+			</Profiler>
+		) : (
+			host
+		);
+	};
 
 	// Render a FlowNode primitive leaf as a slot-filling WidgetHost, FULLY wired (incl. edit-mode
 	// drag) via the shared renderHost — flow-drag/drop + selection now target the MEASURED rects, so

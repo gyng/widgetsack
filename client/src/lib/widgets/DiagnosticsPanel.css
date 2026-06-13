@@ -114,3 +114,30 @@
 	opacity: 0.7;
 	line-height: 1.4;
 }
+
+/* Widget render-cost section: a compact table of the busiest-rendering widgets in this studio. */
+.diag-cost-reset {
+	margin-left: auto;
+	font-size: var(--text-xs);
+	padding: 1px var(--space-2);
+}
+.diag-cost-list {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.diag-cost-row {
+	display: grid;
+	grid-template-columns: 1fr auto auto auto;
+	gap: var(--space-3);
+	align-items: baseline;
+}
+.diag-cost-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+/* A widget re-rendering ≥2×/s — likely churn. */
+.diag-cost-row[data-hot] {
+	color: var(--ui-warn-fg, rgb(220, 180, 140));
+}
