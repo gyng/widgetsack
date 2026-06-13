@@ -150,6 +150,13 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.weatherConfigStatus:
 				return { configured: false, latitude: 0, longitude: 0, unit: 'celsius', pollSeconds: 900 };
 
+			// --- RSS proxy: the source connects at boot; just ack (no feed → it idles). ---
+			case COMMANDS.rssConnect:
+			case COMMANDS.rssDisconnect:
+				return undefined;
+			case COMMANDS.rssConfigStatus:
+				return { configured: false, url: '', count: 8, title: '', pollSeconds: 900 };
+
 			// --- AI provider: not configured (shape = LlmStatus). `llm_complete` returns canned layout
 			// ops so the layout assistant is exercisable under Playwright without a real model. ---
 			case COMMANDS.llmConfigStatus:

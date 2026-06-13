@@ -132,6 +132,12 @@ export function seedHub(hub: TelemetryHub): void {
 	text(hub, 'proc.cpu.top.name', 'chrome.exe');
 	scalar(hub, 'proc.cpu.top.pct', 18.4);
 
+	// Process Watcher (defaults to chrome.exe) — running, summed CPU/RAM across its instances.
+	scalar(hub, 'proc.watch.chrome.exe.running', 1);
+	scalar(hub, 'proc.watch.chrome.exe.cpu', 18.4);
+	scalar(hub, 'proc.watch.chrome.exe.mem', 2_100_000_000);
+	scalar(hub, 'proc.watch.chrome.exe.count', 7);
+
 	// Weather (Open-Meteo current conditions; the Weather widget reads weather.*).
 	scalar(hub, 'weather.temp', 12);
 	scalar(hub, 'weather.apparent', 10);
@@ -156,6 +162,11 @@ export function seedHub(hub: TelemetryHub): void {
 	});
 	text(hub, 'weather.sun.rise', '2026-06-08T04:43');
 	text(hub, 'weather.sun.set', '2026-06-08T21:21');
+	// UV index (forecast current) + air quality (separate Open-Meteo endpoint) for the Air Quality widget.
+	scalar(hub, 'weather.uv', 6);
+	scalar(hub, 'weather.air.aqi', 34);
+	scalar(hub, 'weather.air.pm25', 8.2);
+	scalar(hub, 'weather.air.pm10', 14);
 
 	// Network connections (the Connections widget reads net.conn.list + the totals).
 	json(hub, 'net.conn.list', [
@@ -206,6 +217,15 @@ export function seedHub(hub: TelemetryHub): void {
 	// Recycle Bin.
 	scalar(hub, 'recyclebin.items', 23);
 	scalar(hub, 'recyclebin.bytes', 3_400_000_000);
+
+	// RSS headlines (the RSS widget reads rss.list).
+	json(hub, 'rss.list', [
+		{ title: 'Open-source desktop widgets gain momentum', link: 'https://ex.com/1' },
+		{ title: 'Rust 1.90 lands with faster incremental builds', link: 'https://ex.com/2' },
+		{ title: 'A field guide to demand-gated telemetry', link: 'https://ex.com/3' },
+		{ title: 'Why your overlay should be click-through by default', link: 'https://ex.com/4' },
+		{ title: 'Weekend reading: the WASAPI loopback rabbit hole', link: 'https://ex.com/5' }
+	]);
 
 	// Stocks (the Ticker widget reads stocks.<SYMBOL>.* — note the id uppercases the symbol).
 	series(hub, 'stocks.NVDA.series', wave(878, 22, 0.18, 0.6, 820, 920), 40);
