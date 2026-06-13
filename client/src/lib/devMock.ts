@@ -143,6 +143,13 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.stocksConfigStatus:
 				return { configured: false, provider: '', symbols: [], pollSeconds: 60 };
 
+			// --- weather proxy: the source connects at boot; just ack (no location → it idles). ---
+			case COMMANDS.weatherConnect:
+			case COMMANDS.weatherDisconnect:
+				return undefined;
+			case COMMANDS.weatherConfigStatus:
+				return { configured: false, latitude: 0, longitude: 0, unit: 'celsius', pollSeconds: 900 };
+
 			// --- AI provider: not configured (shape = LlmStatus). `llm_complete` returns canned layout
 			// ops so the layout assistant is exercisable under Playwright without a real model. ---
 			case COMMANDS.llmConfigStatus:
