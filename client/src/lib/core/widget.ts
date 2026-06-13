@@ -832,6 +832,28 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		configFields: [color('color', 'accent')]
 	},
 	{
+		// Recycle Bin (binds:'none', multi-sensor): item count + total size, with a "full" cue. The
+		// `sensors` map binds recyclebin.{items,bytes} (gated — the backend only queries the shell when
+		// this is mounted).
+		type: 'recyclebin',
+		description:
+			'Recycle Bin contents: how many items and how much space they take, with a "needs emptying" cue past a size you set.',
+		binds: 'none',
+		sensors: () => ({ items: 'recyclebin.items', bytes: 'recyclebin.bytes' }),
+		label: 'Recycle Bin',
+		category: 'Utility',
+		defaultSize: { w: 150, h: 48 },
+		defaultConfig: { warnGb: 0 },
+		configFields: [
+			num('warnGb', 'warn at (GB)', {
+				min: 0,
+				step: 1,
+				help: 'highlight when the bin reaches this many GB (0 = never)'
+			}),
+			color('color', 'accent')
+		]
+	},
+	{
 		// Spacer: an invisible, space-occupying widget — pure whitespace in a flow/grid that pushes its
 		// neighbours apart. binds:none, no sensor, no config; shown only as a faint outline while editing.
 		type: 'spacer',

@@ -33,6 +33,7 @@ pub mod mqtt;
 pub mod netconn;
 pub mod ping;
 pub mod process_diag;
+pub mod recyclebin;
 pub mod sensors;
 pub mod stocks;
 pub mod state;

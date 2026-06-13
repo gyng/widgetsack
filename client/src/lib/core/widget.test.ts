@@ -67,6 +67,7 @@ describe('meta registry', () => {
 			'iframe',
 			'zone',
 			'audioswitch',
+			'recyclebin',
 			'spacer',
 			'countdown',
 			'timer'

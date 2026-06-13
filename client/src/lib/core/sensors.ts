@@ -57,6 +57,9 @@ export const KNOWN_SENSORS = [
 	'net.wifi.band',
 	'net.wifi.channel',
 	'net.wifi.phy',
+	// Recycle Bin (gated)
+	'recyclebin.items',
+	'recyclebin.bytes',
 	// Host (handles/threads/idle are Windows-only)
 	'host.uptime',
 	'host.procs',

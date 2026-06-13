@@ -108,6 +108,8 @@ windows = { version = "0.61", features = [
     # detection, MVP2) + OBJID_WINDOW in Accessibility.
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Accessibility",
+    # Recycle Bin contents (recyclebin.rs): SHQueryRecycleBinW → item count + total size.
+    "Win32_UI_Shell",
     "Win32_System_Threading",
     "Win32_Graphics_Dwm",
     "Media",

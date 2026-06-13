@@ -1,0 +1,46 @@
+/* Recycle Bin — a bin glyph + item count + size. The accent shifts when it's full (past the warn
+   threshold). Themeable via --np-* / --rb-* tokens. */
+.recyclebin {
+	display: flex;
+	align-items: center;
+	gap: var(--rb-gap, 8px);
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.rb-icon {
+	flex: 0 0 auto;
+	font-size: var(--rb-icon-size, 1.6em);
+	line-height: 1;
+	/* Empty bin reads muted; a full one gets a gentle nudge of the accent. */
+	opacity: 0.85;
+}
+.recyclebin[data-level='empty'] .rb-icon {
+	opacity: 0.4;
+}
+
+.rb-body {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.15;
+}
+.rb-count {
+	font-size: var(--rb-count-size, 0.95em);
+	font-weight: 600;
+}
+.recyclebin[data-level='full'] .rb-count {
+	color: var(--rb-accent, var(--np-accent, rgb(226, 130, 90)));
+}
+.rb-size {
+	font-size: var(--rb-size-size, 0.72em);
+	color: var(--np-label, rgba(255, 255, 255, 0.55));
+}
+.rb-empty {
+	font-size: var(--rb-count-size, 0.95em);
+	color: var(--np-label, rgba(255, 255, 255, 0.5));
+}

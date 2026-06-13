@@ -379,6 +379,20 @@ Switch the default audio output device with a tap — lists your speakers/headph
 | --- | --- | --- | --- | --- |
 | `color` | color |  |  |  |
 
+### Recycle Bin — `recyclebin`
+
+![Recycle Bin widget](img/widgets/recyclebin.png)
+
+Recycle Bin contents: how many items and how much space they take, with a "needs emptying" cue past a size you set.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 150×48
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `warnGb` | number | 0 | min 0, step 1 | highlight when the bin reaches this many GB (0 = never) |
+| `color` | color |  |  |  |
+
 ### Spacer — `spacer`
 
 ![Spacer widget](img/widgets/spacer.png)

@@ -28,6 +28,7 @@ import Iframe from './meters/Iframe';
 import Zone from './meters/Zone';
 import Spacer from './meters/Spacer';
 import Timer from './meters/Timer';
+import Recyclebin from './meters/Recyclebin';
 import AudioSwitcherHost from './AudioSwitcherHost';
 
 export type { MeterComponent };
@@ -56,6 +57,7 @@ const components: Record<string, MeterComponent> = {
 	zone: asMeter(Zone),
 	spacer: asMeter(Spacer),
 	timer: asMeter(Timer),
+	recyclebin: asMeter(Recyclebin),
 	audioswitch: asMeter(AudioSwitcherHost)
 };
 
