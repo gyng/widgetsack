@@ -785,6 +785,21 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		]
 	},
 	{
+		// Audio output switcher (binds:'none', interactive): lists the system's render endpoints and
+		// switches the default on tap. Bespoke wiring lives in AudioSwitcherHost (Tauri commands), so the
+		// meter stays props-only. interactive:true so the rows catch clicks on the passive overlay.
+		type: 'audioswitch',
+		description:
+			'Switch the default audio output device with a tap — lists your speakers/headphones/HDMI outputs and marks the active one. Windows.',
+		binds: 'none',
+		interactive: true,
+		label: 'Audio Switcher',
+		category: 'Utility',
+		defaultSize: { w: 200, h: 120 },
+		defaultConfig: {},
+		configFields: [color('color', 'accent')]
+	},
+	{
 		// Spacer: an invisible, space-occupying widget — pure whitespace in a flow/grid that pushes its
 		// neighbours apart. binds:none, no sensor, no config; shown only as a faint outline while editing.
 		type: 'spacer',

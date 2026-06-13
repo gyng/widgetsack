@@ -60,6 +60,9 @@ tauri-plugin-autostart = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 win-gsmtc = { version = "0.1.0", features = ["serde"] }
+# The #[interface] macro (audio.rs IPolicyConfig: set the default audio endpoint) expands to
+# ::windows_core paths, so the crate must be a direct dependency. Pinned to windows 0.61's core.
+windows-core = "0.61"
 # WASAPI loopback capture for the audio spectrum widget. Safe-ish bindings over windows-rs that
 # encapsulate GetMixFormat / SampleType (float vs int) / the loopback init flags. Kept at the
 # audio.rs edge (anti-corruption layer, like win-gsmtc for media). Windows-only.

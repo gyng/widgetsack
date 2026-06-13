@@ -96,6 +96,8 @@ export const COMMANDS = {
 	startSpectrum: 'start_spectrum',
 	stopSpectrum: 'stop_spectrum',
 	listAudioOutputs: 'list_audio_outputs',
+	defaultAudioOutput: 'default_audio_output',
+	setDefaultAudioOutput: 'set_default_audio_output',
 	// Home Assistant proxy (ha.rs)
 	haConnect: 'ha_connect',
 	haDisconnect: 'ha_disconnect',

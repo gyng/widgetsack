@@ -26,6 +26,7 @@ import Iframe from './meters/Iframe';
 import Zone from './meters/Zone';
 import Spacer from './meters/Spacer';
 import Timer from './meters/Timer';
+import AudioSwitcherHost from './AudioSwitcherHost';
 
 export type { MeterComponent };
 export { asMeter };
@@ -50,7 +51,8 @@ const components: Record<string, MeterComponent> = {
 	iframe: asMeter(Iframe),
 	zone: asMeter(Zone),
 	spacer: asMeter(Spacer),
-	timer: asMeter(Timer)
+	timer: asMeter(Timer),
+	audioswitch: asMeter(AudioSwitcherHost)
 };
 
 /** Back-compat alias used by WidgetHost (`registry[instance.type]`). */

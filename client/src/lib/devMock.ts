@@ -119,9 +119,17 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 					discovery: false
 				};
 
-			// --- audio outputs (the Spectrum widget's device picker) ---
+			// --- audio outputs (the Spectrum widget's device picker + the Audio Switcher) ---
 			case COMMANDS.listAudioOutputs:
-				return [];
+				return [
+					{ id: 'dev-speakers', name: 'Speakers (Realtek)' },
+					{ id: 'dev-headphones', name: 'Headphones (USB)' },
+					{ id: 'dev-hdmi', name: 'HDMI Display' }
+				];
+			case COMMANDS.defaultAudioOutput:
+				return 'dev-speakers';
+			case COMMANDS.setDefaultAudioOutput:
+				return undefined;
 
 			// --- stocks proxy: not configured (mirrors HA/MQTT; shape = StocksStatus). ---
 			case COMMANDS.stocksConnect:

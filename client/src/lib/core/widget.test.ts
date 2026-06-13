@@ -65,6 +65,7 @@ describe('meta registry', () => {
 			'spectrum',
 			'iframe',
 			'zone',
+			'audioswitch',
 			'spacer',
 			'timer'
 		]);

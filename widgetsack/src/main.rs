@@ -210,6 +210,8 @@ async fn main() -> Result<(), ()> {
             audio::start_spectrum,
             audio::stop_spectrum,
             audio::list_audio_outputs,
+            audio::default_audio_output,
+            audio::set_default_audio_output,
             media::media_control,
             media::media_capabilities,
             log::get_logs,

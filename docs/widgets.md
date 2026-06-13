@@ -351,6 +351,20 @@ A landing zone: drag a window over it (hold Shift) to snap it here; optional mat
 | `matchClass` | text | "" |  | optional window-class glob refiner, e.g. Chrome_WidgetWin_1 |
 | `matchTitle` | text | "" |  | optional title glob refiner, e.g. *Gmail* |
 
+### Audio Switcher — `audioswitch`
+
+![Audio Switcher widget](img/widgets/audioswitch.png)
+
+Switch the default audio output device with a tap — lists your speakers/headphones/HDMI outputs and marks the active one. Windows.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×120
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `color` | color |  |  |  |
+
 ### Spacer — `spacer`
 
 ![Spacer widget](img/widgets/spacer.png)
