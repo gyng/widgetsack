@@ -142,6 +142,70 @@ export function seedHub(hub: TelemetryHub): void {
 	scalar(hub, 'weather.high', 15);
 	scalar(hub, 'weather.low', 8);
 	text(hub, 'weather.unit', 'C');
+	// Multi-day forecast strip (weather.day.N.*) + sunrise/sunset for the Sun & Moon widget.
+	[
+		{ hi: 15, lo: 8, code: 3 },
+		{ hi: 17, lo: 9, code: 1 },
+		{ hi: 14, lo: 7, code: 61 },
+		{ hi: 19, lo: 10, code: 0 },
+		{ hi: 16, lo: 8, code: 80 }
+	].forEach((d, i) => {
+		scalar(hub, `weather.day.${i}.high`, d.hi);
+		scalar(hub, `weather.day.${i}.low`, d.lo);
+		scalar(hub, `weather.day.${i}.code`, d.code);
+	});
+	text(hub, 'weather.sun.rise', '2026-06-08T04:43');
+	text(hub, 'weather.sun.set', '2026-06-08T21:21');
+
+	// Network connections (the Connections widget reads net.conn.list + the totals).
+	json(hub, 'net.conn.list', [
+		{
+			proc: 'chrome.exe',
+			pid: 4123,
+			established: 14,
+			listening: 0,
+			public: 9,
+			remotes: ['142.250.72.196:443', '13.107.42.14:443', '140.82.113.25:443']
+		},
+		{
+			proc: 'Spotify.exe',
+			pid: 8821,
+			established: 5,
+			listening: 0,
+			public: 4,
+			remotes: ['35.186.224.25:443']
+		},
+		{
+			proc: 'Discord.exe',
+			pid: 6610,
+			established: 6,
+			listening: 0,
+			public: 5,
+			remotes: ['162.159.135.234:443']
+		},
+		{ proc: 'svchost.exe', pid: 1180, established: 2, listening: 3, public: 0, remotes: [] }
+	]);
+	scalar(hub, 'net.conn.established', 27);
+	scalar(hub, 'net.conn.public', 18);
+	scalar(hub, 'net.conn.listening', 9);
+
+	// Ping (default host 1.1.1.1) — reachable + low latency.
+	scalar(hub, 'net.ping.1.1.1.1.up', 1);
+	scalar(hub, 'net.ping.1.1.1.1.ms', 12);
+
+	// Wi-Fi link detail.
+	text(hub, 'net.wifi.ssid', 'Starlink-A4F2');
+	scalar(hub, 'net.wifi.signal', 82);
+	scalar(hub, 'net.wifi.rssi', -59);
+	scalar(hub, 'net.wifi.rx', 866);
+	scalar(hub, 'net.wifi.tx', 433);
+	text(hub, 'net.wifi.band', '5 GHz');
+	scalar(hub, 'net.wifi.channel', 44);
+	text(hub, 'net.wifi.phy', 'ax');
+
+	// Recycle Bin.
+	scalar(hub, 'recyclebin.items', 23);
+	scalar(hub, 'recyclebin.bytes', 3_400_000_000);
 
 	// Stocks (the Ticker widget reads stocks.<SYMBOL>.* — note the id uppercases the symbol).
 	series(hub, 'stocks.NVDA.series', wave(878, 22, 0.18, 0.6, 820, 920), 40);
