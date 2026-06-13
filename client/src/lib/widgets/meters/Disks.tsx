@@ -15,6 +15,15 @@ type Props = { showBytes?: boolean; color?: string };
 
 const PROBE = 'disk._probe'; // demand sentinel — gates the enumeration on; never emits a sample
 
+/** Structural equality so a re-read that found no change returns the SAME array → React bails the
+ * re-render (capacity barely moves, so this widget is idle after the first read). */
+const sameVols = (a: Vol[], b: Vol[]): boolean =>
+	a.length === b.length &&
+	a.every((x, i) => {
+		const y = b[i];
+		return x.letter === y.letter && x.pct === y.pct && x.used === y.used && x.total === y.total;
+	});
+
 export default function Disks({ showBytes = true, color }: Props) {
 	const hub = useContext(TelemetryHubContext);
 	const [vols, setVols] = useState<Vol[]>([]);
@@ -25,20 +34,21 @@ export default function Disks({ showBytes = true, color }: Props) {
 			const v = hub.sensor(id).getSnapshot().value;
 			return v && v.kind === 'scalar' ? v.value : null;
 		};
-		const read = (): void =>
-			setVols(
-				diskLetters(hub.sensorIds()).map((l) => ({
-					letter: l,
-					pct: sc(`disk.${l}.used.pct`),
-					used: sc(`disk.${l}.used`),
-					total: sc(`disk.${l}.total`)
-				}))
-			);
+		const read = (): void => {
+			const next = diskLetters(hub.sensorIds()).map((l) => ({
+				letter: l,
+				pct: sc(`disk.${l}.used.pct`),
+				used: sc(`disk.${l}.used`),
+				total: sc(`disk.${l}.total`)
+			}));
+			setVols((prev) => (sameVols(prev, next) ? prev : next));
+		};
 		const probe = hub.sensor(PROBE).subscribe(() => undefined); // demand only (keeps disks sampled)
 		read();
-		// Disk usage changes slowly + the ids are dynamic (no single fixed id to ride), so poll the
-		// hub snapshots on a 1s cadence rather than subscribing per-volume.
-		const timer = window.setInterval(read, 1000);
+		// Capacity changes slowly + the ids are dynamic (no single fixed id to ride), so re-read the
+		// hub snapshots on a relaxed cadence — the read is cheap and the dedupe above gates re-renders,
+		// so a steady disk costs one cheap snapshot scan every 5s and zero React work.
+		const timer = window.setInterval(read, 5000);
 		return () => {
 			probe();
 			window.clearInterval(timer);
