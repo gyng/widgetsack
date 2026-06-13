@@ -20,6 +20,7 @@ import Battery from './meters/Battery';
 import GpuPanel from './meters/GpuPanel';
 import Disks from './meters/Disks';
 import TopProcess from './meters/TopProcess';
+import ProcessWatch from './meters/ProcessWatch';
 import NetConnections from './meters/NetConnections';
 import Ping from './meters/Ping';
 import Wifi from './meters/Wifi';
@@ -50,6 +51,7 @@ const components: Record<string, MeterComponent> = {
 	gpu: asMeter(GpuPanel),
 	disks: asMeter(Disks),
 	topproc: asMeter(TopProcess),
+	procwatch: asMeter(ProcessWatch),
 	netconn: asMeter(NetConnections),
 	ping: asMeter(Ping),
 	wifi: asMeter(Wifi),

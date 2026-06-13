@@ -60,6 +60,7 @@ describe('meta registry', () => {
 			'gpu',
 			'disks',
 			'topproc',
+			'procwatch',
 			'netconn',
 			'ping',
 			'wifi',

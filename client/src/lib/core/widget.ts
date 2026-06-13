@@ -8,6 +8,7 @@
 import type { WidgetInstance } from './layout';
 import { topProcessSensors } from './topProcess';
 import { pingSensors } from './ping';
+import { procWatchSensors } from './procWatch';
 
 // A typed config field, so the inspector can render a real input instead of raw JSON. `help` is a
 // one-line description surfaced in the inspector; `default` is the field's own reset value (falls
@@ -586,6 +587,25 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				help: 'CPU %, RAM, disk I/O, or GPU VRAM (GPU needs NVIDIA/NVML)'
 			},
 			text('label', 'label', { help: 'header (defaults to "Top CPU" etc.)' }),
+			color('color', 'accent')
+		]
+	},
+	{
+		// Watch ONE process by name (binds:'none', multi-sensor): running state + its CPU%/RAM (summed
+		// across all instances). The `sensors` map binds proc.watch.<name>.* from config.name; the
+		// backend only samples a watched name while its widget is mounted (per-name demand gating).
+		type: 'procwatch',
+		description:
+			'Watch a specific process by name: is it running, and its CPU % + RAM (summed across instances). Good for keeping an eye on one app (a game, a build, OBS).',
+		binds: 'none',
+		sensors: (config) => procWatchSensors(String(config.name ?? 'chrome.exe')),
+		label: 'Process Watcher',
+		category: 'Meters',
+		defaultSize: { w: 200, h: 44 },
+		defaultConfig: { name: 'chrome.exe' },
+		configFields: [
+			text('name', 'process', { help: 'executable name, e.g. chrome.exe, obs64.exe, Spotify.exe' }),
+			text('label', 'label', { help: 'override the shown name (defaults to the process)' }),
 			color('color', 'accent')
 		]
 	},

@@ -264,6 +264,21 @@ The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my
 | `label` | text |  |  | header (defaults to "Top CPU" etc.) |
 | `color` | color |  |  |  |
 
+### Process Watcher — `procwatch`
+
+![Process Watcher widget](img/widgets/procwatch.png)
+
+Watch a specific process by name: is it running, and its CPU % + RAM (summed across instances). Good for keeping an eye on one app (a game, a build, OBS).
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×44
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `name` | text | "chrome.exe" |  | executable name, e.g. chrome.exe, obs64.exe, Spotify.exe |
+| `label` | text |  |  | override the shown name (defaults to the process) |
+| `color` | color |  |  |  |
+
 ### Connections — `netconn`
 
 ![Connections widget](img/widgets/netconn.png)
