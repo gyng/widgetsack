@@ -377,6 +377,27 @@ An invisible spacer: empty whitespace that occupies layout space to push other w
 _No configurable fields._
 
 
+### Countdown — `countdown`
+
+![Countdown widget](img/widgets/countdown.png)
+
+Counts down to a target date/time ("days until …"), or runs an auto-cycling Pomodoro work/break rhythm. Wall-clock driven (no start/pause — use Timer for that).
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 170×80
+- **Intrinsic size:** `basis:"content"` shrink-wraps to the rendered content
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `mode` | select | "event" | `event`, `pomodoro` | count down to a date, or run a repeating work/break rhythm |
+| `target` | text | "" |  | event mode: a date/time, e.g. 2026-12-31 or 2026-12-31T18:00 |
+| `format` | select | "auto" | `auto`, `dhms`, `hms`, `ms` | event display: auto trims units; dhms/hms/ms are fixed |
+| `countUp` | toggle | false |  | event mode: once the target passes, count the time elapsed since (instead of stopping at 0) |
+| `workMin` | number | 25 | min 1, step 1 | pomodoro work length |
+| `breakMin` | number | 5 | min 1, step 1 | pomodoro break length |
+| `label` | text | "" |  |  |
+| `color` | color |  |  |  |
+
 ### Timer — `timer`
 
 ![Timer widget](img/widgets/timer.png)

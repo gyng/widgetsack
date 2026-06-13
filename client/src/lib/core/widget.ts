@@ -811,6 +811,57 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 60, h: 40 }
 	},
 	{
+		// Countdown: counts down to a TARGET DATE ("days until X"), or runs an auto-cycling Pomodoro
+		// rhythm. Self-sourcing (ticks on the wall clock); distinct from Timer (which is manual
+		// start/pause). No controls — it just reflects the clock.
+		type: 'countdown',
+		description:
+			'Counts down to a target date/time ("days until …"), or runs an auto-cycling Pomodoro work/break rhythm. Wall-clock driven (no start/pause — use Timer for that).',
+		binds: 'none',
+		label: 'Countdown',
+		category: 'Clocks',
+		intrinsic: true,
+		defaultSize: { w: 170, h: 80 },
+		defaultConfig: {
+			mode: 'event',
+			target: '',
+			format: 'auto',
+			countUp: false,
+			workMin: 25,
+			breakMin: 5,
+			label: ''
+		},
+		configFields: [
+			{
+				key: 'mode',
+				label: 'mode',
+				kind: 'select',
+				options: ['event', 'pomodoro'],
+				help: 'count down to a date, or run a repeating work/break rhythm'
+			},
+			text('target', 'target date', {
+				help: 'event mode: a date/time, e.g. 2026-12-31 or 2026-12-31T18:00'
+			}),
+			{
+				key: 'format',
+				label: 'format',
+				kind: 'select',
+				options: ['auto', 'dhms', 'hms', 'ms'],
+				help: 'event display: auto trims units; dhms/hms/ms are fixed'
+			},
+			{
+				key: 'countUp',
+				label: 'count up after',
+				kind: 'toggle',
+				help: 'event mode: once the target passes, count the time elapsed since (instead of stopping at 0)'
+			},
+			num('workMin', 'work (min)', { min: 1, step: 1, help: 'pomodoro work length' }),
+			num('breakMin', 'break (min)', { min: 1, step: 1, help: 'pomodoro break length' }),
+			text('label', 'label'),
+			color('color', 'color')
+		]
+	},
+	{
 		// Timer: a countdown timer or stopwatch with start/pause/reset. Self-sourcing (drives its own
 		// tick) + interactive so the controls catch clicks on the passive overlay.
 		type: 'timer',

@@ -1,0 +1,46 @@
+/* Countdown — a label, a large time value, and a subtitle (target hint / pomodoro phase). The accent
+   shifts on the pomodoro phase + when an event is reached. Themeable via --np-* / --cd-* tokens. */
+.countdown {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	gap: var(--cd-gap, 2px);
+	overflow: hidden;
+	text-align: center;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.cd-label {
+	font-size: var(--cd-label-size, 0.64em);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--np-label, rgba(255, 255, 255, 0.55));
+}
+.cd-value {
+	font-size: var(--cd-value-size, 1.8em);
+	font-weight: 700;
+	line-height: 1.05;
+	font-variant-numeric: tabular-nums;
+	color: var(--cd-accent, var(--np-accent, rgb(119, 196, 211)));
+}
+.cd-sub {
+	font-size: var(--cd-sub-size, 0.66em);
+	color: var(--np-label, rgba(255, 255, 255, 0.55));
+}
+
+/* Pomodoro: a calm accent during work, a softer one on the break. */
+.countdown[data-mode='pomodoro'][data-phase='break'] .cd-value {
+	color: var(--cd-break, rgb(140, 200, 150));
+}
+/* Event reached → de-emphasise the zero; elapsed (count-up) keeps the accent. */
+.countdown[data-phase='reached'] .cd-value {
+	color: var(--np-label, rgba(255, 255, 255, 0.5));
+}
+.countdown[data-phase='idle'] .cd-value {
+	color: var(--np-label, rgba(255, 255, 255, 0.4));
+}

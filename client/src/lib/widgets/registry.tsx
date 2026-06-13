@@ -11,6 +11,7 @@ import Sparkline from './meters/Sparkline';
 import Text from './meters/Text';
 import Clock from './meters/Clock';
 import Calendar from './meters/Calendar';
+import Countdown from './meters/Countdown';
 import AnalogClock from './meters/AnalogClock';
 import Bar from './meters/Bar';
 import Button from './meters/Button';
@@ -37,6 +38,7 @@ const components: Record<string, MeterComponent> = {
 	text: asMeter(Text),
 	clock: asMeter(Clock),
 	calendar: asMeter(Calendar),
+	countdown: asMeter(Countdown),
 	analogclock: asMeter(AnalogClock),
 	bar: asMeter(Bar),
 	button: asMeter(Button),

@@ -67,6 +67,7 @@ describe('meta registry', () => {
 			'zone',
 			'audioswitch',
 			'spacer',
+			'countdown',
 			'timer'
 		]);
 		expect(getMeta('gauge')).toMatchObject({ label: 'Gauge', binds: 'scalar' });
