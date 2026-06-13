@@ -644,6 +644,38 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		]
 	},
 	{
+		// Wi-Fi link detail (binds:'none', multi-sensor): SSID + signal bars + band/channel/PHY/rate.
+		// The `sensors` map binds the fixed net.wifi.* ids (gated — the backend only opens the WLAN
+		// handle when this is mounted). Not on Wi-Fi → "Not connected".
+		type: 'wifi',
+		description:
+			'Wi-Fi link detail: SSID, signal strength, and band / channel / 802.11 generation / RSSI / link rate. Windows; shows "Not connected" off Wi-Fi.',
+		binds: 'none',
+		sensors: () => ({
+			ssid: 'net.wifi.ssid',
+			signal: 'net.wifi.signal',
+			rssi: 'net.wifi.rssi',
+			rx: 'net.wifi.rx',
+			tx: 'net.wifi.tx',
+			band: 'net.wifi.band',
+			channel: 'net.wifi.channel',
+			phy: 'net.wifi.phy'
+		}),
+		label: 'Wi-Fi',
+		category: 'Network',
+		defaultSize: { w: 200, h: 76 },
+		defaultConfig: { showDetail: true },
+		configFields: [
+			{
+				key: 'showDetail',
+				label: 'detail line',
+				kind: 'toggle',
+				help: 'show band / channel / generation / RSSI / link rate under the SSID'
+			},
+			color('color', 'accent')
+		]
+	},
+	{
 		// Self-sourcing audio spectrum (binds:'none'): WASAPI loopback → real FFT in Rust, streamed
 		// over a Channel and drawn on a <canvas>. The display bar count is independent of the capture
 		// band count (the meter groups bands down), so changing it never reconfigures capture.

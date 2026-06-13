@@ -38,6 +38,7 @@ pub mod stocks;
 pub mod state;
 pub mod timings;
 pub mod weather;
+pub mod wifi;
 pub mod windowmgr;
 
 pub struct AppState {

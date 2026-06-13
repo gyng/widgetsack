@@ -48,6 +48,15 @@ export const KNOWN_SENSORS = [
 	'net.conn.established',
 	'net.conn.listening',
 	'net.conn.public',
+	// Wi-Fi link detail (gated; emitted only while on Wi-Fi)
+	'net.wifi.ssid',
+	'net.wifi.signal',
+	'net.wifi.rssi',
+	'net.wifi.rx',
+	'net.wifi.tx',
+	'net.wifi.band',
+	'net.wifi.channel',
+	'net.wifi.phy',
 	// Host (handles/threads/idle are Windows-only)
 	'host.uptime',
 	'host.procs',

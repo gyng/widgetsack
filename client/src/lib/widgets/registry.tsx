@@ -22,6 +22,7 @@ import Disks from './meters/Disks';
 import TopProcess from './meters/TopProcess';
 import NetConnections from './meters/NetConnections';
 import Ping from './meters/Ping';
+import Wifi from './meters/Wifi';
 import Spectrum from './meters/Spectrum';
 import Iframe from './meters/Iframe';
 import Zone from './meters/Zone';
@@ -49,6 +50,7 @@ const components: Record<string, MeterComponent> = {
 	topproc: asMeter(TopProcess),
 	netconn: asMeter(NetConnections),
 	ping: asMeter(Ping),
+	wifi: asMeter(Wifi),
 	spectrum: asMeter(Spectrum),
 	iframe: asMeter(Iframe),
 	zone: asMeter(Zone),

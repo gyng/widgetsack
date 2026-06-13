@@ -296,6 +296,20 @@ Ping a host (default 1.1.1.1) and show reachability + round-trip latency — a q
 | `slowMs` | number | 150 | min 1, step 10 | latency at/above this is shown as "slow" (amber) |
 | `color` | color |  |  |  |
 
+### Wi-Fi — `wifi`
+
+![Wi-Fi widget](img/widgets/wifi.png)
+
+Wi-Fi link detail: SSID, signal strength, and band / channel / 802.11 generation / RSSI / link rate. Windows; shows "Not connected" off Wi-Fi.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×76
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showDetail` | toggle | true |  | show band / channel / generation / RSSI / link rate under the SSID |
+| `color` | color |  |  |  |
+
 ### Spectrum — `spectrum`
 
 ![Spectrum widget](img/widgets/spectrum.png)

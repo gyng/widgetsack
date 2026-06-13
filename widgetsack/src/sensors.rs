@@ -677,6 +677,12 @@ fn is_netlink_id(id: &str) -> bool {
     id.starts_with("net.linkspeed") || id == "net.adapter" || id == "net.state"
 }
 
+/// Ids served by the WLAN query (SSID / signal / channel / PHY). Gated so the WLAN handle is only
+/// opened when a Wi-Fi meter is mounted.
+fn is_wifi_id(id: &str) -> bool {
+    id.starts_with("net.wifi")
+}
+
 /// Poll system sensors on an interval and emit a `telemetry` batch each tick.
 ///
 /// Cheap, always-on sensors (CPU usage + per-core, memory, swap, network, host counts/uptime) emit
@@ -789,7 +795,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         // (NVML, process enumeration, disk refresh, frequency refresh) — the std Mutex must never be
         // held across an await or a blocking driver call.
         #[allow(clippy::type_complexity)]
-        let (want_gpu, want_disks, want_disk_io, want_procs, proc_w, want_freq, want_perf, want_cpufreq, want_netlink, want_conns) = {
+        let (want_gpu, want_disks, want_disk_io, want_procs, proc_w, want_freq, want_perf, want_cpufreq, want_netlink, want_conns, want_wifi) = {
             let active: tauri::State<ActiveSensors> = app.state();
             let g = active.0.lock().unwrap_or_else(|e| e.into_inner());
             let pw = |p: &str| any_wanted(&g, |id| id.starts_with(p));
@@ -809,6 +815,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
                 any_wanted(&g, is_cpufreq_id),
                 any_wanted(&g, is_netlink_id),
                 any_wanted(&g, |id| id.starts_with("net.conn")),
+                any_wanted(&g, is_wifi_id),
             )
         };
         let want_proctop = proc_w.any();
@@ -996,6 +1003,10 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         if want_conns {
             let _t = timings.start("sensors.netconn");
             batch.extend(crate::netconn::connection_samples(ts));
+        }
+        if want_wifi {
+            let _t = timings.start("sensors.wifi");
+            batch.extend(crate::wifi::wifi_samples(ts));
         }
         // Battery is cheap + presence-gated (empty on desktops), like host.idle — always-on.
         batch.extend(battery_samples(ts));

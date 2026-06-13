@@ -97,6 +97,9 @@ windows = { version = "0.61", features = [
     # IF_OPER_STATUS / NET_IF_MEDIA_CONNECT_STATE enums (and the cfg-gated row struct) in Ndis.
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
+    # Wi-Fi detail (wifi.rs): WlanOpenHandle/EnumInterfaces/QueryInterface(current_connection +
+    # channel_number) → SSID / signal / PHY / channel for the Wi-Fi widget.
+    "Win32_NetworkManagement_WiFi",
     # Landing-zone foreign-window manager (windowmgr.rs): EnumWindows / GetWindowRect / SetWindowPos /
     # ShowWindow / GetWindow*W / GetWindowThreadProcessId / the WS_EX_*/SWP_*/SW_* constants + the
     # EVENT_SYSTEM_MOVESIZE* / WINEVENT_* / MSG / GetMessageW message-pump in WindowsAndMessaging;
