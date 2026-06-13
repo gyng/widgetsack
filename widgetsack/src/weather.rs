@@ -104,7 +104,7 @@ fn open_meteo_url(lat: f64, lon: f64, unit: &str) -> String {
     format!(
         "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
          &current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m\
-         &daily=temperature_2m_max,temperature_2m_min,weather_code&temperature_unit={temp_unit}\
+         &daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset&temperature_unit={temp_unit}\
          &wind_speed_unit={wind_unit}&timezone=auto&forecast_days=7"
     )
 }
@@ -143,6 +143,15 @@ fn weather_to_samples(body: &Value, unit_letter: &str, ts_ms: u64) -> Vec<Sensor
         scalar(&format!("weather.day.{i}.high"), at(highs));
         scalar(&format!("weather.day.{i}.low"), at(lows));
         scalar(&format!("weather.day.{i}.code"), at(codes));
+    }
+    // Today's sunrise/sunset as the location-local ISO strings Open-Meteo returns (timezone=auto), e.g.
+    // "2026-06-14T05:12" — the Sun/Moon widget slices the HH:mm. Text, since they're wall-clock times.
+    // (After the `scalar` closure's last use above, so `out` is free to borrow again.)
+    if let Some(s) = body["daily"]["sunrise"][0].as_str() {
+        out.push(SensorSample::text("weather.sun.rise", ts_ms, s));
+    }
+    if let Some(s) = body["daily"]["sunset"][0].as_str() {
+        out.push(SensorSample::text("weather.sun.set", ts_ms, s));
     }
     out
 }
@@ -389,7 +398,9 @@ mod tests {
             "daily": {
                 "temperature_2m_max": [15.0, 17.0, 12.0],
                 "temperature_2m_min": [8.0, 9.0, 5.0],
-                "weather_code": [3, 61, 0]
+                "weather_code": [3, 61, 0],
+                "sunrise": ["2026-06-14T05:12", "2026-06-15T05:11", "2026-06-16T05:11"],
+                "sunset": ["2026-06-14T21:30", "2026-06-15T21:31", "2026-06-16T21:31"]
             }
         })
     }
@@ -427,6 +438,14 @@ mod tests {
         assert_eq!(v("weather.day.1.code"), 61.0);
         // Only as many days as the arrays provided (3 here) are emitted.
         assert!(find(&s, "weather.day.3.high").is_none());
+    }
+
+    #[test]
+    fn sunrise_and_sunset_ride_along_as_text() {
+        let s = weather_to_samples(&sample_body(), "C", 0);
+        let v = |id: &str| serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone();
+        assert_eq!(v("weather.sun.rise"), "2026-06-14T05:12");
+        assert_eq!(v("weather.sun.set"), "2026-06-14T21:30");
     }
 
     #[test]

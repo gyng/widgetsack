@@ -1,0 +1,65 @@
+/* Sun & Moon — sunrise/sunset times on the left, the moon phase (glyph + name + illumination) on the
+   right. Themeable via --np-* / --sm-* tokens. */
+.sunmoon {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--sm-gap, 10px);
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.sm-sun {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+.sm-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+.sm-ico {
+	font-size: var(--sm-ico-size, 1em);
+	line-height: 1;
+}
+.sm-time {
+	font-size: var(--sm-time-size, 0.95em);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	color: var(--sm-accent, var(--np-accent, rgb(119, 196, 211)));
+}
+
+.sm-moon {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	min-width: 0;
+}
+.sm-moon-ico {
+	font-size: var(--sm-moon-size, 1.7em);
+	line-height: 1;
+	flex: 0 0 auto;
+}
+.sm-moon-body {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.15;
+	text-align: right;
+}
+.sm-moon-name {
+	font-size: var(--sm-moon-name-size, 0.74em);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.sm-moon-illum {
+	font-size: var(--sm-moon-illum-size, 0.66em);
+	color: var(--np-label, rgba(255, 255, 255, 0.55));
+}

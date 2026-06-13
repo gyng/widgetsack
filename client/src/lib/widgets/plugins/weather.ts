@@ -7,6 +7,7 @@ import { registerPlugin } from '../plugin';
 import { weatherSource } from './weather-source';
 import WeatherSettings from './WeatherSettings';
 import Weather from '../meters/Weather';
+import SunMoon from '../meters/SunMoon';
 import { asMeter } from '../registry';
 
 export const registerWeatherPlugin = (): void =>
@@ -69,6 +70,26 @@ export const registerWeatherPlugin = (): void =>
 					]
 				},
 				component: asMeter(Weather)
+			},
+			{
+				// Sun & Moon: sunrise/sunset from the weather source + a wall-clock moon phase. binds:'none',
+				// multi-sensor — the sensors map binds weather.sun.{rise,set}; the moon needs no backend.
+				meta: {
+					type: 'sunmoon',
+					binds: 'none',
+					sensors: () => ({ rise: 'weather.sun.rise', set: 'weather.sun.set' }),
+					label: 'Sun & Moon',
+					description:
+						'Today’s sunrise + sunset (from your weather location) and the current moon phase with illumination.',
+					defaultSize: { w: 210, h: 64 },
+					defaultConfig: { showSun: true, showMoon: true },
+					configFields: [
+						{ key: 'showSun', label: 'sunrise / sunset', kind: 'toggle' },
+						{ key: 'showMoon', label: 'moon phase', kind: 'toggle' },
+						{ key: 'color', label: 'accent', kind: 'color' }
+					]
+				},
+				component: asMeter(SunMoon)
 			}
 		]
 	});
