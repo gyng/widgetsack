@@ -1,0 +1,50 @@
+/* Ping — a status dot (color by reachability/latency), the host, and the round-trip time. --np-* themed. */
+.ping {
+	display: flex;
+	align-items: center;
+	gap: var(--ping-gap, 8px);
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.ping-dot {
+	flex: 0 0 auto;
+	width: var(--ping-dot-size, 10px);
+	height: var(--ping-dot-size, 10px);
+	border-radius: 50%;
+	background: var(--ping-color, var(--np-label, rgba(255, 255, 255, 0.4)));
+}
+/* up = accent/green, slow = amber, down = red, unknown = muted. */
+.ping[data-level='up'] .ping-dot {
+	background: var(--ping-accent, var(--ping-up, rgb(110, 209, 129)));
+}
+.ping[data-level='slow'] .ping-dot {
+	background: var(--ping-slow, rgb(232, 193, 96));
+}
+.ping[data-level='down'] .ping-dot {
+	background: var(--ping-down, rgb(226, 100, 100));
+}
+
+.ping-host {
+	flex: 1 1 0;
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ping-value {
+	flex: 0 0 auto;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+	color: var(--ping-accent, var(--np-accent, rgb(119, 196, 211)));
+}
+.ping[data-level='down'] .ping-value {
+	color: var(--ping-down, rgb(226, 100, 100));
+}
+.ping[data-level='unknown'] .ping-value {
+	color: var(--np-label, rgba(255, 255, 255, 0.4));
+}

@@ -31,6 +31,7 @@ pub mod log;
 pub mod media;
 pub mod mqtt;
 pub mod netconn;
+pub mod ping;
 pub mod process_diag;
 pub mod sensors;
 pub mod stocks;
@@ -272,6 +273,13 @@ async fn main() -> Result<(), ()> {
             let sensors_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 sensors::run_system_sensors(sensors_handle).await;
+            });
+
+            // Ping / "is my internet up?" poller — always running, but demand-gated: it pings only the
+            // hosts named by mounted net.ping.* sensors, so it's free until a Ping widget is placed.
+            let ping_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                ping::run_ping_source(ping_handle).await;
             });
 
             // Agent-control server: OPT-IN (off unless LlmConfig.agent_control is true). Started on

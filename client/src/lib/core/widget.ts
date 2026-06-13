@@ -7,6 +7,7 @@
 
 import type { WidgetInstance } from './layout';
 import { topProcessSensors } from './topProcess';
+import { pingSensors } from './ping';
 
 // A typed config field, so the inspector can render a real input instead of raw JSON. `help` is a
 // one-line description surfaced in the inspector; `default` is the field's own reset value (falls
@@ -613,6 +614,31 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				max: 20,
 				step: 1,
 				help: 'how many processes to list (busiest — most public — first)'
+			}),
+			color('color', 'accent')
+		]
+	},
+	{
+		// Ping / "is my internet up?" (binds:'none', multi-sensor): the `sensors` map binds
+		// net.ping.<host>.{ms,up} from config.host. Subscribing tells the backend poller which host to
+		// ICMP-ping (demand gate), so nothing pings until this widget is mounted.
+		type: 'ping',
+		description:
+			'Ping a host (default 1.1.1.1) and show reachability + round-trip latency — a quick "is my internet up?" light. ICMP, no admin needed.',
+		binds: 'none',
+		sensors: (config) => pingSensors(String(config.host ?? '1.1.1.1')),
+		label: 'Ping',
+		category: 'Network',
+		intrinsic: true,
+		defaultSize: { w: 150, h: 24 },
+		defaultConfig: { host: '1.1.1.1', slowMs: 150 },
+		configFields: [
+			text('host', 'host', { help: 'IP or hostname to ping, e.g. 1.1.1.1 or cloudflare.com' }),
+			text('label', 'label', { help: 'override the shown name (defaults to the host)' }),
+			num('slowMs', 'slow threshold (ms)', {
+				min: 1,
+				step: 10,
+				help: 'latency at/above this is shown as "slow" (amber)'
 			}),
 			color('color', 'accent')
 		]

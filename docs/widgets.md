@@ -279,6 +279,23 @@ Active network connections by process: established + listening counts and how ma
 | `maxRows` | number | 8 | min 1, max 20, step 1 | how many processes to list (busiest — most public — first) |
 | `color` | color |  |  |  |
 
+### Ping — `ping`
+
+![Ping widget](img/widgets/ping.png)
+
+Ping a host (default 1.1.1.1) and show reachability + round-trip latency — a quick "is my internet up?" light. ICMP, no admin needed.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 150×24
+- **Intrinsic size:** `basis:"content"` shrink-wraps to the rendered content
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `host` | text | "1.1.1.1" |  | IP or hostname to ping, e.g. 1.1.1.1 or cloudflare.com |
+| `label` | text |  |  | override the shown name (defaults to the host) |
+| `slowMs` | number | 150 | min 1, step 10 | latency at/above this is shown as "slow" (amber) |
+| `color` | color |  |  |  |
+
 ### Spectrum — `spectrum`
 
 ![Spectrum widget](img/widgets/spectrum.png)

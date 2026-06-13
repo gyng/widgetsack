@@ -61,6 +61,7 @@ describe('meta registry', () => {
 			'disks',
 			'topproc',
 			'netconn',
+			'ping',
 			'spectrum',
 			'iframe',
 			'zone',
