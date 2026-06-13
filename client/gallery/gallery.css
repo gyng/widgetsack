@@ -88,3 +88,23 @@ figcaption {
 	box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
 	overflow: hidden;
 }
+
+/* Auto-theme-from-wallpaper demo: widgets float over the wallpaper with the derived CSS-var tokens
+   applied on the wrapper (which they inherit), so it shows the derived accent + readable text. */
+.autotheme-demo {
+	display: flex;
+	align-items: center;
+	gap: 20px;
+	width: 900px;
+	box-sizing: border-box;
+	padding: 28px 32px;
+	border-radius: 12px;
+	background-size: cover;
+	background-position: center;
+	box-shadow: 0 18px 60px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+.autotheme-stage {
+	flex: 0 0 auto;
+	position: relative;
+	/* No card surface — the widgets sit directly on the wallpaper (the real overlay behaviour). */
+}

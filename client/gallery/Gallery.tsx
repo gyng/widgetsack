@@ -4,7 +4,7 @@
 // (scripts/screenshots.mjs) screenshots each `[data-shot]` element and reads `window.__GALLERY__`
 // for the per-widget metadata used to generate the docs pages.
 
-import { useEffect } from 'react';
+import { useEffect, type CSSProperties } from 'react';
 // Register the plugin widgets (HA, now-playing, MQTT, stocks/Ticker — deliberately not the AI
 // Provider) so they appear in the gallery, exactly as Canvas.tsx does in the app via
 // registerBuiltinPlugins(). Must run before paletteItems().
@@ -23,6 +23,7 @@ import { paletteItems, getMeta } from '../src/lib/widgets/registry';
 import { createWidget } from '../src/lib/core/widget';
 import { scopeCss } from '../src/lib/core/style';
 import { DEFAULT_TOKENS, tokensToCss } from '../src/lib/core/tokens';
+import { deriveTokens, type RGB } from '../src/lib/core/palette';
 import type { WidgetInstance } from '../src/lib/core/layout';
 import type { TelemetryHub } from '../src/lib/core/telemetry';
 import { fakeSpectrum, makeHub } from './seed';
@@ -200,6 +201,31 @@ const DEMO: WidgetInstance[] = [
 	})
 ];
 
+// Auto-theme demo (issue #15): the SAME deriveTokens() the Background panel's "🎨 From wallpaper"
+// button uses, run on a sample representative of the demo photo (navy sky + amber sun), applied as CSS
+// vars over the wallpaper — showing the derived accent + readable text on a real wallpaper.
+const AUTO_TOKENS = deriveTokens([
+	...(Array(60).fill([27, 59, 84]) as RGB[]), // navy sky / hills
+	...(Array(14).fill([255, 212, 121]) as RGB[]) // amber sun
+]);
+const AUTO_DEMO: WidgetInstance[] = [
+	buildInstance('clock', 'a-clock', {
+		rect: { x: 0, y: 0, w: 150, h: 40 },
+		config: { format: 'HH:mm' }
+	}),
+	buildInstance('gauge', 'a-cpu', {
+		rect: { x: 0, y: 0, w: 92, h: 92 },
+		sensor: 'cpu.total',
+		config: { label: 'CPU', unit: '%' }
+	}),
+	buildInstance('battery', 'a-bat', { rect: { x: 0, y: 0, w: 150, h: 44 } }),
+	buildInstance('sparkline', 'a-net', {
+		rect: { x: 0, y: 0, w: 150, h: 40 },
+		sensor: 'net.down',
+		config: { histogram: true }
+	})
+];
+
 // One stylesheet: the default design tokens (:root) + each instance's seeded css (mostly NowPlaying)
 // scoped to its [data-w="<id>"] host, exactly as the app assembles it.
 const allInstances = [...widgetInstances, ...DEMO];
@@ -281,6 +307,23 @@ export default function Gallery() {
 				<div className="demo-panel" data-shot="demo">
 					{DEMO.map((inst) => (
 						<WidgetHost key={inst.id} hub={hub} instance={inst} />
+					))}
+				</div>
+
+				<h2>Auto theme from wallpaper</h2>
+				<div
+					className="autotheme-demo"
+					data-shot="autotheme"
+					style={{ ...(AUTO_TOKENS as CSSProperties), backgroundImage: `url("${PHOTO}")` }}
+				>
+					{AUTO_DEMO.map((inst) => (
+						<div
+							key={inst.id}
+							className="autotheme-stage"
+							style={{ width: inst.rect.w, height: inst.rect.h }}
+						>
+							<WidgetHost hub={hub} instance={inst} />
+						</div>
 					))}
 				</div>
 			</SpectrumContext.Provider>

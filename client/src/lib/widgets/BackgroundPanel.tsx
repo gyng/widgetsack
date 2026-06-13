@@ -3,8 +3,12 @@
 // Purely a panel: the spec + handlers live in Canvas (canvas/useBackground) and arrive as props;
 // the only module call it makes itself is the stateless open-folder helper. Lazy-loaded like the
 // other studio panels (Canvas's lazy() block), so the overlay never fetches it.
+import { useState } from 'react';
 import { BACKGROUND_FITS, BACKGROUND_KINDS, isMediaKind } from '../core/background';
 import type { BackgroundKind, BackgroundSpec } from '../core/layoutTree';
+import type { Tokens } from '../core/tokens';
+import { deriveTokens } from '../core/palette';
+import { sampleImagePixels } from './canvas/wallpaperSampler';
 import { openWallpapersDir } from '../overlay';
 
 type Props = {
@@ -14,6 +18,10 @@ type Props = {
 	patchBg: (patch: Partial<BackgroundSpec>) => void;
 	setBgKind: (kind: BackgroundKind) => void;
 	clearBg: () => void;
+	// Wallpaper auto-theme (issue #15): resolve the current image to a URL, apply the derived tokens.
+	resolveWallpaper?: (name: string) => string;
+	onAutoTheme?: (tokens: Tokens) => void;
+	onClearTokens?: () => void;
 };
 
 export default function BackgroundPanel({
@@ -22,8 +30,32 @@ export default function BackgroundPanel({
 	refreshWallpapers,
 	patchBg,
 	setBgKind,
-	clearBg
+	clearBg,
+	resolveWallpaper,
+	onAutoTheme,
+	onClearTokens
 }: Props) {
+	const [busy, setBusy] = useState(false);
+	const [status, setStatus] = useState<'idle' | 'done' | 'fail'>('idle');
+
+	const autoTheme = async (): Promise<void> => {
+		if (!bg?.src || !resolveWallpaper || !onAutoTheme) return;
+		setBusy(true);
+		setStatus('idle');
+		try {
+			const pixels = await sampleImagePixels(resolveWallpaper(bg.src));
+			const tokens = deriveTokens(pixels);
+			if (Object.keys(tokens).length === 0) {
+				setStatus('fail');
+				return;
+			}
+			onAutoTheme(tokens);
+			setStatus('done');
+		} finally {
+			setBusy(false);
+		}
+	};
+
 	return (
 		<div className="rail-panel bg-panel">
 			<div className="rp-hd">Background</div>
@@ -128,6 +160,37 @@ export default function BackgroundPanel({
 						))}
 					</select>
 				</label>
+			)}
+
+			{bg?.kind === 'image' && bg.src && resolveWallpaper && onAutoTheme && (
+				<>
+					<div className="bg-files-hd">
+						<span className="rp-sub">Auto theme</span>
+					</div>
+					<div className="rp-stub">
+						Derive readable widget colours from this wallpaper — an accent from its dominant tone,
+						with text that flips light/dark to stay legible over it.
+					</div>
+					<div className="bg-files-ops">
+						<button type="button" onClick={autoTheme} disabled={busy} aria-busy={busy}>
+							{busy ? 'Reading…' : '🎨 From wallpaper'}
+						</button>
+						{onClearTokens && (
+							<button
+								type="button"
+								title="Clear the auto / manual colour overrides"
+								onClick={() => {
+									onClearTokens();
+									setStatus('idle');
+								}}
+							>
+								Reset colours
+							</button>
+						)}
+					</div>
+					{status === 'done' && <div className="rp-stub">Applied — the widgets recolour live.</div>}
+					{status === 'fail' && <div className="rp-stub">Couldn’t read the image’s colours.</div>}
+				</>
 			)}
 
 			{bg?.kind === 'video' && (
