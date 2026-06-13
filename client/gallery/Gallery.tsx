@@ -48,6 +48,8 @@ const OVERRIDES: Record<string, { sensor?: string; config?: Record<string, unkno
 	cpu: { config: { mode: 'cores', cols: 6 } },
 	iframe: { config: { url: IFRAME_DEMO } },
 	ticker: { config: { symbol: 'NVDA' } },
+	// Event countdown to a fixed future date (the frozen clock is 2026-06-08, so this reads "~206d …").
+	countdown: { config: { mode: 'event', target: '2026-12-31T00:00', label: 'New Year' } },
 	'ha.sensor': { sensor: 'demo.temperature' },
 	'ha.light': { sensor: 'demo.light' },
 	'ha.climate': { sensor: 'demo.climate' }
