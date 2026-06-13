@@ -54,3 +54,25 @@ export function weatherInfo(code: number, isDay = true): WeatherInfo {
 			return { label: '—', icon: '❓' };
 	}
 }
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Column label for a forecast day: "Today" for offset 0, else the 3-letter weekday computed from
+ * `baseMs` (passed in, so the helper stays pure + testable). */
+export function forecastDayLabel(offsetDays: number, baseMs: number): string {
+	if (offsetDays <= 0) return 'Today';
+	return WEEKDAYS[new Date(baseMs + offsetDays * 86_400_000).getDay()];
+}
+
+export type ForecastCell = { code: number | null; high: number | null; low: number | null };
+export type ForecastDay = ForecastCell & { label: string; info: WeatherInfo };
+
+/** Decorate raw per-day cells (index 0 = today) with a column label + day-icon. Pure (baseMs in).
+ * Forecast icons use the day glyph — a daily summary has no night variant. */
+export function labelForecast(cells: ForecastCell[], baseMs: number): ForecastDay[] {
+	return cells.map((c, i) => ({
+		...c,
+		label: forecastDayLabel(i, baseMs),
+		info: c.code == null ? { label: '—', icon: '❓' } : weatherInfo(c.code, true)
+	}));
+}

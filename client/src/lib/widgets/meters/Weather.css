@@ -61,3 +61,42 @@
 	font-size: var(--wx-detail-size, 0.7em);
 	color: var(--np-label, rgba(255, 255, 255, 0.55));
 }
+
+/* Multi-day forecast strip: one equal column per day (label / icon / hi·lo). */
+.wx-forecast {
+	display: flex;
+	gap: var(--wx-forecast-gap, 4px);
+	margin-top: 2px;
+	min-width: 0;
+}
+.wx-day {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1px;
+	text-align: center;
+}
+.wx-day-label {
+	font-size: var(--wx-day-label-size, 0.62em);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: var(--np-label, rgba(255, 255, 255, 0.55));
+}
+.wx-day-icon {
+	font-size: var(--wx-day-icon-size, 1.1em);
+	line-height: 1.1;
+}
+.wx-day-hilo {
+	display: flex;
+	gap: 4px;
+	font-size: var(--wx-day-hilo-size, 0.64em);
+	font-variant-numeric: tabular-nums;
+}
+.wx-day-hi {
+	color: var(--wx-accent, var(--np-accent, rgb(119, 196, 211)));
+}
+.wx-day-lo {
+	color: var(--np-label, rgba(255, 255, 255, 0.5));
+}

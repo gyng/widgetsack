@@ -54,4 +54,36 @@ describe('Weather meter', () => {
 		expect(container.querySelector('.wx-temp-val')?.textContent).toBe('—');
 		expect(container.querySelector('.wx-cond')?.textContent).toBe('—');
 	});
+
+	it('renders a forecast column per day from the day.N sensors', () => {
+		const { container } = render(
+			<Weather
+				forecastDays={3}
+				sensors={{
+					temp: scalar(12),
+					code: scalar(3),
+					unit: txt('C'),
+					d0high: scalar(15),
+					d0low: scalar(8),
+					d0code: scalar(0),
+					d1high: scalar(17),
+					d1low: scalar(9),
+					d1code: scalar(61),
+					d2high: scalar(12),
+					d2low: scalar(5),
+					d2code: scalar(2)
+				}}
+			/>
+		);
+		const cols = container.querySelectorAll('.wx-day');
+		expect(cols).toHaveLength(3);
+		expect(cols[0].querySelector('.wx-day-label')?.textContent).toBe('Today');
+		expect(cols[0].querySelector('.wx-day-hi')?.textContent).toBe('15°');
+		expect(cols[0].querySelector('.wx-day-icon')?.textContent).toBe('☀️'); // code 0 = clear (day)
+	});
+
+	it('omits the forecast strip when forecastDays is 0 (default)', () => {
+		const { container } = render(<Weather sensors={{ temp: scalar(12), code: scalar(3) }} />);
+		expect(container.querySelector('.wx-forecast')).toBeNull();
+	});
 });

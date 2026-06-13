@@ -25,26 +25,45 @@ export const registerWeatherPlugin = (): void =>
 					// passes the meter a props-only `sensors` snapshot.
 					type: 'weather',
 					binds: 'none',
-					sensors: () => ({
-						temp: 'weather.temp',
-						apparent: 'weather.apparent',
-						humidity: 'weather.humidity',
-						wind: 'weather.wind',
-						code: 'weather.code',
-						is_day: 'weather.is_day',
-						high: 'weather.high',
-						low: 'weather.low',
-						unit: 'weather.unit'
-					}),
+					sensors: (config) => {
+						// The forecast strip subscribes weather.day.N.* for the configured days (backend ≤7).
+						const map: Record<string, string> = {
+							temp: 'weather.temp',
+							apparent: 'weather.apparent',
+							humidity: 'weather.humidity',
+							wind: 'weather.wind',
+							code: 'weather.code',
+							is_day: 'weather.is_day',
+							high: 'weather.high',
+							low: 'weather.low',
+							unit: 'weather.unit'
+						};
+						const days = Math.max(0, Math.min(7, Math.floor(Number(config?.forecastDays ?? 0))));
+						for (let i = 0; i < days; i++) {
+							map[`d${i}high`] = `weather.day.${i}.high`;
+							map[`d${i}low`] = `weather.day.${i}.low`;
+							map[`d${i}code`] = `weather.day.${i}.code`;
+						}
+						return map;
+					},
 					label: 'Weather',
-					defaultSize: { w: 200, h: 110 },
-					defaultConfig: { showHiLo: true, showDetail: true },
+					defaultSize: { w: 220, h: 160 },
+					defaultConfig: { showHiLo: true, showDetail: true, forecastDays: 5 },
 					configFields: [
 						{ key: 'showHiLo', label: 'today high / low', kind: 'toggle' },
 						{
 							key: 'showDetail',
 							label: 'feels-like / humidity / wind',
 							kind: 'toggle'
+						},
+						{
+							key: 'forecastDays',
+							label: 'forecast days',
+							kind: 'number',
+							min: 0,
+							max: 7,
+							step: 1,
+							help: 'how many days of forecast to show below (0 = off; up to 7)'
 						},
 						{ key: 'color', label: 'accent', kind: 'color' }
 					]

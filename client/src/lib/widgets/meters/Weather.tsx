@@ -5,13 +5,14 @@
 // (~15 min) → very low churn. No location configured → "—".
 import type { CSSProperties } from 'react';
 import type { SensorState } from '../../core/telemetry';
-import { weatherInfo } from '../../core/weather';
+import { weatherInfo, labelForecast, type ForecastCell } from '../../core/weather';
 import './Weather.css';
 
 type Props = {
 	sensors?: Record<string, SensorState>;
 	showHiLo?: boolean;
 	showDetail?: boolean;
+	forecastDays?: number;
 	color?: string;
 };
 
@@ -24,6 +25,7 @@ export default function Weather({
 	sensors = {},
 	showHiLo = true,
 	showDetail = true,
+	forecastDays = 0,
 	color
 }: Props) {
 	const temp = scalar(sensors.temp);
@@ -41,6 +43,21 @@ export default function Weather({
 	const deg = (n: number | null) => (n == null ? '—' : `${Math.round(n)}°`);
 	const windUnit = unit === 'F' ? 'mph' : 'km/h';
 	const vars = color ? ({ '--wx-accent': color } as CSSProperties) : undefined;
+
+	// Multi-day forecast strip (off when forecastDays is 0). Cells are read from the day.N.* sensors the
+	// meta subscribes; only days that actually have data are shown (a short backend array → fewer cols).
+	const days = Math.max(0, Math.min(7, Math.floor(forecastDays)));
+	const cells: ForecastCell[] = [];
+	for (let i = 0; i < days; i++) {
+		cells.push({
+			code: scalar(sensors[`d${i}code`]),
+			high: scalar(sensors[`d${i}high`]),
+			low: scalar(sensors[`d${i}low`])
+		});
+	}
+	const forecast = labelForecast(cells, Date.now()).filter(
+		(d) => d.high != null || d.low != null || d.code != null
+	);
 
 	return (
 		<div className="weather np-weather" style={vars}>
@@ -70,6 +87,22 @@ export default function Weather({
 							{Math.round(wind)} {windUnit}
 						</span>
 					)}
+				</div>
+			)}
+			{forecast.length > 0 && (
+				<div className="wx-forecast" data-part="forecast">
+					{forecast.map((d, i) => (
+						<div className="wx-day" key={i}>
+							<span className="wx-day-label">{d.label}</span>
+							<span className="wx-day-icon" role="img" aria-label={d.info.label}>
+								{d.info.icon}
+							</span>
+							<span className="wx-day-hilo">
+								<span className="wx-day-hi">{deg(d.high)}</span>
+								<span className="wx-day-lo">{deg(d.low)}</span>
+							</span>
+						</div>
+					))}
 				</div>
 			)}
 		</div>

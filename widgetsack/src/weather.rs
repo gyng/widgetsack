@@ -104,8 +104,8 @@ fn open_meteo_url(lat: f64, lon: f64, unit: &str) -> String {
     format!(
         "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
          &current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m\
-         &daily=temperature_2m_max,temperature_2m_min&temperature_unit={temp_unit}\
-         &wind_speed_unit={wind_unit}&timezone=auto&forecast_days=1"
+         &daily=temperature_2m_max,temperature_2m_min,weather_code&temperature_unit={temp_unit}\
+         &wind_speed_unit={wind_unit}&timezone=auto&forecast_days=7"
     )
 }
 
@@ -132,6 +132,18 @@ fn weather_to_samples(body: &Value, unit_letter: &str, ts_ms: u64) -> Vec<Sensor
     scalar("weather.is_day", cur["is_day"].as_f64());
     scalar("weather.high", body["daily"]["temperature_2m_max"][0].as_f64());
     scalar("weather.low", body["daily"]["temperature_2m_min"][0].as_f64());
+    // Multi-day forecast: weather.day.N.{high,low,code} for each day Open-Meteo returned (day 0 = today,
+    // duplicating weather.high/low which are kept for back-compat). A short array just yields fewer days.
+    let highs = body["daily"]["temperature_2m_max"].as_array();
+    let lows = body["daily"]["temperature_2m_min"].as_array();
+    let codes = body["daily"]["weather_code"].as_array();
+    let days = highs.map_or(0, Vec::len);
+    for i in 0..days {
+        let at = |arr: Option<&Vec<Value>>| arr.and_then(|a| a.get(i)).and_then(Value::as_f64);
+        scalar(&format!("weather.day.{i}.high"), at(highs));
+        scalar(&format!("weather.day.{i}.low"), at(lows));
+        scalar(&format!("weather.day.{i}.code"), at(codes));
+    }
     out
 }
 
@@ -335,6 +347,9 @@ mod tests {
         assert!(c.contains("longitude=-0.12"));
         assert!(c.contains("temperature_unit=celsius"));
         assert!(c.contains("wind_speed_unit=kmh"));
+        // Multi-day forecast: a week of daily highs/lows + codes.
+        assert!(c.contains("forecast_days=7"));
+        assert!(c.contains("weather_code"));
         let f = open_meteo_url(40.0, -74.0, "Fahrenheit");
         assert!(f.contains("temperature_unit=fahrenheit"));
         assert!(f.contains("wind_speed_unit=mph"));
@@ -371,7 +386,11 @@ mod tests {
                 "weather_code": 3,
                 "wind_speed_10m": 14.2
             },
-            "daily": { "temperature_2m_max": [15.0], "temperature_2m_min": [8.0] }
+            "daily": {
+                "temperature_2m_max": [15.0, 17.0, 12.0],
+                "temperature_2m_min": [8.0, 9.0, 5.0],
+                "weather_code": [3, 61, 0]
+            }
         })
     }
 
@@ -392,6 +411,22 @@ mod tests {
         assert_eq!(v("weather.high"), 15.0);
         assert_eq!(v("weather.low"), 8.0);
         assert_eq!(v("weather.unit"), "C");
+    }
+
+    #[test]
+    fn daily_arrays_become_per_day_forecast_samples() {
+        let s = weather_to_samples(&sample_body(), "C", 0);
+        let v = |id: &str| serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone();
+        // Day 0 mirrors today's high/low and carries the code.
+        assert_eq!(v("weather.day.0.high"), 15.0);
+        assert_eq!(v("weather.day.0.low"), 8.0);
+        assert_eq!(v("weather.day.0.code"), 3.0);
+        // Subsequent days come straight from the arrays.
+        assert_eq!(v("weather.day.1.high"), 17.0);
+        assert_eq!(v("weather.day.2.low"), 5.0);
+        assert_eq!(v("weather.day.1.code"), 61.0);
+        // Only as many days as the arrays provided (3 here) are emitted.
+        assert!(find(&s, "weather.day.3.high").is_none());
     }
 
     #[test]
