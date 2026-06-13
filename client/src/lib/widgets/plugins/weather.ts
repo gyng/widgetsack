@@ -8,6 +8,7 @@ import { weatherSource } from './weather-source';
 import WeatherSettings from './WeatherSettings';
 import Weather from '../meters/Weather';
 import SunMoon from '../meters/SunMoon';
+import AirQuality from '../meters/AirQuality';
 import { asMeter } from '../registry';
 
 export const registerWeatherPlugin = (): void =>
@@ -90,6 +91,26 @@ export const registerWeatherPlugin = (): void =>
 					]
 				},
 				component: asMeter(SunMoon)
+			},
+			{
+				// Air Quality: European AQI + PM2.5 (separate Open-Meteo air-quality endpoint) and the UV
+				// index (from the forecast current). binds:'none', multi-sensor.
+				meta: {
+					type: 'airquality',
+					binds: 'none',
+					sensors: () => ({ aqi: 'weather.air.aqi', pm25: 'weather.air.pm25', uv: 'weather.uv' }),
+					label: 'Air Quality',
+					description:
+						'European Air Quality Index with a colour-coded band, plus PM2.5 and the UV index — for your weather location.',
+					defaultSize: { w: 190, h: 86 },
+					defaultConfig: { showPm: true, showUv: true },
+					configFields: [
+						{ key: 'showPm', label: 'PM2.5', kind: 'toggle' },
+						{ key: 'showUv', label: 'UV index', kind: 'toggle' },
+						{ key: 'color', label: 'accent', kind: 'color' }
+					]
+				},
+				component: asMeter(AirQuality)
 			}
 		]
 	});

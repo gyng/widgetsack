@@ -8,6 +8,7 @@ import { registerNowPlayingPlugin } from './now-playing';
 import { registerMqttPlugin } from './mqtt';
 import { registerStocksPlugin } from './stocks';
 import { registerWeatherPlugin } from './weather';
+import { registerRssPlugin } from './rss';
 import { registerLlmPlugin } from './llm';
 
 export type PluginLoadError = { id: string; name: string; error: string };
@@ -20,6 +21,7 @@ const BUILTINS: { id: string; name: string; register: () => void }[] = [
 	{ id: 'mqtt', name: 'MQTT', register: registerMqttPlugin },
 	{ id: 'stocks', name: 'Stocks', register: registerStocksPlugin },
 	{ id: 'weather', name: 'Weather', register: registerWeatherPlugin },
+	{ id: 'rss', name: 'RSS', register: registerRssPlugin },
 	{ id: 'ai-provider', name: 'AI Provider', register: registerLlmPlugin }
 ];
 

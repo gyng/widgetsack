@@ -1,0 +1,53 @@
+/* Process Watcher — a running dot + process name + (when running) CPU%/RAM. The dot/name colour
+   tracks the running state. Themeable via --np-* / --pw-* tokens. */
+.procwatch {
+	display: flex;
+	align-items: center;
+	gap: var(--pw-gap, 8px);
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.pw-dot {
+	flex: 0 0 auto;
+	width: var(--pw-dot-size, 9px);
+	height: var(--pw-dot-size, 9px);
+	border-radius: 50%;
+	background: var(--np-label, rgba(255, 255, 255, 0.3));
+}
+.procwatch[data-state='running'] .pw-dot {
+	background: var(--pw-accent, var(--pw-running, rgb(110, 209, 129)));
+}
+.procwatch[data-state='stopped'] .pw-dot {
+	background: var(--pw-stopped, rgba(255, 255, 255, 0.25));
+	box-shadow: inset 0 0 0 1.5px var(--np-label, rgba(255, 255, 255, 0.4));
+}
+
+.pw-body {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	flex: 1 1 0;
+	line-height: 1.15;
+}
+.pw-name {
+	font-size: var(--pw-name-size, 0.95em);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.procwatch[data-state='stopped'] .pw-name {
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
+}
+.pw-status {
+	font-size: var(--pw-status-size, 0.72em);
+	font-variant-numeric: tabular-nums;
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
+}
+.procwatch[data-state='running'] .pw-status {
+	color: var(--pw-accent, var(--np-accent, rgb(119, 196, 211)));
+}

@@ -133,6 +133,42 @@ fn top_of(items: &[(String, f64)]) -> Option<&(String, f64)> {
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
 }
 
+/// Extract `<name>` from a `proc.watch.<name>.{running,count,cpu,mem}` id (the Process Watcher binds
+/// these). `None` otherwise. The name can contain dots ("Discord.exe"), so strip the fixed prefix +
+/// suffix rather than splitting. Pure.
+fn proc_watch_name_of(id: &str) -> Option<&str> {
+    let rest = id.strip_prefix("proc.watch.")?;
+    for suf in [".running", ".count", ".cpu", ".mem"] {
+        if let Some(name) = rest.strip_suffix(suf) {
+            return (!name.is_empty()).then_some(name);
+        }
+    }
+    None
+}
+
+/// The distinct watched process names from the active set (sorted, deduped). Pure.
+fn proc_watch_names(active: &HashMap<String, HashSet<String>>) -> Vec<String> {
+    let mut set: HashSet<&str> = HashSet::new();
+    for ids in active.values() {
+        for id in ids {
+            if let Some(n) = proc_watch_name_of(id) {
+                set.insert(n);
+            }
+        }
+    }
+    let mut v: Vec<String> = set.into_iter().map(str::to_string).collect();
+    v.sort();
+    v
+}
+
+/// Case-insensitive process-name match, tolerant of a present/absent ".exe" on either side (so a
+/// config of "chrome" or "chrome.exe" both match the "chrome.exe" sysinfo reports). Pure.
+fn name_matches(proc_name: &str, watched: &str) -> bool {
+    let n = proc_name.to_lowercase();
+    let w = watched.to_lowercase();
+    n.strip_suffix(".exe").unwrap_or(&n) == w.strip_suffix(".exe").unwrap_or(&w)
+}
+
 /// Flatten the latest-value map to a `{ id: number|string }` JSON object — Scalar and Text only
 /// (Series/Json are dropped; not useful in a flat snapshot). Pure seam for the MCP live-state file.
 fn flatten_latest(latest: &HashMap<String, SensorValue>) -> serde_json::Map<String, serde_json::Value> {
@@ -795,7 +831,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         // (NVML, process enumeration, disk refresh, frequency refresh) — the std Mutex must never be
         // held across an await or a blocking driver call.
         #[allow(clippy::type_complexity)]
-        let (want_gpu, want_disks, want_disk_io, want_procs, proc_w, want_freq, want_perf, want_cpufreq, want_netlink, want_conns, want_wifi, want_recyclebin) = {
+        let (want_gpu, want_disks, want_disk_io, want_procs, proc_w, proc_watch, want_freq, want_perf, want_cpufreq, want_netlink, want_conns, want_wifi, want_recyclebin) = {
             let active: tauri::State<ActiveSensors> = app.state();
             let g = active.0.lock().unwrap_or_else(|e| e.into_inner());
             let pw = |p: &str| any_wanted(&g, |id| id.starts_with(p));
@@ -810,6 +846,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
                     disk: pw("proc.disk.top"),
                     gpu: pw("proc.gpu.top"),
                 },
+                proc_watch_names(&g),
                 any_wanted(&g, |id| id == "cpu.freq"),
                 any_wanted(&g, is_perf_id),
                 any_wanted(&g, is_cpufreq_id),
@@ -833,19 +870,45 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
             }
         }
 
-        if want_procs || want_proctop {
+        if want_procs || want_proctop || !proc_watch.is_empty() {
             let _t = timings.start("sensors.process");
             let n = sys.refresh_processes(ProcessesToUpdate::All, true);
             if want_procs {
                 batch.push(SensorSample::scalar("host.procs", ts, n as f64));
             }
+            // sysinfo's per-process cpu_usage sums across cores (can exceed 100%); divide by the logical
+            // core count so it reads as "% of the whole machine", like cpu.total. Shared by top + watch.
+            let ncpu = sys.cpus().len().max(1) as f64;
+
+            // Process Watcher: for each watched name, aggregate every matching process (a browser has
+            // many) into a running flag + summed CPU% + summed RAM + a count.
+            for watched in &proc_watch {
+                let mut cpu = 0.0_f64;
+                let mut mem = 0.0_f64;
+                let mut count = 0u32;
+                for proc in sys.processes().values() {
+                    if name_matches(&proc.name().to_string_lossy(), watched) {
+                        cpu += proc.cpu_usage() as f64 / ncpu;
+                        mem += proc.memory() as f64;
+                        count += 1;
+                    }
+                }
+                batch.push(SensorSample::scalar(
+                    format!("proc.watch.{watched}.running"),
+                    ts,
+                    if count > 0 { 1.0 } else { 0.0 },
+                ));
+                batch.push(SensorSample::scalar(format!("proc.watch.{watched}.count"), ts, count as f64));
+                if count > 0 {
+                    batch.push(SensorSample::scalar(format!("proc.watch.{watched}.cpu"), ts, cpu));
+                    batch.push(SensorSample::scalar(format!("proc.watch.{watched}.mem"), ts, mem));
+                }
+            }
+
             if want_proctop {
                 // The busiest process by CPU / RAM / disk I/O — the "what's eating my machine" sensors.
-                // One pass builds only the rankings whose widget is mounted (proc_w.*). sysinfo's
-                // per-process cpu_usage sums across cores (can exceed 100%); divide by the logical core
-                // count so it reads as "% of the whole machine", like cpu.total. disk_usage is the
+                // One pass builds only the rankings whose widget is mounted (proc_w.*). disk_usage is the
                 // read+written bytes since the last refresh (~1 s) — a per-tick rate.
-                let ncpu = sys.cpus().len().max(1) as f64;
                 let mut by_cpu: Vec<(String, f64)> = Vec::new();
                 let mut by_mem: Vec<(String, f64)> = Vec::new();
                 let mut by_disk: Vec<(String, f64)> = Vec::new();
@@ -1280,6 +1343,29 @@ mod tests {
         assert_eq!(flat.get("cpu.total"), Some(&serde_json::json!(42.0)));
         assert_eq!(flat.get("net.adapter"), Some(&serde_json::json!("Ethernet")));
         assert!(!flat.contains_key("cpu.series")); // Series dropped
+    }
+
+    #[test]
+    fn proc_watch_helpers_parse_and_match() {
+        // Name extraction tolerates dots in the process name + every suffix.
+        assert_eq!(proc_watch_name_of("proc.watch.chrome.exe.running"), Some("chrome.exe"));
+        assert_eq!(proc_watch_name_of("proc.watch.obs64.cpu"), Some("obs64"));
+        assert_eq!(proc_watch_name_of("proc.watch.steam.mem"), Some("steam"));
+        assert_eq!(proc_watch_name_of("proc.watch..running"), None);
+        assert_eq!(proc_watch_name_of("proc.cpu.top.name"), None);
+
+        let a = active(&[
+            ("main", &["proc.watch.chrome.exe.running", "proc.watch.chrome.exe.cpu"]),
+            ("overlay-1", &["proc.watch.Spotify.exe.running", "cpu.total"]),
+        ]);
+        assert_eq!(proc_watch_names(&a), vec!["Spotify.exe", "chrome.exe"]);
+
+        // Matching is case-insensitive + ".exe"-tolerant on either side, but exact on the base name.
+        assert!(name_matches("chrome.exe", "chrome"));
+        assert!(name_matches("chrome.exe", "Chrome.exe"));
+        assert!(name_matches("Discord.exe", "discord.exe"));
+        assert!(!name_matches("chromedriver.exe", "chrome"));
+        assert!(!name_matches("notepad.exe", "wordpad"));
     }
 
     #[test]

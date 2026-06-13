@@ -34,6 +34,7 @@ pub mod netconn;
 pub mod ping;
 pub mod process_diag;
 pub mod recyclebin;
+pub mod rss;
 pub mod sensors;
 pub mod stocks;
 pub mod state;
@@ -163,6 +164,7 @@ async fn main() -> Result<(), ()> {
         .manage(mqtt::MqttState::default())
         .manage(stocks::StocksState::default())
         .manage(weather::WeatherState::default())
+        .manage(rss::RssState::default())
         .manage(timings::SubsystemTimings::default())
         .manage(sensors::ActiveSensors::default())
         .manage(audio::SpectrumState::default())
@@ -241,6 +243,10 @@ async fn main() -> Result<(), ()> {
             weather::weather_config_status,
             weather::weather_connect,
             weather::weather_disconnect,
+            rss::save_rss_config,
+            rss::rss_config_status,
+            rss::rss_connect,
+            rss::rss_disconnect,
             timings::set_subsystem_profiling,
             timings::subsystem_timings,
             llm::save_llm_config,

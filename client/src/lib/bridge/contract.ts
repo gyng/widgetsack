@@ -126,6 +126,11 @@ export const COMMANDS = {
 	weatherConfigStatus: 'weather_config_status',
 	weatherConnect: 'weather_connect',
 	weatherDisconnect: 'weather_disconnect',
+	// RSS source (rss.rs)
+	saveRssConfig: 'save_rss_config',
+	rssConfigStatus: 'rss_config_status',
+	rssConnect: 'rss_connect',
+	rssDisconnect: 'rss_disconnect',
 	// AI provider + agent control (llm.rs, control.rs)
 	saveLlmConfig: 'save_llm_config',
 	llmConfigStatus: 'llm_config_status',

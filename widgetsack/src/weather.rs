@@ -103,10 +103,39 @@ fn open_meteo_url(lat: f64, lon: f64, unit: &str) -> String {
     let wind_unit = if fahrenheit { "mph" } else { "kmh" };
     format!(
         "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
-         &current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m\
+         &current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m,uv_index\
          &daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset&temperature_unit={temp_unit}\
          &wind_speed_unit={wind_unit}&timezone=auto&forecast_days=7"
     )
+}
+
+/// The Open-Meteo AIR-QUALITY endpoint (a separate host from the forecast API, keyless too). Requests
+/// the current European + US AQI and the PM particulates.
+fn air_quality_url(lat: f64, lon: f64) -> String {
+    format!(
+        "https://air-quality-api.open-meteo.com/v1/air-quality?latitude={lat}&longitude={lon}\
+         &current=european_aqi,us_aqi,pm2_5,pm10&timezone=auto"
+    )
+}
+
+/// Map an Open-Meteo air-quality body to `weather.air.*` samples (European AQI is the headline; US AQI
+/// + PM2.5/PM10 ride along). Pure: the caller does the fetch. Missing fields are skipped.
+fn air_to_samples(body: &Value, ts_ms: u64) -> Vec<SensorSample> {
+    let cur = &body["current"];
+    if cur.is_null() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut scalar = |id: &str, v: Option<f64>| {
+        if let Some(n) = v.filter(|n| n.is_finite()) {
+            out.push(SensorSample::scalar(id.to_string(), ts_ms, n));
+        }
+    };
+    scalar("weather.air.aqi", cur["european_aqi"].as_f64());
+    scalar("weather.air.us_aqi", cur["us_aqi"].as_f64());
+    scalar("weather.air.pm25", cur["pm2_5"].as_f64());
+    scalar("weather.air.pm10", cur["pm10"].as_f64());
+    out
 }
 
 /// Map an Open-Meteo forecast JSON body to `weather.*` telemetry samples. Pure: the caller does the
@@ -128,6 +157,7 @@ fn weather_to_samples(body: &Value, unit_letter: &str, ts_ms: u64) -> Vec<Sensor
     scalar("weather.apparent", cur["apparent_temperature"].as_f64());
     scalar("weather.humidity", cur["relative_humidity_2m"].as_f64());
     scalar("weather.wind", cur["wind_speed_10m"].as_f64());
+    scalar("weather.uv", cur["uv_index"].as_f64());
     scalar("weather.code", cur["weather_code"].as_f64());
     scalar("weather.is_day", cur["is_day"].as_f64());
     scalar("weather.high", body["daily"]["temperature_2m_max"][0].as_f64());
@@ -214,6 +244,7 @@ pub async fn run_weather_client<R: Runtime>(app: AppHandle<R>, cfg: WeatherConfi
     };
     let interval = Duration::from_secs(cfg.poll_interval_secs.clamp(MIN_INTERVAL, MAX_INTERVAL));
     let url = open_meteo_url(cfg.latitude, cfg.longitude, &cfg.unit);
+    let air_url = air_quality_url(cfg.latitude, cfg.longitude);
     let letter = unit_letter(&cfg.unit);
     let located = has_location(&cfg);
     let timings = app.state::<crate::timings::SubsystemTimings>();
@@ -242,6 +273,15 @@ pub async fn run_weather_client<R: Runtime>(app: AppHandle<R>, cfg: WeatherConfi
                 }
                 emit_status(&app, "connected");
                 fails = 0;
+                // Air quality is a SEPARATE Open-Meteo endpoint — best-effort, so a failure here never
+                // affects the (already-emitted) forecast. Only the parse/emit is timed (fetch is wait).
+                if let Ok(air) = fetch_forecast(&client, &air_url).await {
+                    let _t = timings.start("plugin.weather");
+                    let batch = air_to_samples(&air, now_ms());
+                    if !batch.is_empty() {
+                        let _ = app.emit(TELEMETRY_EVENT, &batch);
+                    }
+                }
             }
             Err(err) => {
                 eprintln!("weather: fetch {err}");
@@ -393,7 +433,8 @@ mod tests {
                 "apparent_temperature": 10.1,
                 "is_day": 1,
                 "weather_code": 3,
-                "wind_speed_10m": 14.2
+                "wind_speed_10m": 14.2,
+                "uv_index": 4.6
             },
             "daily": {
                 "temperature_2m_max": [15.0, 17.0, 12.0],
@@ -417,6 +458,7 @@ mod tests {
         assert_eq!(v("weather.humidity"), 80.0);
         assert_eq!(v("weather.apparent"), 10.1);
         assert_eq!(v("weather.wind"), 14.2);
+        assert_eq!(v("weather.uv"), 4.6);
         assert_eq!(v("weather.code"), 3.0);
         assert_eq!(v("weather.is_day"), 1.0);
         assert_eq!(v("weather.high"), 15.0);
@@ -438,6 +480,24 @@ mod tests {
         assert_eq!(v("weather.day.1.code"), 61.0);
         // Only as many days as the arrays provided (3 here) are emitted.
         assert!(find(&s, "weather.day.3.high").is_none());
+    }
+
+    #[test]
+    fn air_quality_url_and_samples() {
+        let u = air_quality_url(51.5, -0.12);
+        assert!(u.contains("air-quality-api.open-meteo.com"));
+        assert!(u.contains("european_aqi"));
+        assert!(u.contains("latitude=51.5"));
+
+        let body = json!({ "current": { "european_aqi": 34, "us_aqi": 51, "pm2_5": 8.2, "pm10": 14.0 } });
+        let s = air_to_samples(&body, 9);
+        let v = |id: &str| serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone();
+        assert_eq!(v("weather.air.aqi"), 34.0);
+        assert_eq!(v("weather.air.us_aqi"), 51.0);
+        assert_eq!(v("weather.air.pm25"), 8.2);
+        assert_eq!(v("weather.air.pm10"), 14.0);
+        // An empty body yields nothing (no fabricated zeros).
+        assert!(air_to_samples(&json!({}), 0).is_empty());
     }
 
     #[test]
