@@ -42,6 +42,20 @@ const hub: TelemetryHub = makeHub();
 // URL is rejected). Served by the gallery's own dev server next to this entry.
 const IFRAME_DEMO = `${location.origin}/gallery/iframe-demo.html`;
 
+// A deterministic placeholder "photo" (an SVG landscape) for the Image widget — a direct data: URL, so
+// no wallpapers/ resolution is needed in the gallery.
+const PHOTO =
+	'data:image/svg+xml,' +
+	encodeURIComponent(
+		`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="240" viewBox="0 0 320 240">` +
+			`<defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1">` +
+			`<stop offset="0" stop-color="#1b3b54"/><stop offset="1" stop-color="#2f6d8c"/></linearGradient></defs>` +
+			`<rect width="320" height="240" fill="url(#s)"/>` +
+			`<circle cx="240" cy="68" r="34" fill="#ffd479"/>` +
+			`<path d="M0 200 Q90 130 180 190 T360 180 V240 H0 Z" fill="#16384a"/>` +
+			`<path d="M0 230 Q120 170 240 220 T420 210 V240 H0 Z" fill="#0f2734"/></svg>`
+	);
+
 // Per-type tweaks so each widget renders a representative, good-looking demo. Anything not listed
 // uses the meta's own defaults (sensor + config + size).
 const OVERRIDES: Record<string, { sensor?: string; config?: Record<string, unknown> }> = {
@@ -56,6 +70,7 @@ const OVERRIDES: Record<string, { sensor?: string; config?: Record<string, unkno
 	countdown: { config: { mode: 'event', target: '2026-12-31T00:00', label: 'New Year' } },
 	rss: { config: { title: 'Headlines' } },
 	agenda: { config: { title: 'Agenda' } },
+	image: { config: { src: PHOTO, fit: 'cover' } },
 	'ha.sensor': { sensor: 'demo.temperature' },
 	'ha.light': { sensor: 'demo.light' },
 	'ha.climate': { sensor: 'demo.climate' }

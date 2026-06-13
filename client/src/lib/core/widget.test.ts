@@ -70,6 +70,8 @@ describe('meta registry', () => {
 			'audioswitch',
 			'recyclebin',
 			'volume',
+			'image',
+			'note',
 			'spacer',
 			'countdown',
 			'timer'

@@ -369,6 +369,7 @@ function WidgetHost({
 							{...meterConfig}
 							{...formulaOverrides}
 							{...multiSensorProps}
+							widgetId={instance.id}
 							editMode={editMode}
 							onControl={handleControl}
 						/>

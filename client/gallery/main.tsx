@@ -29,6 +29,12 @@ const GALLERY_INVOKE: Record<string, unknown> = {
 
 async function boot(): Promise<void> {
 	freezeClock();
+	// Seed the Sticky Note's localStorage (keyed by the gallery instance id) so it shows real text.
+	try {
+		localStorage.setItem('scratch:w-note', '• Ship v0.0.34\n• Water the plants\n• Reply to Sam');
+	} catch {
+		/* localStorage unavailable */
+	}
 	await seedMedia();
 	const root = document.getElementById('root');
 	if (root) createRoot(root).render(<Gallery />);
