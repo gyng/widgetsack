@@ -52,6 +52,36 @@ export async function getProcessDiagnostics(): Promise<ProcessDiag | null> {
 	}
 }
 
+/** One backend subsystem's CPU timing. Mirrors `SubsystemTiming` in `widgetsack/src/timings.rs`.
+ * `msPerSec` (avg × runs/sec) is the headline load: ms of CPU the subsystem uses per second. */
+export type SubsystemTiming = {
+	key: string;
+	avgMs: number;
+	lastMs: number;
+	samples: number;
+	perSec: number;
+	msPerSec: number;
+};
+
+/** Turn the demand-gated backend timing instrumentation on/off (the Diagnostics panel enables it while
+ * open, so there's no cost when nobody's watching). Best-effort. */
+export async function setSubsystemProfiling(enabled: boolean): Promise<void> {
+	try {
+		await invoke(COMMANDS.setSubsystemProfiling, { enabled });
+	} catch {
+		// not in Tauri / not the studio — the panel just shows nothing
+	}
+}
+
+/** Poll the per-subsystem CPU timings (busiest first). Empty outside Tauri / before profiling runs. */
+export async function getSubsystemTimings(): Promise<SubsystemTiming[]> {
+	try {
+		return (await invoke<SubsystemTiming[]>(COMMANDS.subsystemTimings)) ?? [];
+	} catch {
+		return [];
+	}
+}
+
 /** Read this window's heap (Chromium / WebView2 only `performance.memory`) past the type checker. */
 function readMemory(): DiagMemory | undefined {
 	const perf = performance as Performance & { memory?: DiagMemory };

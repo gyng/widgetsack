@@ -364,6 +364,181 @@ pub fn list_audio_outputs() -> Result<Vec<AudioDevice>, String> {
     Ok(Vec::new())
 }
 
+// --- Default output-device control (the Audio Switcher widget) ----------------------------------
+// Reading the current default uses the documented wasapi enumerator; SETTING it uses the
+// undocumented-but-stable IPolicyConfig COM interface (CPolicyConfigClient) — the same mechanism
+// nircmd / SoundSwitch use, because Windows exposes no public API to set the default endpoint.
+
+/// The current default RENDER endpoint's WASAPI id, so the switcher can mark the active device.
+/// `None` on failure / non-Windows.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn default_audio_output() -> Option<String> {
+    use wasapi::{initialize_mta, Direction};
+    let _ = initialize_mta().ok();
+    let enumerator = wasapi::DeviceEnumerator::new().ok()?;
+    enumerator
+        .get_default_device(&Direction::Render)
+        .ok()?
+        .get_id()
+        .ok()
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn default_audio_output() -> Option<String> {
+    None
+}
+
+/// IPolicyConfig — the undocumented endpoint-policy COM interface. Only `set_default_endpoint` is
+/// used; the methods before it are declared as opaque slots SOLELY to preserve the vtable layout
+/// (COM dispatch is by ordinal, so every earlier method must occupy its slot). IID + CLSID are the
+/// long-stable CPolicyConfigClient values.
+#[cfg(target_os = "windows")]
+#[windows::core::interface("f8679f50-850a-41cf-9c72-430f290290c8")]
+unsafe trait IPolicyConfig: windows::core::IUnknown {
+    unsafe fn get_mix_format(&self, id: windows::core::PCWSTR, fmt: *mut *mut ::core::ffi::c_void) -> windows::core::HRESULT;
+    unsafe fn get_device_format(&self, id: windows::core::PCWSTR, default: i32, fmt: *mut *mut ::core::ffi::c_void) -> windows::core::HRESULT;
+    unsafe fn reset_device_format(&self, id: windows::core::PCWSTR) -> windows::core::HRESULT;
+    unsafe fn set_device_format(&self, id: windows::core::PCWSTR, endpoint_fmt: *mut ::core::ffi::c_void, mix_fmt: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
+    unsafe fn get_processing_period(&self, id: windows::core::PCWSTR, default: i32, default_period: *mut i64, min_period: *mut i64) -> windows::core::HRESULT;
+    unsafe fn set_processing_period(&self, id: windows::core::PCWSTR, period: *mut i64) -> windows::core::HRESULT;
+    unsafe fn get_share_mode(&self, id: windows::core::PCWSTR, mode: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
+    unsafe fn set_share_mode(&self, id: windows::core::PCWSTR, mode: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
+    unsafe fn get_property_value(&self, id: windows::core::PCWSTR, key: i32, value: *const ::core::ffi::c_void, out: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
+    unsafe fn set_property_value(&self, id: windows::core::PCWSTR, key: i32, value: *const ::core::ffi::c_void, out: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
+    /// SetDefaultEndpoint(wszDeviceId, eRole) — the one we call. role: 0 eConsole, 1 eMultimedia, 2 eCommunications.
+    unsafe fn set_default_endpoint(&self, device_id: windows::core::PCWSTR, role: u32) -> windows::core::HRESULT;
+    unsafe fn set_endpoint_visibility(&self, id: windows::core::PCWSTR, visible: i32) -> windows::core::HRESULT;
+}
+
+/// Make `id` the default render endpoint for ALL roles (console + multimedia + communications), like
+/// the Sound control panel's "Set Default". Callable from any window (it's a widget action, not a
+/// studio-only setting). No-op error off Windows.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn set_default_audio_output(id: String) -> Result<(), String> {
+    use std::iter::once;
+    use windows::core::PCWSTR;
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+    };
+
+    // CPolicyConfigClient.
+    const CLSID_POLICY_CONFIG: windows::core::GUID =
+        windows::core::GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
+
+    if id.is_empty() {
+        return Err("empty device id".into());
+    }
+    // SAFETY: standard COM create-and-call; the device id is a NUL-terminated UTF-16 string that
+    // outlives the calls. IPolicyConfig's vtable layout is preserved (see the interface decl).
+    unsafe {
+        // The command may run on a COM-uninitialised pool thread; init MTA (harmless if already up).
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let config: IPolicyConfig =
+            CoCreateInstance(&CLSID_POLICY_CONFIG, None, CLSCTX_ALL).map_err(|e| e.to_string())?;
+        let wide: Vec<u16> = id.encode_utf16().chain(once(0)).collect();
+        for role in [0u32, 1, 2] {
+            config
+                .set_default_endpoint(PCWSTR(wide.as_ptr()), role)
+                .ok()
+                .map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn set_default_audio_output(_id: String) -> Result<(), String> {
+    Err("setting the default audio output is only supported on Windows".into())
+}
+
+// --- System master volume + mute (the Volume widget) --------------------------------------------
+// The documented Core Audio path: MMDeviceEnumerator → default render endpoint → IAudioEndpointVolume
+// (scalar 0..1 master level + mute). Callable from any window (a widget control, not a studio setting).
+
+/// The default render endpoint's master volume + mute. Mirrors `AudioVolume` in
+/// `client/src/lib/audio/volume.ts`. camelCase on the wire.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct AudioVolume {
+    /// Master level, 0.0..=1.0 (scalar — perceptually even, matching the Windows volume slider).
+    pub level: f32,
+    pub muted: bool,
+}
+
+/// Acquire the default render endpoint's `IAudioEndpointVolume`. COM is initialised MTA on the calling
+/// (pool) thread; `RPC_E_CHANGED_MODE` if already up in another mode is harmless.
+#[cfg(target_os = "windows")]
+fn endpoint_volume() -> windows::core::Result<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume>
+{
+    use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
+    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+
+    // SAFETY: standard COM create/activate; every interface is released on drop.
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+        let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
+        device.Activate(CLSCTX_ALL, None)
+    }
+}
+
+/// Read the system master volume + mute. `None` on failure / non-Windows.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn get_audio_volume() -> Option<AudioVolume> {
+    // SAFETY: standard Core Audio read; all interfaces are released on drop.
+    unsafe {
+        let vol = endpoint_volume().ok()?;
+        let level = vol.GetMasterVolumeLevelScalar().ok()?;
+        let muted = vol.GetMute().ok()?.as_bool();
+        Some(AudioVolume { level, muted })
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn get_audio_volume() -> Option<AudioVolume> {
+    None
+}
+
+/// Set the system master volume (scalar 0..1, clamped). No-op error off Windows.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn set_audio_volume(level: f32) -> Result<(), String> {
+    // SAFETY: writes the master scalar level; eventcontext is null (no callback correlation needed).
+    unsafe {
+        let vol = endpoint_volume().map_err(|e| e.to_string())?;
+        vol.SetMasterVolumeLevelScalar(level.clamp(0.0, 1.0), std::ptr::null())
+            .map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn set_audio_volume(_level: f32) -> Result<(), String> {
+    Err("setting the volume is only supported on Windows".into())
+}
+
+/// Set the system mute state. No-op error off Windows.
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn set_audio_mute(muted: bool) -> Result<(), String> {
+    // SAFETY: writes the mute flag; eventcontext is null.
+    unsafe {
+        let vol = endpoint_volume().map_err(|e| e.to_string())?;
+        vol.SetMute(muted, std::ptr::null()).map_err(|e| e.to_string())
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn set_audio_mute(_muted: bool) -> Result<(), String> {
+    Err("muting is only supported on Windows".into())
+}
+
 /// Spawn the dedicated capture thread (Windows only; elsewhere there is no loopback backend, so
 /// clear the flag immediately so the state doesn't claim to be running).
 #[cfg(target_os = "windows")]

@@ -1,0 +1,78 @@
+/* GPU panel — card name, a big utilisation % + bar, and a wrapped grid of secondary stats. Themeable
+   via --np-* tokens; --gpu-* overrides per instance. Sizes are em-relative so it scales with the box. */
+.gpu-panel {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	gap: var(--gpu-gap, 4px);
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.gpu-name {
+	flex: 0 0 auto;
+	font-size: var(--gpu-name-size, 0.72em);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.gpu-util {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+.gpu-util-val {
+	font-size: var(--gpu-util-size, 1.6em);
+	font-weight: 700;
+	line-height: 1;
+}
+.gpu-util-bar {
+	flex: 1 1 0;
+	height: var(--gpu-bar-h, 4px);
+	border-radius: 2px;
+	background: var(--np-track, rgba(255, 255, 255, 0.15));
+	overflow: hidden;
+}
+.gpu-util-fill {
+	display: block;
+	height: 100%;
+	width: var(--gpu-pct, 0%);
+	background: var(--gpu-accent, var(--np-accent, rgb(119, 196, 211)));
+	transition: width 0.4s ease;
+}
+
+.gpu-stats {
+	flex: 1 1 0;
+	min-height: 0;
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(64px, 1fr));
+	gap: var(--gpu-gap, 4px) 10px;
+	align-content: start;
+	margin-top: 2px;
+}
+.gpu-stat {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.15;
+}
+.gpu-stat-label {
+	font-size: var(--gpu-stat-label-size, 0.6em);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--np-label, rgba(255, 255, 255, 0.5));
+}
+.gpu-stat-val {
+	font-size: var(--gpu-stat-size, 0.82em);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}

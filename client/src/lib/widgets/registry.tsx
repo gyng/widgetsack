@@ -11,15 +11,26 @@ import Sparkline from './meters/Sparkline';
 import Text from './meters/Text';
 import Clock from './meters/Clock';
 import Calendar from './meters/Calendar';
+import Countdown from './meters/Countdown';
 import AnalogClock from './meters/AnalogClock';
 import Bar from './meters/Bar';
 import Button from './meters/Button';
 import Cpu from './meters/Cpu';
+import Battery from './meters/Battery';
+import GpuPanel from './meters/GpuPanel';
+import Disks from './meters/Disks';
+import TopProcess from './meters/TopProcess';
+import NetConnections from './meters/NetConnections';
+import Ping from './meters/Ping';
+import Wifi from './meters/Wifi';
 import Spectrum from './meters/Spectrum';
 import Iframe from './meters/Iframe';
 import Zone from './meters/Zone';
 import Spacer from './meters/Spacer';
 import Timer from './meters/Timer';
+import Recyclebin from './meters/Recyclebin';
+import AudioSwitcherHost from './AudioSwitcherHost';
+import VolumeHost from './VolumeHost';
 
 export type { MeterComponent };
 export { asMeter };
@@ -30,15 +41,26 @@ const components: Record<string, MeterComponent> = {
 	text: asMeter(Text),
 	clock: asMeter(Clock),
 	calendar: asMeter(Calendar),
+	countdown: asMeter(Countdown),
 	analogclock: asMeter(AnalogClock),
 	bar: asMeter(Bar),
 	button: asMeter(Button),
 	cpu: asMeter(Cpu),
+	battery: asMeter(Battery),
+	gpu: asMeter(GpuPanel),
+	disks: asMeter(Disks),
+	topproc: asMeter(TopProcess),
+	netconn: asMeter(NetConnections),
+	ping: asMeter(Ping),
+	wifi: asMeter(Wifi),
 	spectrum: asMeter(Spectrum),
 	iframe: asMeter(Iframe),
 	zone: asMeter(Zone),
 	spacer: asMeter(Spacer),
-	timer: asMeter(Timer)
+	timer: asMeter(Timer),
+	recyclebin: asMeter(Recyclebin),
+	audioswitch: asMeter(AudioSwitcherHost),
+	volume: asMeter(VolumeHost)
 };
 
 /** Back-compat alias used by WidgetHost (`registry[instance.type]`). */

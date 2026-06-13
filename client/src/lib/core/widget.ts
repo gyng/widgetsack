@@ -6,6 +6,8 @@
 // `registerWidget`). Co-located vitest tests in widget.test.ts.
 
 import type { WidgetInstance } from './layout';
+import { topProcessSensors } from './topProcess';
+import { pingSensors } from './ping';
 
 // A typed config field, so the inspector can render a real input instead of raw JSON. `help` is a
 // one-line description surfaced in the inspector; `default` is the field's own reset value (falls
@@ -488,6 +490,192 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		]
 	},
 	{
+		// Battery indicator (laptops). Multi-sensor (binds:'none') — reads the battery.* family via the
+		// `sensors` map; WidgetHost resolves it (useSensorMap) and passes a props-only `sensors` snapshot.
+		// A desktop with no battery emits no battery.* samples, so it shows "—".
+		type: 'battery',
+		description:
+			'A battery indicator: charge icon, percent, and charging / time-remaining status (laptops; a desktop without a battery shows "—").',
+		binds: 'none',
+		sensors: () => ({ percent: 'battery.percent', state: 'battery.state', time: 'battery.time' }),
+		label: 'Battery',
+		category: 'Meters',
+		defaultSize: { w: 150, h: 44 },
+		defaultConfig: { showStatus: true },
+		configFields: [
+			{
+				key: 'showStatus',
+				label: 'status line',
+				kind: 'toggle',
+				help: 'show charging / time-remaining under the percent'
+			},
+			color('color', 'fill colour')
+		]
+	},
+	{
+		// GPU panel: card name + a prominent utilisation %, plus whatever NVML reports (temp / VRAM /
+		// power / clock / fan). Multi-sensor (binds:'none') — reads the gpu.* family via the `sensors`
+		// map. No NVIDIA/NVML → no gpu.* samples, so it shows "—".
+		type: 'gpu',
+		description:
+			'A GPU panel: card name, utilisation %, and the reported temp / VRAM / power / clock / fan (NVIDIA NVML; non-NVIDIA shows "—").',
+		binds: 'none',
+		sensors: () => ({
+			util: 'gpu.util',
+			name: 'gpu.name',
+			temp: 'gpu.temp',
+			vramUsed: 'gpu.vram.used',
+			vramTotal: 'gpu.vram.total',
+			power: 'gpu.power',
+			clock: 'gpu.clock.core',
+			fan: 'gpu.fan'
+		}),
+		label: 'GPU',
+		category: 'Meters',
+		defaultSize: { w: 200, h: 96 },
+		defaultConfig: { showName: true },
+		configFields: [
+			{ key: 'showName', label: 'card name', kind: 'toggle', help: 'show the GPU model header' },
+			text('label', 'name override', { help: 'replace the detected card name' }),
+			color('color', 'accent')
+		]
+	},
+	{
+		// Self-sourcing storage panel (binds:'none'): a usage bar per volume. Discovers the dynamic
+		// `disk.<letter>.*` ids from the hub at runtime (like Cpu's per-core discovery) and signals the
+		// demand-gated per-disk enumeration via a `disk._probe` sentinel. Capacity only — bind a
+		// Sparkline to `disk.<letter>.read`/`.write` for I/O graphs.
+		type: 'disks',
+		description:
+			'Storage usage: one bar per volume (used %, used/total), auto-discovering your drives. Near-full volumes warn.',
+		binds: 'none',
+		label: 'Disks',
+		category: 'Meters',
+		defaultSize: { w: 200, h: 80 },
+		defaultConfig: { showBytes: true },
+		configFields: [
+			{
+				key: 'showBytes',
+				label: 'show used / total',
+				kind: 'toggle',
+				help: 'append used/total bytes after the percent'
+			},
+			color('color', 'accent')
+		]
+	},
+	{
+		// The busiest process by CPU / RAM / disk I/O / GPU VRAM — "what's eating my machine".
+		// Multi-sensor (binds:'none'): the `sensors` map derives proc.<by>.top.{name,value} from the
+		// chosen metric. The backend only samples a metric while its widget is mounted (per-metric
+		// demand gating), and GPU additionally needs NVML — no metric is paid for unless shown.
+		type: 'topproc',
+		description:
+			'The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my machine". Each metric is sampled only while shown.',
+		binds: 'none',
+		sensors: (config) => topProcessSensors(String(config.by ?? 'cpu')),
+		label: 'Top Process',
+		category: 'Meters',
+		defaultSize: { w: 200, h: 44 },
+		defaultConfig: { by: 'cpu' },
+		configFields: [
+			{
+				key: 'by',
+				label: 'rank by',
+				kind: 'select',
+				options: ['cpu', 'mem', 'disk', 'gpu'],
+				help: 'CPU %, RAM, disk I/O, or GPU VRAM (GPU needs NVIDIA/NVML)'
+			},
+			text('label', 'label', { help: 'header (defaults to "Top CPU" etc.)' }),
+			color('color', 'accent')
+		]
+	},
+	{
+		// Self-sourcing network-connections panel (binds:'none'): per-process active connections +
+		// listening ports + how many go to PUBLIC remotes — security peace of mind. Subscribes to the
+		// `net.conn.list` JSON sensor (which demand-gates the backend GetExtendedTcpTable snapshot) and
+		// reads the net.conn.* totals. Observability, not an IDS.
+		type: 'netconn',
+		description:
+			'Active network connections by process: established + listening counts and how many go to a PUBLIC remote IP — so an unusual outbound connection stands out. Observability, not an IDS.',
+		binds: 'none',
+		label: 'Connections',
+		category: 'Network',
+		defaultSize: { w: 240, h: 150 },
+		defaultConfig: { showListening: false, maxRows: 8 },
+		configFields: [
+			{
+				key: 'showListening',
+				label: 'show listeners',
+				kind: 'toggle',
+				help: 'include processes that are only LISTENing (accepting inbound), not just active talkers'
+			},
+			num('maxRows', 'max rows', {
+				min: 1,
+				max: 20,
+				step: 1,
+				help: 'how many processes to list (busiest — most public — first)'
+			}),
+			color('color', 'accent')
+		]
+	},
+	{
+		// Ping / "is my internet up?" (binds:'none', multi-sensor): the `sensors` map binds
+		// net.ping.<host>.{ms,up} from config.host. Subscribing tells the backend poller which host to
+		// ICMP-ping (demand gate), so nothing pings until this widget is mounted.
+		type: 'ping',
+		description:
+			'Ping a host (default 1.1.1.1) and show reachability + round-trip latency — a quick "is my internet up?" light. ICMP, no admin needed.',
+		binds: 'none',
+		sensors: (config) => pingSensors(String(config.host ?? '1.1.1.1')),
+		label: 'Ping',
+		category: 'Network',
+		intrinsic: true,
+		defaultSize: { w: 150, h: 24 },
+		defaultConfig: { host: '1.1.1.1', slowMs: 150 },
+		configFields: [
+			text('host', 'host', { help: 'IP or hostname to ping, e.g. 1.1.1.1 or cloudflare.com' }),
+			text('label', 'label', { help: 'override the shown name (defaults to the host)' }),
+			num('slowMs', 'slow threshold (ms)', {
+				min: 1,
+				step: 10,
+				help: 'latency at/above this is shown as "slow" (amber)'
+			}),
+			color('color', 'accent')
+		]
+	},
+	{
+		// Wi-Fi link detail (binds:'none', multi-sensor): SSID + signal bars + band/channel/PHY/rate.
+		// The `sensors` map binds the fixed net.wifi.* ids (gated — the backend only opens the WLAN
+		// handle when this is mounted). Not on Wi-Fi → "Not connected".
+		type: 'wifi',
+		description:
+			'Wi-Fi link detail: SSID, signal strength, and band / channel / 802.11 generation / RSSI / link rate. Windows; shows "Not connected" off Wi-Fi.',
+		binds: 'none',
+		sensors: () => ({
+			ssid: 'net.wifi.ssid',
+			signal: 'net.wifi.signal',
+			rssi: 'net.wifi.rssi',
+			rx: 'net.wifi.rx',
+			tx: 'net.wifi.tx',
+			band: 'net.wifi.band',
+			channel: 'net.wifi.channel',
+			phy: 'net.wifi.phy'
+		}),
+		label: 'Wi-Fi',
+		category: 'Network',
+		defaultSize: { w: 200, h: 76 },
+		defaultConfig: { showDetail: true },
+		configFields: [
+			{
+				key: 'showDetail',
+				label: 'detail line',
+				kind: 'toggle',
+				help: 'show band / channel / generation / RSSI / link rate under the SSID'
+			},
+			color('color', 'accent')
+		]
+	},
+	{
 		// Self-sourcing audio spectrum (binds:'none'): WASAPI loopback → real FFT in Rust, streamed
 		// over a Channel and drawn on a <canvas>. The display bar count is independent of the capture
 		// band count (the meter groups bands down), so changing it never reconfigures capture.
@@ -629,6 +817,58 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		]
 	},
 	{
+		// Audio output switcher (binds:'none', interactive): lists the system's render endpoints and
+		// switches the default on tap. Bespoke wiring lives in AudioSwitcherHost (Tauri commands), so the
+		// meter stays props-only. interactive:true so the rows catch clicks on the passive overlay.
+		type: 'audioswitch',
+		description:
+			'Switch the default audio output device with a tap — lists your speakers/headphones/HDMI outputs and marks the active one. Windows.',
+		binds: 'none',
+		interactive: true,
+		label: 'Audio Switcher',
+		category: 'Utility',
+		defaultSize: { w: 200, h: 120 },
+		defaultConfig: {},
+		configFields: [color('color', 'accent')]
+	},
+	{
+		// Recycle Bin (binds:'none', multi-sensor): item count + total size, with a "full" cue. The
+		// `sensors` map binds recyclebin.{items,bytes} (gated — the backend only queries the shell when
+		// this is mounted).
+		type: 'recyclebin',
+		description:
+			'Recycle Bin contents: how many items and how much space they take, with a "needs emptying" cue past a size you set.',
+		binds: 'none',
+		sensors: () => ({ items: 'recyclebin.items', bytes: 'recyclebin.bytes' }),
+		label: 'Recycle Bin',
+		category: 'Utility',
+		defaultSize: { w: 150, h: 48 },
+		defaultConfig: { warnGb: 0 },
+		configFields: [
+			num('warnGb', 'warn at (GB)', {
+				min: 0,
+				step: 1,
+				help: 'highlight when the bin reaches this many GB (0 = never)'
+			}),
+			color('color', 'accent')
+		]
+	},
+	{
+		// System master volume (binds:'none', interactive): a mute toggle + level slider. Bespoke wiring
+		// lives in VolumeHost (Core Audio commands); the meter is props-only. interactive:true so the
+		// slider/button work on the passive overlay.
+		type: 'volume',
+		description:
+			'System master volume: a slider + mute toggle controlling the default output device. Windows.',
+		binds: 'none',
+		interactive: true,
+		label: 'Volume',
+		category: 'Utility',
+		defaultSize: { w: 190, h: 36 },
+		defaultConfig: {},
+		configFields: [color('color', 'accent')]
+	},
+	{
 		// Spacer: an invisible, space-occupying widget — pure whitespace in a flow/grid that pushes its
 		// neighbours apart. binds:none, no sensor, no config; shown only as a faint outline while editing.
 		type: 'spacer',
@@ -638,6 +878,57 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		label: 'Spacer',
 		category: 'Utility',
 		defaultSize: { w: 60, h: 40 }
+	},
+	{
+		// Countdown: counts down to a TARGET DATE ("days until X"), or runs an auto-cycling Pomodoro
+		// rhythm. Self-sourcing (ticks on the wall clock); distinct from Timer (which is manual
+		// start/pause). No controls — it just reflects the clock.
+		type: 'countdown',
+		description:
+			'Counts down to a target date/time ("days until …"), or runs an auto-cycling Pomodoro work/break rhythm. Wall-clock driven (no start/pause — use Timer for that).',
+		binds: 'none',
+		label: 'Countdown',
+		category: 'Clocks',
+		intrinsic: true,
+		defaultSize: { w: 170, h: 80 },
+		defaultConfig: {
+			mode: 'event',
+			target: '',
+			format: 'auto',
+			countUp: false,
+			workMin: 25,
+			breakMin: 5,
+			label: ''
+		},
+		configFields: [
+			{
+				key: 'mode',
+				label: 'mode',
+				kind: 'select',
+				options: ['event', 'pomodoro'],
+				help: 'count down to a date, or run a repeating work/break rhythm'
+			},
+			text('target', 'target date', {
+				help: 'event mode: a date/time, e.g. 2026-12-31 or 2026-12-31T18:00'
+			}),
+			{
+				key: 'format',
+				label: 'format',
+				kind: 'select',
+				options: ['auto', 'dhms', 'hms', 'ms'],
+				help: 'event display: auto trims units; dhms/hms/ms are fixed'
+			},
+			{
+				key: 'countUp',
+				label: 'count up after',
+				kind: 'toggle',
+				help: 'event mode: once the target passes, count the time elapsed since (instead of stopping at 0)'
+			},
+			num('workMin', 'work (min)', { min: 1, step: 1, help: 'pomodoro work length' }),
+			num('breakMin', 'break (min)', { min: 1, step: 1, help: 'pomodoro break length' }),
+			text('label', 'label'),
+			color('color', 'color')
+		]
 	},
 	{
 		// Timer: a countdown timer or stopwatch with start/pause/reset. Self-sourcing (drives its own

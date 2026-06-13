@@ -43,6 +43,23 @@ export const KNOWN_SENSORS = [
 	'net.linkspeed.tx',
 	'net.adapter',
 	'net.state',
+	// Active connections (gated; net.conn.list is a JSON sensor consumed by the Connections widget,
+	// so it's not in the scalar picker — these totals are)
+	'net.conn.established',
+	'net.conn.listening',
+	'net.conn.public',
+	// Wi-Fi link detail (gated; emitted only while on Wi-Fi)
+	'net.wifi.ssid',
+	'net.wifi.signal',
+	'net.wifi.rssi',
+	'net.wifi.rx',
+	'net.wifi.tx',
+	'net.wifi.band',
+	'net.wifi.channel',
+	'net.wifi.phy',
+	// Recycle Bin (gated)
+	'recyclebin.items',
+	'recyclebin.bytes',
 	// Host (handles/threads/idle are Windows-only)
 	'host.uptime',
 	'host.procs',
@@ -54,6 +71,10 @@ export const KNOWN_SENSORS = [
 	'proc.cpu.top.pct',
 	'proc.mem.top.name',
 	'proc.mem.top.bytes',
+	'proc.disk.top.name',
+	'proc.disk.top.bytes',
+	'proc.gpu.top.name',
+	'proc.gpu.top.bytes',
 	// GPU (NVIDIA / NVML)
 	'gpu.util',
 	'gpu.mem.util',

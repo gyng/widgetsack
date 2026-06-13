@@ -17,14 +17,18 @@ import { formatBytes } from '../core/format';
 import { formatDuration } from '../core/timer';
 import {
 	getProcessDiagnostics,
+	getSubsystemTimings,
 	listenDiagReports,
 	listWindowLabels,
 	openDevtoolsFor,
 	reloadWindow,
 	requestDiagnostics,
+	setSubsystemProfiling,
 	setWindowInteractive,
-	type ProcessDiag
+	type ProcessDiag,
+	type SubsystemTiming
 } from '../diag';
+import { widgetCosts, resetWidgetProfile, type WidgetCost } from './canvas/widgetProfile';
 import './DiagnosticsPanel.css';
 
 const POLL_MS = 1500;
@@ -41,6 +45,10 @@ export default function DiagnosticsPanel() {
 	// Local mirror of the click-through toggle we last sent each overlay (the overlay owns the truth;
 	// this just reflects the control state).
 	const [interactive, setInteractive] = useState<Record<string, boolean>>({});
+	// This (studio) window's per-widget render cost, from the <Profiler>s Canvas wraps each widget in.
+	const [costs, setCosts] = useState<WidgetCost[]>([]);
+	// Per-subsystem backend CPU timing (Rust). Demand-gated: enabled only while this panel is open.
+	const [timings, setTimings] = useState<SubsystemTiming[]>([]);
 
 	useEffect(() => {
 		let alive = true;
@@ -60,18 +68,30 @@ export default function DiagnosticsPanel() {
 			void listWindowLabels().then((l) => {
 				if (alive && l.length) setLabels(l);
 			});
+		// Turn ON the backend per-subsystem timing while this panel is mounted (demand-gated — it's
+		// inert otherwise), and poll it alongside the rest.
+		void setSubsystemProfiling(true);
+		const pollTimings = () =>
+			void getSubsystemTimings().then((t) => {
+				if (alive) setTimings(t);
+			});
 		requestDiagnostics();
 		pollProc();
 		pollLabels();
+		setCosts(widgetCosts());
+		pollTimings();
 		const poll = window.setInterval(() => {
 			requestDiagnostics();
 			pollProc();
 			pollLabels();
+			setCosts(widgetCosts());
+			pollTimings();
 		}, POLL_MS);
 		return () => {
 			alive = false;
 			void offReports.then((un) => un());
 			clearInterval(poll);
+			void setSubsystemProfiling(false);
 		};
 	}, []);
 
@@ -108,6 +128,79 @@ export default function DiagnosticsPanel() {
 					</div>
 				</div>
 			)}
+			{timings.length > 0 && (
+				<div className="diag-win diag-cost">
+					<div className="diag-win-hd">
+						<span className="diag-label">backend CPU by subsystem</span>
+						<span className="dim">Rust host · ms/s · avg</span>
+					</div>
+					<div className="diag-cost-list">
+						{timings.slice(0, 10).map((t) => (
+							<div className="diag-cost-row" key={t.key} data-hot={t.msPerSec >= 5 || undefined}>
+								<span className="diag-cost-name" title={`${t.samples} runs`}>
+									{t.key}
+								</span>
+								<span title="CPU load: ms of work per second (avg × runs/sec) — the real cost">
+									{t.msPerSec.toFixed(1)} ms/s
+								</span>
+								<span title="average time per run">{t.avgMs.toFixed(2)}ms</span>
+								<span className="dim" title="how often it runs">
+									{t.perSec.toFixed(1)}/s
+								</span>
+							</div>
+						))}
+					</div>
+				</div>
+			)}
+			<div className="diag-win diag-cost">
+				<div className="diag-win-hd">
+					<span className="diag-label">widget render cost</span>
+					<span className="dim">this studio · re-renders/s · render ms</span>
+					{costs.length > 0 && (
+						<button
+							type="button"
+							className="diag-cost-reset"
+							title="Clear the captured render stats and start fresh"
+							onClick={() => {
+								resetWidgetProfile();
+								setCosts([]);
+							}}
+						>
+							reset
+						</button>
+					)}
+				</div>
+				{costs.length === 0 ? (
+					<div className="rp-stub">
+						No renders captured yet — open a layout in the studio (each widget is profiled here).
+					</div>
+				) : (
+					<div className="diag-cost-list">
+						{costs.slice(0, 8).map((c) => (
+							<div className="diag-cost-row" key={c.id} data-hot={c.perSec >= 2 || undefined}>
+								<span className="diag-cost-name" title={c.id}>
+									{c.type}
+								</span>
+								<span title="re-renders per second — a high steady number is churn (re-rendering when nothing changed)">
+									{c.perSec.toFixed(1)}/s
+								</span>
+								<span title="average render (React reconcile) time — not paint/GPU">
+									{c.avgMs.toFixed(2)}ms
+								</span>
+								<span className="dim" title="commits captured">
+									×{c.commits}
+								</span>
+							</div>
+						))}
+					</div>
+				)}
+			</div>
+			<div className="rp-stub diag-note">
+				“Widget render cost” measures how often + how long each widget RE-RENDERS in this studio
+				window (React Profiler). A high steady re-renders/s is churn; the ms is React reconcile
+				time, not paint or GPU — use Devtools below for those. The heap / DOM rows are per overlay
+				window.
+			</div>
 			{rows.length === 0 ? (
 				<div className="rp-stub">Polling windows…</div>
 			) : (

@@ -1,0 +1,82 @@
+/* Audio Switcher — a title + one clickable row per output device; the active one is marked + floats
+   to the top. Rows are bare buttons (overlay-interactive). Themeable via --np-* / --as-* tokens. */
+.audioswitch {
+	display: flex;
+	flex-direction: column;
+	gap: var(--as-gap, 3px);
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.as-head {
+	flex: 0 0 auto;
+}
+.as-title {
+	font-size: var(--as-title-size, 0.66em);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--np-label, rgba(255, 255, 255, 0.5));
+}
+
+.as-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--as-row-gap, 2px);
+	min-height: 0;
+	overflow: hidden;
+}
+.as-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 2px 6px;
+	border: 0;
+	border-radius: var(--as-radius, 5px);
+	background: var(--as-row-bg, rgba(255, 255, 255, 0.06));
+	color: inherit;
+	font: inherit;
+	font-size: var(--as-row-size, 0.86em);
+	text-align: left;
+	cursor: pointer;
+	transition: background 0.12s ease;
+}
+.as-row:hover {
+	background: var(--as-row-hover, rgba(255, 255, 255, 0.14));
+}
+.as-row[data-active] {
+	background: var(--as-active-bg, rgba(119, 196, 211, 0.18));
+}
+.as-row[data-busy] {
+	opacity: 0.6;
+	cursor: progress;
+}
+
+.as-dot {
+	flex: 0 0 auto;
+	width: var(--as-dot-size, 8px);
+	height: var(--as-dot-size, 8px);
+	border-radius: 50%;
+	background: transparent;
+	box-shadow: inset 0 0 0 1.5px var(--np-label, rgba(255, 255, 255, 0.35));
+}
+.as-row[data-active] .as-dot {
+	background: var(--as-accent, var(--np-accent, rgb(119, 196, 211)));
+	box-shadow: none;
+}
+
+.as-name {
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.as-empty {
+	color: var(--np-label, rgba(255, 255, 255, 0.4));
+	font-size: 0.9em;
+}

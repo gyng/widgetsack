@@ -85,6 +85,8 @@ export const COMMANDS = {
 	reloadWindow: 'reload_window',
 	logDiag: 'log_diag',
 	processDiagnostics: 'process_diagnostics',
+	setSubsystemProfiling: 'set_subsystem_profiling',
+	subsystemTimings: 'subsystem_timings',
 	getLogs: 'get_logs',
 	// fonts (command.rs)
 	systemFonts: 'system_fonts',
@@ -94,6 +96,11 @@ export const COMMANDS = {
 	startSpectrum: 'start_spectrum',
 	stopSpectrum: 'stop_spectrum',
 	listAudioOutputs: 'list_audio_outputs',
+	defaultAudioOutput: 'default_audio_output',
+	setDefaultAudioOutput: 'set_default_audio_output',
+	getAudioVolume: 'get_audio_volume',
+	setAudioVolume: 'set_audio_volume',
+	setAudioMute: 'set_audio_mute',
 	// Home Assistant proxy (ha.rs)
 	haConnect: 'ha_connect',
 	haDisconnect: 'ha_disconnect',
@@ -114,6 +121,11 @@ export const COMMANDS = {
 	stocksConfigStatus: 'stocks_config_status',
 	stocksConnect: 'stocks_connect',
 	stocksDisconnect: 'stocks_disconnect',
+	// weather source (weather.rs)
+	saveWeatherConfig: 'save_weather_config',
+	weatherConfigStatus: 'weather_config_status',
+	weatherConnect: 'weather_connect',
+	weatherDisconnect: 'weather_disconnect',
 	// AI provider + agent control (llm.rs, control.rs)
 	saveLlmConfig: 'save_llm_config',
 	llmConfigStatus: 'llm_config_status',

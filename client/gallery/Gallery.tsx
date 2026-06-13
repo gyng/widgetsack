@@ -12,6 +12,7 @@ import { registerHomeAssistantPlugin } from '../src/lib/widgets/plugins/home-ass
 import { registerNowPlayingPlugin } from '../src/lib/widgets/plugins/now-playing';
 import { registerMqttPlugin } from '../src/lib/widgets/plugins/mqtt';
 import { registerStocksPlugin } from '../src/lib/widgets/plugins/stocks';
+import { registerWeatherPlugin } from '../src/lib/widgets/plugins/weather';
 import { TelemetryHubContext } from '../src/lib/widgets/telemetryContext';
 import { SpectrumContext } from '../src/lib/widgets/spectrumContext';
 import WidgetHost from '../src/lib/widgets/WidgetHost';
@@ -29,6 +30,7 @@ registerHomeAssistantPlugin();
 registerNowPlayingPlugin();
 registerMqttPlugin();
 registerStocksPlugin();
+registerWeatherPlugin();
 
 const hub: TelemetryHub = makeHub();
 
@@ -144,7 +146,7 @@ const DEMO: WidgetInstance[] = [
 	}),
 	buildInstance('gauge', 'd-disk', {
 		rect: { x: 216, y: 248, w: 300, h: 22 },
-		sensor: 'disk.c.used.pct',
+		sensor: 'disk.C.used.pct',
 		config: { label: 'DISK', unit: '%', style: 'pips', direction: 'ltr', pips: 20 }
 	}),
 	buildInstance('spectrum', 'd-spectrum', {

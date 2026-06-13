@@ -1,7 +1,7 @@
 [package]
 name = "widgetsack"
 # Keep in lockstep with tauri.conf.json's version (the bundle/updater source of truth).
-version = "0.0.30"
+version = "0.0.31"
 description = "widgetsack desktop widget platform"
 authors = ["you"]
 license = "MIT OR Apache-2.0"
@@ -60,6 +60,9 @@ tauri-plugin-autostart = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 win-gsmtc = { version = "0.1.0", features = ["serde"] }
+# The #[interface] macro (audio.rs IPolicyConfig: set the default audio endpoint) expands to
+# ::windows_core paths, so the crate must be a direct dependency. Pinned to windows 0.61's core.
+windows-core = "0.61"
 # WASAPI loopback capture for the audio spectrum widget. Safe-ish bindings over windows-rs that
 # encapsulate GetMixFormat / SampleType (float vs int) / the loopback init flags. Kept at the
 # audio.rs edge (anti-corruption layer, like win-gsmtc for media). Windows-only.
@@ -78,6 +81,8 @@ windows = { version = "0.61", features = [
     # UI_Input_KeyboardAndMouse.
     "Win32_System_Power",
     "Win32_System_ProcessStatus",
+    # Toolhelp process snapshot (netconn.rs: pid → exe name for the active-connections panel).
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_SystemInformation",
     "Win32_UI_Input_KeyboardAndMouse",
     # Live disk I/O: DeviceIoControl(IOCTL_DISK_PERFORMANCE) on a volume handle — CreateFileW +
@@ -92,6 +97,9 @@ windows = { version = "0.61", features = [
     # IF_OPER_STATUS / NET_IF_MEDIA_CONNECT_STATE enums (and the cfg-gated row struct) in Ndis.
     "Win32_NetworkManagement_IpHelper",
     "Win32_NetworkManagement_Ndis",
+    # Wi-Fi detail (wifi.rs): WlanOpenHandle/EnumInterfaces/QueryInterface(current_connection +
+    # channel_number) → SSID / signal / PHY / channel for the Wi-Fi widget.
+    "Win32_NetworkManagement_WiFi",
     # Landing-zone foreign-window manager (windowmgr.rs): EnumWindows / GetWindowRect / SetWindowPos /
     # ShowWindow / GetWindow*W / GetWindowThreadProcessId / the WS_EX_*/SWP_*/SW_* constants + the
     # EVENT_SYSTEM_MOVESIZE* / WINEVENT_* / MSG / GetMessageW message-pump in WindowsAndMessaging;
@@ -100,10 +108,16 @@ windows = { version = "0.61", features = [
     # detection, MVP2) + OBJID_WINDOW in Accessibility.
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Accessibility",
+    # Recycle Bin contents (recyclebin.rs): SHQueryRecycleBinW → item count + total size.
+    "Win32_UI_Shell",
     "Win32_System_Threading",
     "Win32_Graphics_Dwm",
     "Media",
     "Media_Control",
+    # System master volume + mute (audio.rs Volume widget): IMMDeviceEnumerator/IMMDevice in
+    # Win32_Media_Audio, IAudioEndpointVolume in Win32_Media_Audio_Endpoints.
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
     "Foundation",
     "Foundation_Collections",
 ] }

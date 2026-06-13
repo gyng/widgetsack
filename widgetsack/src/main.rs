@@ -30,10 +30,16 @@ pub mod llm;
 pub mod log;
 pub mod media;
 pub mod mqtt;
+pub mod netconn;
+pub mod ping;
 pub mod process_diag;
+pub mod recyclebin;
 pub mod sensors;
 pub mod stocks;
 pub mod state;
+pub mod timings;
+pub mod weather;
+pub mod wifi;
 pub mod windowmgr;
 
 pub struct AppState {
@@ -156,6 +162,8 @@ async fn main() -> Result<(), ()> {
         .manage(llm::LlmState::default())
         .manage(mqtt::MqttState::default())
         .manage(stocks::StocksState::default())
+        .manage(weather::WeatherState::default())
+        .manage(timings::SubsystemTimings::default())
         .manage(sensors::ActiveSensors::default())
         .manage(audio::SpectrumState::default())
         .manage(process_diag::ProcDiag::default())
@@ -204,6 +212,11 @@ async fn main() -> Result<(), ()> {
             audio::start_spectrum,
             audio::stop_spectrum,
             audio::list_audio_outputs,
+            audio::default_audio_output,
+            audio::set_default_audio_output,
+            audio::get_audio_volume,
+            audio::set_audio_volume,
+            audio::set_audio_mute,
             media::media_control,
             media::media_capabilities,
             log::get_logs,
@@ -224,6 +237,12 @@ async fn main() -> Result<(), ()> {
             stocks::stocks_config_status,
             stocks::stocks_connect,
             stocks::stocks_disconnect,
+            weather::save_weather_config,
+            weather::weather_config_status,
+            weather::weather_connect,
+            weather::weather_disconnect,
+            timings::set_subsystem_profiling,
+            timings::subsystem_timings,
             llm::save_llm_config,
             llm::llm_config_status,
             llm::llm_test_connection,
@@ -261,6 +280,13 @@ async fn main() -> Result<(), ()> {
             let sensors_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 sensors::run_system_sensors(sensors_handle).await;
+            });
+
+            // Ping / "is my internet up?" poller — always running, but demand-gated: it pings only the
+            // hosts named by mounted net.ping.* sensors, so it's free until a Ping widget is placed.
+            let ping_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                ping::run_ping_source(ping_handle).await;
             });
 
             // Agent-control server: OPT-IN (off unless LlmConfig.agent_control is true). Started on

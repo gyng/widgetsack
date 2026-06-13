@@ -22,8 +22,11 @@
 //!   `disk.<letter>.busy.pct` (active time).
 //! - Host: `host.uptime` (s), `host.procs` (count, gated), `host.idle` (s since last input, Windows),
 //!   `host.handles` / `host.threads` (counts, Windows, gated).
-//! - Processes (gated): the busiest process — `proc.cpu.top.name` (text) + `proc.cpu.top.pct` (% of the
-//!   whole machine), and the hungriest — `proc.mem.top.name` (text) + `proc.mem.top.bytes` (RSS bytes).
+//! - Processes (gated, per-metric): the busiest process by CPU — `proc.cpu.top.name` (text) +
+//!   `proc.cpu.top.pct` (% of the whole machine); by RAM — `proc.mem.top.name` + `proc.mem.top.bytes`
+//!   (RSS); by disk I/O — `proc.disk.top.name` + `proc.disk.top.bytes` (read+write bytes/s); and by GPU
+//!   VRAM — `proc.gpu.top.name` + `proc.gpu.top.bytes` (NVML running-process VRAM). Each metric is only
+//!   sampled while its widget is mounted.
 //! - GPU (gated, NVIDIA/NVML): `gpu.util` / `gpu.mem.util` / `gpu.fan` (%), `gpu.vram` (%),
 //!   `gpu.vram.{total,used,free}` (bytes), `gpu.temp` (°C), `gpu.clock.{core,mem}` (MHz),
 //!   `gpu.power` / `gpu.power.limit` (W — NVML reports mW, divided here), `gpu.name` (text).
@@ -625,6 +628,23 @@ fn gpu_wanted(active: &HashMap<String, HashSet<String>>) -> bool {
     any_wanted(active, |id| id.starts_with("gpu."))
 }
 
+/// Per-metric demand for the "top process" sensors (`proc.<metric>.top.*`). The (gated, expensive)
+/// process refresh runs when ANY of these is set; each metric is then emitted only when its own widget
+/// is mounted, so a Top-Process(disk) widget never pays to compute the CPU/RAM/GPU tops. The GPU top
+/// additionally enumerates NVML's running-process list, so it's gated on `gpu` alone.
+#[derive(Clone, Copy, Default)]
+struct ProcWants {
+    cpu: bool,
+    mem: bool,
+    disk: bool,
+    gpu: bool,
+}
+impl ProcWants {
+    fn any(&self) -> bool {
+        self.cpu || self.mem || self.disk || self.gpu
+    }
+}
+
 /// Ids served by the single `GetPerformanceInfo` call (commit charge / cache / kernel pools /
 /// handle + thread totals). Gated as a group so the syscall + 8 samples are skipped when unused.
 fn is_perf_id(id: &str) -> bool {
@@ -655,6 +675,12 @@ fn is_disk_io_id(id: &str) -> bool {
 /// interface-table enumeration is skipped when no network-link meter is mounted.
 fn is_netlink_id(id: &str) -> bool {
     id.starts_with("net.linkspeed") || id == "net.adapter" || id == "net.state"
+}
+
+/// Ids served by the WLAN query (SSID / signal / channel / PHY). Gated so the WLAN handle is only
+/// opened when a Wi-Fi meter is mounted.
+fn is_wifi_id(id: &str) -> bool {
+    id.starts_with("net.wifi")
 }
 
 /// Poll system sensors on an interval and emit a `telemetry` batch each tick.
@@ -704,12 +730,18 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
     let mut latest: HashMap<String, SensorValue> = HashMap::new();
     let mut snap_tick: u32 = 0;
 
+    // Opt-in per-subsystem CPU timing for the Diagnostics panel (inert unless the panel enabled it).
+    let timings = app.state::<crate::timings::SubsystemTimings>();
+
     let mut ticker = tokio::time::interval(Duration::from_millis(INTERVAL_MS));
     loop {
         ticker.tick().await;
-        sys.refresh_cpu_usage();
-        sys.refresh_memory();
-        networks.refresh(true);
+        {
+            let _t = timings.start("sensors.base");
+            sys.refresh_cpu_usage();
+            sys.refresh_memory();
+            networks.refresh(true);
+        }
 
         let ts = now_ms();
 
@@ -763,21 +795,31 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         // (NVML, process enumeration, disk refresh, frequency refresh) — the std Mutex must never be
         // held across an await or a blocking driver call.
         #[allow(clippy::type_complexity)]
-        let (want_gpu, want_disks, want_disk_io, want_procs, want_proctop, want_freq, want_perf, want_cpufreq, want_netlink) = {
+        let (want_gpu, want_disks, want_disk_io, want_procs, proc_w, want_freq, want_perf, want_cpufreq, want_netlink, want_conns, want_wifi, want_recyclebin) = {
             let active: tauri::State<ActiveSensors> = app.state();
             let g = active.0.lock().unwrap_or_else(|e| e.into_inner());
+            let pw = |p: &str| any_wanted(&g, |id| id.starts_with(p));
             (
                 gpu_wanted(&g),
                 any_wanted(&g, |id| id.starts_with("disk.")),
                 any_wanted(&g, is_disk_io_id),
                 any_wanted(&g, |id| id == "host.procs"),
-                any_wanted(&g, |id| id.starts_with("proc.")),
+                ProcWants {
+                    cpu: pw("proc.cpu.top"),
+                    mem: pw("proc.mem.top"),
+                    disk: pw("proc.disk.top"),
+                    gpu: pw("proc.gpu.top"),
+                },
                 any_wanted(&g, |id| id == "cpu.freq"),
                 any_wanted(&g, is_perf_id),
                 any_wanted(&g, is_cpufreq_id),
                 any_wanted(&g, is_netlink_id),
+                any_wanted(&g, |id| id.starts_with("net.conn")),
+                any_wanted(&g, is_wifi_id),
+                any_wanted(&g, |id| id.starts_with("recyclebin")),
             )
         };
+        let want_proctop = proc_w.any();
 
         // host.idle is a single cheap syscall — always-on, like host.uptime / battery.
         if let Some(secs) = idle_seconds() {
@@ -792,42 +834,66 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         }
 
         if want_procs || want_proctop {
+            let _t = timings.start("sensors.process");
             let n = sys.refresh_processes(ProcessesToUpdate::All, true);
             if want_procs {
                 batch.push(SensorSample::scalar("host.procs", ts, n as f64));
             }
             if want_proctop {
-                // Highest-CPU + highest-memory process — the "what's eating my machine" sensors.
-                // sysinfo's per-process cpu_usage sums across cores (can exceed 100%); divide by the
-                // logical core count so it reads as "% of the whole machine", like cpu.total.
+                // The busiest process by CPU / RAM / disk I/O — the "what's eating my machine" sensors.
+                // One pass builds only the rankings whose widget is mounted (proc_w.*). sysinfo's
+                // per-process cpu_usage sums across cores (can exceed 100%); divide by the logical core
+                // count so it reads as "% of the whole machine", like cpu.total. disk_usage is the
+                // read+written bytes since the last refresh (~1 s) — a per-tick rate.
                 let ncpu = sys.cpus().len().max(1) as f64;
                 let mut by_cpu: Vec<(String, f64)> = Vec::new();
                 let mut by_mem: Vec<(String, f64)> = Vec::new();
+                let mut by_disk: Vec<(String, f64)> = Vec::new();
                 for proc in sys.processes().values() {
                     let name = proc.name().to_string_lossy().to_string();
                     if name.is_empty() {
                         continue;
                     }
-                    by_cpu.push((name.clone(), proc.cpu_usage() as f64 / ncpu));
-                    by_mem.push((name, proc.memory() as f64));
+                    if proc_w.cpu {
+                        by_cpu.push((name.clone(), proc.cpu_usage() as f64 / ncpu));
+                    }
+                    if proc_w.mem {
+                        by_mem.push((name.clone(), proc.memory() as f64));
+                    }
+                    if proc_w.disk {
+                        let du = proc.disk_usage();
+                        by_disk.push((name, (du.read_bytes + du.written_bytes) as f64));
+                    }
                 }
                 // Skip the first gated tick's misleading sample: sysinfo CPU% needs two refreshes, so
                 // the first reads 0 for every process and top_of would pick an arbitrary one. Emit only
                 // once there's a real (>0) busiest process; memory is valid from the first refresh.
-                if let Some((name, pct)) = top_of(&by_cpu)
+                if proc_w.cpu
+                    && let Some((name, pct)) = top_of(&by_cpu)
                     && *pct > 0.0
                 {
                     batch.push(SensorSample::text("proc.cpu.top.name", ts, name.clone()));
                     batch.push(SensorSample::scalar("proc.cpu.top.pct", ts, *pct));
                 }
-                if let Some((name, bytes)) = top_of(&by_mem) {
+                if proc_w.mem
+                    && let Some((name, bytes)) = top_of(&by_mem)
+                {
                     batch.push(SensorSample::text("proc.mem.top.name", ts, name.clone()));
                     batch.push(SensorSample::scalar("proc.mem.top.bytes", ts, *bytes));
+                }
+                // Like CPU, disk deltas read 0 on the first refresh — emit only once there's real I/O.
+                if proc_w.disk
+                    && let Some((name, bytes)) = top_of(&by_disk)
+                    && *bytes > 0.0
+                {
+                    batch.push(SensorSample::text("proc.disk.top.name", ts, name.clone()));
+                    batch.push(SensorSample::scalar("proc.disk.top.bytes", ts, *bytes));
                 }
             }
         }
 
         if want_disks || want_disk_io {
+            let _t = timings.start("sensors.disk");
             disks.refresh(true);
             for disk in disks.list() {
                 let Some(letter) = disk_letter(disk.mount_point()) else {
@@ -857,6 +923,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         }
 
         if want_gpu && let Some(device) = &gpu {
+            let _t = timings.start("sensors.gpu");
             if let Ok(util) = device.utilization_rates() {
                 batch.push(SensorSample::scalar("gpu.util", ts, f64::from(util.gpu)));
                 batch.push(SensorSample::scalar("gpu.mem.util", ts, f64::from(util.memory)));
@@ -890,16 +957,61 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
             if let Some(name) = &gpu_name {
                 batch.push(SensorSample::text("gpu.name", ts, name.clone()));
             }
+            if proc_w.gpu {
+                // Top process by GPU VRAM. NVML's running-process lists give (pid, used VRAM); the pid
+                // → name comes from the process table refreshed above (proc.gpu.top is a `proc.*` id, so
+                // want_proctop ran the refresh). Graphics + compute lists are merged (a pid can be in
+                // both); the hungriest wins. Util-per-process needs a fragile timestamp API, so VRAM —
+                // reliably reported — is the rank.
+                use nvml_wrapper::enums::device::UsedGpuMemory;
+                let mut procs = device.running_graphics_processes().unwrap_or_default();
+                procs.extend(device.running_compute_processes().unwrap_or_default());
+                let mut seen: HashSet<u32> = HashSet::new();
+                let mut by_vram: Vec<(String, f64)> = Vec::new();
+                for p in procs {
+                    if !seen.insert(p.pid) {
+                        continue;
+                    }
+                    if let UsedGpuMemory::Used(bytes) = p.used_gpu_memory {
+                        let name = sys
+                            .process(sysinfo::Pid::from_u32(p.pid))
+                            .map(|pr| pr.name().to_string_lossy().to_string())
+                            .unwrap_or_else(|| format!("pid {}", p.pid));
+                        by_vram.push((name, bytes as f64));
+                    }
+                }
+                if let Some((name, bytes)) = top_of(&by_vram)
+                    && *bytes > 0.0
+                {
+                    batch.push(SensorSample::text("proc.gpu.top.name", ts, name.clone()));
+                    batch.push(SensorSample::scalar("proc.gpu.top.bytes", ts, *bytes));
+                }
+            }
         }
 
         if want_perf {
+            let _t = timings.start("sensors.perf");
             batch.extend(perf_info_samples(ts));
         }
         if want_cpufreq {
+            let _t = timings.start("sensors.cpufreq");
             batch.extend(cpu_freq_samples(ts, logical_cores));
         }
         if want_netlink {
+            let _t = timings.start("sensors.netlink");
             batch.extend(net_link_samples(ts));
+        }
+        if want_conns {
+            let _t = timings.start("sensors.netconn");
+            batch.extend(crate::netconn::connection_samples(ts));
+        }
+        if want_wifi {
+            let _t = timings.start("sensors.wifi");
+            batch.extend(crate::wifi::wifi_samples(ts));
+        }
+        if want_recyclebin {
+            let _t = timings.start("sensors.recyclebin");
+            batch.extend(crate::recyclebin::recyclebin_samples(ts));
         }
         // Battery is cheap + presence-gated (empty on desktops), like host.idle — always-on.
         batch.extend(battery_samples(ts));

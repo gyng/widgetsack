@@ -206,6 +206,110 @@ Self-sourcing CPU widget: a per-core sparkline grid or one combined gauge.
 | `label` | text |  |  |  |
 | `color` | color |  |  |  |
 
+### Battery — `battery`
+
+![Battery widget](img/widgets/battery.png)
+
+A battery indicator: charge icon, percent, and charging / time-remaining status (laptops; a desktop without a battery shows "—").
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 150×44
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showStatus` | toggle | true |  | show charging / time-remaining under the percent |
+| `color` | color |  |  |  |
+
+### GPU — `gpu`
+
+![GPU widget](img/widgets/gpu.png)
+
+A GPU panel: card name, utilisation %, and the reported temp / VRAM / power / clock / fan (NVIDIA NVML; non-NVIDIA shows "—").
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×96
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showName` | toggle | true |  | show the GPU model header |
+| `label` | text |  |  | replace the detected card name |
+| `color` | color |  |  |  |
+
+### Disks — `disks`
+
+![Disks widget](img/widgets/disks.png)
+
+Storage usage: one bar per volume (used %, used/total), auto-discovering your drives. Near-full volumes warn.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×80
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showBytes` | toggle | true |  | append used/total bytes after the percent |
+| `color` | color |  |  |  |
+
+### Top Process — `topproc`
+
+![Top Process widget](img/widgets/topproc.png)
+
+The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my machine". Each metric is sampled only while shown.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×44
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `by` | select | "cpu" | `cpu`, `mem`, `disk`, `gpu` | CPU %, RAM, disk I/O, or GPU VRAM (GPU needs NVIDIA/NVML) |
+| `label` | text |  |  | header (defaults to "Top CPU" etc.) |
+| `color` | color |  |  |  |
+
+### Connections — `netconn`
+
+![Connections widget](img/widgets/netconn.png)
+
+Active network connections by process: established + listening counts and how many go to a PUBLIC remote IP — so an unusual outbound connection stands out. Observability, not an IDS.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 240×150
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showListening` | toggle | false |  | include processes that are only LISTENing (accepting inbound), not just active talkers |
+| `maxRows` | number | 8 | min 1, max 20, step 1 | how many processes to list (busiest — most public — first) |
+| `color` | color |  |  |  |
+
+### Ping — `ping`
+
+![Ping widget](img/widgets/ping.png)
+
+Ping a host (default 1.1.1.1) and show reachability + round-trip latency — a quick "is my internet up?" light. ICMP, no admin needed.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 150×24
+- **Intrinsic size:** `basis:"content"` shrink-wraps to the rendered content
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `host` | text | "1.1.1.1" |  | IP or hostname to ping, e.g. 1.1.1.1 or cloudflare.com |
+| `label` | text |  |  | override the shown name (defaults to the host) |
+| `slowMs` | number | 150 | min 1, step 10 | latency at/above this is shown as "slow" (amber) |
+| `color` | color |  |  |  |
+
+### Wi-Fi — `wifi`
+
+![Wi-Fi widget](img/widgets/wifi.png)
+
+Wi-Fi link detail: SSID, signal strength, and band / channel / 802.11 generation / RSSI / link rate. Windows; shows "Not connected" off Wi-Fi.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×76
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showDetail` | toggle | true |  | show band / channel / generation / RSSI / link rate under the SSID |
+| `color` | color |  |  |  |
+
 ### Spectrum — `spectrum`
 
 ![Spectrum widget](img/widgets/spectrum.png)
@@ -261,6 +365,48 @@ A landing zone: drag a window over it (hold Shift) to snap it here; optional mat
 | `matchClass` | text | "" |  | optional window-class glob refiner, e.g. Chrome_WidgetWin_1 |
 | `matchTitle` | text | "" |  | optional title glob refiner, e.g. *Gmail* |
 
+### Audio Switcher — `audioswitch`
+
+![Audio Switcher widget](img/widgets/audioswitch.png)
+
+Switch the default audio output device with a tap — lists your speakers/headphones/HDMI outputs and marks the active one. Windows.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 200×120
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `color` | color |  |  |  |
+
+### Recycle Bin — `recyclebin`
+
+![Recycle Bin widget](img/widgets/recyclebin.png)
+
+Recycle Bin contents: how many items and how much space they take, with a "needs emptying" cue past a size you set.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 150×48
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `warnGb` | number | 0 | min 0, step 1 | highlight when the bin reaches this many GB (0 = never) |
+| `color` | color |  |  |  |
+
+### Volume — `volume`
+
+![Volume widget](img/widgets/volume.png)
+
+System master volume: a slider + mute toggle controlling the default output device. Windows.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 190×36
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `color` | color |  |  |  |
+
 ### Spacer — `spacer`
 
 ![Spacer widget](img/widgets/spacer.png)
@@ -272,6 +418,27 @@ An invisible spacer: empty whitespace that occupies layout space to push other w
 
 _No configurable fields._
 
+
+### Countdown — `countdown`
+
+![Countdown widget](img/widgets/countdown.png)
+
+Counts down to a target date/time ("days until …"), or runs an auto-cycling Pomodoro work/break rhythm. Wall-clock driven (no start/pause — use Timer for that).
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 170×80
+- **Intrinsic size:** `basis:"content"` shrink-wraps to the rendered content
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `mode` | select | "event" | `event`, `pomodoro` | count down to a date, or run a repeating work/break rhythm |
+| `target` | text | "" |  | event mode: a date/time, e.g. 2026-12-31 or 2026-12-31T18:00 |
+| `format` | select | "auto" | `auto`, `dhms`, `hms`, `ms` | event display: auto trims units; dhms/hms/ms are fixed |
+| `countUp` | toggle | false |  | event mode: once the target passes, count the time elapsed since (instead of stopping at 0) |
+| `workMin` | number | 25 | min 1, step 1 | pomodoro work length |
+| `breakMin` | number | 5 | min 1, step 1 | pomodoro break length |
+| `label` | text | "" |  |  |
+| `color` | color |  |  |  |
 
 ### Timer — `timer`
 

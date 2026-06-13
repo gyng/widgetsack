@@ -103,15 +103,45 @@ export function seedHub(hub: TelemetryHub): void {
 	series(hub, 'net.up', wave(420_000, 360_000, 0.45, 2.1, 0, 4_000_000));
 	scalar(hub, 'net.total', 3_000_000);
 
-	// GPU.
+	// GPU (the GPU panel reads the full set; any unreported metric just drops out).
 	series(hub, 'gpu.util', wave(52, 26, 0.28, 0.9));
 	series(hub, 'gpu.vram', wave(63, 5, 0.1, 0.5));
 	scalar(hub, 'gpu.temp', 61);
+	scalar(hub, 'gpu.fan', 44);
+	scalar(hub, 'gpu.power', 182);
+	scalar(hub, 'gpu.clock.core', 2520);
 	scalar(hub, 'gpu.vram.used', 6_900_000_000);
+	scalar(hub, 'gpu.vram.total', 12_884_901_888);
+	text(hub, 'gpu.name', 'NVIDIA GeForce RTX 4070');
 
-	// Disks + host.
-	scalar(hub, 'disk.c.used.pct', 74);
+	// Disks (the widget auto-discovers volumes — two for a fuller shot) + host uptime.
+	scalar(hub, 'disk.C.used.pct', 74);
+	scalar(hub, 'disk.C.used', 760_000_000_000);
+	scalar(hub, 'disk.C.total', 1_024_000_000_000);
+	scalar(hub, 'disk.D.used.pct', 38);
+	scalar(hub, 'disk.D.used', 780_000_000_000);
+	scalar(hub, 'disk.D.total', 2_048_000_000_000);
 	scalar(hub, 'host.uptime', 3 * 86400 + 4 * 3600 + 12 * 60);
+
+	// Battery (laptop indicator).
+	scalar(hub, 'battery.percent', 72);
+	text(hub, 'battery.state', 'discharging');
+	scalar(hub, 'battery.time', 8100);
+
+	// Top process (the widget defaults to the CPU metric).
+	text(hub, 'proc.cpu.top.name', 'chrome.exe');
+	scalar(hub, 'proc.cpu.top.pct', 18.4);
+
+	// Weather (Open-Meteo current conditions; the Weather widget reads weather.*).
+	scalar(hub, 'weather.temp', 12);
+	scalar(hub, 'weather.apparent', 10);
+	scalar(hub, 'weather.humidity', 78);
+	scalar(hub, 'weather.wind', 14);
+	scalar(hub, 'weather.code', 3);
+	scalar(hub, 'weather.is_day', 1);
+	scalar(hub, 'weather.high', 15);
+	scalar(hub, 'weather.low', 8);
+	text(hub, 'weather.unit', 'C');
 
 	// Stocks (the Ticker widget reads stocks.<SYMBOL>.* — note the id uppercases the symbol).
 	series(hub, 'stocks.NVDA.series', wave(878, 22, 0.18, 0.6, 820, 920), 40);

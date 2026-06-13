@@ -119,9 +119,22 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 					discovery: false
 				};
 
-			// --- audio outputs (the Spectrum widget's device picker) ---
+			// --- audio outputs (the Spectrum widget's device picker + the Audio Switcher) ---
 			case COMMANDS.listAudioOutputs:
-				return [];
+				return [
+					{ id: 'dev-speakers', name: 'Speakers (Realtek)' },
+					{ id: 'dev-headphones', name: 'Headphones (USB)' },
+					{ id: 'dev-hdmi', name: 'HDMI Display' }
+				];
+			case COMMANDS.defaultAudioOutput:
+				return 'dev-speakers';
+			case COMMANDS.setDefaultAudioOutput:
+				return undefined;
+			case COMMANDS.getAudioVolume:
+				return { level: 0.5, muted: false };
+			case COMMANDS.setAudioVolume:
+			case COMMANDS.setAudioMute:
+				return undefined;
 
 			// --- stocks proxy: not configured (mirrors HA/MQTT; shape = StocksStatus). ---
 			case COMMANDS.stocksConnect:
@@ -129,6 +142,13 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 				return undefined;
 			case COMMANDS.stocksConfigStatus:
 				return { configured: false, provider: '', symbols: [], pollSeconds: 60 };
+
+			// --- weather proxy: the source connects at boot; just ack (no location → it idles). ---
+			case COMMANDS.weatherConnect:
+			case COMMANDS.weatherDisconnect:
+				return undefined;
+			case COMMANDS.weatherConfigStatus:
+				return { configured: false, latitude: 0, longitude: 0, unit: 'celsius', pollSeconds: 900 };
 
 			// --- AI provider: not configured (shape = LlmStatus). `llm_complete` returns canned layout
 			// ops so the layout assistant is exercisable under Playwright without a real model. ---

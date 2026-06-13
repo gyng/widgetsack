@@ -56,10 +56,21 @@ describe('meta registry', () => {
 			'analogclock',
 			'button',
 			'cpu',
+			'battery',
+			'gpu',
+			'disks',
+			'topproc',
+			'netconn',
+			'ping',
+			'wifi',
 			'spectrum',
 			'iframe',
 			'zone',
+			'audioswitch',
+			'recyclebin',
+			'volume',
 			'spacer',
+			'countdown',
 			'timer'
 		]);
 		expect(getMeta('gauge')).toMatchObject({ label: 'Gauge', binds: 'scalar' });

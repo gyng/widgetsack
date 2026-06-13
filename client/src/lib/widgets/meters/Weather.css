@@ -1,0 +1,102 @@
+/* Weather — condition icon + temperature + label, optional high/low and a detail line. Themeable via
+   --np-* tokens; --wx-* overrides. Sizes em-relative so it scales with the widget box. */
+.weather {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	gap: var(--wx-gap, 4px);
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.wx-main {
+	display: flex;
+	align-items: center;
+	gap: var(--wx-gap, 10px);
+	min-width: 0;
+}
+.wx-icon {
+	font-size: var(--wx-icon-size, 2.1em);
+	line-height: 1;
+	flex: 0 0 auto;
+}
+.wx-temp {
+	display: flex;
+	flex-direction: column;
+	min-width: 0;
+	line-height: 1.1;
+}
+.wx-temp-val {
+	font-size: var(--wx-temp-size, 1.6em);
+	font-weight: 700;
+}
+.wx-cond {
+	font-size: var(--wx-cond-size, 0.72em);
+	color: var(--np-label, rgba(255, 255, 255, 0.65));
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.wx-hilo {
+	display: flex;
+	gap: 12px;
+	font-size: var(--wx-hilo-size, 0.78em);
+}
+.wx-hi {
+	color: var(--wx-accent, var(--np-accent, rgb(119, 196, 211)));
+}
+.wx-lo {
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
+}
+
+.wx-detail {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	font-size: var(--wx-detail-size, 0.7em);
+	color: var(--np-label, rgba(255, 255, 255, 0.55));
+}
+
+/* Multi-day forecast strip: one equal column per day (label / icon / hi·lo). */
+.wx-forecast {
+	display: flex;
+	gap: var(--wx-forecast-gap, 4px);
+	margin-top: 2px;
+	min-width: 0;
+}
+.wx-day {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 1px;
+	text-align: center;
+}
+.wx-day-label {
+	font-size: var(--wx-day-label-size, 0.62em);
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: var(--np-label, rgba(255, 255, 255, 0.55));
+}
+.wx-day-icon {
+	font-size: var(--wx-day-icon-size, 1.1em);
+	line-height: 1.1;
+}
+.wx-day-hilo {
+	display: flex;
+	gap: 4px;
+	font-size: var(--wx-day-hilo-size, 0.64em);
+	font-variant-numeric: tabular-nums;
+}
+.wx-day-hi {
+	color: var(--wx-accent, var(--np-accent, rgb(119, 196, 211)));
+}
+.wx-day-lo {
+	color: var(--np-label, rgba(255, 255, 255, 0.5));
+}
