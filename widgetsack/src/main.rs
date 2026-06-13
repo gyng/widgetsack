@@ -34,6 +34,7 @@ pub mod process_diag;
 pub mod sensors;
 pub mod stocks;
 pub mod state;
+pub mod weather;
 pub mod windowmgr;
 
 pub struct AppState {
@@ -156,6 +157,7 @@ async fn main() -> Result<(), ()> {
         .manage(llm::LlmState::default())
         .manage(mqtt::MqttState::default())
         .manage(stocks::StocksState::default())
+        .manage(weather::WeatherState::default())
         .manage(sensors::ActiveSensors::default())
         .manage(audio::SpectrumState::default())
         .manage(process_diag::ProcDiag::default())
@@ -224,6 +226,10 @@ async fn main() -> Result<(), ()> {
             stocks::stocks_config_status,
             stocks::stocks_connect,
             stocks::stocks_disconnect,
+            weather::save_weather_config,
+            weather::weather_config_status,
+            weather::weather_connect,
+            weather::weather_disconnect,
             llm::save_llm_config,
             llm::llm_config_status,
             llm::llm_test_connection,
