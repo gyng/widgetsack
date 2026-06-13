@@ -589,6 +589,35 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		]
 	},
 	{
+		// Self-sourcing network-connections panel (binds:'none'): per-process active connections +
+		// listening ports + how many go to PUBLIC remotes — security peace of mind. Subscribes to the
+		// `net.conn.list` JSON sensor (which demand-gates the backend GetExtendedTcpTable snapshot) and
+		// reads the net.conn.* totals. Observability, not an IDS.
+		type: 'netconn',
+		description:
+			'Active network connections by process: established + listening counts and how many go to a PUBLIC remote IP — so an unusual outbound connection stands out. Observability, not an IDS.',
+		binds: 'none',
+		label: 'Connections',
+		category: 'Network',
+		defaultSize: { w: 240, h: 150 },
+		defaultConfig: { showListening: false, maxRows: 8 },
+		configFields: [
+			{
+				key: 'showListening',
+				label: 'show listeners',
+				kind: 'toggle',
+				help: 'include processes that are only LISTENing (accepting inbound), not just active talkers'
+			},
+			num('maxRows', 'max rows', {
+				min: 1,
+				max: 20,
+				step: 1,
+				help: 'how many processes to list (busiest — most public — first)'
+			}),
+			color('color', 'accent')
+		]
+	},
+	{
 		// Self-sourcing audio spectrum (binds:'none'): WASAPI loopback → real FFT in Rust, streamed
 		// over a Channel and drawn on a <canvas>. The display bar count is independent of the capture
 		// band count (the meter groups bands down), so changing it never reconfigures capture.

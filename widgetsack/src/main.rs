@@ -30,6 +30,7 @@ pub mod llm;
 pub mod log;
 pub mod media;
 pub mod mqtt;
+pub mod netconn;
 pub mod process_diag;
 pub mod sensors;
 pub mod stocks;

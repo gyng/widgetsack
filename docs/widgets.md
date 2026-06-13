@@ -264,6 +264,21 @@ The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my
 | `label` | text |  |  | header (defaults to "Top CPU" etc.) |
 | `color` | color |  |  |  |
 
+### Connections — `netconn`
+
+![Connections widget](img/widgets/netconn.png)
+
+Active network connections by process: established + listening counts and how many go to a PUBLIC remote IP — so an unusual outbound connection stands out. Observability, not an IDS.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 240×150
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showListening` | toggle | false |  | include processes that are only LISTENing (accepting inbound), not just active talkers |
+| `maxRows` | number | 8 | min 1, max 20, step 1 | how many processes to list (busiest — most public — first) |
+| `color` | color |  |  |  |
+
 ### Spectrum — `spectrum`
 
 ![Spectrum widget](img/widgets/spectrum.png)

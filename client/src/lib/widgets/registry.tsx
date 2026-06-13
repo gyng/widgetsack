@@ -19,6 +19,7 @@ import Battery from './meters/Battery';
 import GpuPanel from './meters/GpuPanel';
 import Disks from './meters/Disks';
 import TopProcess from './meters/TopProcess';
+import NetConnections from './meters/NetConnections';
 import Spectrum from './meters/Spectrum';
 import Iframe from './meters/Iframe';
 import Zone from './meters/Zone';
@@ -42,6 +43,7 @@ const components: Record<string, MeterComponent> = {
 	gpu: asMeter(GpuPanel),
 	disks: asMeter(Disks),
 	topproc: asMeter(TopProcess),
+	netconn: asMeter(NetConnections),
 	spectrum: asMeter(Spectrum),
 	iframe: asMeter(Iframe),
 	zone: asMeter(Zone),

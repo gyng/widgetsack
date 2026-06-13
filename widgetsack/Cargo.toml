@@ -78,6 +78,8 @@ windows = { version = "0.61", features = [
     # UI_Input_KeyboardAndMouse.
     "Win32_System_Power",
     "Win32_System_ProcessStatus",
+    # Toolhelp process snapshot (netconn.rs: pid → exe name for the active-connections panel).
+    "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_SystemInformation",
     "Win32_UI_Input_KeyboardAndMouse",
     # Live disk I/O: DeviceIoControl(IOCTL_DISK_PERFORMANCE) on a volume handle — CreateFileW +
