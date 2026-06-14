@@ -11,7 +11,9 @@ import { copyToClipboard } from '../../overlay';
 import { mqttConfigStatus, mqttConnect, mqttDisconnect, saveMqttConfig } from './mqtt-commands';
 import { refreshMqttCatalog } from './mqtt-source';
 import type { MqttCatalogEntry } from './mqtt-types';
+import TokenListField from './TokenListField';
 
+// Split on newline only — MQTT topic names may legitimately contain commas (unlike stock tickers).
 const parseTopics = (text: string): string[] =>
 	text
 		.split('\n')
@@ -28,7 +30,7 @@ export default function MqttSettings() {
 	const [username, setUsername] = useState('');
 	const [password, setPassword] = useState('');
 	const [clientId, setClientId] = useState('');
-	const [topicsText, setTopicsText] = useState('');
+	const [topics, setTopics] = useState<string[]>([]);
 	const [tls, setTls] = useState(false);
 	const [insecure, setInsecure] = useState(false);
 	const [discovery, setDiscovery] = useState(false);
@@ -55,7 +57,7 @@ export default function MqttSettings() {
 				setHost(s.host);
 				setPort(s.port);
 				setUsername(s.username);
-				setTopicsText(s.topics.join('\n'));
+				setTopics(s.topics);
 				setTls(s.tls);
 				setInsecure(s.insecure);
 				setDiscovery(s.discovery);
@@ -84,7 +86,7 @@ export default function MqttSettings() {
 				username: username.trim(),
 				password,
 				clientId: clientId.trim(),
-				topics: parseTopics(topicsText),
+				topics,
 				tls,
 				insecure,
 				discovery
@@ -186,20 +188,22 @@ export default function MqttSettings() {
 				/>
 			</label>
 
-			<label className="has-field">
-				Topics (one per line, wildcards ok: <code>zigbee2mqtt/#</code>)
-				<textarea
-					className="has-search"
-					rows={3}
-					spellCheck={false}
-					placeholder={'zigbee2mqtt/#\ntasmota/+/SENSOR'}
-					value={topicsText}
-					onChange={(e) => {
-						setTopicsText(e.currentTarget.value);
-						dirtied();
-					}}
-				/>
-			</label>
+			<TokenListField
+				label={
+					<>
+						Topics (wildcards ok: <code>zigbee2mqtt/#</code>)
+					</>
+				}
+				values={topics}
+				onChange={(next) => {
+					setTopics(next);
+					dirtied();
+				}}
+				parse={parseTopics}
+				placeholder="zigbee2mqtt/# — Enter to add"
+				listLabel="Subscribed topics"
+				emptyHint="No topics yet — add one above (e.g. tasmota/+/SENSOR)."
+			/>
 
 			<label className="has-check">
 				<input
