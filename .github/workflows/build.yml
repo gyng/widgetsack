@@ -8,6 +8,8 @@ jobs:
   build-tauri:
     permissions:
       contents: write
+      id-token: write # mint the OIDC token actions/attest-build-provenance signs the provenance with
+      attestations: write # write the provenance attestation to the repo
     strategy:
       fail-fast: false
       matrix:
@@ -77,3 +79,12 @@ jobs:
             echo "Upload attempt $attempt failed; retrying in 20s…"; sleep 20
           done
           echo "::error::release upload failed after 5 attempts"; exit 1
+      - name: Attest build provenance
+        # SLSA provenance for the exact installer we just published — proves it was built by THIS
+        # workflow from THIS commit (no reproducible build needed). Verify a downloaded asset with:
+        #   gh attest verify widgetsack_<ver>_x64-setup.exe --repo gyng/widgetsack
+        # Release events only: dispatch builds aren't published, so there's nothing to attest.
+        if: github.event_name == 'release'
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: "target/release/bundle/nsis/*-setup.exe"

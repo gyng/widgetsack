@@ -578,6 +578,28 @@ export async function openDevtools(): Promise<void> {
 	}
 }
 
+// --- app update check ---
+// Manual check (About panel): the backend (command.rs check_app_update) asks GitHub for the latest
+// published release and compares it to the running version — the app ships no auto-updater.
+
+export type AppUpdate = {
+	current: string;
+	latest: string;
+	url: string;
+	updateAvailable: boolean;
+};
+
+/** Check GitHub for a newer release. Throws on network/parse failure (the caller surfaces it). */
+export async function checkAppUpdate(): Promise<AppUpdate> {
+	const r = await invoke<{
+		current: string;
+		latest: string;
+		url: string;
+		update_available: boolean;
+	}>(COMMANDS.checkAppUpdate);
+	return { current: r.current, latest: r.latest, url: r.url, updateAvailable: r.update_available };
+}
+
 // --- launch at login ---
 // Backed by tauri-plugin-autostart, but routed through our own commands (autostart.rs) so a durable
 // preference is persisted alongside the OS Run key — the Run key alone doesn't survive a manual
