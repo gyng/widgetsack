@@ -37,6 +37,9 @@ import { sttAvailable, startRecording, type Recorder } from '../../stt';
 import type { LlmModel, LlmStatus } from './llm-types';
 
 type TestState = { kind: 'idle' } | { kind: 'ok'; msg: string } | { kind: 'err'; msg: string };
+// The model-picker's own status, kept SEPARATE from `test` so refresh feedback shows next to the
+// ↻ Models button (not buried under the Test/Save line at the bottom of the form).
+type ModelsState = TestState | { kind: 'loading' };
 
 export default function LlmSettings() {
 	const hub = useTelemetryHub();
@@ -57,8 +60,10 @@ export default function LlmSettings() {
 	const [agentControl, setAgentControl] = useState(false); // global
 	const [saving, setSaving] = useState(false);
 	const [saved, setSaved] = useState(false);
+	const [dirty, setDirty] = useState(false); // form differs from the saved plugins/llm.json
 	const [test, setTest] = useState<TestState>({ kind: 'idle' });
 	const [models, setModels] = useState<LlmModel[]>([]);
+	const [modelsState, setModelsState] = useState<ModelsState>({ kind: 'idle' });
 
 	// Auto-dismiss the "Saved ✓" tick like a toast (it otherwise lingers until the next edit).
 	useEffect(() => {
@@ -85,6 +90,7 @@ export default function LlmSettings() {
 		setTtsVoice(p?.ttsVoice ?? '');
 		setApiKey('');
 		setModels([]);
+		setModelsState({ kind: 'idle' });
 	};
 
 	useEffect(() => {
@@ -106,7 +112,12 @@ export default function LlmSettings() {
 		};
 	}, []);
 
-	const dirtied = () => setSaved(false);
+	// Any field edit marks the form dirty (and clears the Saved tick) so an "Unsaved — click Save" cue can
+	// nudge the user to persist — the #1 confusion was Test working while Chat/widgets need a saved config.
+	const dirtied = () => {
+		setSaved(false);
+		setDirty(true);
+	};
 	const onPickProvider = (id: string) => {
 		setProvider(id);
 		loadProvider(id, status);
@@ -114,6 +125,13 @@ export default function LlmSettings() {
 	};
 
 	const canSubmit = !saving && (!needsKey || hasKey || apiKey.trim().length > 0);
+	// Listing models needs auth, so disable refresh until a key is usable (saved or just typed).
+	const canListModels = !needsKey || hasKey || apiKey.trim().length > 0;
+	// The Chat tester + assistant call the SAVED active provider (the backend reads plugins/llm.json), so
+	// readiness tracks the saved file, NOT the in-progress form — surfacing this kills the "I added a key
+	// but chat hangs" trap (Test works unsaved; Chat needs a Save).
+	const activeReady = !!status?.configured;
+	const activeLabel = status?.active ? providerMeta(status.active).label : undefined;
 
 	// Build the typeahead options for a free-text Select: the live list (when loaded) else the samples.
 	const modelOptions = models.length
@@ -147,6 +165,7 @@ export default function LlmSettings() {
 			setStatus(next);
 			ingestLlmStatus(hub, next); // keep the Plugins-list dot live without a restart
 			setSaved(true);
+			setDirty(false);
 		} catch (err) {
 			setTest({ kind: 'err', msg: `Save failed: ${String(err)}` });
 		} finally {
@@ -162,6 +181,7 @@ export default function LlmSettings() {
 		try {
 			await saveLlmConfig(configBody({ agentControl: next }));
 			await (next ? controlStart() : controlStop());
+			setDirty(false); // configBody persisted every field, so the form now matches disk
 		} catch (err) {
 			setTest({ kind: 'err', msg: `Agent control: ${String(err)}` });
 		}
@@ -177,11 +197,21 @@ export default function LlmSettings() {
 		}
 	};
 
+	// List the provider's models for the CURRENT form (provider/url/key/insecure), so refresh works for
+	// a just-switched or not-yet-saved provider. Shows in-flight + result feedback next to the button —
+	// the prior version gave none, so an empty list or a buried error read as "nothing happens".
 	const onLoadModels = async () => {
+		setModelsState({ kind: 'loading' });
 		try {
-			setModels(await llmListModels());
+			const list = await llmListModels({ provider, baseUrl: baseUrl.trim(), apiKey, insecure });
+			setModels(list);
+			setModelsState(
+				list.length
+					? { kind: 'ok', msg: `Loaded ${list.length} model${list.length === 1 ? '' : 's'}` }
+					: { kind: 'err', msg: `${meta.label} returned no models (type the id manually)` }
+			);
 		} catch (err) {
-			setTest({ kind: 'err', msg: `Could not list models: ${String(err)}` });
+			setModelsState({ kind: 'err', msg: `Could not list models: ${String(err)}` });
 		}
 	};
 
@@ -212,14 +242,15 @@ export default function LlmSettings() {
 					))}
 				</select>
 			</label>
-			{/* Per-provider auth at a glance, so the multi-provider state is visible. */}
-			<div className="has-help">
-				Authenticated:{' '}
-				{PROVIDERS.map((p, i) => {
+			{/* Per-provider auth at a glance (the active one outlined), so the multi-provider state is visible. */}
+			<div className="has-authrow" aria-label="Provider authentication">
+				{PROVIDERS.map((p) => {
 					const keyed = !p.needsKey || !!status?.providers[p.id]?.hasKey;
 					return (
-						<span key={p.id}>
-							{i > 0 ? ' · ' : ''}
+						<span
+							key={p.id}
+							className={`has-chip${keyed ? ' ok' : ''}${p.id === provider ? ' active' : ''}`}
+						>
 							{p.label.split(' ')[0]} {keyed ? '✓' : '—'}
 						</span>
 					);
@@ -227,6 +258,7 @@ export default function LlmSettings() {
 			</div>
 			<div className="has-help">{meta.help}</div>
 
+			<div className="rp-hd">Connection</div>
 			<label className="has-field">
 				Base URL
 				<input
@@ -272,10 +304,21 @@ export default function LlmSettings() {
 						}}
 					/>
 				</label>
-				<button type="button" onClick={onLoadModels} title="List the provider's models">
-					↻ Models
+				<button
+					type="button"
+					onClick={onLoadModels}
+					disabled={modelsState.kind === 'loading' || !canListModels}
+					aria-busy={modelsState.kind === 'loading'}
+					title={canListModels ? "List the provider's models" : 'Enter an API key first'}
+				>
+					{modelsState.kind === 'loading' ? 'Loading…' : '↻ Models'}
 				</button>
 			</div>
+			{modelsState.kind === 'ok' && <div className="has-test ok">{modelsState.msg}</div>}
+			{modelsState.kind === 'err' && <div className="has-test err">⚠ {modelsState.msg}</div>}
+			<small className="has-help">
+				Blank uses the provider default; ↻ Models lists what your key can access.
+			</small>
 
 			{meta.supportsAudio && (
 				<>
@@ -403,12 +446,17 @@ export default function LlmSettings() {
 					Test
 				</button>
 				{saved && <span className="has-ok">Saved ✓</span>}
+				{!saved && dirty && <span className="has-unsaved">● Unsaved — click Save</span>}
 			</div>
-			{test.kind === 'ok' && <div className="has-ok">{test.msg}</div>}
-			{test.kind === 'err' && <div className="has-warn">⚠ {test.msg}</div>}
+			<small className="has-help">
+				<strong>Test</strong> checks the key without saving. <strong>Save</strong> persists it so
+				Chat, the assistant &amp; widgets can use the provider.
+			</small>
+			{test.kind === 'ok' && <div className="has-test ok">{test.msg}</div>}
+			{test.kind === 'err' && <div className="has-test err">⚠ {test.msg}</div>}
 
 			<LayoutAssistant sensorIds={() => hub.sensorIds()} />
-			<ChatTester />
+			<ChatTester ready={activeReady} activeLabel={activeLabel} />
 		</div>
 	);
 }
@@ -551,7 +599,7 @@ function LayoutAssistant({ sensorIds }: { sensorIds: () => string[] }) {
 
 // --- a quick streaming chat tester -----------------------------------------------------------
 
-function ChatTester() {
+function ChatTester({ ready, activeLabel }: { ready: boolean; activeLabel?: string }) {
 	const { chat, send, reset } = useLlmChat();
 	const [input, setInput] = useState('');
 	const logRef = useRef<HTMLDivElement>(null);
@@ -570,50 +618,64 @@ function ChatTester() {
 	return (
 		<>
 			<div className="rp-hd">Chat</div>
-			<div className="has-help">A quick test of the configured provider (streamed).</div>
-			{chat.turns.length > 0 && (
-				<div className="has-entities" ref={logRef} style={{ maxHeight: 180, overflowY: 'auto' }}>
-					{chat.turns.map((t) => (
-						<div key={t.id} className="has-entity" style={{ display: 'block' }}>
-							<span className="has-state-dim">{t.role === 'user' ? 'you' : 'ai'}</span>{' '}
-							<span>{t.error ? `⚠ ${t.error}` : t.content || (t.streaming ? '…' : '')}</span>
-							{t.role === 'assistant' && t.content && !t.streaming && ttsAvailable() && (
-								<button
-									type="button"
-									className="has-copy"
-									title="Read aloud"
-									aria-label="Read aloud"
-									onClick={() => void speakSmart(t.content)}
-								>
-									🔊
-								</button>
-							)}
-						</div>
-					))}
-				</div>
-			)}
-			<div className="has-browser-bar">
-				<label className="has-field" style={{ flex: 3 }}>
-					<input
-						type="text"
-						autoComplete="off"
-						placeholder="Ask anything…"
-						value={input}
-						onChange={(e) => setInput(e.currentTarget.value)}
-						onKeyDown={(e) => {
-							if (e.key === 'Enter') onSend();
-						}}
-					/>
-				</label>
-				<button type="button" className="has-primary" onClick={onSend} disabled={!input.trim()}>
-					Send
-				</button>
-				{chat.turns.length > 0 && (
-					<button type="button" onClick={reset} title="Clear the transcript">
-						Clear
-					</button>
-				)}
+			<div className="has-help">
+				A quick streamed test of the saved provider{activeLabel ? ` (${activeLabel})` : ''}.
 			</div>
+			{!ready ? (
+				// The chat calls the SAVED active provider — make the "you must Save first" requirement
+				// explicit instead of letting a send fail with an error turn.
+				<div className="has-warn">Save a configured provider above to start chatting.</div>
+			) : (
+				<>
+					{chat.turns.length > 0 && (
+						<div
+							className="has-entities"
+							ref={logRef}
+							style={{ maxHeight: 180, overflowY: 'auto' }}
+						>
+							{chat.turns.map((t) => (
+								<div key={t.id} className="has-entity" style={{ display: 'block' }}>
+									<span className="has-state-dim">{t.role === 'user' ? 'you' : 'ai'}</span>{' '}
+									<span>{t.error ? `⚠ ${t.error}` : t.content || (t.streaming ? '…' : '')}</span>
+									{t.role === 'assistant' && t.content && !t.streaming && ttsAvailable() && (
+										<button
+											type="button"
+											className="has-copy"
+											title="Read aloud"
+											aria-label="Read aloud"
+											onClick={() => void speakSmart(t.content)}
+										>
+											🔊
+										</button>
+									)}
+								</div>
+							))}
+						</div>
+					)}
+					<div className="has-browser-bar">
+						<label className="has-field" style={{ flex: 3 }}>
+							<input
+								type="text"
+								autoComplete="off"
+								placeholder="Ask anything…"
+								value={input}
+								onChange={(e) => setInput(e.currentTarget.value)}
+								onKeyDown={(e) => {
+									if (e.key === 'Enter') onSend();
+								}}
+							/>
+						</label>
+						<button type="button" className="has-primary" onClick={onSend} disabled={!input.trim()}>
+							Send
+						</button>
+						{chat.turns.length > 0 && (
+							<button type="button" onClick={reset} title="Clear the transcript">
+								Clear
+							</button>
+						)}
+					</div>
+				</>
+			)}
 		</>
 	);
 }

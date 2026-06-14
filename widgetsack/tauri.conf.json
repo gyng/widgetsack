@@ -49,7 +49,7 @@
     "createUpdaterArtifacts": false
   },
   "productName": "widgetsack",
-  "version": "0.0.37",
+  "version": "0.0.38",
   "identifier": "io.github.gyng",
   "plugins": {},
   "app": {
