@@ -287,6 +287,10 @@ function isJustify(j: unknown): boolean {
 }
 
 function isLength(b: unknown): boolean {
-	if (b === 'auto' || typeof b === 'number') return true;
+	// Length = number | 'auto' | 'content' | { fr }. Omitting 'content' here silently DROPPED a hug
+	// (content) basis on every load (parseLeaf / parseContainer), so a hugged widget/group looked
+	// right in the studio (in-memory) but clipped on the overlay (re-parsed) — the Network "hug
+	// clips" bug.
+	if (b === 'auto' || b === 'content' || typeof b === 'number') return true;
 	return typeof b === 'object' && b !== null && typeof (b as { fr?: unknown }).fr === 'number';
 }

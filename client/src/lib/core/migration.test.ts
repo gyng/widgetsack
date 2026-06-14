@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Layout as LayoutV1, WidgetInstance } from './layout';
 import { emptyRoot, type MonitorLayout } from './layoutTree';
-import { migrateMonitorKeys, migrateV1, parseLayoutAny } from './migration';
+import { migrateMonitorKeys, migrateV1, parseLayoutAny, parseLayoutNode } from './migration';
 
 describe('migrateMonitorKeys', () => {
 	const mon = (): MonitorLayout => ({ root: emptyRoot(), floating: [] });
@@ -250,5 +250,40 @@ describe('parseLayoutAny', () => {
 		expect(
 			parseLayoutAny({ version: '1', monitors: { default: { widgets: [validWidget] } } })
 		).toBeNull();
+	});
+});
+
+describe("parseLayoutNode preserves a 'content' (hug) basis", () => {
+	// Regression: isLength dropped 'content', so a hugged widget/group rendered fine in the studio
+	// (in-memory) but clipped on the overlay (re-parsed from disk with the basis gone).
+	const basisOf = (n: unknown) => (n as { basis?: unknown } | null)?.basis;
+
+	it('on a primitive leaf', () => {
+		const n = parseLayoutNode({
+			id: 't',
+			unit: { id: 't', type: 'text', rect: { x: 0, y: 0, w: 10, h: 10 }, config: {} },
+			basis: 'content'
+		});
+		expect(basisOf(n)).toBe('content');
+	});
+
+	it('on a GROUP leaf (the Network widget)', () => {
+		const n = parseLayoutNode({
+			id: 'g',
+			unit: {
+				id: 'g',
+				kind: 'group',
+				size: { w: 170, h: 104 },
+				child: { id: 'c', kind: 'col', children: [] }
+			},
+			basis: 'content'
+		});
+		expect(basisOf(n)).toBe('content');
+	});
+
+	it('on a container', () => {
+		expect(basisOf(parseLayoutNode({ id: 'r', kind: 'row', children: [], basis: 'content' }))).toBe(
+			'content'
+		);
 	});
 });
