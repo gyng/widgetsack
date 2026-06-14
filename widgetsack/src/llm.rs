@@ -872,15 +872,33 @@ pub async fn llm_complete<R: Runtime>(
     chat_once(&cfg, &messages).await
 }
 
-/// The configured provider's available models (for the settings model picker). Best-effort: returns an
-/// empty list if the provider doesn't expose a catalog or the call fails.
+/// The available models for the settings model picker. Best-effort: an empty list when the provider
+/// has no catalog endpoint, an error string when the call fails. Accepts the settings form's
+/// (possibly UNSAVED) provider / url / key / insecure so the picker can refresh BEFORE Save — mirrors
+/// `llm_test_connection`. With no provider it falls back to the saved active config; a blank key
+/// resolves to that provider's saved one (the UI holds the key write-only).
 #[tauri::command]
-pub async fn llm_list_models<R: Runtime>(app: AppHandle<R>) -> Result<Vec<LlmModel>, String> {
-    let cfg = load_llm_config(&app)?.ok_or("AI provider not configured")?;
-    let base = effective_base(&cfg);
-    let url = models_endpoint(&cfg.provider, &base);
-    let client = llm_http_client(cfg.insecure)?;
-    let resp = apply_auth(client.get(&url), &cfg.provider, &cfg.api_key)
+pub async fn llm_list_models<R: Runtime>(
+    app: AppHandle<R>,
+    provider: Option<String>,
+    base_url: Option<String>,
+    api_key: Option<String>,
+    insecure: Option<bool>,
+) -> Result<Vec<LlmModel>, String> {
+    let (provider, base, key, insecure) = match provider.filter(|p| !p.is_empty()) {
+        Some(p) => {
+            let key = resolve_key(&app, &p, api_key.unwrap_or_default())?;
+            let base = effective_base_of(&p, &base_url.unwrap_or_default());
+            (p, base, key, insecure.unwrap_or(false))
+        }
+        None => {
+            let cfg = load_llm_config(&app)?.ok_or("AI provider not configured")?;
+            (cfg.provider.clone(), effective_base(&cfg), cfg.api_key, cfg.insecure)
+        }
+    };
+    let url = models_endpoint(&provider, &base);
+    let client = llm_http_client(insecure)?;
+    let resp = apply_auth(client.get(&url), &provider, &key)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -888,7 +906,7 @@ pub async fn llm_list_models<R: Runtime>(app: AppHandle<R>) -> Result<Vec<LlmMod
         return Err(format!("could not list models: HTTP {}", resp.status()));
     }
     let v: Value = resp.json().await.map_err(|e| e.to_string())?;
-    Ok(parse_models(&cfg.provider, &v))
+    Ok(parse_models(&provider, &v))
 }
 
 /// Transcribe recorded audio (speech-to-text). The webview captures the mic (getUserMedia/MediaRecorder)

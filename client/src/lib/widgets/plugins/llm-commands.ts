@@ -57,8 +57,21 @@ export const llmComplete = (
 		maxTokens: opts?.maxTokens ?? null
 	});
 
-/** The configured provider's available models (best-effort; may be empty). */
-export const llmListModels = (): Promise<LlmModel[]> => invoke<LlmModel[]>(COMMANDS.llmListModels);
+/** The provider's available models (best-effort; may be empty). Pass the settings form's current
+ * (possibly unsaved) provider/url/key/insecure so the picker can refresh before Save; with nothing
+ * passed the backend uses the saved active config. A blank apiKey reuses the saved key. */
+export const llmListModels = (params?: {
+	provider?: string;
+	baseUrl?: string;
+	apiKey?: string;
+	insecure?: boolean;
+}): Promise<LlmModel[]> =>
+	invoke<LlmModel[]>(COMMANDS.llmListModels, {
+		provider: params?.provider ?? null,
+		baseUrl: params?.baseUrl ?? null,
+		apiKey: params?.apiKey ?? null,
+		insecure: params?.insecure ?? null
+	});
 
 /** Synthesize speech for `text` via the active provider's TTS endpoint (OpenAI-compatible only). Returns
  * the audio bytes + mime; rejects when the provider has no TTS endpoint or no key (caller falls back to

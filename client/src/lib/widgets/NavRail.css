@@ -1541,6 +1541,40 @@
 	color: var(--ui-danger-fg);
 }
 
+/* AI-provider settings: per-provider auth chips (the active one outlined) + the unsaved-changes cue. */
+.canvas .plugins-panel .has-authrow {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	margin: 0 0 var(--space-4);
+}
+
+.canvas .plugins-panel .has-chip {
+	font-size: var(--text-md);
+	color: var(--ui-fg-dim);
+	background: var(--ui-raised);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+	padding: var(--space-1) var(--space-2);
+	white-space: nowrap;
+}
+
+.canvas .plugins-panel .has-chip.ok {
+	color: var(--ui-success-fg);
+}
+
+.canvas .plugins-panel .has-chip.active {
+	border-color: rgb(var(--ui-accent-rgb));
+	color: var(--ui-accent-fg);
+}
+
+/* Pushed to the right of the action row (and the status line); a calm warn tone, not an error. */
+.canvas .plugins-panel .has-unsaved {
+	margin-left: auto;
+	color: var(--ui-warn-fg);
+	font-size: var(--text-md);
+}
+
 /* HA entity browser: search + refresh bar, count, and the expose/copy entity rows. */
 .canvas .plugins-panel .has-browser-bar {
 	display: flex;

@@ -4,7 +4,7 @@
 // Pure transcript logic lives in core/llm.ts; the Tauri calls go through llm-commands.ts.
 import { useCallback, useEffect } from 'react';
 import { pushUser, startTurn, toMessages, type ChatState } from '../core/llm';
-import { llmStore, resetChat, useChat } from '../../stores/llmStore';
+import { handleDelta, llmStore, resetChat, useChat } from '../../stores/llmStore';
 import { llmCancel, llmStream } from '../widgets/plugins/llm-commands';
 import { startLlmSource } from './source';
 
@@ -47,7 +47,15 @@ export function useLlmChat(): LlmChat {
 		llmStore.update((s) => startTurn(pushUser(s, `u-${seq}`, trimmed), requestId));
 		// Send the full prior transcript (the empty assistant turn is filtered out by toMessages).
 		const messages = toMessages(llmStore.getSnapshot());
-		await llmStream(requestId, messages);
+		try {
+			await llmStream(requestId, messages);
+		} catch (err) {
+			// `llm_stream` rejected before any `llm_delta` frame could arrive — e.g. the provider isn't
+			// configured/saved (load_llm_config -> None) or a backend error. The streaming turn we just
+			// opened would otherwise hang on "…" forever, so terminate it with the error: the same
+			// error path a server-side failure takes (applyDelta), making the cause visible.
+			handleDelta({ requestId, token: '', done: true, error: String(err) });
+		}
 		return requestId;
 	}, []);
 
