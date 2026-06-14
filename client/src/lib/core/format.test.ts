@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	formatBytes,
+	formatBytesPair,
 	formatClock,
 	formatDuration,
 	formatPercent,
@@ -20,6 +21,19 @@ describe('formatBytes', () => {
 	it('handles zero and non-finite input', () => {
 		expect(formatBytes(0)).toBe('0 B');
 		expect(formatBytes(Number.NaN)).toBe('0 B');
+	});
+});
+
+describe('formatBytesPair', () => {
+	it('shares one unit scaled to the total (compact VRAM readout)', () => {
+		// 6 GiB / 12 GiB → "5.6 / 11.2 GiB" (one unit, not "5.6 GiB / 11.2 GiB")
+		expect(formatBytesPair(6_000_000_000, 12_000_000_000)).toBe('5.6 / 11.2 GiB');
+	});
+	it('scales the used value to the total unit even when much smaller', () => {
+		expect(formatBytesPair(512 * 1024 * 1024, 16 * 1024 ** 3)).toBe('0.5 / 16.0 GiB');
+	});
+	it('falls back to two units when the total is missing/zero', () => {
+		expect(formatBytesPair(1024, 0)).toContain('/');
 	});
 });
 

@@ -169,7 +169,11 @@ function systemTree(): Container {
 const HIST_H = 60; // fixed histogram row height (px)
 const HIST_GAP = 4; // margin between the up + down histograms
 const HIST_TEXT_GAP = 8; // margin between the histogram cluster and the rate text row
+const RATE_H = 18; // the rate-text row height (the leaf hint + line-height headroom)
 const HIST_SECONDS = 90; // 1.5× the default 60s window — the histograms retain more history
+// The template's def box must fit the stacked content (two fixed histograms + their margins + the
+// rate row), else the bottom rows clip. Derived from the constants so it can't drift when they change.
+const NETWORK_H = HIST_H * 2 + HIST_GAP + HIST_TEXT_GAP + RATE_H; // 150
 function networkTree(): Container {
 	const rate = (
 		id: string,
@@ -186,7 +190,7 @@ function networkTree(): Container {
 				{
 					sensor,
 					w: 75,
-					h: 16,
+					h: RATE_H,
 					css: alignEnd ? '.np-text { justify-content: flex-end; }' : undefined
 				}
 			),
@@ -327,7 +331,7 @@ export const TEMPLATES: Template[] = [
 		id: 'network',
 		name: 'Network',
 		description: 'Up/down throughput histograms + rate text',
-		size: { w: 170, h: 104 },
+		size: { w: 170, h: NETWORK_H },
 		tree: networkTree
 	},
 	{
