@@ -102,7 +102,11 @@ export type TimelineModel = {
 	start: number;
 };
 
-export type ThumbnailInfo = { content_type?: string; data?: number[]; url?: string };
+// Album-art descriptor mirroring the Rust `ImageWrapper` serialization (widgetsack/src/listener.rs).
+// The cover bytes are NOT shipped over the JSON bridge any more — `url` points the `<img>` at the
+// backend `art` URI-scheme handler (art.rs), and `bytes` is the retained byte count for the studio
+// Diagnostics panel (see sumArtBytes). Keep in sync with `ImageWrapper::serialize` (AGENTS.md §5).
+export type ThumbnailInfo = { content_type?: string; url?: string; bytes?: number };
 export type SessionUpdateEventMedia = { Media: [SessionModel, ThumbnailInfo | null] };
 export type SessionUpdateEventModel = { Model: SessionModel };
 

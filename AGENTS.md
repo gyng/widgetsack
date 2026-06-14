@@ -106,6 +106,8 @@ widgetsack/                 Rust / Tauri backend (the workspace member)
     mqtt.rs / stocks.rs     Peer telemetry sources (broker proxy / quote poller) — same shape as ha.rs
     llm.rs                  AI-provider proxy (Anthropic/OpenAI/Ollama); API key stays server-side
     media.rs                Media transport control + per-session capability flags (GSMTC write side)
+    art.rs                  Album-art store + `art` URI-scheme handler — serves covers to the webview
+                            (http://art.localhost/<hash>) instead of shipping bytes through the JSON bridge
     audio.rs                WASAPI loopback FFT → spectrum widget frames over a Tauri Channel
     windowmgr.rs            Foreign-window enumeration + landing-zone snapping (Win32 edge)
     display.rs              Friendly monitor names via the Windows CCD API
@@ -151,7 +153,7 @@ client/                     React frontend
       components/NowPlaying/
         source.ts                   Tauri media adapter (listen/invoke)
         priority.ts + .test.ts      pure source-priority sort (domain) + tests
-        image.ts                    byte-array → object URL helper
+                                    (the cover is now a backend `art://` URL — see art.rs — not raw bytes)
       telemetry/source.ts   Tauri "telemetry" adapter → TelemetryHub
       overlay.ts            Tauri window/monitor + file bridge (isStudioWindow, reconcileOverlays…)
       utils/monitor.ts      monitor helpers

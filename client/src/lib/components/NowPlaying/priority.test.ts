@@ -230,7 +230,9 @@ describe('mergeMediaForward', () => {
 	const withMedia = (session_id: number): SessionRecord => ({
 		...sessionRecord,
 		session_id,
-		last_media_update: { Media: [{ ...session, source: 'p.exe' }, { data: [1, 2, 3] }] }
+		last_media_update: {
+			Media: [{ ...session, source: 'p.exe' }, { url: 'http://art.localhost/1' }]
+		}
 	});
 	const modelOnly = (session_id: number): SessionRecord => ({
 		...sessionRecord,
@@ -262,20 +264,20 @@ describe('mergeMediaForward', () => {
 });
 
 describe('sumArtBytes', () => {
-	const withArt = (session_id: number, bytes: number[]): SessionRecord => ({
+	const withArt = (session_id: number, bytes: number): SessionRecord => ({
 		...sessionRecord,
 		session_id,
-		last_media_update: { Media: [{ ...session, source: 'p.exe' }, { data: bytes }] }
+		last_media_update: { Media: [{ ...session, source: 'p.exe' }, { bytes }] }
 	});
 
-	it('sums album-art byte lengths across sessions', () => {
-		const sessions = { 1: withArt(1, [1, 2, 3]), 2: withArt(2, [4, 5]) };
+	it('sums album-art byte counts across sessions', () => {
+		const sessions = { 1: withArt(1, 3), 2: withArt(2, 2) };
 		expect(sumArtBytes(sessions)).toBe(5);
 	});
 
-	it('ignores sessions with no art (null media or no data)', () => {
+	it('ignores sessions with no art (null media or no bytes)', () => {
 		const sessions = {
-			1: withArt(1, [1, 2, 3]),
+			1: withArt(1, 3),
 			2: { ...sessionRecord, session_id: 2, last_media_update: null },
 			3: { ...sessionRecord, session_id: 3 } // fixture default: Media[1] is null
 		};

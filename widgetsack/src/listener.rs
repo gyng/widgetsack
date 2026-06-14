@@ -2,7 +2,8 @@ use std::fmt;
 use std::sync::Arc;
 
 use gsmtc::{Image, ManagerEvent, SessionModel, SessionUpdateEvent};
-use serde::Serialize;
+use serde::ser::SerializeStruct;
+use serde::{Serialize, Serializer};
 use tokio::sync::mpsc;
 
 use crate::event::NpSessionEvent;
@@ -72,18 +73,45 @@ pub async fn session_listener_windows_gsmtc(
     Ok(())
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone)]
 pub struct ImageWrapper {
     pub content_type: String,
     pub data: Vec<u8>,
+    /// Content hash of `data`, computed once at construction (`art::art_hash`). Drives the cover's
+    /// bridge URL (`art::art_url`) and its registry key, so identical covers (same album across
+    /// tracks) map to the same URL — a browser cache hit and a stable crossfade `artKey`.
+    pub hash: u64,
+}
+
+impl ImageWrapper {
+    pub fn new(content_type: String, data: Vec<u8>) -> Self {
+        let hash = crate::art::art_hash(&data);
+        ImageWrapper {
+            content_type,
+            data,
+            hash,
+        }
+    }
 }
 
 impl From<Image> for ImageWrapper {
     fn from(value: Image) -> Self {
-        ImageWrapper {
-            content_type: value.content_type,
-            data: value.data,
-        }
+        ImageWrapper::new(value.content_type, value.data)
+    }
+}
+
+// The cover bytes DO NOT cross the JSON bridge — that's the whole point of `art.rs`. Instead of
+// serde_json rendering `data: Vec<u8>` as a multi-MB array of decimal numbers, an `ImageWrapper`
+// serializes to a compact descriptor the frontend (`stores.ts` `ThumbnailInfo`) reads: `url` points
+// the `<img>` at the custom `art` scheme handler, `bytes` is the retained byte count surfaced in the
+// studio Diagnostics panel. Keep this in lockstep with `ThumbnailInfo` (AGENTS.md §5).
+impl Serialize for ImageWrapper {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("ImageWrapper", 3)?;
+        state.serialize_field("content_type", &self.content_type)?;
+        state.serialize_field("url", &crate::art::art_url(self.hash))?;
+        state.serialize_field("bytes", &self.data.len())?;
+        state.end()
     }
 }
 
@@ -142,5 +170,27 @@ impl From<ManagerEvent> for ManagerEventWrapper {
                 Self::CurrentSessionChanged { session_id }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn image_wrapper_serializes_as_url_and_bytes_not_raw_data() {
+        let data = vec![0x89u8, 0x50, 0x4E, 0x47, 1, 2, 3];
+        let wrapper = ImageWrapper::new("image/png".to_string(), data.clone());
+        let value = serde_json::to_value(&wrapper).expect("serialize");
+
+        assert_eq!(value["content_type"], "image/png");
+        assert_eq!(value["bytes"], data.len() as u64);
+        // The whole point: the encoded bytes must NOT cross the JSON bridge.
+        assert!(value.get("data").is_none(), "raw cover bytes must not be serialized");
+        // The url is the content-hash scheme URL the webview's <img> fetches.
+        assert_eq!(
+            value["url"],
+            crate::art::art_url(crate::art::art_hash(&data))
+        );
     }
 }
