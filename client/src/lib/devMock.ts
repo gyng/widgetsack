@@ -71,8 +71,9 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case 'plugin:event|listen':
 				return ++evtId;
 
-			// --- autostart ---
-			case COMMANDS.autostartIsEnabled:
+			// --- autostart (launch at login) ---
+			case COMMANDS.autostartGet:
+			case COMMANDS.autostartSet:
 				return false;
 
 			// --- Home Assistant proxy: not configured, no entities. Catalogs MUST be [] (not null) —

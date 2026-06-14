@@ -5130,7 +5130,7 @@ dependencies = [
 
 [[package]]
 name = "widgetsack"
-version = "0.0.39"
+version = "0.0.40"
 dependencies = [
  "fontdb",
  "futures-util",
@@ -5156,6 +5156,7 @@ dependencies = [
  "win-gsmtc",
  "windows 0.61.3",
  "windows-core 0.61.2",
+ "winreg 0.55.0",
 ]
 
 [[package]]

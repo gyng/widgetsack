@@ -20,6 +20,7 @@ use crate::state::updater;
 pub mod agenda;
 pub mod art;
 pub mod audio;
+pub mod autostart;
 pub mod bridge;
 pub mod clickthrough;
 pub mod command;
@@ -274,11 +275,18 @@ async fn main() -> Result<(), ()> {
             llm::llm_synthesize,
             control::control_start,
             control::control_stop,
-            process_diag::process_diagnostics
+            process_diag::process_diagnostics,
+            autostart::get_autostart_enabled,
+            autostart::set_autostart_enabled
         ])
         .setup(|app| {
             // Wire structured logging to the app so records also stream to the webview (`log` event).
             log::init(app.handle().clone());
+
+            // Re-assert "launch at login" from the durable preference. The NSIS uninstaller wipes
+            // the OS Run key on every manual upgrade, so this is what makes the setting survive an
+            // install (autostart.rs).
+            autostart::reconcile(app.handle());
 
             tauri::async_runtime::spawn(async move {
                 session_listener_windows_gsmtc(rx_session_manager, tx_gsmtc).await

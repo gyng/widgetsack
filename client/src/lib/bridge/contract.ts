@@ -148,8 +148,9 @@ export const COMMANDS = {
 	llmSynthesize: 'llm_synthesize',
 	controlStart: 'control_start',
 	controlStop: 'control_stop',
-	// Tauri plugin commands (plugin-owned wire strings; not in main.rs invoke_handler)
-	autostartIsEnabled: 'plugin:autostart|is_enabled',
-	autostartEnable: 'plugin:autostart|enable',
-	autostartDisable: 'plugin:autostart|disable'
+	// Launch at login. These wrap tauri-plugin-autostart but go through our own commands
+	// (autostart.rs) so a durable preference is written alongside the OS Run key — the Run key
+	// alone doesn't survive a manual install (the NSIS uninstaller wipes it).
+	autostartGet: 'get_autostart_enabled',
+	autostartSet: 'set_autostart_enabled'
 } as const;
