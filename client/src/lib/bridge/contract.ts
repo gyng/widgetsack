@@ -88,6 +88,8 @@ export const COMMANDS = {
 	setSubsystemProfiling: 'set_subsystem_profiling',
 	subsystemTimings: 'subsystem_timings',
 	getLogs: 'get_logs',
+	// app update check — GitHub latest release vs the running version (command.rs)
+	checkAppUpdate: 'check_app_update',
 	// fonts (command.rs)
 	systemFonts: 'system_fonts',
 	// sensors / telemetry demand-gating (sensors.rs)

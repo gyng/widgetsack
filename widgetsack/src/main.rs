@@ -234,6 +234,7 @@ async fn main() -> Result<(), ()> {
             command::rescue_windows,
             command::reload_window,
             command::log_diag,
+            command::check_app_update,
             command::system_fonts,
             display::list_display_names,
             clickthrough::set_interactive_rects,

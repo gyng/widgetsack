@@ -804,6 +804,79 @@ async fn fetch_text_capped(client: &reqwest::Client, url: &str) -> Result<String
     String::from_utf8(buf).map_err(|_| format!("{url} is not valid UTF-8"))
 }
 
+/// GitHub releases API for the app's own repo — the manual "check for updates" source (the app
+/// ships no auto-updater, so this just tells the user a newer release exists).
+const GITHUB_LATEST_RELEASE_API: &str =
+    "https://api.github.com/repos/gyng/widgetsack/releases/latest";
+const RELEASES_PAGE: &str = "https://github.com/gyng/widgetsack/releases";
+
+#[derive(Serialize)]
+pub struct AppUpdate {
+    pub current: String,
+    pub latest: String,
+    pub url: String,
+    pub update_available: bool,
+}
+
+/// Parse an `X.Y.Z` version into a comparable tuple, tolerating a leading `v` and a `-pre`/`+build`
+/// suffix; any missing or non-numeric part is 0 so a malformed tag never falsely reports an update.
+fn parse_version(v: &str) -> (u32, u32, u32) {
+    let core = v.trim().trim_start_matches('v');
+    let core = core.split(['-', '+']).next().unwrap_or(core);
+    let mut parts = core.split('.').map(|p| p.parse::<u32>().unwrap_or(0));
+    (
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+        parts.next().unwrap_or(0),
+    )
+}
+
+/// Whether `latest` is a newer version than `current` (numeric X.Y.Z compare). Pure seam.
+fn version_is_newer(latest: &str, current: &str) -> bool {
+    parse_version(latest) > parse_version(current)
+}
+
+/// Ask GitHub for the latest published release of the app and compare it to the running version.
+/// Manual (driven by the About panel button); best-effort — any network/parse failure is returned
+/// as an `Err` the UI shows verbatim. The GitHub REST API requires a User-Agent.
+#[tauri::command]
+pub async fn check_app_update(app: tauri::AppHandle) -> Result<AppUpdate, String> {
+    let current = app.package_info().version.to_string();
+    let client = install_http_client()?;
+    let resp = client
+        .get(GITHUB_LATEST_RELEASE_API)
+        .header(reqwest::header::USER_AGENT, "widgetsack")
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("update check failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("update check failed: HTTP {}", resp.status()));
+    }
+    let json: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("update check failed: {e}"))?;
+    let latest = json
+        .get("tag_name")
+        .and_then(|v| v.as_str())
+        .ok_or("update check failed: no tag_name in latest release")?
+        .trim_start_matches('v')
+        .to_string();
+    let url = json
+        .get("html_url")
+        .and_then(|v| v.as_str())
+        .unwrap_or(RELEASES_PAGE)
+        .to_string();
+    let update_available = version_is_newer(&latest, &current);
+    Ok(AppUpdate {
+        current,
+        latest,
+        url,
+        update_available,
+    })
+}
+
 #[derive(Serialize)]
 pub struct InstalledPackage {
     pub id: String,
@@ -1223,7 +1296,23 @@ pub fn watch_controls(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::valid_name;
+    use super::{valid_name, version_is_newer};
+
+    #[test]
+    fn version_is_newer_compares_numerically() {
+        assert!(version_is_newer("0.0.42", "0.0.41"));
+        assert!(version_is_newer("0.1.0", "0.0.41")); // 0.1.0 > 0.0.41, not string compare
+        assert!(version_is_newer("1.0.0", "0.9.9"));
+        assert!(!version_is_newer("0.0.41", "0.0.41")); // equal → no update
+        assert!(!version_is_newer("0.0.40", "0.0.41")); // older
+    }
+
+    #[test]
+    fn version_is_newer_tolerates_v_prefix_and_suffixes() {
+        assert!(version_is_newer("v0.0.42", "0.0.41"));
+        assert!(!version_is_newer("0.0.41-rc1", "0.0.41")); // pre-release suffix stripped → equal
+        assert!(!version_is_newer("garbage", "0.0.1")); // unparseable → (0,0,0), no false update
+    }
 
     #[test]
     fn valid_name_accepts_plain_tokens() {
