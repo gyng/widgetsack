@@ -53,13 +53,9 @@ export default function WeatherSettings() {
 
 	const latN = parseFloat(lat);
 	const lonN = parseFloat(lon);
-	const valid =
-		Number.isFinite(latN) &&
-		Number.isFinite(lonN) &&
-		latN >= -90 &&
-		latN <= 90 &&
-		lonN >= -180 &&
-		lonN <= 180;
+	const latValid = Number.isFinite(latN) && latN >= -90 && latN <= 90;
+	const lonValid = Number.isFinite(lonN) && lonN >= -180 && lonN <= 180;
+	const valid = latValid && lonValid;
 
 	const dirtied = () => setSaved(false);
 
@@ -106,11 +102,15 @@ export default function WeatherSettings() {
 					inputMode="decimal"
 					placeholder="51.5072"
 					value={lat}
+					aria-invalid={lat !== '' && !latValid}
 					onChange={(e) => {
 						setLat(e.currentTarget.value);
 						dirtied();
 					}}
 				/>
+				{lat !== '' && !latValid && (
+					<small className="has-field-err">Must be a number between −90 and 90.</small>
+				)}
 			</label>
 			<label className="has-field">
 				Longitude
@@ -119,11 +119,15 @@ export default function WeatherSettings() {
 					inputMode="decimal"
 					placeholder="-0.1276"
 					value={lon}
+					aria-invalid={lon !== '' && !lonValid}
 					onChange={(e) => {
 						setLon(e.currentTarget.value);
 						dirtied();
 					}}
 				/>
+				{lon !== '' && !lonValid && (
+					<small className="has-field-err">Must be a number between −180 and 180.</small>
+				)}
 			</label>
 			<label className="has-field">
 				Units
@@ -163,9 +167,6 @@ export default function WeatherSettings() {
 					{saving ? 'Saving…' : 'Save & fetch'}
 				</button>
 				{saved && <span className="has-ok">Saved ✓</span>}
-				{!valid && (lat !== '' || lon !== '') && (
-					<span className="has-state-dim">enter a valid lat / lon</span>
-				)}
 			</div>
 
 			<div className="has-help">

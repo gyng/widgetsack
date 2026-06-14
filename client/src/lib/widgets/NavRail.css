@@ -1451,6 +1451,18 @@
 	border-color: rgb(var(--ui-accent-rgb));
 }
 
+/* Inline field validation: red border on the offending input + a small message under it (used by the
+   Weather / RSS / Agenda panels instead of a single hint next to Save). */
+.canvas .plugins-panel .has-field input[aria-invalid='true'] {
+	border-color: var(--ui-danger-fg);
+}
+
+.canvas .plugins-panel .has-field-err {
+	color: var(--ui-danger-fg);
+	font-size: var(--text-sm);
+	margin-top: var(--space-1);
+}
+
 .canvas .plugins-panel .has-check {
 	display: flex;
 	align-items: center;
@@ -1681,6 +1693,13 @@
 .canvas .plugins-panel .has-group-toggle {
 	margin-bottom: 0;
 	color: var(--ui-fg-dim);
+}
+
+/* Bulk expose/clear actions for the entity browser (act on the currently-shown, filter-aware set). */
+.canvas .plugins-panel .has-bulk {
+	display: flex;
+	gap: var(--space-2);
+	margin-bottom: var(--space-3);
 }
 
 /* Grouped (area > device > entity) browser. */

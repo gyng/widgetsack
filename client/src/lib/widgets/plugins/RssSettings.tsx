@@ -91,11 +91,15 @@ export default function RssSettings() {
 					inputMode="url"
 					placeholder="https://example.com/feed.xml"
 					value={url}
+					aria-invalid={url !== '' && !valid}
 					onChange={(e) => {
 						setUrl(e.currentTarget.value);
 						dirtied();
 					}}
 				/>
+				{url !== '' && !valid && (
+					<small className="has-field-err">Enter a full http(s):// feed URL.</small>
+				)}
 			</label>
 			<label className="has-field">
 				Title (optional)
@@ -147,7 +151,6 @@ export default function RssSettings() {
 					{saving ? 'Saving…' : 'Save & fetch'}
 				</button>
 				{saved && <span className="has-ok">Saved ✓</span>}
-				{!valid && url !== '' && <span className="has-state-dim">enter a http(s) feed URL</span>}
 			</div>
 
 			<div className="has-help">

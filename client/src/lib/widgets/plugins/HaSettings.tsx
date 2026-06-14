@@ -9,7 +9,7 @@ import { useTelemetryHub } from '../telemetryContext';
 import { useSensor } from '../useSensor';
 import { useStore } from '../../../stores/createStore';
 import { haStatusBadge } from '../../core/haStatus';
-import { isExposed, toggleExposed } from '../../core/haExposed';
+import { isExposed, normalizeExposed, toggleExposed } from '../../core/haExposed';
 import { buildRegistryTree, type HaRegistry, type LiveState } from '../../core/haRegistry';
 import { copyToClipboard } from '../../overlay';
 import {
@@ -149,6 +149,30 @@ export default function HaSettings() {
 			}))
 			.filter((a) => a.devices.length || a.looseEntities.length);
 	}, [tree, query]);
+
+	// The sensor ids currently SHOWN (flat list or grouped tree, after the search filter) — what the
+	// bulk expose/clear actions operate on, so they respect a filter ("expose every light.*").
+	const visibleSensorIds = useMemo(() => {
+		if (groupByArea) {
+			const ids: string[] = [];
+			for (const a of treeFiltered) {
+				for (const d of a.devices) for (const e of d.entities) ids.push(e.sensorId);
+				for (const e of a.looseEntities) ids.push(e.sensorId);
+			}
+			return ids;
+		}
+		return filtered.map((e) => `ha.${e.entity_id}`);
+	}, [groupByArea, treeFiltered, filtered]);
+	const visibleExposedCount = useMemo(
+		() => visibleSensorIds.reduce((n, id) => (exposed.includes(id) ? n + 1 : n), 0),
+		[visibleSensorIds, exposed]
+	);
+	const exposeAllVisible = () =>
+		haExposedStore.update((cur) => normalizeExposed([...cur, ...visibleSensorIds]));
+	const clearVisibleExposed = () => {
+		const vis = new Set(visibleSensorIds);
+		haExposedStore.update((cur) => cur.filter((id) => !vis.has(id)));
+	};
 
 	// One entity row, shared by the flat list and the grouped tree (expose toggle + copy id).
 	const entityRow = (
@@ -371,6 +395,29 @@ export default function HaSettings() {
 					Group by area
 				</label>
 			</div>
+
+			{entities.length > 0 && (
+				<div className="has-bulk">
+					<button
+						type="button"
+						onClick={exposeAllVisible}
+						disabled={
+							visibleSensorIds.length === 0 || visibleExposedCount === visibleSensorIds.length
+						}
+						title="Expose every entity currently shown (respects the filter)"
+					>
+						Expose all{query.trim() ? ' shown' : ''}
+					</button>
+					<button
+						type="button"
+						onClick={clearVisibleExposed}
+						disabled={visibleExposedCount === 0}
+						title="Un-expose every entity currently shown"
+					>
+						Clear{query.trim() ? ' shown' : ''}
+					</button>
+				</div>
+			)}
 
 			{groupByArea ? (
 				treeFiltered.length ? (
