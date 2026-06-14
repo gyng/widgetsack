@@ -18,6 +18,7 @@ use crate::event::emit_to_bridge;
 use crate::state::updater;
 
 pub mod agenda;
+pub mod art;
 pub mod audio;
 pub mod bridge;
 pub mod clickthrough;
@@ -158,6 +159,9 @@ async fn main() -> Result<(), ()> {
         .manage(AppState {
             sessions: Default::default(),
         })
+        // Album-art store: covers are served to the webview over the `art` URI scheme (below)
+        // instead of being shipped as JSON byte arrays. See art.rs.
+        .manage(art::ArtState::default())
         .manage(clickthrough::InteractiveRects::default())
         .manage(control::ControlState::default())
         .manage(ha::HaState::default())
@@ -171,6 +175,10 @@ async fn main() -> Result<(), ()> {
         .manage(sensors::ActiveSensors::default())
         .manage(audio::SpectrumState::default())
         .manage(process_diag::ProcDiag::default())
+        // Serve album art from memory over `art` (Windows/WebView2: http://art.localhost/<hash>).
+        // Available to every webview (all overlays + the studio); keep the CSP `img-src` token in
+        // tauri.conf.json in sync. The closure just forwards to the tested handler in art.rs.
+        .register_uri_scheme_protocol("art", |ctx, request| art::serve_art(ctx, request))
         .invoke_handler(tauri::generate_handler![
             get_initial_sessions,
             command::load_layout,
@@ -284,7 +292,13 @@ async fn main() -> Result<(), ()> {
                         let state: State<AppState> = app_handle.state();
                         let mut sessions = state.sessions.lock().await;
                         let delta = updater(&mut sessions, event);
-                        emit_to_bridge(&app_handle.clone(), delta);
+                        // Register the cover BEFORE emitting so the webview's immediate fetch of the
+                        // serialized `url` finds the bytes (art.rs); a media update is the only delta
+                        // that carries one.
+                        if let Some(record) = &delta.1 {
+                            art::register_cover(&app_handle, record);
+                        }
+                        emit_to_bridge(&app_handle, delta);
                     }
                 }
             });

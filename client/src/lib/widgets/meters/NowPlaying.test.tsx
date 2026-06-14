@@ -1,18 +1,13 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 import NowPlaying from './NowPlaying';
 import type { SessionRecord } from '../../../stores/stores';
 
-// happy-dom doesn't implement blob object URLs; stub so the crossfade layers get a usable src.
-beforeAll(() => {
-	let n = 0;
-	URL.createObjectURL = () => `blob:mock/${n++}`;
-	URL.revokeObjectURL = () => undefined;
-});
+// The cover is now a backend-served URL (art.rs), so the meter just sets it as the <img src> — no
+// object URLs to stub. artKey is the url itself, so a distinct url = a distinct cover (crossfade).
+const ART = 'http://art.localhost/123'; // a stable cover url for the active track
 
-const ART = [137, 80, 78, 71, 1, 2, 3, 42]; // a non-empty thumbnail (distinct first/last byte → artKey)
-
-const session = (title: string, art: number[] | null): SessionRecord => ({
+const session = (title: string, art: string | null): SessionRecord => ({
 	session_id: 1,
 	source: 'spotify.exe',
 	timestamp_created: null,
@@ -39,7 +34,7 @@ const session = (title: string, art: number[] | null): SessionRecord => ({
 					track_number: null
 				}
 			},
-			art ? { content_type: 'image/png', data: art } : null
+			art ? { content_type: 'image/png', url: art } : null
 		]
 	},
 	last_model_update: { Model: { playback: null, timeline: null, media: null, source: '' } }

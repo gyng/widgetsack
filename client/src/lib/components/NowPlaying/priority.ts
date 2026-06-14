@@ -80,15 +80,16 @@ export const mergeMediaForward = (
 		? { ...incoming, last_media_update: prev.last_media_update }
 		: incoming;
 
-// Total bytes of album art retained across all tracked sessions. Each record can hold a cover as a
-// raw byte array (`last_media_update.Media[1].data`); summing them is the headline number for the
-// studio Diagnostics panel — a climbing total is the fingerprint of the media-store leak this guards
-// against. Pure.
+// Total bytes of album art referenced across all tracked sessions. The cover bytes no longer cross
+// the bridge — they're served from the backend `art` registry (art.rs) — so each record carries only
+// the retained byte count (`last_media_update.Media[1].bytes`). Summing them is the headline number
+// for the studio Diagnostics panel: a climbing total still fingerprints a session-record leak (orphan
+// records pile up references), now measuring backend retention rather than frontend heap. Pure.
 export const sumArtBytes = (sessions: Record<number, SessionRecord>): number => {
 	let total = 0;
 	for (const rec of Object.values(sessions)) {
-		const len = rec?.last_media_update?.Media?.[1]?.data?.length;
-		if (typeof len === 'number') total += len;
+		const bytes = rec?.last_media_update?.Media?.[1]?.bytes;
+		if (typeof bytes === 'number') total += bytes;
 	}
 	return total;
 };
