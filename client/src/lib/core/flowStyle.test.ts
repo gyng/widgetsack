@@ -112,9 +112,22 @@ describe('itemStyle (sizing)', () => {
 			flexBasis: '20px'
 		});
 		expect(itemStyle({ ...leaf(prim('A', 40, 20)) }, 'row').flexBasis).toBe('40px');
-		// 'content' on a FILL meter (gauge — no intrinsic content size) keeps its stored box so it can't
-		// collapse to 0; true content-fit is reserved for intrinsic meters (next test).
-		expect(itemStyle({ ...leaf(prim('A', 40, 20), 'content') }, 'row').flexBasis).toBe('40px');
+	});
+
+	it("basis 'content' on a FILL meter (gauge/gpu/…) → authored box as basis, floored at min-content", () => {
+		// Keeps the stored box as the default extent (can't collapse to 0), but floors BOTH axes at
+		// min-content so a content-bearing meter (e.g. GPU VRAM) is never squeezed below its content and
+		// clipped by the slot's overflow:hidden — the "hug clips" fix.
+		const s = itemStyle({ ...leaf(prim('A', 40, 20), 'content') }, 'row');
+		expect(s).toMatchObject({
+			flexGrow: 0,
+			flexShrink: 0,
+			flexBasis: '40px',
+			minWidth: 'min-content',
+			minHeight: 'min-content'
+		});
+		// col → main axis is height, so the basis tracks the stored height.
+		expect(itemStyle({ ...leaf(prim('A', 40, 20), 'content') }, 'col').flexBasis).toBe('20px');
 	});
 
 	it("basis 'content' on an INTRINSIC text meter (clock/text) → content-fit (auto basis, shrinkable)", () => {

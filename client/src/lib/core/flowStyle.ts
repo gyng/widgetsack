@@ -162,12 +162,26 @@ export function itemStyle(node: LayoutNode, parentKind: Container['kind']): Styl
 		s.flexBasis = 'auto';
 		s.minWidth = 0;
 		s.minHeight = 0;
+	} else if (basis === 'content' && isLeaf(node) && !isGroup(node.unit)) {
+		// 'content' on a FILL meter (gauge / sparkline / cpu / GPU panel / …, no intrinsic size):
+		// keep its authored box as the DEFAULT extent (flex-basis), but FLOOR both axes at the
+		// content's min-content so it's never squeezed below its own content and then clipped by the
+		// slot's overflow:hidden — the cause of the GPU VRAM / network "hug clips" reports. The cross
+		// axis (stretch) otherwise has no min-content floor. Meter fonts are FIXED (only AnalogClock is
+		// container-query scaled), so min-content is stable: no measure→grow feedback. flex-shrink:0 +
+		// the floor mean a hugged meter sits at max(authored box, its content).
+		s.flexGrow = 0;
+		s.flexShrink = 0;
+		const rect = node.unit.rect;
+		s.flexBasis = `${parentKind === 'row' ? rect.w : rect.h}px`;
+		s.minWidth = 'min-content';
+		s.minHeight = 'min-content';
 	} else {
-		// 'auto' / 'content' / unset: a LEAF takes its STORED main extent (primitive rect / group
-		// size) as the flex-basis, so a fill-meter (width/height:100%, no intrinsic size) keeps the
-		// authored box the solver used to give it via intrinsicMain — otherwise flex:0 0 auto would
-		// collapse it toward 0. A CONTAINER shrink-wraps its children (flex-basis:auto). The cross
-		// axis is filled by the container's default align-items:stretch.
+		// 'auto' / unset: a LEAF takes its STORED main extent (primitive rect / group size) as the
+		// flex-basis, so a fill-meter (width/height:100%, no intrinsic size) keeps the authored box the
+		// solver used to give it via intrinsicMain — otherwise flex:0 0 auto would collapse it toward 0.
+		// A CONTAINER shrink-wraps its children (flex-basis:auto). The cross axis is filled by the
+		// container's default align-items:stretch.
 		s.flexGrow = 0;
 		s.flexShrink = 0;
 		const size = isLeaf(node) ? (isGroup(node.unit) ? node.unit.size : node.unit.rect) : null;

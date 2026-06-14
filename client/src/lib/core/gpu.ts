@@ -1,7 +1,7 @@
 // Pure stat-list builder for the GPU panel: pick the metrics that are actually reported and format
 // them. No React/DOM — unit-tested (gpu.test.ts). The meter extracts the raw values from its sensor
 // map and renders the returned list. Units: vram bytes, temp °C, power W, clock MHz, fan %.
-import { formatBytes } from './format';
+import { formatBytesPair } from './format';
 
 export type GpuStat = { key: string; label: string; value: string };
 
@@ -24,7 +24,7 @@ export function gpuStats(v: {
 		out.push({
 			key: 'vram',
 			label: 'vram',
-			value: `${formatBytes(v.vramUsed)} / ${formatBytes(v.vramTotal)}`
+			value: formatBytesPair(v.vramUsed, v.vramTotal)
 		});
 	if (num(v.power)) out.push({ key: 'power', label: 'power', value: `${Math.round(v.power)} W` });
 	if (num(v.clockCore))

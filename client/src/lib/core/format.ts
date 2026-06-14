@@ -14,6 +14,22 @@ export function formatBytes(bytes: number, decimals = 1): string {
 	return `${scaled.toFixed(i === 0 ? 0 : decimals)} ${BYTE_UNITS[i]}`;
 }
 
+/** A compact "used / total UNIT" pair that shares ONE unit (scaled to the total), e.g.
+ * `12.3 GiB / 16.0 GiB` → `12.3 / 16.0 GiB`. Used for the GPU panel's VRAM readout, where the
+ * per-stat grid cell is narrow — dropping the redundant first unit keeps it from ellipsizing. */
+export function formatBytesPair(used: number, total: number, decimals = 1): string {
+	if (!Number.isFinite(total) || total <= 0) {
+		return `${formatBytes(used, decimals)} / ${formatBytes(total, decimals)}`;
+	}
+	const i = Math.min(
+		BYTE_UNITS.length - 1,
+		Math.max(0, Math.floor(Math.log(total) / Math.log(1024)))
+	);
+	const scale = 1024 ** i;
+	const fmt = (b: number) => (Math.max(0, b) / scale).toFixed(i === 0 ? 0 : decimals);
+	return `${fmt(used)} / ${fmt(total)} ${BYTE_UNITS[i]}`;
+}
+
 /** Bytes-per-second as a human-readable rate. */
 export function formatRate(bytesPerSec: number, decimals = 1): string {
 	return `${formatBytes(bytesPerSec, decimals)}/s`;
