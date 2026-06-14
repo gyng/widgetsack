@@ -218,6 +218,14 @@ export default function LlmSettings() {
 		}
 	};
 
+	// Auto-load the model list when the active provider changes (or its saved key becomes usable), so the
+	// dropdown populates without a manual "↻ Models" click. Keyed on `provider`/`hasKey` ONLY — a
+	// not-yet-saved key typed char-by-char must not fire a request per keystroke; use ↻ Models for that.
+	useEffect(() => {
+		if (canListModels) void onLoadModels();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [provider, hasKey]);
+
 	return (
 		<div className="has">
 			<div className="has-statusline">

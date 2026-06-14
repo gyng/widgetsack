@@ -88,11 +88,15 @@ export default function AgendaSettings() {
 					inputMode="url"
 					placeholder="https://calendar.google.com/…/basic.ics"
 					value={url}
+					aria-invalid={url !== '' && !valid}
 					onChange={(e) => {
 						setUrl(e.currentTarget.value);
 						dirtied();
 					}}
 				/>
+				{url !== '' && !valid && (
+					<small className="has-field-err">Enter an https:// or webcal:// calendar URL.</small>
+				)}
 			</label>
 			<label className="has-field">
 				Title (optional)
@@ -131,7 +135,6 @@ export default function AgendaSettings() {
 					{saving ? 'Saving…' : 'Save & fetch'}
 				</button>
 				{saved && <span className="has-ok">Saved ✓</span>}
-				{!valid && url !== '' && <span className="has-state-dim">enter an ICS / webcal URL</span>}
 			</div>
 
 			<div className="has-help">

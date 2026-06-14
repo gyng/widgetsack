@@ -1451,6 +1451,18 @@
 	border-color: rgb(var(--ui-accent-rgb));
 }
 
+/* Inline field validation: red border on the offending input + a small message under it (used by the
+   Weather / RSS / Agenda panels instead of a single hint next to Save). */
+.canvas .plugins-panel .has-field input[aria-invalid='true'] {
+	border-color: var(--ui-danger-fg);
+}
+
+.canvas .plugins-panel .has-field-err {
+	color: var(--ui-danger-fg);
+	font-size: var(--text-sm);
+	margin-top: var(--space-1);
+}
+
 .canvas .plugins-panel .has-check {
 	display: flex;
 	align-items: center;
@@ -1458,6 +1470,71 @@
 	color: var(--ui-fg-muted);
 	margin-bottom: var(--space-2);
 	cursor: pointer;
+}
+
+/* TokenListField: a wrapping row of removable chips + an add-row (input + button). Used by the
+   stocks (tickers) and MQTT (topics) panels in place of a raw textarea. */
+.canvas .plugins-panel .has-tokens {
+	list-style: none;
+	margin: 0 0 var(--space-2);
+	padding: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+
+.canvas .plugins-panel .has-token {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-1);
+	max-width: 100%;
+	padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
+	background: rgba(255, 255, 255, 0.03);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+	color: var(--ui-fg);
+	font-family: monospace;
+	font-size: var(--text-md);
+}
+
+.canvas .plugins-panel .has-token:hover {
+	border-color: var(--ui-border-strong);
+}
+
+.canvas .plugins-panel .has-token-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.canvas .plugins-panel .has-token-x {
+	flex: 0 0 auto;
+	margin: 0;
+	padding: 0 var(--space-1);
+	background: transparent;
+	border: none;
+	color: var(--ui-fg-dim);
+	font-size: var(--text-lg);
+	line-height: 1;
+	cursor: pointer;
+}
+
+.canvas .plugins-panel .has-token-x:hover {
+	color: var(--ui-danger-fg);
+}
+
+.canvas .plugins-panel .has-token-add {
+	display: flex;
+	gap: var(--space-2);
+}
+
+.canvas .plugins-panel .has-token-add input {
+	flex: 1;
+	min-width: 0;
+}
+
+.canvas .plugins-panel .has-token-add button {
+	flex: 0 0 auto;
 }
 
 .canvas .plugins-panel .has-warn {
@@ -1616,6 +1693,13 @@
 .canvas .plugins-panel .has-group-toggle {
 	margin-bottom: 0;
 	color: var(--ui-fg-dim);
+}
+
+/* Bulk expose/clear actions for the entity browser (act on the currently-shown, filter-aware set). */
+.canvas .plugins-panel .has-bulk {
+	display: flex;
+	gap: var(--space-2);
+	margin-bottom: var(--space-3);
 }
 
 /* Grouped (area > device > entity) browser. */

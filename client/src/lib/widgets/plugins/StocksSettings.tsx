@@ -16,13 +16,14 @@ import {
 } from './stocks-commands';
 import { refreshStocksCatalog, stocksSource } from './stocks-source';
 import { parseSymbols } from './stocks-symbols';
+import TokenListField from './TokenListField';
 
 export default function StocksSettings() {
 	const hub = useTelemetryHub();
 	const status = useSensor(hub, 'stocks.status');
 	const badge = haStatusBadge(status.value?.kind === 'text' ? status.value.value : null);
 
-	const [symbolsText, setSymbolsText] = useState('');
+	const [symbols, setSymbols] = useState<string[]>([]);
 	const [pollSeconds, setPollSeconds] = useState(60);
 	const [configured, setConfigured] = useState(false);
 	const [saving, setSaving] = useState(false);
@@ -42,7 +43,7 @@ export default function StocksSettings() {
 		stocksConfigStatus()
 			.then((s) => {
 				if (!alive) return;
-				setSymbolsText(s.symbols.join('\n'));
+				setSymbols(s.symbols);
 				setPollSeconds(s.pollSeconds);
 				setConfigured(s.configured);
 			})
@@ -52,7 +53,6 @@ export default function StocksSettings() {
 		};
 	}, []);
 
-	const symbols = parseSymbols(symbolsText);
 	const dirtied = () => setSaved(false);
 	const canSubmit = !saving;
 
@@ -95,20 +95,18 @@ export default function StocksSettings() {
 				<code>SPY</code>), crypto (<code>BTC-USD</code>), indices (<code>^GSPC</code>).
 			</div>
 
-			<label className="has-field">
-				Tickers (one per line, or comma-separated)
-				<textarea
-					className="has-search"
-					rows={4}
-					spellCheck={false}
-					placeholder={'AAPL\nMSFT\nBTC-USD'}
-					value={symbolsText}
-					onChange={(e) => {
-						setSymbolsText(e.currentTarget.value);
-						dirtied();
-					}}
-				/>
-			</label>
+			<TokenListField
+				label="Tickers"
+				values={symbols}
+				onChange={(next) => {
+					setSymbols(next);
+					dirtied();
+				}}
+				parse={parseSymbols}
+				placeholder="AAPL — Enter to add, or paste a comma/newline list"
+				listLabel="Tickers"
+				emptyHint="No tickers yet — type one above and press Enter."
+			/>
 
 			<label className="has-field">
 				Poll interval (seconds)
@@ -124,10 +122,6 @@ export default function StocksSettings() {
 					}}
 				/>
 			</label>
-
-			{symbolsText.trim() && symbols.length === 0 && (
-				<div className="has-warn">No valid symbols entered — nothing will be saved.</div>
-			)}
 
 			<div className="has-warn">
 				⚠ Yahoo&rsquo;s endpoint is unofficial and best-effort — it can rate-limit or change without
