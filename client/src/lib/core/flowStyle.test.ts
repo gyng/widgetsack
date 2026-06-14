@@ -130,16 +130,17 @@ describe('itemStyle (sizing)', () => {
 		expect(itemStyle({ ...leaf(prim('A', 40, 20), 'content') }, 'col').flexBasis).toBe('20px');
 	});
 
-	it("basis 'content' on a GROUP (dropped template) → group size as basis, floored at min-content", () => {
-		// The Network widget is a GROUP; hugging it must fit its content, not pin to the stored size.
+	it("basis 'content' on a GROUP (dropped template) → group size as basis, floored at MAX-content", () => {
+		// The Network widget is a GROUP; hugging it must fit its FULL content (a collapsing sub-row
+		// falls out of min-content), so groups floor at max-content — not min-content like fill meters.
 		const g = group('g', { w: 80, h: 120 }, container('c', 'col', []));
 		const s = itemStyle({ ...leaf(g, 'content') }, 'col');
 		expect(s).toMatchObject({
 			flexGrow: 0,
 			flexShrink: 0,
 			flexBasis: '120px', // group size on the main (col) axis
-			minWidth: 'min-content',
-			minHeight: 'min-content'
+			minWidth: 'max-content',
+			minHeight: 'max-content'
 		});
 	});
 

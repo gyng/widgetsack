@@ -165,19 +165,26 @@ export function itemStyle(node: LayoutNode, parentKind: Container['kind']): Styl
 	} else if (basis === 'content' && isLeaf(node)) {
 		// 'content' on a FILL meter (gauge / sparkline / cpu / GPU panel / …, no intrinsic size) OR a
 		// GROUP (a dropped template / nested layout): keep its authored box as the DEFAULT extent
-		// (flex-basis = the meter rect / the group size), but FLOOR both axes at the content's
-		// min-content so it's never squeezed below its own content and then clipped by the slot's
-		// overflow:hidden — the cause of the GPU VRAM / Network "hug clips" reports (the Network widget
-		// is a GROUP, so it MUST be included here, not just leaf meters). The cross axis (stretch) and a
-		// shrinking fr column otherwise have no min-content floor. Meter fonts are FIXED (only
-		// AnalogClock is container-query scaled), so min-content is stable — no measure→grow feedback.
-		// flex-shrink:0 + the floor mean a hugged widget sits at max(authored box, its content).
+		// (flex-basis = the meter rect / the group size), but FLOOR both axes at the content extent so
+		// it's never squeezed below its own content and clipped by the slot's overflow:hidden — the
+		// GPU VRAM / Network "hug clips" reports. The cross axis (stretch) and a shrinking fr column
+		// otherwise have no such floor.
+		//
+		// The floor differs by kind. A GROUP floors at MAX-content — its full natural content: a
+		// collapsing sub-row (e.g. the Network rate-text row, whose fr text leaves can shrink to 0)
+		// falls OUT of min-content, so a min-content floor lands short and clips that row. A GROUP has
+		// well-defined max-content (real children), so max-content captures the whole thing. A FILL
+		// meter floors at min-content: max-content is ill-defined for a width/height:100% meter with no
+		// intrinsic content (it can collapse toward 0), so min-content is the safe non-collapsing floor.
+		// Meter fonts are FIXED (only AnalogClock is container-query scaled) → the floor is stable, no
+		// measure→grow feedback. flex-shrink:0 + the floor mean a hugged widget sits at max(box, content).
 		s.flexGrow = 0;
 		s.flexShrink = 0;
 		const box = isGroup(node.unit) ? node.unit.size : node.unit.rect;
 		s.flexBasis = `${parentKind === 'row' ? box.w : box.h}px`;
-		s.minWidth = 'min-content';
-		s.minHeight = 'min-content';
+		const floor = isGroup(node.unit) ? 'max-content' : 'min-content';
+		s.minWidth = floor;
+		s.minHeight = floor;
 	} else {
 		// 'auto' / unset: a LEAF takes its STORED main extent (primitive rect / group size) as the
 		// flex-basis, so a fill-meter (width/height:100%, no intrinsic size) keeps the authored box the
