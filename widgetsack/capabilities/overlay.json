@@ -26,9 +26,6 @@
     "core:window:allow-is-maximized",
     "core:window:allow-start-dragging",
     "core:window:allow-current-monitor",
-    "core:window:allow-available-monitors",
-    "autostart:allow-enable",
-    "autostart:allow-disable",
-    "autostart:allow-is-enabled"
+    "core:window:allow-available-monitors"
   ]
 }

@@ -578,17 +578,18 @@ export async function openDevtools(): Promise<void> {
 	}
 }
 
-// --- launch at login (tauri-plugin-autostart) ---
-// The plugin is registered in main.rs; its commands are granted in capabilities/overlay.json. We
-// invoke them directly (no JS package) so there's no extra dependency. All resolve gracefully off-
-// Windows / when the plugin is unavailable, so the Settings toggle never throws.
+// --- launch at login ---
+// Backed by tauri-plugin-autostart, but routed through our own commands (autostart.rs) so a durable
+// preference is persisted alongside the OS Run key — the Run key alone doesn't survive a manual
+// install (the NSIS uninstaller wipes it). All resolve gracefully off-Windows / when unavailable,
+// so the Settings toggle never throws.
 
 /** Whether the app is registered to launch at login. */
 export async function isAutostartEnabled(): Promise<boolean> {
 	try {
-		return await invoke<boolean>(COMMANDS.autostartIsEnabled);
+		return await invoke<boolean>(COMMANDS.autostartGet);
 	} catch (err) {
-		console.warn('autostart is_enabled failed', err);
+		console.warn('autostart get failed', err);
 		return false;
 	}
 }
@@ -596,11 +597,11 @@ export async function isAutostartEnabled(): Promise<boolean> {
 /** Enable/disable launch at login; returns the resulting (re-read) state. */
 export async function setAutostart(enabled: boolean): Promise<boolean> {
 	try {
-		await invoke(enabled ? COMMANDS.autostartEnable : COMMANDS.autostartDisable);
+		return await invoke<boolean>(COMMANDS.autostartSet, { enabled });
 	} catch (err) {
 		console.warn('autostart toggle failed', err);
+		return isAutostartEnabled();
 	}
-	return isAutostartEnabled();
 }
 
 type SystemFont = { name: string; fontName: string; path: string };

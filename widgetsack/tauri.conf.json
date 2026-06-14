@@ -25,6 +25,7 @@
         "type": "downloadBootstrapper"
       },
       "nsis": {
+        "template": "./windows/installer.nsi",
         "installerHooks": "./windows/hooks.nsh",
         "installerIcon": "./icons/icon.ico",
         "headerImage": "./windows/installer-header.bmp",
@@ -49,7 +50,7 @@
     "createUpdaterArtifacts": false
   },
   "productName": "widgetsack",
-  "version": "0.0.39",
+  "version": "0.0.40",
   "identifier": "io.github.gyng",
   "plugins": {},
   "app": {

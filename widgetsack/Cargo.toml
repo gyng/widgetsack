@@ -1,7 +1,7 @@
 [package]
 name = "widgetsack"
 # Keep in lockstep with tauri.conf.json's version (the bundle/updater source of truth).
-version = "0.0.39"
+version = "0.0.40"
 description = "widgetsack desktop widget platform"
 authors = ["you"]
 license = "MIT OR Apache-2.0"
@@ -60,6 +60,10 @@ tauri-plugin-autostart = "2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 win-gsmtc = { version = "0.1.0", features = ["serde"] }
+# Read/write the durable launch-at-login preference in HKCU (autostart.rs). The Run key alone
+# doesn't survive a manual install (the NSIS uninstaller wipes it), so we persist a preference
+# and re-assert on startup. Already in the lock tree (auto-launch / embed-resource pull winreg).
+winreg = "0.55"
 # The #[interface] macro (audio.rs IPolicyConfig: set the default audio endpoint) expands to
 # ::windows_core paths, so the crate must be a direct dependency. Pinned to windows 0.61's core.
 windows-core = "0.61"
