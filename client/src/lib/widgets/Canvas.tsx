@@ -139,6 +139,7 @@ import { useThemes } from './canvas/useThemes';
 import { sackSummary, useSacks } from './canvas/useSacks';
 import { useSavedLayouts } from './canvas/useSavedLayouts';
 import { useBackground } from './canvas/useBackground';
+import { useAutoTheme } from './canvas/useAutoTheme';
 import { useDefEditor } from './canvas/useDefEditor';
 import { useSplitters } from './canvas/useSplitters';
 import { useStudioInit } from './canvas/useStudioInit';
@@ -628,6 +629,13 @@ export default function Canvas({ studio = false }: Props) {
 	// full-bleed in top-overlay mode would cover the user's apps); the studio always previews it.
 	const { bg, resolveWallpaper, wallpaperFiles, refreshWallpapers, patchBg, setBgKind, clearBg } =
 		useBackground({ studio, navSection, monitor, handleOp });
+	// Wallpaper auto-theme (issue #15) — shared by the Background panel + the Themes section's token
+	// overrides. Applies the derived map above any active theme via the setTokens op.
+	const autoTheme = useAutoTheme({
+		bg,
+		resolveWallpaper,
+		applyTokens: (tokens) => handleOp({ op: 'setTokens', tokens })
+	});
 	const showBackground = studio || overlayPrefs.overlayLayer !== 'top';
 
 	// --- selection-derived state ---
@@ -2839,6 +2847,31 @@ export default function Canvas({ studio = false }: Props) {
 										    the Inspector for per-widget tweaks). These override on top of the selected theme,
 										    persist across theme switches, and win until cleared. */}
 										<div className="rp-hd">Tokens (override this theme)</div>
+										{/* Auto theme from the wallpaper (issue #15): fills these overrides with a readable
+										    palette derived from the current image wallpaper. Same action as the Background
+										    panel's button; shown here because it WRITES these token overrides. */}
+										{autoTheme.canAuto ? (
+											<div className="theme-auto">
+												<button
+													type="button"
+													onClick={() => void autoTheme.run()}
+													disabled={autoTheme.busy}
+													aria-busy={autoTheme.busy}
+													title="Derive a readable accent + text colours from your wallpaper"
+												>
+													{autoTheme.busy ? 'Reading…' : '🎨 From wallpaper'}
+												</button>
+												{autoTheme.status === 'done' && <span className="rp-id">applied ✓</span>}
+												{autoTheme.status === 'fail' && (
+													<span className="rp-id">couldn’t read the image</span>
+												)}
+											</div>
+										) : (
+											<div className="rp-stub">
+												Tip: set an <strong>image</strong> Background to auto-derive colours from
+												your wallpaper.
+											</div>
+										)}
 										<TokenFields
 											values={tokenOverrides}
 											onSet={(key, value) => handleOp({ op: 'setToken', key, value })}
@@ -2855,8 +2888,7 @@ export default function Canvas({ studio = false }: Props) {
 										patchBg={patchBg}
 										setBgKind={setBgKind}
 										clearBg={clearBg}
-										resolveWallpaper={resolveWallpaper}
-										onAutoTheme={(tokens) => handleOp({ op: 'setTokens', tokens })}
+										autoTheme={autoTheme}
 										onClearTokens={() => handleOp({ op: 'clearTokens' })}
 									/>
 								)}

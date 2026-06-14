@@ -1677,3 +1677,11 @@
 .canvas .plugins-panel .has-copy:hover {
 	color: rgb(var(--ui-accent-rgb));
 }
+
+/* Auto-theme-from-wallpaper action in the Themes section (sits above the token-override fields). */
+.theme-auto {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-bottom: 8px;
+}
