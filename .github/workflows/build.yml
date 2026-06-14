@@ -33,6 +33,14 @@ jobs:
         # webkitgtk 4.0 is for Tauri v1 - webkitgtk 4.1 is for Tauri v2.
         # You can remove the one that doesn't apply to your app to speed up the workflow a bit.
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Restore the Rust cache, but DON'T save one here. This workflow only runs on `release`
+          # (which executes on the tag ref) and `workflow_dispatch`. A cache saved on a tag ref can
+          # never be restored — the next release is a new tag, tag refs don't share caches, and this
+          # job never runs on `main` to seed a default-branch cache — so saving just accumulates
+          # ~620 MB of dead, un-restorable cache per release, pushing the repo over the 10 GB limit and
+          # evicting the test.yml caches that DO get hit. The test workflow owns the useful Rust cache.
+          save-if: false
       - name: install frontend dependencies
         run: npm ci
         working-directory: ./client
