@@ -574,7 +574,7 @@ export default function Inspector({
 						isFrBasis(widgetBasis) ? 'grow' : typeof widgetBasis === 'number' ? 'fixed' : 'fit'
 					}
 					options={[
-						{ value: 'fit', label: 'hug — its own size' },
+						{ value: 'fit', label: 'hug — fit content' },
 						{ value: 'grow', label: 'fill — grow to share' },
 						{ value: 'fixed', label: 'fixed (px)' }
 					]}
@@ -582,6 +582,9 @@ export default function Inspector({
 						op({
 							op: 'setBasis',
 							id,
+							// 'fit' → 'content' (not undefined): a content basis floors the group at its
+							// min-content in flowStyle, so hugging a GROUP (e.g. the Network widget) fits its
+							// content instead of clipping to a stale stored size.
 							basis:
 								v === 'grow'
 									? { fr: 1 }
@@ -589,7 +592,7 @@ export default function Inspector({
 									? typeof widgetBasis === 'number'
 										? widgetBasis
 										: 100
-									: undefined
+									: 'content'
 						})
 					}
 					aria-label="size in parent"

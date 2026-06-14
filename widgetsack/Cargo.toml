@@ -1,7 +1,7 @@
 [package]
 name = "widgetsack"
 # Keep in lockstep with tauri.conf.json's version (the bundle/updater source of truth).
-version = "0.0.43"
+version = "0.0.44"
 description = "widgetsack desktop widget platform"
 authors = ["you"]
 license = "MIT OR Apache-2.0"
