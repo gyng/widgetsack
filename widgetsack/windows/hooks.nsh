@@ -30,6 +30,18 @@
   ; so clear the leftover folder an upgrade would otherwise orphan. Runs AFTER the new
   ; shortcuts are created — the root-level widgetsack.lnk is untouched.
   RMDir /r "$SMPROGRAMS\widgetsack"
+
+  ; widgetsack evolved from the "np" (nowplaying-widget) app and kept its bundle identifier
+  ; (io.github.gyng). Windows de-dupes Start entries by AppUserModelID, so a leftover np.lnk from the
+  ; old app shadows widgetsack's shortcut — Start lists the app as "np" and searching "widgetsack"
+  ; finds nothing (the reported "doesn't show up in start"). Remove the legacy np shortcuts and its
+  ; autostart entries (the shared identifier would also collide with single-instance). np autostarts
+  ; via a Startup-folder shortcut (and possibly a Run key), so clear both. The old np install itself
+  ; is left alone — uninstall it via its own entry in Apps & features.
+  Delete "$SMPROGRAMS\np.lnk"
+  Delete "$DESKTOP\np.lnk"
+  Delete "$SMSTARTUP\np.lnk"
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "np"
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL

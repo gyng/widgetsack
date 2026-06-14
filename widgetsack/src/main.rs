@@ -68,6 +68,16 @@ fn open_or_focus_studio(app: &tauri::AppHandle) {
         let _ = app.emit(bridge::OPEN_STUDIO_EVENT, ());
         return;
     }
+    build_studio_window(app);
+}
+
+/// Build the studio webview window directly (mirrors overlay.ts `openStudio`). Split out of
+/// `open_or_focus_studio` so the `--studio` startup launch can build it WITHOUT going through the
+/// main overlay's JS — at boot that webview hasn't registered the `open_studio` listener yet.
+fn build_studio_window(app: &tauri::AppHandle) {
+    if app.get_webview_window("studio").is_some() {
+        return;
+    }
     if let Err(err) =
         tauri::WebviewWindowBuilder::new(app, "studio", tauri::WebviewUrl::App("/".into()))
             .title("WidgetSack Studio")
@@ -81,6 +91,14 @@ fn open_or_focus_studio(app: &tauri::AppHandle) {
             .field("error", err)
             .emit();
     }
+}
+
+/// Whether this process was launched to open the designer. The Start Menu / desktop shortcuts and the
+/// installer's "Run WidgetSack" checkbox pass `--studio`, so starting the app manually shows the
+/// studio window instead of just the silent (and, on a fresh install, empty) overlay. Autostart at
+/// login passes no flag and stays silent.
+fn launched_with_studio_flag() -> bool {
+    std::env::args().any(|arg| arg == "--studio")
 }
 
 /// The window-state the app persists across runs: size / position / maximized / fullscreen, but NOT
@@ -287,6 +305,13 @@ async fn main() -> Result<(), ()> {
             // the OS Run key on every manual upgrade, so this is what makes the setting survive an
             // install (autostart.rs).
             autostart::reconcile(app.handle());
+
+            // `--studio` (shortcuts + installer "Run") opens the designer on a manual launch, so the
+            // app shows a window instead of just the silent overlay. Built directly here because the
+            // overlay webview isn't ready to receive `open_studio` yet at boot.
+            if launched_with_studio_flag() {
+                build_studio_window(app.handle());
+            }
 
             tauri::async_runtime::spawn(async move {
                 session_listener_windows_gsmtc(rx_session_manager, tx_gsmtc).await
