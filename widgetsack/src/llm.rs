@@ -489,14 +489,32 @@ fn build_chat_body(
             "stream": stream,
             "options": { "temperature": temperature, "num_predict": max_tokens },
         }),
-        _ => json!({
-            "model": model,
-            "messages": messages_json(provider, messages),
-            "stream": stream,
-            "temperature": temperature,
-            "max_tokens": max_tokens,
-        }),
+        _ => {
+            let mut body = json!({
+                "model": model,
+                "messages": messages_json(provider, messages),
+                "stream": stream,
+            });
+            if uses_completion_tokens(model) {
+                // Next-gen / reasoning OpenAI models (gpt-5*, o-series) REJECT the legacy `max_tokens`
+                // ("use max_completion_tokens instead") and also reject a non-default `temperature`, so
+                // send the new field and omit temperature — otherwise every request 400s.
+                body["max_completion_tokens"] = json!(max_tokens);
+            } else {
+                body["temperature"] = json!(temperature);
+                body["max_tokens"] = json!(max_tokens);
+            }
+            body
+        }
     }
+}
+
+/// Whether an OpenAI-style model needs `max_completion_tokens` (and no custom temperature) instead of
+/// the legacy `max_tokens`. True for the reasoning o-series (o1/o3/o4…) and the gpt-5 family; older
+/// models (gpt-4o…) and most OpenAI-compatible servers still take `max_tokens`.
+fn uses_completion_tokens(model: &str) -> bool {
+    let m = model.trim();
+    m.starts_with("gpt-5") || m.starts_with("o1") || m.starts_with("o3") || m.starts_with("o4")
 }
 
 /// Extract the assistant's reply text from a non-streamed response body, per provider.
@@ -1285,6 +1303,34 @@ mod tests {
         assert_eq!(m[0].id, "gpt-4o");
         let oll = serde_json::json!({ "models": [ { "name": "llama3.2" } ] });
         assert_eq!(parse_models("ollama", &oll)[0].id, "llama3.2");
+    }
+
+    #[test]
+    fn uses_completion_tokens_matches_next_gen_families() {
+        for m in ["gpt-5", "gpt-5-nano", "gpt-5.1", "o1", "o1-mini", "o3-mini", "o4-mini"] {
+            assert!(uses_completion_tokens(m), "{m} should use max_completion_tokens");
+        }
+        for m in ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "llama3.2", ""] {
+            assert!(!uses_completion_tokens(m), "{m} should keep max_tokens");
+        }
+    }
+
+    #[test]
+    fn openai_body_picks_the_right_token_param_per_model() {
+        let msgs = vec![ChatMessage {
+            role: "user".into(),
+            content: "hi".into(),
+        }];
+        // Legacy model: temperature + max_tokens, no max_completion_tokens.
+        let legacy = build_chat_body("openai", "gpt-4o-mini", &msgs, 0.5, 100, false);
+        assert_eq!(legacy["max_tokens"], 100);
+        assert_eq!(legacy["temperature"], 0.5);
+        assert!(legacy.get("max_completion_tokens").is_none());
+        // Next-gen model: max_completion_tokens, and NO max_tokens / NO temperature (both 400 there).
+        let next = build_chat_body("openai", "gpt-5-nano", &msgs, 0.5, 100, false);
+        assert_eq!(next["max_completion_tokens"], 100);
+        assert!(next.get("max_tokens").is_none());
+        assert!(next.get("temperature").is_none());
     }
 
     #[test]

@@ -51,6 +51,14 @@ describe('Select (combobox variant: typeahead)', () => {
 		expect(onChange).toHaveBeenCalledWith('s.7');
 	});
 
+	it('opens the menu on a plain click of the input (not just the ▾ caret)', () => {
+		const onChange = vi.fn();
+		render(<Select value="" options={SENSORS} onChange={onChange} searchable />);
+		fireEvent.click(screen.getByRole('combobox')); // click the field itself
+		fireEvent.click(screen.getByText('Sensor 5')); // the list is open → pick from it
+		expect(onChange).toHaveBeenCalledWith('s.5');
+	});
+
 	it('accepts a typed custom value when allowCustom (commits live, like the sensor field)', () => {
 		const onChange = vi.fn();
 		render(<Select value="" options={SENSORS} onChange={onChange} allowCustom />);

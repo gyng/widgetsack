@@ -188,7 +188,8 @@ function SelectCombobox({
 		getMenuProps,
 		getInputProps,
 		getToggleButtonProps,
-		getItemProps
+		getItemProps,
+		openMenu
 	} = useCombobox<SelectOption>({
 		items,
 		inputValue,
@@ -237,6 +238,10 @@ function SelectCombobox({
 					placeholder={placeholder}
 					title={title}
 					{...getInputProps({ disabled, 'aria-label': ariaLabel })}
+					// Open the list on a plain click of the field (not just the ▾ caret) — clicking a combobox
+					// to see its options is what users expect ("I can't click to choose"). Attached after the
+					// prop-getter spread so it isn't dropped; useCombobox sets no onClick of its own to compose.
+					onClick={() => openMenu()}
 				/>
 				<button
 					type="button"

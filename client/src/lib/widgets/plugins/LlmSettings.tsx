@@ -83,11 +83,14 @@ export default function LlmSettings() {
 		const m = providerMeta(id);
 		const p = st?.providers[id];
 		setBaseUrl(p?.baseUrl ?? m.defaultBaseUrl);
-		setModel(p?.model ?? '');
+		// Default each model field to the provider's first sample (which mirrors the backend
+		// default_model / whisper-1 / tts-1 / alloy) instead of blank, so there's always a selected item
+		// to start from rather than an empty box.
+		setModel(p?.model || m.sampleModels[0] || '');
 		setInsecure(p?.insecure ?? false);
-		setSttModel(p?.sttModel ?? '');
-		setTtsModel(p?.ttsModel ?? '');
-		setTtsVoice(p?.ttsVoice ?? '');
+		setSttModel(p?.sttModel || m.sampleSttModels[0] || '');
+		setTtsModel(p?.ttsModel || m.sampleTtsModels[0] || '');
+		setTtsVoice(p?.ttsVoice || m.sampleVoices[0] || '');
 		setApiKey('');
 		setModels([]);
 		setModelsState({ kind: 'idle' });
