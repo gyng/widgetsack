@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { container, leaf, type WidgetInstance, type Leaf } from './layoutTree';
+import { container, group, leaf, type WidgetInstance, type Leaf } from './layoutTree';
 import { containerStyle, itemStyle, overlapChildStyle } from './flowStyle';
 
 const prim = (id: string, w = 10, h = 10): WidgetInstance => ({
@@ -128,6 +128,19 @@ describe('itemStyle (sizing)', () => {
 		});
 		// col → main axis is height, so the basis tracks the stored height.
 		expect(itemStyle({ ...leaf(prim('A', 40, 20), 'content') }, 'col').flexBasis).toBe('20px');
+	});
+
+	it("basis 'content' on a GROUP (dropped template) → group size as basis, floored at min-content", () => {
+		// The Network widget is a GROUP; hugging it must fit its content, not pin to the stored size.
+		const g = group('g', { w: 80, h: 120 }, container('c', 'col', []));
+		const s = itemStyle({ ...leaf(g, 'content') }, 'col');
+		expect(s).toMatchObject({
+			flexGrow: 0,
+			flexShrink: 0,
+			flexBasis: '120px', // group size on the main (col) axis
+			minWidth: 'min-content',
+			minHeight: 'min-content'
+		});
 	});
 
 	it("basis 'content' on an INTRINSIC text meter (clock/text) → content-fit (auto basis, shrinkable)", () => {

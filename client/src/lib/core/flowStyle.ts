@@ -162,18 +162,20 @@ export function itemStyle(node: LayoutNode, parentKind: Container['kind']): Styl
 		s.flexBasis = 'auto';
 		s.minWidth = 0;
 		s.minHeight = 0;
-	} else if (basis === 'content' && isLeaf(node) && !isGroup(node.unit)) {
-		// 'content' on a FILL meter (gauge / sparkline / cpu / GPU panel / …, no intrinsic size):
-		// keep its authored box as the DEFAULT extent (flex-basis), but FLOOR both axes at the
-		// content's min-content so it's never squeezed below its own content and then clipped by the
-		// slot's overflow:hidden — the cause of the GPU VRAM / network "hug clips" reports. The cross
-		// axis (stretch) otherwise has no min-content floor. Meter fonts are FIXED (only AnalogClock is
-		// container-query scaled), so min-content is stable: no measure→grow feedback. flex-shrink:0 +
-		// the floor mean a hugged meter sits at max(authored box, its content).
+	} else if (basis === 'content' && isLeaf(node)) {
+		// 'content' on a FILL meter (gauge / sparkline / cpu / GPU panel / …, no intrinsic size) OR a
+		// GROUP (a dropped template / nested layout): keep its authored box as the DEFAULT extent
+		// (flex-basis = the meter rect / the group size), but FLOOR both axes at the content's
+		// min-content so it's never squeezed below its own content and then clipped by the slot's
+		// overflow:hidden — the cause of the GPU VRAM / Network "hug clips" reports (the Network widget
+		// is a GROUP, so it MUST be included here, not just leaf meters). The cross axis (stretch) and a
+		// shrinking fr column otherwise have no min-content floor. Meter fonts are FIXED (only
+		// AnalogClock is container-query scaled), so min-content is stable — no measure→grow feedback.
+		// flex-shrink:0 + the floor mean a hugged widget sits at max(authored box, its content).
 		s.flexGrow = 0;
 		s.flexShrink = 0;
-		const rect = node.unit.rect;
-		s.flexBasis = `${parentKind === 'row' ? rect.w : rect.h}px`;
+		const box = isGroup(node.unit) ? node.unit.size : node.unit.rect;
+		s.flexBasis = `${parentKind === 'row' ? box.w : box.h}px`;
 		s.minWidth = 'min-content';
 		s.minHeight = 'min-content';
 	} else {
