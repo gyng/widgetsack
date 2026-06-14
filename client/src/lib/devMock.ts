@@ -76,6 +76,15 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.autostartSet:
 				return false;
 
+			// --- app update check: pretend we're current ---
+			case COMMANDS.checkAppUpdate:
+				return {
+					current: '0.0.0',
+					latest: '0.0.0',
+					url: 'https://github.com/gyng/widgetsack/releases',
+					update_available: false
+				};
+
 			// --- Home Assistant proxy: not configured, no entities. Catalogs MUST be [] (not null) —
 			// ha-source caches the result and later .map()s it; a null would throw on the next read. ---
 			case COMMANDS.haConnect:

@@ -3,13 +3,65 @@
 // the prefs/handlers it surfaces stay owned by Canvas and arrive as grouped props; the only module
 // calls it makes itself are the stateless overlay helpers (devtools / rescue / clipboard). Lazy-
 // loaded like the other studio panels (Canvas's lazy() block), so the overlay never fetches it.
+import { useState } from 'react';
 import type { Rect } from '../core/layout';
 import type { ControlOverrides, Trigger } from '../core/controls';
 import type { OverlayLayer, OverlayPrefs } from './canvas/overlayPrefs';
-import { copyToClipboard, openDevtools, rescueWindows } from '../overlay';
+import { checkAppUpdate, copyToClipboard, openDevtools, rescueWindows } from '../overlay';
 import ControlsPanel from './ControlsPanel';
 import DiagnosticsPanel from './DiagnosticsPanel';
 import mascotUrl from '../../assets/mascot.png';
+
+// About → "Check for updates": asks the backend (GitHub latest release vs the running version) on
+// demand and reports the result inline. Local state only — closing the panel resets it, which is
+// fine for a manual check (mirrors the per-package update check in PluginsPanel).
+type AppUpdateState =
+	| { kind: 'idle' }
+	| { kind: 'busy' }
+	| { kind: 'current'; current: string }
+	| { kind: 'update'; latest: string; url: string }
+	| { kind: 'error'; message: string };
+
+function AppUpdateCheck() {
+	const [state, setState] = useState<AppUpdateState>({ kind: 'idle' });
+	const onCheck = async () => {
+		setState({ kind: 'busy' });
+		try {
+			const r = await checkAppUpdate();
+			setState(
+				r.updateAvailable
+					? { kind: 'update', latest: r.latest, url: r.url }
+					: { kind: 'current', current: r.current }
+			);
+		} catch (err) {
+			setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
+		}
+	};
+	return (
+		<>
+			<div className="rp-hd">Updates</div>
+			<button type="button" disabled={state.kind === 'busy'} onClick={() => void onCheck()}>
+				{state.kind === 'busy' ? 'Checking…' : '⟳ Check for updates'}
+			</button>
+			{state.kind === 'current' && (
+				<div className="pl-desc">You’re up to date (v{state.current}).</div>
+			)}
+			{state.kind === 'update' && (
+				<div className="rp-row">
+					<span>v{state.latest} available</span>
+					<button type="button" onClick={() => void copyToClipboard(state.url)}>
+						copy link
+					</button>
+				</div>
+			)}
+			{state.kind === 'error' && (
+				<div className="pl-desc" title={state.message}>
+					Update check failed: {state.message}
+				</div>
+			)}
+		</>
+	);
+}
 
 // Settings subsections — a side list (mirrors the Plugins list+detail split) so the pane shows one
 // focused topic at a time (progressive disclosure / chunking) instead of one long scroll, and each
@@ -289,13 +341,14 @@ export default function StudioSettingsPanel({
 								<span className="dim">MIT OR Apache-2.0</span>
 							</div>
 						</div>
+						<AppUpdateCheck />
 						<div className="rp-hd">Source</div>
 						<div className="rp-row">
-							<span className="set-repo">github.com/gyng/nowplaying-widget</span>
+							<span className="set-repo">github.com/gyng/widgetsack</span>
 							<button
 								type="button"
 								onClick={() => {
-									void copyToClipboard('https://github.com/gyng/nowplaying-widget');
+									void copyToClipboard('https://github.com/gyng/widgetsack');
 								}}
 							>
 								copy
