@@ -48,3 +48,48 @@ test('a content-basis group floored at max-content sizes to its FULL content (ra
 	expect(m.rateBottom).toBeLessThanOrEqual(m.grpBottom + 1);
 	expect(m.rateH).toBeGreaterThan(5);
 });
+
+// Cross-axis (horizontal) overflow regression: a content-basis GROUP in a COL hugs along the MAIN
+// axis (height) but must NOT be floored on the CROSS axis (width) — flooring width at max-content too
+// forces the slot WIDER than its 170px container when the content (two un-wrapping rate texts) is
+// wider, the live "Network widget overflows horizontally in studio" report. flowStyle now floors the
+// main axis only; this asserts the group stays within its container width.
+const crossHtml = (floorWidth: boolean) => `
+  <div id="container" style="width:170px; height:600px; display:flex; flex-direction:column; align-items:stretch;">
+    <div id="grp" style="flex:0 0 104px; min-height:max-content; ${
+			floorWidth ? 'min-width:max-content;' : ''
+		} display:flex; flex-direction:column; overflow:hidden; align-items:stretch;">
+      <div style="width:100%; height:100%; display:flex; flex-direction:column; align-items:stretch; overflow:hidden;">
+        <div id="rate" style="flex:0 0 auto; display:flex; flex-direction:row; gap:6px; white-space:nowrap;">
+          <span style="flex:1 1 0; min-width:0;">▲ 1234.5 MB/s</span>
+          <span style="flex:1 1 0; min-width:0;">▼ 6789.0 MB/s</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+test('a content-basis group in a col does NOT overflow its container horizontally (cross axis unfloored)', async ({
+	page
+}) => {
+	await page.setContent(crossHtml(false));
+	const w = await page.evaluate(() => {
+		const c = document.getElementById('container');
+		const g = document.getElementById('grp');
+		if (!c || !g) throw new Error('missing test nodes');
+		return { containerW: c.getBoundingClientRect().width, grpW: g.getBoundingClientRect().width };
+	});
+	// Main-axis-only flooring: the group width tracks the 170px container — no horizontal overflow.
+	expect(w.grpW).toBeLessThanOrEqual(w.containerW + 1);
+	expect(w.grpW).toBeGreaterThan(160);
+
+	// Sanity: the OLD both-axes behaviour (min-width:max-content) DID overflow, proving this guards a
+	// real regression and isn't trivially satisfiable.
+	await page.setContent(crossHtml(true));
+	const overflow = await page.evaluate(() => {
+		const c = document.getElementById('container');
+		const g = document.getElementById('grp');
+		if (!c || !g) throw new Error('missing test nodes');
+		return g.getBoundingClientRect().width > c.getBoundingClientRect().width + 1;
+	});
+	expect(overflow).toBe(true);
+});

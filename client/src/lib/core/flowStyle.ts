@@ -165,10 +165,17 @@ export function itemStyle(node: LayoutNode, parentKind: Container['kind']): Styl
 	} else if (basis === 'content' && isLeaf(node)) {
 		// 'content' on a FILL meter (gauge / sparkline / cpu / GPU panel / …, no intrinsic size) OR a
 		// GROUP (a dropped template / nested layout): keep its authored box as the DEFAULT extent
-		// (flex-basis = the meter rect / the group size), but FLOOR both axes at the content extent so
-		// it's never squeezed below its own content and clipped by the slot's overflow:hidden — the
-		// GPU VRAM / Network "hug clips" reports. The cross axis (stretch) and a shrinking fr column
-		// otherwise have no such floor.
+		// (flex-basis = the meter rect / the group size), but FLOOR the MAIN axis at the content extent
+		// so it's never squeezed below its own content and clipped by the slot's overflow:hidden — the
+		// GPU VRAM / Network "hug clips" reports. A shrinking fr column otherwise has no such floor.
+		//
+		// In a FLEX parent (row/col) floor the MAIN axis ONLY. The cross axis is governed by the parent's
+		// align-items:stretch and already fills the container; pinning the cross axis to a content floor
+		// too (min/max-content) forces the slot WIDER than its container when the content is wider than
+		// the box — the Network widget's "overflows horizontally in studio" report. Main-axis-only
+		// flooring fits the content along the hug direction while letting the cross axis stay bounded by
+		// its container. A GRID parent has no single main axis (the item fills a 2D cell), and there's no
+		// such overflow report there, so it keeps the original 2D floor (both axes).
 		//
 		// The floor differs by kind. A GROUP floors at MAX-content — its full natural content: a
 		// collapsing sub-row (e.g. the Network rate-text row, whose fr text leaves can shrink to 0)
@@ -183,8 +190,13 @@ export function itemStyle(node: LayoutNode, parentKind: Container['kind']): Styl
 		const box = isGroup(node.unit) ? node.unit.size : node.unit.rect;
 		s.flexBasis = `${parentKind === 'row' ? box.w : box.h}px`;
 		const floor = isGroup(node.unit) ? 'max-content' : 'min-content';
-		s.minWidth = floor;
-		s.minHeight = floor;
+		if (parentKind === 'row') s.minWidth = floor;
+		else if (parentKind === 'col') s.minHeight = floor;
+		else {
+			// grid: no single main axis — floor both so a hugged cell fits its content in 2D.
+			s.minWidth = floor;
+			s.minHeight = floor;
+		}
 	} else {
 		// 'auto' / unset: a LEAF takes its STORED main extent (primitive rect / group size) as the
 		// flex-basis, so a fill-meter (width/height:100%, no intrinsic size) keeps the authored box the

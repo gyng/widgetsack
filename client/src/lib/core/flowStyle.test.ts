@@ -114,34 +114,49 @@ describe('itemStyle (sizing)', () => {
 		expect(itemStyle({ ...leaf(prim('A', 40, 20)) }, 'row').flexBasis).toBe('40px');
 	});
 
-	it("basis 'content' on a FILL meter (gauge/gpu/…) → authored box as basis, floored at min-content", () => {
-		// Keeps the stored box as the default extent (can't collapse to 0), but floors BOTH axes at
+	it("basis 'content' on a FILL meter (gauge/gpu/…) → authored box as basis, MAIN axis floored at min-content", () => {
+		// Keeps the stored box as the default extent (can't collapse to 0), and floors the MAIN axis at
 		// min-content so a content-bearing meter (e.g. GPU VRAM) is never squeezed below its content and
-		// clipped by the slot's overflow:hidden — the "hug clips" fix.
+		// clipped by the slot's overflow:hidden — the "hug clips" fix. The CROSS axis is NOT floored
+		// (the parent's align-items:stretch bounds it to the container) — flooring it too overflows the
+		// container horizontally.
 		const s = itemStyle({ ...leaf(prim('A', 40, 20), 'content') }, 'row');
 		expect(s).toMatchObject({
 			flexGrow: 0,
 			flexShrink: 0,
 			flexBasis: '40px',
-			minWidth: 'min-content',
-			minHeight: 'min-content'
+			minWidth: 'min-content' // main axis (row → width)
 		});
-		// col → main axis is height, so the basis tracks the stored height.
-		expect(itemStyle({ ...leaf(prim('A', 40, 20), 'content') }, 'col').flexBasis).toBe('20px');
+		expect('minHeight' in s).toBe(false); // cross axis stays unbounded → stretches, no overflow
+		// col → main axis is height, so the basis (and the floor) tracks height instead.
+		const sc = itemStyle({ ...leaf(prim('A', 40, 20), 'content') }, 'col');
+		expect(sc.flexBasis).toBe('20px');
+		expect(sc.minHeight).toBe('min-content');
+		expect('minWidth' in sc).toBe(false);
 	});
 
-	it("basis 'content' on a GROUP (dropped template) → group size as basis, floored at MAX-content", () => {
+	it("basis 'content' on a GROUP (dropped template) → group size as basis, MAIN axis floored at MAX-content", () => {
 		// The Network widget is a GROUP; hugging it must fit its FULL content (a collapsing sub-row
 		// falls out of min-content), so groups floor at max-content — not min-content like fill meters.
+		// Only the MAIN axis is floored: in a col that's height, so the cross axis (width) stays bounded
+		// by the container — flooring width too made the Network group overflow horizontally.
 		const g = group('g', { w: 80, h: 120 }, container('c', 'col', []));
 		const s = itemStyle({ ...leaf(g, 'content') }, 'col');
 		expect(s).toMatchObject({
 			flexGrow: 0,
 			flexShrink: 0,
 			flexBasis: '120px', // group size on the main (col) axis
-			minWidth: 'max-content',
-			minHeight: 'max-content'
+			minHeight: 'max-content' // main axis (col → height)
 		});
+		expect('minWidth' in s).toBe(false); // cross axis (width) not floored → no horizontal overflow
+		// row parent → main axis is width, so the floor lands on minWidth instead.
+		const sr = itemStyle({ ...leaf(g, 'content') }, 'row');
+		expect(sr.minWidth).toBe('max-content');
+		expect('minHeight' in sr).toBe(false);
+		// grid parent → no single main axis (2D cell), so BOTH axes keep the content floor.
+		const sg = itemStyle({ ...leaf(g, 'content') }, 'grid');
+		expect(sg.minWidth).toBe('max-content');
+		expect(sg.minHeight).toBe('max-content');
 	});
 
 	it("basis 'content' on an INTRINSIC text meter (clock/text) → content-fit (auto basis, shrinkable)", () => {
