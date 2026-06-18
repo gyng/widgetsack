@@ -296,6 +296,7 @@ async fn main() -> Result<(), ()> {
             ha::list_ha_entities,
             ha::ha_registry_snapshot,
             ha::ha_call_service,
+            ha::ha_history,
             ha::save_ha_config,
             ha::ha_config_status,
             ha::ha_test_connection,

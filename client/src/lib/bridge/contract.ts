@@ -116,6 +116,7 @@ export const COMMANDS = {
 	listHaEntities: 'list_ha_entities',
 	haRegistrySnapshot: 'ha_registry_snapshot',
 	haCallService: 'ha_call_service',
+	haHistory: 'ha_history',
 	saveHaConfig: 'save_ha_config',
 	haConfigStatus: 'ha_config_status',
 	haTestConnection: 'ha_test_connection',

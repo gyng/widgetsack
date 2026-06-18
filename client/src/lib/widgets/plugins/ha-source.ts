@@ -11,6 +11,7 @@
 import type { SensorSource, SensorCatalogEntry } from '../../core/plugin';
 import { curate } from '../../core/haExposed';
 import { haConnect, haDisconnect, listHaEntities } from './ha-commands';
+import { startHaBackfill } from './ha-backfill';
 import type { HaEntity } from './ha-types';
 import { haExposedStore } from './ha-exposed-store';
 
@@ -43,9 +44,14 @@ export async function refreshHaCatalog(): Promise<HaEntity[]> {
 
 export const haSource: SensorSource = {
 	id: 'home-assistant',
-	start: async () => {
+	start: async (hub) => {
 		await refreshHaCatalog();
+		// Backfill recent HA history into this window's hub so sparklines bound to HA entities aren't
+		// blank on launch (reactive: fires as widgets subscribe). Order-stable ingest merges the
+		// back-dated samples — see core/telemetry.ts + plugins/ha-backfill.ts.
+		const stopBackfill = startHaBackfill(hub);
 		return () => {
+			stopBackfill();
 			haDisconnect().catch(() => undefined);
 		};
 	},

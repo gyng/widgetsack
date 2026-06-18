@@ -224,6 +224,88 @@ fn state_to_samples(entity_id: &str, new_state: &Value, ts_ms: u64) -> Option<Ve
     Some(out)
 }
 
+/// A plain `<domain>.<object_id>` HA entity id (lowercase slug). Guards the value before it goes
+/// into a request (no `/`, `..`, spaces, etc. — path/param injection defence).
+fn valid_entity_id(id: &str) -> bool {
+    let mut parts = id.split('.');
+    let (Some(domain), Some(object), None) = (parts.next(), parts.next(), parts.next()) else {
+        return false;
+    };
+    !domain.is_empty()
+        && !object.is_empty()
+        && domain.chars().all(|c| c.is_ascii_lowercase() || c == '_')
+        && object
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// Parse an ISO-8601 UTC timestamp (HA's `last_changed`/`last_updated`, e.g.
+/// "2026-06-17T12:34:56.789+00:00") to epoch milliseconds. HA stores these in UTC, so any zone
+/// suffix is ignored (the wall-clock fields are treated as UTC). `None` on a malformed prefix.
+/// Pure — unit-tested without I/O. Uses Howard Hinnant's days-from-civil algorithm (no chrono dep).
+fn iso8601_to_ms(s: &str) -> Option<u64> {
+    let year: i64 = s.get(0..4)?.parse().ok()?;
+    let month: i64 = s.get(5..7)?.parse().ok()?;
+    let day: i64 = s.get(8..10)?.parse().ok()?;
+    let hour: i64 = s.get(11..13)?.parse().ok()?;
+    let min: i64 = s.get(14..16)?.parse().ok()?;
+    let sec: i64 = s.get(17..19)?.parse().ok()?;
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hour > 23 || min > 59 || sec > 60 {
+        return None;
+    }
+    // Fractional seconds → ms: the first up to 3 digits after a '.', right-padded.
+    let frac_ms: i64 = if s.as_bytes().get(19) == Some(&b'.') {
+        let mut d = String::new();
+        for c in s.get(20..).unwrap_or("").chars() {
+            if c.is_ascii_digit() && d.len() < 3 {
+                d.push(c);
+            } else {
+                break;
+            }
+        }
+        while d.len() < 3 {
+            d.push('0');
+        }
+        d.parse().unwrap_or(0)
+    } else {
+        0
+    };
+    // days since 1970-01-01 (civil → days), then to seconds + ms.
+    let y = if month <= 2 { year - 1 } else { year };
+    let era = (if y >= 0 { y } else { y - 399 }) / 400;
+    let yoe = y - era * 400;
+    let mp = if month > 2 { month - 3 } else { month + 9 };
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe - 719468;
+    let secs = days * 86400 + hour * 3600 + min * 60 + sec;
+    if secs < 0 {
+        return None;
+    }
+    Some((secs * 1000 + frac_ms) as u64)
+}
+
+/// Map one entity's HA history array (the inner array from `/api/history/period`'s array-of-arrays)
+/// to NUMERIC samples on `ha.<entity_id>.state` — the SAME id the live stream produces, so backfill
+/// merges into one series. Non-numeric states (on/off/strings) and unparseable timestamps are
+/// skipped. No `Json` variant: backfill exists only to feed numeric sparkline history. Pure seam.
+fn history_to_samples(entity_id: &str, history: &Value) -> Vec<SensorSample> {
+    let id = format!("ha.{entity_id}.state");
+    let Some(rows) = history.as_array() else {
+        return Vec::new();
+    };
+    rows.iter()
+        .filter_map(|st| {
+            let n = st["state"].as_str()?.parse::<f64>().ok()?;
+            let ts_str = st["last_changed"]
+                .as_str()
+                .or_else(|| st["last_updated"].as_str())?;
+            let ts = iso8601_to_ms(ts_str)?;
+            Some(SensorSample::scalar(id.clone(), ts, n))
+        })
+        .collect()
+}
+
 /// Classify an auth-phase frame: `Some(Ok)` on `auth_ok` (capturing `ha_version`), `Some(Err)`
 /// on `auth_invalid`, `None` for any other frame (keep reading). Pure — unit-tested without I/O.
 fn auth_outcome(v: &Value) -> Option<Result<HaTestResult, String>> {
@@ -756,9 +838,119 @@ pub async fn ha_call_service<R: Runtime>(
     resp.json().await.map_err(|e| e.to_string())
 }
 
+/// Fetch historical state for ONE entity over [start, end] (ISO-8601 UTC) via REST
+/// `/api/history/period`, returning NUMERIC samples on `ha.<entity_id>.state` for sparkline
+/// backfill. `minimal_response` + `significant_changes_only` + numeric-only keep the payload small;
+/// the caller ingests the result into its OWN hub (no telemetry emit), so each window backfills once
+/// without double-counting. Errors never include the token.
+#[tauri::command]
+pub async fn ha_history<R: Runtime>(
+    app: AppHandle<R>,
+    entity_id: String,
+    start: String,
+    end: String,
+) -> Result<Vec<SensorSample>, String> {
+    if !valid_entity_id(&entity_id) {
+        return Err("invalid entity_id".to_string());
+    }
+    // `start` is interpolated into the URL PATH (`end` into a query) — require a real ISO-8601
+    // timestamp so neither can carry path/query separators (`/`, `?`, `#`) or other junk.
+    if iso8601_to_ms(&start).is_none() || iso8601_to_ms(&end).is_none() {
+        return Err("invalid time range".to_string());
+    }
+    let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
+    let client = ha_http_client(cfg.insecure)?;
+    // parse_with_params percent-encodes the query (the ISO `end_time` carries ':' and '+').
+    let url = reqwest::Url::parse_with_params(
+        &format!(
+            "{}/api/history/period/{}",
+            rest_base(&cfg.url, &cfg.base_path),
+            start
+        ),
+        &[
+            ("filter_entity_id", entity_id.as_str()),
+            ("end_time", end.as_str()),
+            ("minimal_response", ""),
+            ("significant_changes_only", ""),
+        ],
+    )
+    .map_err(|e| e.to_string())?;
+    let resp = client
+        .get(url)
+        .bearer_auth(&cfg.token)
+        .timeout(std::time::Duration::from_secs(120))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("GET /api/history failed: {}", resp.status()));
+    }
+    // HA returns an array-of-arrays (one inner array per filtered entity); we filtered to one.
+    let data: Vec<Value> = resp.json().await.map_err(|e| e.to_string())?;
+    Ok(data
+        .first()
+        .map(|h| history_to_samples(&entity_id, h))
+        .unwrap_or_default())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn valid_entity_id_accepts_slugs_rejects_injection() {
+        assert!(valid_entity_id("sensor.cpu_temp"));
+        assert!(valid_entity_id("binary_sensor.front_door"));
+        assert!(valid_entity_id("input_number.x1"));
+        assert!(!valid_entity_id("x/api/admin"));
+        assert!(!valid_entity_id("../etc"));
+        assert!(!valid_entity_id("a.b.c"));
+        assert!(!valid_entity_id(""));
+        assert!(!valid_entity_id("sensor."));
+        assert!(!valid_entity_id("Sensor.X")); // uppercase is not a slug
+    }
+
+    #[test]
+    fn iso8601_parses_to_ms_as_utc() {
+        assert_eq!(iso8601_to_ms("1970-01-01T00:00:00+00:00"), Some(0));
+        assert_eq!(
+            iso8601_to_ms("2021-01-01T00:00:00.000+00:00"),
+            Some(1_609_459_200_000)
+        );
+        // fractional seconds → ms (first 3 digits)
+        assert_eq!(
+            iso8601_to_ms("2021-01-01T00:00:00.789012+00:00"),
+            Some(1_609_459_200_789)
+        );
+        assert_eq!(
+            iso8601_to_ms("2021-01-01T00:00:00.5Z"),
+            Some(1_609_459_200_500)
+        );
+        assert_eq!(iso8601_to_ms("not-a-date"), None);
+        assert_eq!(iso8601_to_ms("2021-13-01T00:00:00Z"), None);
+    }
+
+    #[test]
+    fn history_to_samples_keeps_numeric_only_with_ts() {
+        let hist = json!([
+            { "state": "21.6", "last_changed": "2021-01-01T00:00:00+00:00" },
+            { "state": "unavailable", "last_changed": "2021-01-01T00:01:00+00:00" },
+            { "state": "22.0", "last_updated": "2021-01-01T00:02:00+00:00" }
+        ]);
+        let samples = history_to_samples("sensor.temp", &hist);
+        assert_eq!(samples.len(), 2);
+        assert_eq!(samples[0].sensor, "ha.sensor.temp.state");
+        assert_eq!(samples[0].ts_ms, 1_609_459_200_000);
+        assert!(matches!(samples[0].value, SensorValue::Scalar(v) if (v - 21.6).abs() < 1e-9));
+        // the second numeric row falls back to last_updated for its ts
+        assert_eq!(samples[1].ts_ms, 1_609_459_320_000);
+    }
+
+    #[test]
+    fn history_to_samples_empty_on_non_array() {
+        assert!(history_to_samples("sensor.x", &Value::Null).is_empty());
+        assert!(history_to_samples("sensor.x", &json!([])).is_empty());
+    }
 
     #[test]
     fn ws_url_maps_scheme_and_appends_path() {
