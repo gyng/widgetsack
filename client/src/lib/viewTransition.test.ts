@@ -12,7 +12,7 @@ afterEach(() => {
 });
 
 const setReducedMotion = (reduced: boolean): void => {
-	window.matchMedia = vi.fn(() => ({ matches: reduced }) as unknown as MediaQueryList);
+	window.matchMedia = vi.fn(() => ({ matches: reduced } as unknown as MediaQueryList));
 };
 
 describe('viewTransition', () => {
