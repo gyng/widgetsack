@@ -442,7 +442,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		description:
 			'Pressable button that runs a macro of {domain, service, data} calls (HA services or media transport).',
 		binds: 'none',
-		label: 'Button',
+		label: 'Button / Macro',
 		category: 'Utility',
 		defaultSize: { w: 90, h: 44 },
 		defaultConfig: { label: 'tap', actions: [] },

@@ -172,9 +172,9 @@ Analog clock face with hour / minute / second hands (self-sourcing).
 | `accent` | color |  |  |  |
 | `face` | color |  |  | face fill (default transparent) |
 
-### Button — `button`
+### Button / Macro — `button`
 
-![Button widget](img/widgets/button.png)
+![Button / Macro widget](img/widgets/button.png)
 
 Pressable button that runs a macro of {domain, service, data} calls (HA services or media transport).
 
