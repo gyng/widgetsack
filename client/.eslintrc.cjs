@@ -22,5 +22,13 @@ module.exports = {
 	},
 	settings: {
 		react: { version: 'detect' }
-	}
+	},
+	overrides: [
+		{
+			// Test code may use non-null assertions on values it has just constructed / knows are defined
+			// (e.g. asserting on a Patch's `monitor`). Production code keeps the strict rule.
+			files: ['**/*.test.ts', '**/*.test.tsx'],
+			rules: { '@typescript-eslint/no-non-null-assertion': 'off' }
+		}
+	]
 };
