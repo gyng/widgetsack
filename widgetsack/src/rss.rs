@@ -97,7 +97,10 @@ fn extract_tag(block: &str, tag: &str) -> Option<String> {
     let close = format!("</{tag}>");
     let end = block[gt + 1..].find(&close)? + gt + 1;
     let raw = block[gt + 1..end].trim();
-    if let Some(inner) = raw.strip_prefix("<![CDATA[").and_then(|s| s.strip_suffix("]]>")) {
+    if let Some(inner) = raw
+        .strip_prefix("<![CDATA[")
+        .and_then(|s| s.strip_suffix("]]>"))
+    {
         Some(inner.trim().to_string())
     } else {
         Some(unescape(raw))
@@ -169,7 +172,9 @@ fn rss_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
 pub fn load_rss_config<R: Runtime>(app: &AppHandle<R>) -> Result<Option<RssConfig>, String> {
     let path = rss_config_path(app)?;
     match std::fs::read_to_string(&path) {
-        Ok(txt) => serde_json::from_str(&txt).map(Some).map_err(|e| e.to_string()),
+        Ok(txt) => serde_json::from_str(&txt)
+            .map(Some)
+            .map_err(|e| e.to_string()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err.to_string()),
     }
@@ -377,7 +382,13 @@ mod tests {
         let items = parse_feed_items(xml, 10);
         assert_eq!(items.len(), 3);
         // The channel title is NOT picked up — only item titles.
-        assert_eq!(items[0], FeedItem { title: "First & Foremost".into(), link: "https://ex.com/1".into() });
+        assert_eq!(
+            items[0],
+            FeedItem {
+                title: "First & Foremost".into(),
+                link: "https://ex.com/1".into()
+            }
+        );
         assert_eq!(items[1].title, "Second <b>story</b>"); // CDATA kept literal
         assert_eq!(items[1].link, "https://ex.com/2");
     }
@@ -391,7 +402,13 @@ mod tests {
         </feed>"#;
         let items = parse_feed_items(xml, 10);
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0], FeedItem { title: "Alpha".into(), link: "https://ex.com/a".into() });
+        assert_eq!(
+            items[0],
+            FeedItem {
+                title: "Alpha".into(),
+                link: "https://ex.com/a".into()
+            }
+        );
         assert_eq!(items[1].link, "https://ex.com/b");
     }
 
@@ -408,7 +425,10 @@ mod tests {
 
     #[test]
     fn feed_to_samples_emits_json_list_and_count() {
-        let items = vec![FeedItem { title: "X".into(), link: "u".into() }];
+        let items = vec![FeedItem {
+            title: "X".into(),
+            link: "u".into(),
+        }];
         let s = feed_to_samples(&items, 5);
         assert_eq!(s[0].sensor, "rss.list");
         assert!(matches!(s[0].value, SensorValue::Json(_)));
@@ -420,7 +440,12 @@ mod tests {
 
     #[test]
     fn has_feed_requires_an_http_url() {
-        let mk = |u: &str| RssConfig { url: u.into(), count: 8, title: String::new(), poll_interval_secs: 900 };
+        let mk = |u: &str| RssConfig {
+            url: u.into(),
+            count: 8,
+            title: String::new(),
+            poll_interval_secs: 900,
+        };
         assert!(has_feed(&mk("https://example.com/feed.xml")));
         assert!(has_feed(&mk("http://lan.local/rss")));
         assert!(!has_feed(&mk("")));

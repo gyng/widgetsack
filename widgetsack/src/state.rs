@@ -3,7 +3,7 @@ use std::{collections::HashMap, time::SystemTime};
 use serde::Serialize;
 
 use crate::bridge::{SESSION_CREATE_EVENT, SESSION_DELETE_EVENT, SESSION_UPDATE_EVENT};
-use crate::{event::NpSessionEvent, log, ManagerEventWrapper, SessionUpdateEventWrapper};
+use crate::{ManagerEventWrapper, SessionUpdateEventWrapper, event::NpSessionEvent, log};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionRecord {
@@ -209,7 +209,10 @@ mod tests {
         );
         let (_, media_delta) = updater(&mut sessions, NpSessionEvent::Update(7, media_ev));
         assert!(
-            media_delta.expect("media update yields a record").last_media_update.is_some(),
+            media_delta
+                .expect("media update yields a record")
+                .last_media_update
+                .is_some(),
             "a media update must ship its album art"
         );
 
@@ -220,7 +223,10 @@ mod tests {
         );
         assert_eq!(kind, "session_update");
         assert!(
-            model_delta.expect("model update yields a record").last_media_update.is_none(),
+            model_delta
+                .expect("model update yields a record")
+                .last_media_update
+                .is_none(),
             "an emitted model/timeline update must not re-ship the (unchanged) album art"
         );
         // …but the STORED record keeps it, so get_initial_sessions / the frontend retain the cover.
@@ -247,7 +253,10 @@ mod tests {
         let ev = NpSessionEvent::Delete(7, ManagerEventWrapper::SessionRemoved { session_id: 7 });
         let (kind, delta) = updater(&mut sessions, ev);
         assert_eq!(kind, "session_delete");
-        assert!(delta.is_some(), "deleting a tracked session returns its record");
+        assert!(
+            delta.is_some(),
+            "deleting a tracked session returns its record"
+        );
         // …and it is gone from the map afterwards.
         assert!(!sessions.contains_key(&7));
     }

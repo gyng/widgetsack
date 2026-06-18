@@ -100,7 +100,7 @@ pub fn current_work_area(window: tauri::WebviewWindow) -> Result<ScreenRect, Str
 fn work_area_for(window: &tauri::WebviewWindow) -> Result<ScreenRect, String> {
     use windows::Win32::Foundation::POINT;
     use windows::Win32::Graphics::Gdi::{
-        GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
+        GetMonitorInfoW, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromPoint,
     };
 
     let monitor = window
@@ -141,7 +141,10 @@ fn work_area_for(_window: &tauri::WebviewWindow) -> Result<ScreenRect, String> {
 /// surviving Show Desktop (the Wallpaper-Engine trick). When disabled, re-attach it to the
 /// desktop root so it's a normal top-level overlay again. Windows-only; a no-op error elsewhere.
 #[tauri::command]
-pub fn set_overlay_wallpaper(window: tauri::WebviewWindow, enabled: bool) -> Result<String, String> {
+pub fn set_overlay_wallpaper(
+    window: tauri::WebviewWindow,
+    enabled: bool,
+) -> Result<String, String> {
     set_wallpaper_parent(&window, enabled)
 }
 
@@ -149,7 +152,7 @@ pub fn set_overlay_wallpaper(window: tauri::WebviewWindow, enabled: bool) -> Res
 fn set_wallpaper_parent(window: &tauri::WebviewWindow, enabled: bool) -> Result<String, String> {
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FindWindowW, SendMessageTimeoutW, SetParent, SMTO_NORMAL,
+        EnumWindows, FindWindowW, SMTO_NORMAL, SendMessageTimeoutW, SetParent,
     };
     use windows::core::w;
 
@@ -185,7 +188,10 @@ fn set_wallpaper_parent(window: &tauri::WebviewWindow, enabled: bool) -> Result<
     let mut worker = HWND::default();
     for attempt in 0..10 {
         unsafe {
-            let _ = EnumWindows(Some(enum_find_workerw), LPARAM(&mut worker as *mut HWND as isize));
+            let _ = EnumWindows(
+                Some(enum_find_workerw),
+                LPARAM(&mut worker as *mut HWND as isize),
+            );
         }
         if !worker.is_invalid() {
             break;
@@ -210,7 +216,7 @@ unsafe extern "system" fn enum_find_workerw(
 ) -> windows::core::BOOL {
     use windows::Win32::Foundation::{HWND, TRUE};
     use windows::Win32::UI::WindowsAndMessaging::FindWindowExW;
-    use windows::core::{w, BOOL};
+    use windows::core::{BOOL, w};
 
     let defview =
         unsafe { FindWindowExW(Some(top), None, w!("SHELLDLL_DefView"), None) }.unwrap_or_default();

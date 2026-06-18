@@ -71,13 +71,33 @@ pub fn wifi_samples_from(info: &WifiInfo, ts: u64) -> Vec<SensorSample> {
     if !info.ssid.is_empty() {
         out.push(SensorSample::text("net.wifi.ssid", ts, info.ssid.clone()));
     }
-    out.push(SensorSample::scalar("net.wifi.signal", ts, f64::from(info.quality.min(100))));
-    out.push(SensorSample::scalar("net.wifi.rssi", ts, f64::from(rssi_from_quality(info.quality))));
+    out.push(SensorSample::scalar(
+        "net.wifi.signal",
+        ts,
+        f64::from(info.quality.min(100)),
+    ));
+    out.push(SensorSample::scalar(
+        "net.wifi.rssi",
+        ts,
+        f64::from(rssi_from_quality(info.quality)),
+    ));
     // kbps → Mbps for display (Wi-Fi link rates read in Mbps).
-    out.push(SensorSample::scalar("net.wifi.rx", ts, f64::from(info.rx_kbps) / 1000.0));
-    out.push(SensorSample::scalar("net.wifi.tx", ts, f64::from(info.tx_kbps) / 1000.0));
+    out.push(SensorSample::scalar(
+        "net.wifi.rx",
+        ts,
+        f64::from(info.rx_kbps) / 1000.0,
+    ));
+    out.push(SensorSample::scalar(
+        "net.wifi.tx",
+        ts,
+        f64::from(info.tx_kbps) / 1000.0,
+    ));
     if info.channel > 0 {
-        out.push(SensorSample::scalar("net.wifi.channel", ts, f64::from(info.channel)));
+        out.push(SensorSample::scalar(
+            "net.wifi.channel",
+            ts,
+            f64::from(info.channel),
+        ));
         let band = band_from_channel(info.channel);
         if !band.is_empty() {
             out.push(SensorSample::text("net.wifi.band", ts, band));
@@ -97,9 +117,9 @@ fn read_wifi() -> Option<WifiInfo> {
     use std::ptr::null_mut;
     use windows::Win32::Foundation::HANDLE;
     use windows::Win32::NetworkManagement::WiFi::{
+        WLAN_CONNECTION_ATTRIBUTES, WLAN_INTERFACE_INFO_LIST, WlanCloseHandle, WlanEnumInterfaces,
+        WlanFreeMemory, WlanOpenHandle, WlanQueryInterface, wlan_interface_state_connected,
         wlan_intf_opcode_channel_number, wlan_intf_opcode_current_connection,
-        wlan_interface_state_connected, WlanCloseHandle, WlanEnumInterfaces, WlanFreeMemory,
-        WlanOpenHandle, WlanQueryInterface, WLAN_CONNECTION_ATTRIBUTES, WLAN_INTERFACE_INFO_LIST,
     };
 
     const WLAN_API_VERSION_2_0: u32 = 2;
@@ -116,8 +136,10 @@ fn read_wifi() -> Option<WifiInfo> {
         // SAFETY: fills `list_ptr` with a WlanFreeMemory-owned interface list.
         let info = if WlanEnumInterfaces(handle, None, &mut list_ptr) == 0 && !list_ptr.is_null() {
             let list = &*list_ptr;
-            let ifaces =
-                std::slice::from_raw_parts(list.InterfaceInfo.as_ptr(), list.dwNumberOfItems as usize);
+            let ifaces = std::slice::from_raw_parts(
+                list.InterfaceInfo.as_ptr(),
+                list.dwNumberOfItems as usize,
+            );
             let mut found = None;
             for iface in ifaces {
                 if iface.isState != wlan_interface_state_connected {
@@ -139,7 +161,8 @@ fn read_wifi() -> Option<WifiInfo> {
                 {
                     let conn = &*(data as *const WLAN_CONNECTION_ATTRIBUTES);
                     let assoc = &conn.wlanAssociationAttributes;
-                    let len = (assoc.dot11Ssid.uSSIDLength as usize).min(assoc.dot11Ssid.ucSSID.len());
+                    let len =
+                        (assoc.dot11Ssid.uSSIDLength as usize).min(assoc.dot11Ssid.ucSSID.len());
                     let mut wifi = WifiInfo {
                         ssid: ssid_to_string(&assoc.dot11Ssid.ucSSID[..len]),
                         quality: assoc.wlanSignalQuality,

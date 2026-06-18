@@ -79,10 +79,14 @@ fn weather_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String
     Ok(dir.join("plugins").join("weather.json"))
 }
 
-pub fn load_weather_config<R: Runtime>(app: &AppHandle<R>) -> Result<Option<WeatherConfig>, String> {
+pub fn load_weather_config<R: Runtime>(
+    app: &AppHandle<R>,
+) -> Result<Option<WeatherConfig>, String> {
     let path = weather_config_path(app)?;
     match std::fs::read_to_string(&path) {
-        Ok(txt) => serde_json::from_str(&txt).map(Some).map_err(|e| e.to_string()),
+        Ok(txt) => serde_json::from_str(&txt)
+            .map(Some)
+            .map_err(|e| e.to_string()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err.to_string()),
     }
@@ -160,8 +164,14 @@ fn weather_to_samples(body: &Value, unit_letter: &str, ts_ms: u64) -> Vec<Sensor
     scalar("weather.uv", cur["uv_index"].as_f64());
     scalar("weather.code", cur["weather_code"].as_f64());
     scalar("weather.is_day", cur["is_day"].as_f64());
-    scalar("weather.high", body["daily"]["temperature_2m_max"][0].as_f64());
-    scalar("weather.low", body["daily"]["temperature_2m_min"][0].as_f64());
+    scalar(
+        "weather.high",
+        body["daily"]["temperature_2m_max"][0].as_f64(),
+    );
+    scalar(
+        "weather.low",
+        body["daily"]["temperature_2m_min"][0].as_f64(),
+    );
     // Multi-day forecast: weather.day.N.{high,low,code} for each day Open-Meteo returned (day 0 = today,
     // duplicating weather.high/low which are kept for back-compat). A short array just yields fewer days.
     let highs = body["daily"]["temperature_2m_max"].as_array();
@@ -323,7 +333,11 @@ pub async fn save_weather_config(
     let cfg = WeatherConfig {
         latitude,
         longitude,
-        unit: if unit.is_empty() { default_unit() } else { unit },
+        unit: if unit.is_empty() {
+            default_unit()
+        } else {
+            unit
+        },
         poll_interval_secs: poll_seconds.clamp(MIN_INTERVAL, MAX_INTERVAL),
     };
     let txt = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
@@ -453,7 +467,9 @@ mod tests {
     #[test]
     fn body_maps_to_current_plus_highlow_plus_unit() {
         let s = weather_to_samples(&sample_body(), "C", 7);
-        let v = |id: &str| serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone();
+        let v = |id: &str| {
+            serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone()
+        };
         assert_eq!(v("weather.temp"), 12.3);
         assert_eq!(v("weather.humidity"), 80.0);
         assert_eq!(v("weather.apparent"), 10.1);
@@ -469,7 +485,9 @@ mod tests {
     #[test]
     fn daily_arrays_become_per_day_forecast_samples() {
         let s = weather_to_samples(&sample_body(), "C", 0);
-        let v = |id: &str| serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone();
+        let v = |id: &str| {
+            serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone()
+        };
         // Day 0 mirrors today's high/low and carries the code.
         assert_eq!(v("weather.day.0.high"), 15.0);
         assert_eq!(v("weather.day.0.low"), 8.0);
@@ -489,9 +507,12 @@ mod tests {
         assert!(u.contains("european_aqi"));
         assert!(u.contains("latitude=51.5"));
 
-        let body = json!({ "current": { "european_aqi": 34, "us_aqi": 51, "pm2_5": 8.2, "pm10": 14.0 } });
+        let body =
+            json!({ "current": { "european_aqi": 34, "us_aqi": 51, "pm2_5": 8.2, "pm10": 14.0 } });
         let s = air_to_samples(&body, 9);
-        let v = |id: &str| serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone();
+        let v = |id: &str| {
+            serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone()
+        };
         assert_eq!(v("weather.air.aqi"), 34.0);
         assert_eq!(v("weather.air.us_aqi"), 51.0);
         assert_eq!(v("weather.air.pm25"), 8.2);
@@ -503,7 +524,9 @@ mod tests {
     #[test]
     fn sunrise_and_sunset_ride_along_as_text() {
         let s = weather_to_samples(&sample_body(), "C", 0);
-        let v = |id: &str| serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone();
+        let v = |id: &str| {
+            serde_json::to_value(find(&s, id).unwrap()).unwrap()["value"]["value"].clone()
+        };
         assert_eq!(v("weather.sun.rise"), "2026-06-14T05:12");
         assert_eq!(v("weather.sun.set"), "2026-06-14T21:30");
     }
@@ -544,7 +567,8 @@ mod tests {
 
     #[test]
     fn config_defaults_keep_a_minimal_json_valid() {
-        let cfg: WeatherConfig = serde_json::from_str(r#"{ "latitude": 51.5, "longitude": -0.1 }"#).unwrap();
+        let cfg: WeatherConfig =
+            serde_json::from_str(r#"{ "latitude": 51.5, "longitude": -0.1 }"#).unwrap();
         assert_eq!(cfg.unit, "celsius");
         assert_eq!(cfg.poll_interval_secs, 900);
     }

@@ -149,7 +149,10 @@ pub fn aggregate(conns: &[RawConn], names: &HashMap<u32, String>) -> (Vec<ProcCo
         // Drop pids with nothing established or listening (e.g. only transient states seen).
         .filter(|(_, a)| a.established > 0 || a.listening > 0)
         .map(|(pid, a)| ProcConn {
-            proc: names.get(&pid).cloned().unwrap_or_else(|| format!("pid {pid}")),
+            proc: names
+                .get(&pid)
+                .cloned()
+                .unwrap_or_else(|| format!("pid {pid}")),
             pid,
             established: a.established,
             listening: a.listening,
@@ -168,7 +171,11 @@ pub fn aggregate(conns: &[RawConn], names: &HashMap<u32, String>) -> (Vec<ProcCo
 }
 
 /// Build the `net.conn.*` samples from raw rows + a pid→name map. Pure seam — fully unit-tested.
-pub fn build_samples(ts: u64, conns: &[RawConn], names: &HashMap<u32, String>) -> Vec<SensorSample> {
+pub fn build_samples(
+    ts: u64,
+    conns: &[RawConn],
+    names: &HashMap<u32, String>,
+) -> Vec<SensorSample> {
     let (rows, totals) = aggregate(conns, names);
     let list = serde_json::to_value(&rows).unwrap_or(serde_json::Value::Null);
     vec![
@@ -196,9 +203,8 @@ fn read_tcp_table() -> Vec<RawConn> {
     let mut size: u32 = 0;
     // First call sizes the buffer (expects ERROR_INSUFFICIENT_BUFFER).
     // SAFETY: a sizing call — null table pointer, size-out only.
-    let rc = unsafe {
-        GetExtendedTcpTable(None, &mut size, false, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0)
-    };
+    let rc =
+        unsafe { GetExtendedTcpTable(None, &mut size, false, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) };
     if rc != ERROR_INSUFFICIENT_BUFFER.0 || size == 0 {
         return Vec::new();
     }
@@ -238,7 +244,7 @@ fn read_tcp_table() -> Vec<RawConn> {
 fn process_names() -> HashMap<u32, String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+        CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
         TH32CS_SNAPPROCESS,
     };
 
@@ -254,7 +260,11 @@ fn process_names() -> HashMap<u32, String> {
     // SAFETY: `pe.dwSize` is set; First/Next fill `pe` until they return Err (end of list).
     if unsafe { Process32FirstW(snap, &mut pe) }.is_ok() {
         loop {
-            let len = pe.szExeFile.iter().position(|&c| c == 0).unwrap_or(pe.szExeFile.len());
+            let len = pe
+                .szExeFile
+                .iter()
+                .position(|&c| c == 0)
+                .unwrap_or(pe.szExeFile.len());
             let name = String::from_utf16_lossy(&pe.szExeFile[..len]);
             if !name.is_empty() {
                 map.insert(pe.th32ProcessID, name);
@@ -336,19 +346,57 @@ mod tests {
     fn aggregate_counts_and_ranks_by_public_talkers() {
         let conns = vec![
             // chrome: two established to public + one to a private LAN host.
-            RawConn { pid: 100, state: STATE_ESTAB, remote_addr: addr(8, 8, 8, 8), remote_port: port(443) },
-            RawConn { pid: 100, state: STATE_ESTAB, remote_addr: addr(1, 1, 1, 1), remote_port: port(443) },
-            RawConn { pid: 100, state: STATE_ESTAB, remote_addr: addr(192, 168, 1, 9), remote_port: port(445) },
+            RawConn {
+                pid: 100,
+                state: STATE_ESTAB,
+                remote_addr: addr(8, 8, 8, 8),
+                remote_port: port(443),
+            },
+            RawConn {
+                pid: 100,
+                state: STATE_ESTAB,
+                remote_addr: addr(1, 1, 1, 1),
+                remote_port: port(443),
+            },
+            RawConn {
+                pid: 100,
+                state: STATE_ESTAB,
+                remote_addr: addr(192, 168, 1, 9),
+                remote_port: port(445),
+            },
             // svchost: a listener only.
-            RawConn { pid: 200, state: STATE_LISTEN, remote_addr: addr(0, 0, 0, 0), remote_port: port(135) },
+            RawConn {
+                pid: 200,
+                state: STATE_LISTEN,
+                remote_addr: addr(0, 0, 0, 0),
+                remote_port: port(135),
+            },
             // foo: one established to a public host.
-            RawConn { pid: 300, state: STATE_ESTAB, remote_addr: addr(93, 184, 216, 34), remote_port: port(80) },
+            RawConn {
+                pid: 300,
+                state: STATE_ESTAB,
+                remote_addr: addr(93, 184, 216, 34),
+                remote_port: port(80),
+            },
             // transient state is ignored.
-            RawConn { pid: 300, state: 4 /* SYN_SENT */, remote_addr: addr(5, 5, 5, 5), remote_port: port(80) },
+            RawConn {
+                pid: 300,
+                state: 4, /* SYN_SENT */
+                remote_addr: addr(5, 5, 5, 5),
+                remote_port: port(80),
+            },
         ];
-        let (rows, totals) = aggregate(&conns, &names(&[(100, "chrome.exe"), (200, "svchost.exe")]));
+        let (rows, totals) =
+            aggregate(&conns, &names(&[(100, "chrome.exe"), (200, "svchost.exe")]));
 
-        assert_eq!(totals, ConnTotals { established: 4, listening: 1, public: 3 });
+        assert_eq!(
+            totals,
+            ConnTotals {
+                established: 4,
+                listening: 1,
+                public: 3
+            }
+        );
         // chrome (2 public) ranks before foo (1 public) before svchost (0 public, listener).
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].proc, "chrome.exe");

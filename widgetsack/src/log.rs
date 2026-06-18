@@ -221,7 +221,12 @@ pub fn error(target: &'static str, message: impl Into<String>) -> LogBuilder {
 
 /// A compact one-liner for the console / panic hook: `LEVEL target: message k=v …`.
 fn console_line(record: &LogRecord) -> String {
-    let mut line = format!("{} {}: {}", record.level.label(), record.target, record.message);
+    let mut line = format!(
+        "{} {}: {}",
+        record.level.label(),
+        record.target,
+        record.message
+    );
     for (k, v) in &record.fields {
         line.push_str(&format!(" {k}={v}"));
     }

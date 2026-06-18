@@ -81,7 +81,11 @@ pub fn reconcile(app: &tauri::AppHandle) {
     let Some(want) = reconcile_action(read_pref(), current) else {
         return;
     };
-    let result = if want { manager.enable() } else { manager.disable() };
+    let result = if want {
+        manager.enable()
+    } else {
+        manager.disable()
+    };
     if let Err(err) = result {
         crate::log::error("startup", "failed to reconcile autostart from preference")
             .field("enable", want)

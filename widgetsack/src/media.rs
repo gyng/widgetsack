@@ -131,7 +131,7 @@ fn resolve_session(
     source: Option<&str>,
 ) -> Result<Option<windows::Media::Control::GlobalSystemMediaTransportControlsSession>, String> {
     use windows::Media::Control::GlobalSystemMediaTransportControlsSessionManager as Manager;
-    use windows::Win32::System::Com::{CoInitializeEx, COINIT_MULTITHREADED};
+    use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
 
     // Best-effort: S_OK / S_FALSE (already inited) / RPC_E_CHANGED_MODE are all fine to ignore.
     unsafe {
@@ -173,7 +173,11 @@ fn session_for_source(
 }
 
 #[cfg(not(target_os = "windows"))]
-async fn control(_action: String, _source: Option<String>, _value: Option<f64>) -> Result<(), String> {
+async fn control(
+    _action: String,
+    _source: Option<String>,
+    _value: Option<f64>,
+) -> Result<(), String> {
     Err("media control is only available on Windows".to_string())
 }
 

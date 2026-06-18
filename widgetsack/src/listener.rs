@@ -186,7 +186,10 @@ mod tests {
         assert_eq!(value["content_type"], "image/png");
         assert_eq!(value["bytes"], data.len() as u64);
         // The whole point: the encoded bytes must NOT cross the JSON bridge.
-        assert!(value.get("data").is_none(), "raw cover bytes must not be serialized");
+        assert!(
+            value.get("data").is_none(),
+            "raw cover bytes must not be serialized"
+        );
         // The url is the content-hash scheme URL the webview's <img> fetches.
         assert_eq!(
             value["url"],

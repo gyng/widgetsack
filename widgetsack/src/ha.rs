@@ -20,11 +20,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use futures_util::{SinkExt, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::async_runtime::{JoinHandle, Mutex};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
-use tokio_tungstenite::{connect_async, connect_async_tls_with_config, Connector};
+use tokio_tungstenite::{Connector, connect_async, connect_async_tls_with_config};
 
 use crate::log;
 use crate::sensors::{SensorSample, SensorValue, TELEMETRY_EVENT};
@@ -142,7 +142,9 @@ fn ha_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
 pub fn load_ha_config<R: Runtime>(app: &AppHandle<R>) -> Result<Option<HaConfig>, String> {
     let path = ha_config_path(app)?;
     match std::fs::read_to_string(&path) {
-        Ok(txt) => serde_json::from_str(&txt).map(Some).map_err(|e| e.to_string()),
+        Ok(txt) => serde_json::from_str(&txt)
+            .map(Some)
+            .map_err(|e| e.to_string()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err.to_string()),
     }
@@ -424,7 +426,10 @@ async fn ws_request_many(
             None => return Err("stream ended during registry fetch".into()),
         }
     }
-    Ok(results.into_iter().map(|r| r.unwrap_or(Value::Null)).collect())
+    Ok(results
+        .into_iter()
+        .map(|r| r.unwrap_or(Value::Null))
+        .collect())
 }
 
 /// One connection lifecycle: connect → auth → seed snapshot → subscribe → stream events.
@@ -598,7 +603,9 @@ pub async fn ha_test_connection(
         .await
         .map_err(|e| e.to_string())?;
     let auth = json!({ "type": "auth", "access_token": token }).to_string();
-    ws.send(Message::Text(auth)).await.map_err(|e| e.to_string())?;
+    ws.send(Message::Text(auth))
+        .await
+        .map_err(|e| e.to_string())?;
     while let Some(msg) = ws.next().await {
         if let Message::Text(txt) = msg.map_err(|e| e.to_string())? {
             let v: Value = serde_json::from_str(&txt).map_err(|e| e.to_string())?;
@@ -667,7 +674,10 @@ pub async fn list_ha_entities<R: Runtime>(app: AppHandle<R>) -> Result<Vec<HaEnt
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let client = ha_http_client(cfg.insecure)?;
     let resp = client
-        .get(format!("{}/api/states", rest_base(&cfg.url, &cfg.base_path)))
+        .get(format!(
+            "{}/api/states",
+            rest_base(&cfg.url, &cfg.base_path)
+        ))
         .bearer_auth(&cfg.token)
         .send()
         .await
@@ -701,8 +711,14 @@ pub async fn ha_registry_snapshot<R: Runtime>(app: AppHandle<R>) -> Result<HaReg
     let as_rows = |v: &Value| v.as_array().cloned().unwrap_or_default();
     Ok(HaRegistry {
         areas: as_rows(&results[0]).iter().filter_map(area_from).collect(),
-        devices: as_rows(&results[1]).iter().filter_map(device_from).collect(),
-        entities: as_rows(&results[2]).iter().filter_map(entity_reg_from).collect(),
+        devices: as_rows(&results[1])
+            .iter()
+            .filter_map(device_from)
+            .collect(),
+        entities: as_rows(&results[2])
+            .iter()
+            .filter_map(entity_reg_from)
+            .collect(),
     })
 }
 
@@ -758,9 +774,18 @@ mod tests {
 
     #[test]
     fn ws_url_strips_trailing_slash_and_passes_ws_schemes() {
-        assert_eq!(ws_url_from("http://ha:8123/", ""), "ws://ha:8123/api/websocket");
-        assert_eq!(ws_url_from("ws://ha:8123", ""), "ws://ha:8123/api/websocket");
-        assert_eq!(ws_url_from("wss://ha:8123/", ""), "wss://ha:8123/api/websocket");
+        assert_eq!(
+            ws_url_from("http://ha:8123/", ""),
+            "ws://ha:8123/api/websocket"
+        );
+        assert_eq!(
+            ws_url_from("ws://ha:8123", ""),
+            "ws://ha:8123/api/websocket"
+        );
+        assert_eq!(
+            ws_url_from("wss://ha:8123/", ""),
+            "wss://ha:8123/api/websocket"
+        );
         // No scheme defaults to ws://.
         assert_eq!(ws_url_from("ha:8123", ""), "ws://ha:8123/api/websocket");
     }
@@ -873,13 +898,16 @@ mod tests {
         assert_eq!(ok.ha_version.as_deref(), Some("2026.6.0"));
 
         // auth_ok without a version is still a success.
-        let ok2 = auth_outcome(&json!({ "type": "auth_ok" })).unwrap().unwrap();
+        let ok2 = auth_outcome(&json!({ "type": "auth_ok" }))
+            .unwrap()
+            .unwrap();
         assert!(ok2.ha_version.is_none());
 
         // auth_invalid maps to a descriptive error (so the UI can say "bad token").
-        let err = auth_outcome(&json!({ "type": "auth_invalid", "message": "Invalid access token" }))
-            .unwrap()
-            .unwrap_err();
+        let err =
+            auth_outcome(&json!({ "type": "auth_invalid", "message": "Invalid access token" }))
+                .unwrap()
+                .unwrap_err();
         assert!(err.contains("auth_invalid"));
         assert!(err.contains("Invalid access token"));
 

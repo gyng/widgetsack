@@ -211,7 +211,9 @@ fn agenda_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String>
 pub fn load_agenda_config<R: Runtime>(app: &AppHandle<R>) -> Result<Option<AgendaConfig>, String> {
     let path = agenda_config_path(app)?;
     match std::fs::read_to_string(&path) {
-        Ok(txt) => serde_json::from_str(&txt).map(Some).map_err(|e| e.to_string()),
+        Ok(txt) => serde_json::from_str(&txt)
+            .map(Some)
+            .map_err(|e| e.to_string()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err.to_string()),
     }
@@ -407,14 +409,23 @@ mod tests {
     #[test]
     fn ics_to_iso_handles_the_three_forms() {
         assert_eq!(ics_to_iso("20261231"), Some(("2026-12-31".into(), true)));
-        assert_eq!(ics_to_iso("20261231T180000Z"), Some(("2026-12-31T18:00:00Z".into(), false)));
-        assert_eq!(ics_to_iso("20261231T093000"), Some(("2026-12-31T09:30:00".into(), false)));
+        assert_eq!(
+            ics_to_iso("20261231T180000Z"),
+            Some(("2026-12-31T18:00:00Z".into(), false))
+        );
+        assert_eq!(
+            ics_to_iso("20261231T093000"),
+            Some(("2026-12-31T09:30:00".into(), false))
+        );
         assert_eq!(ics_to_iso("garbage"), None);
     }
 
     #[test]
     fn unescape_ics_decodes_text_escapes() {
-        assert_eq!(unescape_ics("Lunch with Bob\\, then gym"), "Lunch with Bob, then gym");
+        assert_eq!(
+            unescape_ics("Lunch with Bob\\, then gym"),
+            "Lunch with Bob, then gym"
+        );
         assert_eq!(unescape_ics("line1\\nline2"), "line1 line2");
     }
 
@@ -436,12 +447,15 @@ mod tests {
             END:VCALENDAR";
         let ev = parse_ics_events(ics, 10);
         assert_eq!(ev.len(), 2); // the third (no SUMMARY) is skipped
-        assert_eq!(ev[0], AgendaEvent {
-            summary: "Standup".into(),
-            start: "2026-12-31T09:30:00".into(),
-            all_day: false,
-            location: "Room 2".into(),
-        });
+        assert_eq!(
+            ev[0],
+            AgendaEvent {
+                summary: "Standup".into(),
+                start: "2026-12-31T09:30:00".into(),
+                all_day: false,
+                location: "Room 2".into(),
+            }
+        );
         assert_eq!(ev[1].summary, "All-day off");
         assert!(ev[1].all_day);
         assert_eq!(ev[1].start, "2027-01-01");
@@ -479,13 +493,23 @@ mod tests {
 
     #[test]
     fn normalize_url_rewrites_webcal() {
-        assert_eq!(normalize_url("webcal://ex.com/cal.ics"), "https://ex.com/cal.ics");
-        assert_eq!(normalize_url("https://ex.com/cal.ics"), "https://ex.com/cal.ics");
+        assert_eq!(
+            normalize_url("webcal://ex.com/cal.ics"),
+            "https://ex.com/cal.ics"
+        );
+        assert_eq!(
+            normalize_url("https://ex.com/cal.ics"),
+            "https://ex.com/cal.ics"
+        );
     }
 
     #[test]
     fn has_feed_accepts_http_and_webcal() {
-        let mk = |u: &str| AgendaConfig { url: u.into(), title: String::new(), poll_interval_secs: 1800 };
+        let mk = |u: &str| AgendaConfig {
+            url: u.into(),
+            title: String::new(),
+            poll_interval_secs: 1800,
+        };
         assert!(has_feed(&mk("https://ex.com/c.ics")));
         assert!(has_feed(&mk("webcal://ex.com/c.ics")));
         assert!(!has_feed(&mk("ftp://x")));

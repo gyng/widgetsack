@@ -18,15 +18,15 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::async_runtime::{JoinHandle, Mutex};
 use tauri::{AppHandle, Manager, Runtime};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Semaphore;
 
-use crate::log;
 use crate::AppState;
+use crate::log;
 
 const MAX_HEAD: usize = 16 * 1024;
 const MAX_BODY: usize = 256 * 1024;
@@ -244,7 +244,12 @@ async fn handle_conn<R: Runtime>(app: AppHandle<R>, token: String, mut stream: T
     }
     // Everything else needs the bearer token.
     if !bearer_ok(&head.headers, &token) {
-        write_resp(&mut stream, "401 Unauthorized", &json!({ "error": "unauthorized" })).await;
+        write_resp(
+            &mut stream,
+            "401 Unauthorized",
+            &json!({ "error": "unauthorized" }),
+        )
+        .await;
         return;
     }
 
@@ -261,16 +266,31 @@ async fn handle_conn<R: Runtime>(app: AppHandle<R>, token: String, mut stream: T
                 .iter()
                 .filter_map(|r| serde_json::to_value(r).ok())
                 .collect();
-            write_resp(&mut stream, "200 OK", &json!(now_playing_from_records(&values))).await;
+            write_resp(
+                &mut stream,
+                "200 OK",
+                &json!(now_playing_from_records(&values)),
+            )
+            .await;
         }
         ("POST", "/media") => {
             if !is_json(&head.headers) {
-                write_resp(&mut stream, "415 Unsupported Media Type", &json!({ "error": "send application/json" })).await;
+                write_resp(
+                    &mut stream,
+                    "415 Unsupported Media Type",
+                    &json!({ "error": "send application/json" }),
+                )
+                .await;
                 return;
             }
             let v: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
             let Some(action) = v["action"].as_str().map(String::from) else {
-                write_resp(&mut stream, "400 Bad Request", &json!({ "error": "missing action" })).await;
+                write_resp(
+                    &mut stream,
+                    "400 Bad Request",
+                    &json!({ "error": "missing action" }),
+                )
+                .await;
                 return;
             };
             let source = v["source"].as_str().map(String::from);
@@ -282,23 +302,42 @@ async fn handle_conn<R: Runtime>(app: AppHandle<R>, token: String, mut stream: T
         }
         ("POST", "/ha") => {
             if !is_json(&head.headers) {
-                write_resp(&mut stream, "415 Unsupported Media Type", &json!({ "error": "send application/json" })).await;
+                write_resp(
+                    &mut stream,
+                    "415 Unsupported Media Type",
+                    &json!({ "error": "send application/json" }),
+                )
+                .await;
                 return;
             }
             let v: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
             let domain = v["domain"].as_str().unwrap_or("").to_string();
             let service = v["service"].as_str().unwrap_or("").to_string();
             if domain.is_empty() || service.is_empty() {
-                write_resp(&mut stream, "400 Bad Request", &json!({ "error": "missing domain/service" })).await;
+                write_resp(
+                    &mut stream,
+                    "400 Bad Request",
+                    &json!({ "error": "missing domain/service" }),
+                )
+                .await;
                 return;
             }
             let data = v.get("data").cloned().unwrap_or_else(|| json!({}));
             match crate::ha::ha_call_service(app.clone(), domain, service, data).await {
-                Ok(res) => write_resp(&mut stream, "200 OK", &json!({ "ok": true, "result": res })).await,
+                Ok(res) => {
+                    write_resp(&mut stream, "200 OK", &json!({ "ok": true, "result": res })).await
+                }
                 Err(e) => write_resp(&mut stream, "502 Bad Gateway", &json!({ "error": e })).await,
             }
         }
-        _ => write_resp(&mut stream, "404 Not Found", &json!({ "error": "not found" })).await,
+        _ => {
+            write_resp(
+                &mut stream,
+                "404 Not Found",
+                &json!({ "error": "not found" }),
+            )
+            .await
+        }
     }
 }
 
@@ -308,7 +347,9 @@ async fn run_control_server<R: Runtime>(app: AppHandle<R>, listener: TcpListener
     let token = gen_token();
     let url = format!("http://127.0.0.1:{port}");
     write_control_file(&app, &url, &token);
-    log::info("control", "agent control listening").field("url", &url).emit();
+    log::info("control", "agent control listening")
+        .field("url", &url)
+        .emit();
 
     let sem = Arc::new(Semaphore::new(MAX_CONNS));
     loop {
@@ -327,7 +368,9 @@ async fn run_control_server<R: Runtime>(app: AppHandle<R>, listener: TcpListener
                 });
             }
             Err(e) => {
-                log::warn("control", "accept failed").field("error", e.to_string()).emit();
+                log::warn("control", "accept failed")
+                    .field("error", e.to_string())
+                    .emit();
             }
         }
     }
@@ -355,14 +398,18 @@ pub async fn start_if_enabled<R: Runtime>(app: AppHandle<R>, state: &ControlStat
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(l) => l,
         Err(e) => {
-            log::error("control", "bind failed").field("error", e.to_string()).emit();
+            log::error("control", "bind failed")
+                .field("error", e.to_string())
+                .emit();
             return;
         }
     };
     let port = match listener.local_addr() {
         Ok(a) => a.port(),
         Err(e) => {
-            log::error("control", "local_addr failed").field("error", e.to_string()).emit();
+            log::error("control", "local_addr failed")
+                .field("error", e.to_string())
+                .emit();
             return;
         }
     };
