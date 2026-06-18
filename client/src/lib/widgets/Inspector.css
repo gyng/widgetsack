@@ -42,10 +42,24 @@
 	font-size: var(--text-sm);
 }
 
+/* A MAJOR palette section header (Templates / Library) — full-width, set off from the section above
+   with a hairline rule + breathing room, so the top-level groups read as distinct sections rather
+   than running together under uniform gaps. Scoped to palette CHILDREN so the many other `.hd`
+   headers in the property panel (config labels, Align, Visibility, Params, node headers…) keep their
+   plain styling. */
+.inspector .palette > .hd {
+	flex: 1 1 100%;
+	margin-top: var(--space-4);
+	padding-top: var(--space-4);
+	border-top: 1px solid var(--ui-border);
+}
+
 /* A palette CATEGORY header (Meters / Clocks / Utility / per-plugin) — one step below .hd
-   (dim, not accent) so the widget-type groups don't compete with the Library/Templates sections. */
+   (dim, not accent) so the widget-type groups don't compete with the Library/Templates sections.
+   A small top margin separates adjacent categories without the heavy rule of a major section. */
 .inspector .hd2 {
 	flex: 1 1 100%;
+	margin-top: var(--space-2);
 	color: var(--ui-fg-dim);
 	text-transform: uppercase;
 	letter-spacing: 1px;
@@ -592,7 +606,6 @@
 /* Add-palette filter (search) + its no-matches note. */
 .inspector .palette-filter {
 	width: 100%;
-	margin-bottom: var(--space-3);
 }
 .inspector .palette-empty {
 	color: var(--ui-fg-dim);

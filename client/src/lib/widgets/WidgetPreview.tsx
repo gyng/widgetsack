@@ -29,6 +29,9 @@ function seedHub(now: number): TelemetryHub {
 	series('net.down', (i) => 1_400_000 + 1_300_000 * Math.abs(Math.sin(i * 0.5)));
 	series('net.up', (i) => 300_000 + 500_000 * Math.abs(Math.sin(i * 0.6)));
 	series('gpu.util', (i) => clamp(40 + 30 * Math.sin(i * 0.5), 2, 99));
+	// Per-core series so the Cpu widget (which discovers cpu.core.* from the hub) has a grid to draw.
+	for (let c = 0; c < 8; c++)
+		series(`cpu.core.${c}`, (i) => clamp(28 + 45 * Math.abs(Math.sin(i * 0.3 + c)), 2, 99));
 	const points: Record<string, number> = {
 		'mem.used': 61,
 		'swap.used': 12,
@@ -43,6 +46,22 @@ function seedHub(now: number): TelemetryHub {
 		hub.ingest({ sensor, ts_ms: now, value: { kind: 'scalar', value } });
 	return hub;
 }
+
+// Types whose live render needs a real backend / device / per-instance binding (media, audio FFT, a
+// chosen image or URL, a monitor, a microphone…), so a seeded-hub demo is just blank. Show a small
+// "shows live data" placeholder for these instead of an empty box — the popover still names + describes
+// the widget below the stage.
+const NO_DEMO = new Set([
+	'nowplaying',
+	'spectrum',
+	'assistant',
+	'transcribe',
+	'monitorswitch',
+	'audioswitch',
+	'volume',
+	'image',
+	'iframe'
+]);
 
 type Props = {
 	// One of: a widget type (single meter) OR a tree (def/template) with its native size.
@@ -67,6 +86,26 @@ export default function WidgetPreview({ type, node, size, w = 200, h = 120 }: Pr
 		return { tree: null, nat: { w, h } };
 	}, [type, node, size, w, h]);
 
+	if (type && NO_DEMO.has(type))
+		return (
+			<div
+				style={{
+					width: w,
+					height: h,
+					display: 'flex',
+					alignItems: 'center',
+					justifyContent: 'center',
+					padding: '0 10px',
+					boxSizing: 'border-box',
+					textAlign: 'center',
+					color: 'var(--ui-fg-dim)',
+					fontSize: 'var(--text-sm)',
+					fontStyle: 'italic'
+				}}
+			>
+				shows live data
+			</div>
+		);
 	if (!tree) return null;
 	const scale = Math.min(w / nat.w, h / nat.h, 1);
 	const renderLeaf: RenderLeaf = (lf, id) => (

@@ -15,6 +15,7 @@ import {
 	useRef,
 	useState
 } from 'react';
+import { flushSync } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
@@ -107,6 +108,7 @@ import {
 	syncInteractiveRects,
 	applyOverlayPresentation
 } from '../overlay';
+import { startViewTransition } from '../viewTransition';
 import { TelemetryHubContext } from './telemetryContext';
 import { listMicrophones } from '../stt';
 import {
@@ -1320,7 +1322,11 @@ export default function Canvas({ studio = false }: Props) {
 				if (action === 'stay') return;
 				foldOpenDef();
 			}
-			setNavSection(id);
+			// Cross-fade the section swap (View Transitions where supported): snapshots the old + new
+			// panels and blends them, which both polishes the change AND avoids the stage flashing
+			// through behind the incoming panel. flushSync so the new section is in the DOM when the
+			// transition captures its "after" snapshot.
+			startViewTransition(() => flushSync(() => setNavSection(id)));
 		},
 		[designing, previewing, defDirty, editingDefName, foldOpenDef]
 	);
@@ -1946,13 +1952,14 @@ export default function Canvas({ studio = false }: Props) {
 		// Index the SAME grouped sequence the NavRail renders (main group, then foot), so Ctrl+1..8
 		// lands on the i-th visible rail button even if the section groups are reordered independently.
 		const s = RAIL_ORDER[index];
-		if (s) setNavSection(s.id);
+		if (s) startViewTransition(() => flushSync(() => setNavSection(s.id)));
 	}, []);
 	const cycleSection = useCallback((delta: number) => {
 		if (designingRef.current) return;
 		const ids = RAIL_ORDER.map((s) => s.id);
 		const i = ids.indexOf(navSectionRef.current);
-		setNavSection(ids[(i + delta + ids.length) % ids.length]);
+		const next = ids[(i + delta + ids.length) % ids.length];
+		startViewTransition(() => flushSync(() => setNavSection(next)));
 	}, []);
 
 	// Select every widget on the monitor (Ctrl+A) — the distinct selectIds across all renderables, i.e.
