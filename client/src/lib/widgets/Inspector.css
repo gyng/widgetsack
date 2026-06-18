@@ -581,3 +581,21 @@
 	color: var(--ui-fg-dim);
 	line-height: 1.3;
 }
+.inspector .palette-preview .pp-hint {
+	margin-top: 2px;
+	font-size: var(--text-sm);
+	color: var(--ui-fg-dim);
+	font-style: italic;
+	opacity: 0.85;
+}
+
+/* Add-palette filter (search) + its no-matches note. */
+.inspector .palette-filter {
+	width: 100%;
+	margin-bottom: var(--space-3);
+}
+.inspector .palette-empty {
+	color: var(--ui-fg-dim);
+	font-size: var(--text-sm);
+	padding: var(--space-2);
+}

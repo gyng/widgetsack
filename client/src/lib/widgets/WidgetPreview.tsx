@@ -1,20 +1,21 @@
-// A small live preview of ONE widget TYPE, for the Add-palette hover popover (Tier 2). Generalises
-// ThemePreview: seed a self-contained telemetry hub with demo data so data-bound meters (gauge /
-// sparkline / text / cpu …) look alive, instantiate the type via createWidget (its defaults), and
-// render it through the real WidgetHost — so the preview matches exactly how the widget renders on the
-// canvas, theme tokens and all. Self-sourcing / bespoke widgets that need the backend (now-playing,
-// spectrum, HA…) simply render their idle/empty state here, which still previews their chrome.
+// A small live preview of a palette entry, for the Add-palette hover popover (Tier 2). Renders EITHER
+// a single widget TYPE (its createWidget defaults) OR an arbitrary tree (a library def's `child` or a
+// template's `tree()`), through the real FlowNode + WidgetHost against a seeded telemetry hub — so the
+// preview matches how it renders on the canvas, theme tokens and all. A tree is drawn at its native
+// size and scaled to fit the box. Self-sourcing / bespoke widgets that need the backend (now-playing,
+// spectrum, HA…) just render their idle state here, which still previews their chrome.
 import { useMemo } from 'react';
 import { createTelemetryHub, type SensorSample, type TelemetryHub } from '../core/telemetry';
 import { createWidget } from '../core/widget';
+import { leaf, type LayoutNode, type WidgetInstance } from '../core/layoutTree';
 import { TelemetryHubContext } from './telemetryContext';
 import WidgetHost from './WidgetHost';
+import FlowNode, { type RenderLeaf } from './FlowNode';
 
 const clamp = (v: number, lo: number, hi: number): number => Math.min(hi, Math.max(lo, v));
 
-// Seed the common sensors so most meters show something representative. Series for the history-based
-// meters (gauge/sparkline/cpu), point values for the scalar text/bars. Mirrors ThemePreview's seed,
-// broadened a little (gpu/net-up/swap/battery) since the palette previews every type.
+// Seed the common sensors so data-bound meters (gauge/sparkline/cpu/text/…) look representative.
+// Mirrors ThemePreview's seed, broadened (gpu/net-up/swap/battery) since the palette previews any type.
 function seedHub(now: number): TelemetryHub {
 	const hub = createTelemetryHub();
 	const series = (sensor: string, gen: (i: number) => number, n = 40): void => {
@@ -43,28 +44,52 @@ function seedHub(now: number): TelemetryHub {
 	return hub;
 }
 
-export default function WidgetPreview({
-	type,
-	w = 200,
-	h = 120
-}: {
-	type: string;
-	w?: number;
+type Props = {
+	// One of: a widget type (single meter) OR a tree (def/template) with its native size.
+	type?: string;
+	node?: LayoutNode;
+	size?: { w: number; h: number };
+	w?: number; // preview box
 	h?: number;
-}) {
-	const { hub, inst } = useMemo(() => {
-		const now = Date.now();
-		const i = createWidget(type, `preview-${type}`);
-		i.rect = { x: 0, y: 0, w, h };
-		return { hub: seedHub(now), inst: i };
-	}, [type, w, h]);
+};
 
-	// position:relative box at the preview size; WidgetHost positions its meter within it.
+export default function WidgetPreview({ type, node, size, w = 200, h = 120 }: Props) {
+	const hub = useMemo(() => seedHub(Date.now()), []);
+	// Normalise to a (tree, native-size) pair: a type becomes a one-leaf tree at the box size (scale 1);
+	// a def/template tree keeps its authored size and is scaled to fit.
+	const { tree, nat } = useMemo<{ tree: LayoutNode | null; nat: { w: number; h: number } }>(() => {
+		if (type) {
+			const inst = createWidget(type, `preview-${type}`);
+			inst.rect = { x: 0, y: 0, w, h };
+			return { tree: leaf(inst), nat: { w, h } };
+		}
+		if (node && size) return { tree: node, nat: size };
+		return { tree: null, nat: { w, h } };
+	}, [type, node, size, w, h]);
+
+	if (!tree) return null;
+	const scale = Math.min(w / nat.w, h / nat.h, 1);
+	const renderLeaf: RenderLeaf = (lf, id) => (
+		<WidgetHost flow hub={hub} instance={lf.unit as WidgetInstance} domId={id} selectId={id} />
+	);
+
 	return (
-		<div style={{ position: 'relative', width: w, height: h }}>
-			<TelemetryHubContext.Provider value={hub}>
-				<WidgetHost hub={hub} instance={inst} />
-			</TelemetryHubContext.Provider>
+		<div style={{ position: 'relative', width: w, height: h, overflow: 'hidden' }}>
+			<div
+				style={{
+					position: 'absolute',
+					top: 0,
+					left: 0,
+					width: nat.w,
+					height: nat.h,
+					transform: scale !== 1 ? `scale(${scale})` : undefined,
+					transformOrigin: 'top left'
+				}}
+			>
+				<TelemetryHubContext.Provider value={hub}>
+					<FlowNode node={tree} parentKind="col" renderLeaf={renderLeaf} fill />
+				</TelemetryHubContext.Provider>
+			</div>
 		</div>
 	);
 }

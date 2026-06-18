@@ -88,19 +88,10 @@
 	font-size: var(--text-lg);
 	z-index: 7;
 	pointer-events: auto;
-	/* A quick fade + tiny rise on open, so swapping sections reads as "new screen" not a hard cut. */
-	animation: rail-panel-in var(--motion, 150ms) var(--ease-out, ease-out);
-}
-
-@keyframes rail-panel-in {
-	from {
-		opacity: 0;
-		transform: translateY(-4px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
+	/* No entry animation: the panel is opaque and covers the whole stage, so fading it up from
+	   opacity:0 briefly revealed the layout/stage behind it — a flash on every tab switch. An instant,
+	   opaque swap is flash-free. (A content-only fade could return the "new screen" cue without
+	   exposing the stage, but the hard swap is the safe fix.) */
 }
 
 /* A picker grid (widget types / templates) that spreads across the full-screen panel. */

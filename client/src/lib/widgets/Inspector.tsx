@@ -2,7 +2,14 @@
 // the selected node — widget props (sensor / rect / config / dock·float) or container
 // props (kind / cols / gap / pad / align / justify / grow). Emits a single `op` event;
 // all state + persistence lives in Canvas.
-import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from 'react';
+import {
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+	type DragEvent as ReactDragEvent
+} from 'react';
 import type {
 	Align,
 	AlignH,
@@ -310,23 +317,27 @@ export default function Inspector({
 	const [addOpen, setAddOpen] = useState(!hasSelection);
 
 	// Add-palette hover preview (Tier 2): a floating popover with a live demo render of the hovered
-	// widget type. Debounced so a quick pass over the chips doesn't spin up a render; positioned to the
-	// LEFT of the chip (the palette is the right rail) and clamped into the viewport.
-	const [palettePreview, setPalettePreview] = useState<{
-		type: string;
-		top: number;
-		left: number;
-	} | null>(null);
+	// entry — a widget type, OR a library def / template tree. Debounced so a quick pass doesn't spin up
+	// a render; positioned to the LEFT (the palette is the right rail) and clamped into the viewport.
+	type PreviewSpec = {
+		label: string;
+		desc?: string;
+		hint: string;
+		type?: string; // a single widget
+		node?: LayoutNode; // a def / template tree (with its native size)
+		size?: { w: number; h: number };
+	};
+	const [palettePreview, setPalettePreview] = useState<
+		(PreviewSpec & { top: number; left: number }) | null
+	>(null);
 	const previewTimer = useRef<number | null>(null);
-	const showPreview = (type: string, el: HTMLElement): void => {
+	const previewRef = useRef<HTMLDivElement | null>(null);
+	const showPreview = (spec: PreviewSpec, el: HTMLElement): void => {
 		if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
 		previewTimer.current = window.setTimeout(() => {
 			const r = el.getBoundingClientRect();
-			const pw = 232;
-			const ph = 196;
-			const left = Math.max(8, r.left - pw - 10);
-			const top = Math.min(Math.max(8, r.top - 8), Math.max(8, window.innerHeight - ph - 8));
-			setPalettePreview({ type, top, left });
+			const left = Math.max(8, r.left - 232 - 10);
+			setPalettePreview({ ...spec, top: Math.max(8, r.top - 8), left });
 		}, 280);
 	};
 	const hidePreview = (): void => {
@@ -342,11 +353,33 @@ export default function Inspector({
 		},
 		[]
 	);
+	// Keep the popover on-screen: after render, clamp its top so the bottom isn't cut off (its height
+	// varies with the description, so a fixed estimate clipped tall cards hovered near the bottom).
+	useLayoutEffect(() => {
+		const el = previewRef.current;
+		if (!el || !palettePreview) return;
+		const top = Math.min(palettePreview.top, Math.max(8, window.innerHeight - el.offsetHeight - 8));
+		el.style.top = `${Math.max(8, top)}px`;
+	}, [palettePreview]);
 	useEffect(() => {
 		setAddOpen(!hasSelection);
 	}, [hasSelection]);
 	// Built-ins + one group per enabled plugin package (re-renders on package toggle).
 	const templateGroups = useTemplateGroups();
+
+	// Add-palette filter: one search box narrows widgets + templates + library by name/type/description.
+	const [paletteFilter, setPaletteFilter] = useState('');
+	const pq = paletteFilter.trim().toLowerCase();
+	const pmatch = (...parts: (string | undefined)[]): boolean =>
+		!pq || parts.some((p) => p?.toLowerCase().includes(pq));
+	const fWidgetGroups = groupPalette(
+		widgetTypes.filter((w) => pmatch(w.label, w.type, getMeta(w.type)?.description))
+	);
+	const fDefs = defs.filter((d) => pmatch(d.name));
+	const fTemplateGroups = templateGroups
+		.map((g) => ({ ...g, templates: g.templates.filter((t) => pmatch(t.name, t.description)) }))
+		.filter((g) => g.templates.length);
+	const paletteEmpty = !fWidgetGroups.length && !fDefs.length && !fTemplateGroups.length;
 
 	// Sensor combobox options: friendly "Name (unit)" label, the raw id kept as the value + shown as a
 	// dim hint. A bare id (no metadata) is its own label with no hint. Drives the typeahead sensor field.
@@ -655,22 +688,24 @@ export default function Inspector({
 	return (
 		<div className={['inspector', docked && 'docked'].filter(Boolean).join(' ')}>
 			{/* Add-palette hover preview (Tier 2): a fixed popover with a live demo render of the hovered
-			    widget type, plus its name + one-line description. */}
+			    entry (a widget type, or a library def / template tree), its name, description + a hint. */}
 			{palettePreview ? (
 				<div
+					ref={previewRef}
 					className="palette-preview"
 					style={{ top: palettePreview.top, left: palettePreview.left }}
 				>
 					<div className="pp-stage">
-						<WidgetPreview type={palettePreview.type} />
+						<WidgetPreview
+							type={palettePreview.type}
+							node={palettePreview.node}
+							size={palettePreview.size}
+						/>
 					</div>
 					<div className="pp-meta">
-						<span className="pp-name">
-							{getMeta(palettePreview.type)?.label ?? palettePreview.type}
-						</span>
-						{getMeta(palettePreview.type)?.description ? (
-							<span className="pp-desc">{getMeta(palettePreview.type)?.description}</span>
-						) : null}
+						<span className="pp-name">{palettePreview.label}</span>
+						{palettePreview.desc ? <span className="pp-desc">{palettePreview.desc}</span> : null}
+						<span className="pp-hint">{palettePreview.hint}</span>
 					</div>
 				</div>
 			) : null}
@@ -680,9 +715,19 @@ export default function Inspector({
 				onToggle={(e) => setAddOpen(e.currentTarget.open)}
 			>
 				<summary>＋ Add widget · {addDest}</summary>
-				{/* Grouped by meta.category in first-seen order (uncategorized falls into "Other") —
-				    ~20 ungrouped same-weight chips made find-by-scan fail. */}
-				{groupPalette(widgetTypes).map((g) => (
+				{/* One search box narrows widgets + templates + library at once — ~20 widgets plus
+				    templates + library made find-by-scan slow. */}
+				<input
+					className="palette-filter"
+					type="search"
+					placeholder="Filter widgets, templates, library…"
+					value={paletteFilter}
+					onChange={(e) => setPaletteFilter(e.currentTarget.value)}
+					aria-label="Filter the add palette"
+				/>
+
+				{/* Widgets, grouped by meta.category (first-seen order; uncategorized falls into "Other"). */}
+				{fWidgetGroups.map((g) => (
 					<div key={g.category} className="palette">
 						<span className="hd2">{g.category}</span>
 						{g.items.map((w) => (
@@ -690,19 +735,26 @@ export default function Inspector({
 								key={w.type}
 								type="button"
 								draggable
-								title={[
-									getMeta(w.type)?.description,
-									container
-										? `Add "${w.label}" into the selected ${container.kind} — or drag it onto the canvas / a container in the Outline to place it elsewhere`
-										: `Add "${w.label}" as a floating widget — or drag it onto the canvas / a container in the Outline`
-								]
-									.filter(Boolean)
-									.join('\n\n')}
+								// No native `title` tooltip — the hover preview popover is the richer replacement
+								// (both at once was redundant). The description stays as the aria-label for a11y.
+								aria-label={[w.label, getMeta(w.type)?.description].filter(Boolean).join(' — ')}
 								onClick={() => {
 									hidePreview();
 									op({ op: 'addWidget', widgetType: w.type });
 								}}
-								onMouseEnter={(e) => showPreview(w.type, e.currentTarget)}
+								onMouseEnter={(e) =>
+									showPreview(
+										{
+											label: w.label,
+											desc: getMeta(w.type)?.description,
+											hint: container
+												? `Click to add into the ${container.kind} · drag to place`
+												: 'Click to add · drag to place',
+											type: w.type
+										},
+										e.currentTarget
+									)
+								}
 								onMouseLeave={hidePreview}
 								onDragStart={(e: ReactDragEvent) => {
 									hidePreview();
@@ -715,15 +767,76 @@ export default function Inspector({
 					</div>
 				))}
 
-				{defs.length ? (
+				{/* Templates: insert a STANDALONE inline copy (the designer rail's ⎘ clones one into an
+				    editable library widget instead). 👁 jumps to the designer's read-only preview. Groups
+				    come from the registry: built-ins first, then one per enabled plugin package. */}
+				{fTemplateGroups.map((g) => (
+					<div key={g.group} className="palette">
+						<span className="hd">
+							{g.group === BUILTIN_TEMPLATE_GROUP ? 'Templates' : `Templates · ${g.group}`}
+						</span>
+						{g.templates.map((t) =>
+							t.params?.length ? (
+								<TemplateOptionsForm
+									key={t.id}
+									t={t}
+									onInsert={(options) => op({ op: 'insertTemplate', templateId: t.id, options })}
+									onPreview={onPreviewTemplate}
+								/>
+							) : (
+								<span key={t.id} className="libitem">
+									<button
+										type="button"
+										aria-label={[t.name, t.description].filter(Boolean).join(' — ')}
+										onClick={() => {
+											hidePreview();
+											op({ op: 'insertTemplate', templateId: t.id });
+										}}
+										onMouseEnter={(e) =>
+											showPreview(
+												{
+													label: t.name,
+													desc: t.description,
+													hint: 'Click to insert a standalone copy',
+													node: t.tree(),
+													size: t.size
+												},
+												e.currentTarget
+											)
+										}
+										onMouseLeave={hidePreview}
+									>
+										{t.name}
+									</button>
+									{onPreviewTemplate && (
+										<TemplatePreviewButton t={t} onPreview={onPreviewTemplate} />
+									)}
+								</span>
+							)
+						)}
+					</div>
+				))}
+
+				{/* Library: your saved widget defs (insert an instance linked to the def). */}
+				{fDefs.length ? (
 					<div className="palette">
 						<span className="hd">Library</span>
-						{defs.map((d) => (
+						{fDefs.map((d) => (
 							<span key={d.id} className="libitem">
 								<button
 									type="button"
-									title={d.name}
-									onClick={() => op({ op: 'insertWidget', defId: d.id })}
+									aria-label={d.name}
+									onClick={() => {
+										hidePreview();
+										op({ op: 'insertWidget', defId: d.id });
+									}}
+									onMouseEnter={(e) =>
+										showPreview(
+											{ label: d.name, hint: 'Click to insert', node: d.child, size: d.size },
+											e.currentTarget
+										)
+									}
+									onMouseLeave={hidePreview}
 								>
 									{d.name}
 								</button>
@@ -743,41 +856,9 @@ export default function Inspector({
 					</div>
 				) : null}
 
-				{/* Inserting from here drops a STANDALONE inline copy (no library def) — the designer
-				    rail's ⎘ is the path that clones a template into an editable library widget. The
-				    titles say which is which; 👁 jumps to the designer's read-only preview. Groups come
-				    from the template registry: built-ins first, then one group per enabled plugin
-				    package (under the package's name). */}
-				{templateGroups.map((g) => (
-					<div key={g.group} className="palette">
-						<span className="hd">
-							{g.group === BUILTIN_TEMPLATE_GROUP ? 'Templates' : `Templates · ${g.group}`}
-						</span>
-						{g.templates.map((t) =>
-							t.params?.length ? (
-								<TemplateOptionsForm
-									key={t.id}
-									t={t}
-									onInsert={(options) => op({ op: 'insertTemplate', templateId: t.id, options })}
-									onPreview={onPreviewTemplate}
-								/>
-							) : (
-								<span key={t.id} className="libitem">
-									<button
-										type="button"
-										title={`${t.description} — inserts a standalone copy onto the canvas (not linked to the library)`}
-										onClick={() => op({ op: 'insertTemplate', templateId: t.id })}
-									>
-										{t.name}
-									</button>
-									{onPreviewTemplate && (
-										<TemplatePreviewButton t={t} onPreview={onPreviewTemplate} />
-									)}
-								</span>
-							)
-						)}
-					</div>
-				))}
+				{paletteEmpty ? (
+					<div className="palette-empty">No matches for “{paletteFilter}”.</div>
+				) : null}
 			</details>
 
 			{node && (
