@@ -64,6 +64,12 @@ export default defineConfig({
 				// Resize/MutationObserver (happy-dom returns zero rects). Its pure seam screenRectToLayout
 				// is unit-tested in core/measureMath.test.ts; the rest is runtime/e2e only.
 				'src/lib/widgets/canvas/useMeasuredRects.ts',
+				// canvas-2D / FFT-stream draw glue: the substance is imperative draw() on a 2D context
+				// happy-dom doesn't provide (getContext returns null, client sizes are 0). The pure geometry
+				// is unit-tested in cpuCoresMath / sparklineMath / spectrumMath.test.ts; acquire/release is
+				// in Spectrum.test.ts. Same class as audio/**.
+				'src/lib/widgets/meters/CpuCoresCanvas.tsx',
+				'src/lib/widgets/meters/Spectrum.tsx',
 				// Tauri IO adapters (invoke/listen/emit + window/monitor manipulation)
 				'src/lib/overlay.ts',
 				'src/lib/diag.ts',
