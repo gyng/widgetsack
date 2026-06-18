@@ -40,6 +40,41 @@ export default defineConfig({
 		environment: 'happy-dom',
 		globals: true,
 		setupFiles: ['./src/test-setup.ts'],
-		include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}']
+		include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
+		coverage: {
+			provider: 'v8',
+			all: true,
+			reporter: ['text', 'json-summary', 'text-summary'],
+			include: ['src/**/*.{ts,tsx}'],
+			// Principled exclusions: code that unit tests can't cover usefully. Bootstrap + dev-only
+			// mocks; the Canvas organism + studio interactions are covered by the Playwright e2e suite
+			// (test:e2e), not happy-dom; and the thin Tauri IO adapters (invoke/listen/emit + window
+			// manipulation) are integration glue, not unit logic. Everything else is held to 100%.
+			exclude: [
+				'src/**/*.{test,spec}.{ts,tsx}',
+				'src/test-setup.ts',
+				'src/**/*.d.ts',
+				// bootstrap / dev-only
+				'src/main.tsx',
+				'src/App.tsx',
+				'src/lib/devMock.ts',
+				// e2e-driven (Playwright)
+				'src/lib/widgets/Canvas.tsx',
+				// Tauri IO adapters (invoke/listen/emit + window/monitor manipulation)
+				'src/lib/overlay.ts',
+				'src/lib/diag.ts',
+				'src/lib/utils/**',
+				'src/lib/audio/**',
+				'src/lib/windows/**',
+				'src/lib/ddc/**',
+				'src/lib/telemetry/**',
+				'src/lib/components/NowPlaying/source.ts',
+				'src/lib/components/NowPlaying/np-source.ts',
+				'src/lib/widgets/plugins/*-source.ts',
+				'src/lib/widgets/plugins/*-commands.ts',
+				'src/mcp/server.ts'
+			],
+			thresholds: { 100: true }
+		}
 	}
 });

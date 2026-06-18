@@ -107,6 +107,17 @@ describe('conditionMet — sensor', () => {
 		expect(conditionMet(c, ctx([], s(90)))).toBe(true);
 		expect(conditionMet(c, ctx([], s(50)))).toBe(false);
 	});
+	it('>=, <, <= numeric operators', () => {
+		const ge: Condition = { kind: 'sensor', sensorId: 'cpu.total', op: '>=', value: '80' };
+		expect(conditionMet(ge, ctx([], s(80)))).toBe(true);
+		expect(conditionMet(ge, ctx([], s(79)))).toBe(false);
+		const lt: Condition = { kind: 'sensor', sensorId: 'cpu.total', op: '<', value: '80' };
+		expect(conditionMet(lt, ctx([], s(79)))).toBe(true);
+		expect(conditionMet(lt, ctx([], s(80)))).toBe(false);
+		const le: Condition = { kind: 'sensor', sensorId: 'cpu.total', op: '<=', value: '80' };
+		expect(conditionMet(le, ctx([], s(80)))).toBe(true);
+		expect(conditionMet(le, ctx([], s(81)))).toBe(false);
+	});
 	it('missing sensor → not satisfied', () => {
 		const c: Condition = { kind: 'sensor', sensorId: 'cpu.total', op: '>', value: '80' };
 		expect(conditionMet(c, ctx([], {}))).toBe(false);

@@ -51,6 +51,13 @@ describe('resizeRect', () => {
 		expect(resizeRect(r, 'w', 100, 0, 1, 16)).toEqual({ x: 44, y: 10, w: 16, h: 40 });
 	});
 
+	it('clamps the minimum HEIGHT too, keeping the opposite edge fixed', () => {
+		// south edge dragged up past the minimum: height pins to min, top unchanged
+		expect(resizeRect(r, 's', 0, -100, 1, 16)).toEqual({ x: 10, y: 10, w: 50, h: 16 });
+		// north edge dragged down past the minimum: top moves so the south edge stays fixed
+		expect(resizeRect(r, 'n', 0, 100, 1, 16)).toEqual({ x: 10, y: 34, w: 50, h: 16 });
+	});
+
 	it('snaps only the moved edge to the grid', () => {
 		expect(resizeRect(r, 'e', 3, 0, 8)).toEqual({ x: 10, y: 10, w: 54, h: 40 });
 	});

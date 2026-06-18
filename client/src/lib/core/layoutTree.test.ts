@@ -9,6 +9,7 @@ import {
 	isGroup,
 	isLeaf,
 	leaf,
+	monitorHasWidgets,
 	resolvePad,
 	ROOT_PAD,
 	type Group
@@ -87,5 +88,25 @@ describe('guards', () => {
 		const g: Group = group('g', { w: 1, h: 1 }, leaf(prim('x')));
 		expect(isGroup(g)).toBe(true);
 		expect(isGroup(prim('w'))).toBe(false);
+	});
+});
+
+describe('monitorHasWidgets', () => {
+	it('is false for an empty monitor', () => {
+		expect(monitorHasWidgets(emptyMonitorLayout())).toBe(false);
+	});
+
+	it('is true when there is a floating widget', () => {
+		expect(monitorHasWidgets({ ...emptyMonitorLayout(), floating: [leaf(prim('f'))] })).toBe(true);
+	});
+
+	it('is true for a leaf anywhere in the flow tree, false for empty containers', () => {
+		const nested = {
+			...emptyMonitorLayout(),
+			root: container('r', 'col', [container('c', 'row', [])])
+		};
+		expect(monitorHasWidgets(nested)).toBe(false);
+		const withLeaf = { ...emptyMonitorLayout(), root: container('r', 'col', [leaf(prim('w'))]) };
+		expect(monitorHasWidgets(withLeaf)).toBe(true);
 	});
 });

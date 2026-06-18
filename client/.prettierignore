@@ -20,3 +20,4 @@ build
 /blob-report
 /.playwright-mcp
 /playwright/.cache
+coverage/
