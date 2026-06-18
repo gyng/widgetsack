@@ -9,6 +9,7 @@ import HaBinarySensor from './HaBinarySensor';
 import HaInput from './HaInput';
 import HaClimate from './HaClimate';
 import HaLight from './HaLight';
+import HaMediaPlayer from './HaMediaPlayer';
 
 describe('HaSwitch', () => {
 	it('shows ON/OFF and toggles', () => {
@@ -277,5 +278,56 @@ describe('HaLight showBrightness gate', () => {
 		};
 		const { queryByRole } = render(<HaLight value={dimmable} showBrightness={false} />);
 		expect(queryByRole('slider')).toBeNull();
+	});
+});
+
+describe('HaMediaPlayer', () => {
+	const playing = {
+		state: 'playing',
+		attributes: {
+			friendly_name: 'Speaker',
+			media_title: 'Song',
+			media_artist: 'Artist',
+			volume_level: 0.5,
+			is_volume_muted: false
+		}
+	};
+
+	it('shows now-playing text and emits transport + volume', () => {
+		let detail: unknown = null;
+		const { getByText, getByLabelText, getByRole } = render(
+			<HaMediaPlayer value={playing} onControl={(e) => (detail = e)} />
+		);
+		expect(() => getByText(/Song · Artist/)).not.toThrow();
+
+		fireEvent.click(getByLabelText('Pause Speaker'));
+		expect(detail).toEqual({ domain: 'media_player', service: 'media_play_pause' });
+		fireEvent.click(getByLabelText('Next on Speaker'));
+		expect(detail).toEqual({ domain: 'media_player', service: 'media_next_track' });
+		fireEvent.change(getByRole('slider'), { target: { value: '80' } });
+		expect(detail).toEqual({
+			domain: 'media_player',
+			service: 'volume_set',
+			data: { volume_level: 0.8 }
+		});
+		fireEvent.click(getByLabelText('Mute Speaker'));
+		expect(detail).toEqual({
+			domain: 'media_player',
+			service: 'volume_mute',
+			data: { is_volume_muted: true }
+		});
+	});
+
+	it('hides transport when off, and respects show* toggles', () => {
+		const off = render(
+			<HaMediaPlayer value={{ state: 'off', attributes: { friendly_name: 'Speaker' } }} />
+		);
+		expect(off.queryByLabelText(/Play|Pause/)).toBeNull();
+
+		const gated = render(
+			<HaMediaPlayer value={playing} showTransport={false} showVolume={false} />
+		);
+		expect(gated.queryByLabelText('Next on Speaker')).toBeNull();
+		expect(gated.queryByRole('slider')).toBeNull();
 	});
 });

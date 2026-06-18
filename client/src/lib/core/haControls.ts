@@ -153,3 +153,10 @@ export function inputSelectOption(option: string): ServiceCall {
 export function inputTextSetValue(value: string): ServiceCall {
 	return { service: 'set_value', data: { value } };
 }
+
+// ---- media_player ----
+
+/** media_player.volume_set: a 0..100 percentage → HA's 0..1 `volume_level`. */
+export function mediaVolumeSet(pct: number): ServiceCall {
+	return { service: 'volume_set', data: { volume_level: Math.round(clamp(pct, 0, 100)) / 100 } };
+}

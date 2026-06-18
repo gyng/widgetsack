@@ -19,6 +19,7 @@ import HaCover from '../meters/HaCover';
 import HaLock from '../meters/HaLock';
 import HaBinarySensor from '../meters/HaBinarySensor';
 import HaInput from '../meters/HaInput';
+import HaMediaPlayer from '../meters/HaMediaPlayer';
 import { asMeter } from '../registry';
 
 // HA widgets have no defaultSensor — the entity is unknown until the user picks one from
@@ -201,6 +202,23 @@ export const registerHomeAssistantPlugin = (): void =>
 					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
 				},
 				component: asMeter(HaInput)
+			},
+			{
+				meta: {
+					type: 'ha.media_player',
+					binds: 'json',
+					label: 'HA Media Player',
+					category: 'Home Assistant',
+					interactive: true,
+					defaultSize: { w: 180, h: 92 },
+					defaultConfig: { showTransport: true, showVolume: true },
+					configFields: [
+						{ key: 'label', label: 'label', kind: 'text' },
+						{ key: 'showTransport', label: 'transport buttons', kind: 'toggle' },
+						{ key: 'showVolume', label: 'volume slider', kind: 'toggle' }
+					]
+				},
+				component: asMeter(HaMediaPlayer)
 			}
 		]
 	});

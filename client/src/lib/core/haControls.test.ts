@@ -13,6 +13,7 @@ import {
 	inputNumberSetValue,
 	inputSelectOption,
 	inputTextSetValue,
+	mediaVolumeSet,
 	lightBrightnessPct,
 	lightColorTempKelvin,
 	lightRgb,
@@ -132,5 +133,11 @@ describe('haControls — fan / cover / input helpers', () => {
 		expect(entityDomain('input_number.x')).toBe('input_number');
 		expect(entityDomain('light.kitchen')).toBe('light');
 		expect(entityDomain(undefined)).toBe('');
+	});
+
+	it('builds media_player.volume_set from a 0..100 percentage', () => {
+		expect(mediaVolumeSet(40)).toEqual({ service: 'volume_set', data: { volume_level: 0.4 } });
+		expect(mediaVolumeSet(150).data.volume_level).toBe(1);
+		expect(mediaVolumeSet(-5).data.volume_level).toBe(0);
 	});
 });
