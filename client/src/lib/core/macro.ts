@@ -75,6 +75,21 @@ export function updateAction(actions: Macro, index: number, patch: Partial<Macro
 	return actions.map((a, i) => (i === index ? { ...a, ...patch } : a));
 }
 
+/** Set (or, when `id` is blank, clear) the `entity_id` in an action's `data` — for the editor's
+ * entity picker — without disturbing other data keys. Returns `undefined` when clearing leaves no
+ * keys, matching the model's optional `data`. Pure. */
+export function withEntityId(
+	data: Record<string, unknown> | undefined,
+	id: string
+): Record<string, unknown> | undefined {
+	const rest = { ...(data ?? {}) };
+	if (id.trim() === '') {
+		delete rest.entity_id;
+		return Object.keys(rest).length ? rest : undefined;
+	}
+	return { ...rest, entity_id: id };
+}
+
 /** Move the action at `index` by `delta` slots; returns the list unchanged if the move is a no-op. */
 export function moveAction(actions: Macro, index: number, delta: number): Macro {
 	const to = index + delta;

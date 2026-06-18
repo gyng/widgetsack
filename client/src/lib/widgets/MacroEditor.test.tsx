@@ -73,4 +73,30 @@ describe('MacroEditor', () => {
 			{ domain: 'light', service: 'toggle' }
 		]);
 	});
+
+	it('commits the entity picker into data.entity_id on blur', () => {
+		const onChange = vi.fn();
+		const value: Macro = [{ domain: 'light', service: 'toggle' }];
+		const { getByPlaceholderText } = render(
+			<MacroEditor value={value} onChange={onChange} entities={['light.kitchen', 'light.lounge']} />
+		);
+		const entity = getByPlaceholderText(/entity \(optional\)/i);
+		fireEvent.change(entity, { target: { value: 'light.kitchen' } });
+		fireEvent.blur(entity);
+		expect(onChange).toHaveBeenCalledWith([
+			{ domain: 'light', service: 'toggle', data: { entity_id: 'light.kitchen' } }
+		]);
+	});
+
+	it('wires domain/service/entity datalists (autocomplete)', () => {
+		const value: Macro = [{ domain: '', service: '' }];
+		const { container, getByPlaceholderText } = render(
+			<MacroEditor value={value} onChange={vi.fn()} entities={['light.kitchen']} />
+		);
+		expect(getByPlaceholderText('domain').getAttribute('list')).toBe('macro-domains');
+		expect(getByPlaceholderText('service').getAttribute('list')).toBe('macro-services');
+		expect(container.querySelector('#macro-entities option')?.getAttribute('value')).toBe(
+			'light.kitchen'
+		);
+	});
 });

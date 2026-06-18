@@ -6,6 +6,7 @@ import {
 	removeAction,
 	runMacro,
 	updateAction,
+	withEntityId,
 	type Macro,
 	type MacroAction
 } from './macro';
@@ -148,5 +149,20 @@ describe('macro edit ops (pure / immutable)', () => {
 		expect(moveAction(base, 0, -1)).toBe(base);
 		expect(moveAction(base, 1, 1)).toBe(base);
 		expect(base[0]).toEqual({ domain: 'light', service: 'toggle' });
+	});
+
+	it('withEntityId sets, preserves other keys, and clears', () => {
+		expect(withEntityId(undefined, 'light.x')).toEqual({ entity_id: 'light.x' });
+		expect(withEntityId({ brightness_pct: 60 }, 'light.x')).toEqual({
+			entity_id: 'light.x',
+			brightness_pct: 60
+		});
+		// clearing removes only entity_id, keeping the rest
+		expect(withEntityId({ entity_id: 'light.x', brightness_pct: 60 }, '')).toEqual({
+			brightness_pct: 60
+		});
+		// clearing the last key → undefined (matches optional data)
+		expect(withEntityId({ entity_id: 'light.x' }, '')).toBeUndefined();
+		expect(withEntityId({ entity_id: 'light.x' }, '   ')).toBeUndefined();
 	});
 });

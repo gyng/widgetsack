@@ -381,6 +381,17 @@ export default function Inspector({
 		.filter((g) => g.templates.length);
 	const paletteEmpty = !fWidgetGroups.length && !fDefs.length && !fTemplateGroups.length;
 
+	// HA entity ids (e.g. "light.kitchen") for the macro editor's entity picker — from the json
+	// `ha.<id>` catalog entries (not the `.state` scalars, nor the `ha.status` connection sensor).
+	const haEntityIds = useMemo(
+		() =>
+			sensors
+				.filter((s) => s.startsWith('ha.') && !s.endsWith('.state'))
+				.map((s) => s.slice('ha.'.length))
+				.filter((e) => e.includes('.')),
+		[sensors]
+	);
+
 	// Sensor combobox options: friendly "Name (unit)" label, the raw id kept as the value + shown as a
 	// dim hint. A bare id (no metadata) is its own label with no hint. Drives the typeahead sensor field.
 	const sensorOptions = useMemo<SelectOption[]>(
@@ -1288,6 +1299,7 @@ export default function Inspector({
 									<MacroEditor
 										value={normalizeMacro(widget.config[f.key])}
 										onChange={(next) => setConfig(f.key, next)}
+										entities={haEntityIds}
 									/>
 									{f.help ? <small className="field-help">{f.help}</small> : null}
 								</div>
