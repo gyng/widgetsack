@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, act } from '@testing-library/react';
 import Countdown from './Countdown';
 
 afterEach(() => {
@@ -46,5 +46,36 @@ describe('Countdown meter', () => {
 		expect(container.querySelector('.countdown')?.getAttribute('data-phase')).toBe('work');
 		expect(container.querySelector('.cd-value')?.textContent).toBe('25:00');
 		expect(container.querySelector('.cd-sub')?.textContent).toContain('Work');
+	});
+
+	it('enters the break phase once the work session elapses', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date('2026-01-01T00:00:00Z'));
+		const { container } = render(<Countdown mode="pomodoro" workMin={25} breakMin={5} />);
+		act(() => {
+			// Past the 25-min work session → break phase. The tick advances the fake clock 1s,
+			// so 26:01 elapsed leaves 3:59 of the 5-min break.
+			vi.setSystemTime(new Date('2026-01-01T00:26:00Z'));
+			vi.advanceTimersByTime(1000);
+		});
+		expect(container.querySelector('.countdown')?.getAttribute('data-phase')).toBe('break');
+		expect(container.querySelector('.cd-value')?.textContent).toBe('03:59');
+		expect(container.querySelector('.cd-sub')?.textContent).toContain('Break');
+	});
+
+	it('renders a custom label and applies the accent colour', () => {
+		const { container } = render(
+			<Countdown mode="event" target="" label="Launch" color="#ff0066" />
+		);
+		expect(container.querySelector('.cd-label')?.textContent).toBe('Launch');
+		const root = container.querySelector('.countdown') as HTMLElement;
+		expect(root.style.getPropertyValue('--cd-accent')).toBe('#ff0066');
+	});
+
+	it('drops the accent var when no colour is given', () => {
+		const { container } = render(<Countdown mode="event" target="" />);
+		const root = container.querySelector('.countdown') as HTMLElement;
+		expect(root.style.getPropertyValue('--cd-accent')).toBe('');
+		expect(container.querySelector('.cd-label')).toBeNull();
 	});
 });

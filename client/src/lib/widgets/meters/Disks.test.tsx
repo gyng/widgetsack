@@ -1,10 +1,13 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, cleanup, act } from '@testing-library/react';
 import Disks from './Disks';
 import { createTelemetryHub } from '../../core/telemetry';
 import { TelemetryHubContext } from '../telemetryContext';
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 const s = (sensor: string, value: number) => ({
 	sensor,
 	ts_ms: 0,
@@ -49,5 +52,119 @@ describe('Disks meter', () => {
 			).container;
 		});
 		expect(container.querySelector('.disk-empty')?.textContent).toBe('—');
+	});
+
+	it('shows a dash (no rows) when there is no telemetry hub', async () => {
+		let container!: HTMLElement;
+		await act(async () => {
+			container = render(
+				<TelemetryHubContext.Provider value={null}>
+					<Disks />
+				</TelemetryHubContext.Provider>
+			).container;
+		});
+		expect(container.querySelector('.disk-empty')?.textContent).toBe('—');
+		expect(container.querySelectorAll('.disk-row')).toHaveLength(0);
+	});
+
+	it('omits the byte meta when showBytes is off (percent only)', async () => {
+		const hub = createTelemetryHub();
+		hub.ingestBatch([
+			s('disk.C.used.pct', 50),
+			s('disk.C.used', 500_000_000_000),
+			s('disk.C.total', 1_000_000_000_000)
+		]);
+		let container!: HTMLElement;
+		await act(async () => {
+			container = render(
+				<TelemetryHubContext.Provider value={hub}>
+					<Disks showBytes={false} />
+				</TelemetryHubContext.Provider>
+			).container;
+		});
+		const meta = container.querySelector('.disk-meta')?.textContent;
+		expect(meta).toBe('50%'); // no " · 500GB/1TB" tail
+		expect(meta).not.toContain('·');
+	});
+
+	it('renders a discovered volume with no percent sample (blank meta, no byte tail)', async () => {
+		// total present (so the letter is discovered) but neither used.pct nor used → pct is null:
+		// the bar floors at 0% and the meta is empty (the byte tail also needs `used`, which is absent).
+		const hub = createTelemetryHub();
+		hub.ingestBatch([s('disk.E.total', 2_000_000_000_000)]);
+		let container!: HTMLElement;
+		await act(async () => {
+			container = render(
+				<TelemetryHubContext.Provider value={hub}>
+					<Disks />
+				</TelemetryHubContext.Provider>
+			).container;
+		});
+		const row = container.querySelector('.disk-row') as HTMLElement;
+		expect(row.querySelector('.disk-label')?.textContent).toBe('E:');
+		expect(row.style.getPropertyValue('--disk-pct')).toBe('0%'); // null pct → clamped to 0
+		expect(row.querySelector('.disk-meta')?.textContent).toBe(''); // null pct → blank meta
+	});
+
+	it('applies the accent color as a CSS var on the container', async () => {
+		const hub = createTelemetryHub();
+		hub.ingestBatch([s('disk.C.used.pct', 10)]);
+		let container!: HTMLElement;
+		await act(async () => {
+			container = render(
+				<TelemetryHubContext.Provider value={hub}>
+					<Disks color="cyan" />
+				</TelemetryHubContext.Provider>
+			).container;
+		});
+		expect(
+			(container.querySelector('.disks') as HTMLElement).style.getPropertyValue('--disk-accent')
+		).toBe('cyan');
+	});
+
+	it('bails the re-render on the 5s re-read when capacity is unchanged (sameVols dedupe)', async () => {
+		vi.useFakeTimers();
+		const hub = createTelemetryHub();
+		hub.ingestBatch([
+			s('disk.C.used.pct', 40),
+			s('disk.C.used', 400_000_000_000),
+			s('disk.C.total', 1_000_000_000_000)
+		]);
+		let container!: HTMLElement;
+		await act(async () => {
+			container = render(
+				<TelemetryHubContext.Provider value={hub}>
+					<Disks />
+				</TelemetryHubContext.Provider>
+			).container;
+		});
+		const before = container.querySelector('.disk-meta')?.textContent;
+		// The interval re-reads the same hub snapshot → next equals prev (same length, every field equal),
+		// so sameVols's .every callback runs and returns true; React keeps the prior array (no churn).
+		await act(async () => {
+			vi.advanceTimersByTime(5000);
+		});
+		expect(container.querySelectorAll('.disk-row')).toHaveLength(1);
+		expect(container.querySelector('.disk-meta')?.textContent).toBe(before);
+	});
+
+	it('updates rows on the 5s re-read when a volume capacity changes', async () => {
+		vi.useFakeTimers();
+		const hub = createTelemetryHub();
+		hub.ingestBatch([s('disk.C.used.pct', 40)]);
+		let container!: HTMLElement;
+		await act(async () => {
+			container = render(
+				<TelemetryHubContext.Provider value={hub}>
+					<Disks />
+				</TelemetryHubContext.Provider>
+			).container;
+		});
+		expect(container.querySelector('.disk-meta')?.textContent).toBe('40%');
+		hub.ingestBatch([s('disk.C.used.pct', 88)]); // same letter, changed pct → sameVols returns false
+		await act(async () => {
+			vi.advanceTimersByTime(5000);
+		});
+		expect(container.querySelector('.disk-meta')?.textContent).toBe('88%');
 	});
 });

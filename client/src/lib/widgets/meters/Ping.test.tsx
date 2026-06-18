@@ -37,4 +37,18 @@ describe('Ping meter', () => {
 		);
 		expect(container.querySelector('.ping-host')?.textContent).toBe('Cloudflare');
 	});
+
+	it('shows a bare "up" when reachable but latency is not yet known', () => {
+		const { container } = render(<Ping sensors={{ up: st(1) }} />);
+		expect(container.querySelector('.ping')?.getAttribute('data-level')).toBe('up');
+		expect(container.querySelector('.ping-value')?.textContent).toBe('up');
+	});
+
+	it('applies the accent colour as a CSS var', () => {
+		const { container } = render(
+			<Ping sensors={{ up: st(1), ms: st(8) }} color="rgb(0, 200, 0)" />
+		);
+		const root = container.querySelector('.ping') as HTMLElement;
+		expect(root.style.getPropertyValue('--ping-accent')).toBe('rgb(0, 200, 0)');
+	});
 });
