@@ -503,3 +503,23 @@ A countdown timer or stopwatch with start / pause / reset. A countdown can loop 
 | `loop` | toggle | false |  | restart automatically when a countdown reaches zero |
 | `label` | text | "" |  | header text |
 | `color` | color | "" |  | text colour (blank = theme) |
+
+### Monitor Switch — `monitorswitch`
+
+![Monitor Switch widget](img/widgets/monitorswitch.png)
+
+Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DDC/CI. Shows the current source and, optionally, the resolution + refresh rate. Requires DDC/CI enabled on the monitor; input codes are vendor-specific (auto-detected). Windows.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 220×150
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `monitor` | select |  | (runtime list) — from `displayNames` | which monitor to control (blank = the primary monitor) |
+| `sources` | monitorSources |  |  | pick which inputs to show, and rename them (e.g. HDMI 2 → Switch 2); blank = show all detected |
+| `label` | text |  |  | title override (blank = the monitor’s name) |
+| `showCurrent` | toggle | true |  | highlight the currently-selected input |
+| `showStats` | toggle | false |  | show the current resolution + refresh rate |
+| `compact` | toggle | false |  | show a compact list instead of large touch buttons |
+| `color` | color |  |  |  |

@@ -15,7 +15,8 @@ import {
 	monitorParam,
 	openStudio,
 	setMainWindowVisible,
-	studioMonitorOptions
+	studioMonitorOptions,
+	watchDisplayChanges
 } from '../../overlay';
 import type { MonitorOption } from './types';
 
@@ -49,6 +50,8 @@ export function useStudioInit(deps: StudioInitDeps): void {
 		let unlistenThemes: UnlistenFn | undefined;
 		let unlistenStudio: UnlistenFn | undefined;
 		let unlistenEdit: UnlistenFn | undefined;
+		let unlistenRefit: UnlistenFn | undefined;
+		let stopDisplayWatch: (() => void) | undefined;
 
 		(async () => {
 			const dep = d.current;
@@ -60,6 +63,30 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// window-state plugin parked it.
 			const ownKey = dep.studio ? null : monitorParam();
 			if (ownKey) await fillOwnMonitor(ownKey);
+
+			// Re-fit this window to the CURRENT display layout — on the tray "Re-fit overlays" trigger AND
+			// automatically when monitors are moved/added/removed at runtime (no per-window scale-change
+			// event fires for that, so an overlay otherwise stays anchored to stale coordinates and clips).
+			// Each role re-runs its own fit: a secondary re-fits itself, the primary re-fits + reconciles
+			// its overlays, the studio refreshes its monitor list.
+			const refit = async (): Promise<void> => {
+				if (dep.studio) {
+					d.current.setMonitorOptions(await studioMonitorOptions());
+				} else if (ownKey) {
+					await fillOwnMonitor(ownKey);
+				} else {
+					await fillPrimaryMonitor();
+					await d.current.syncPrimaryOverlays();
+				}
+			};
+			unlistenRefit = await listen(EVENTS.refitOverlays, () => void refit());
+			stopDisplayWatch = watchDisplayChanges(() => void refit());
+			if (cancelled) {
+				unlistenRefit?.();
+				stopDisplayWatch?.();
+				return;
+			}
+
 			await dep.updateWorkArea();
 			sourceStop = await startAllSources(dep.hub); // built-in `system` + any plugin sources
 			if (cancelled) {
@@ -170,6 +197,8 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			unlistenThemes?.();
 			unlistenStudio?.();
 			unlistenEdit?.();
+			unlistenRefit?.();
+			stopDisplayWatch?.();
 			d.current.clearPreviewWrite();
 		};
 		// Run once on mount (non-idempotent). eslint-disable to keep the empty dep list intentional.

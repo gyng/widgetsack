@@ -201,7 +201,9 @@ the working-directory-aware tools.
 | Build | `cargo build` |
 | Test | `cargo test` |
 | Lint | `cargo clippy` |
+| Format (check / fix) | `cargo fmt --check` / `cargo fmt` (default rustfmt) |
 | Run full app (dev) | `cargo tauri dev` |
+| Run a 2nd dev instance alongside the installed release | `cargo run -- --multi` (or `WIDGETSACK_MULTI=1`) — skips the single-instance lock + isolates config to `<app config>/multi` |
 | Release build → `target/release/widgetsack.exe` | `cargo tauri build` |
 
 > ⚠️ **Build order gotcha:** Tauri embeds `client/build` (`frontendDist`), so the frontend

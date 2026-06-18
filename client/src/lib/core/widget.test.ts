@@ -74,7 +74,8 @@ describe('meta registry', () => {
 			'note',
 			'spacer',
 			'countdown',
-			'timer'
+			'timer',
+			'monitorswitch'
 		]);
 		expect(getMeta('gauge')).toMatchObject({ label: 'Gauge', binds: 'scalar' });
 		expect(getMeta('sparkline')?.binds).toBe('series');

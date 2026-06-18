@@ -216,6 +216,59 @@
 	min-height: var(--control-h);
 }
 
+/* Checkboxes: a themed custom control. The generic `width: 100%` above otherwise stretched the native
+   box full-width with a centered tick (looked off). Drawn as a small accent-on-check box that sits at
+   its natural size, vertically centered with its label (see the toggle field layout below). */
+.inspector input[type='checkbox'] {
+	appearance: none;
+	-webkit-appearance: none;
+	flex: 0 0 auto;
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	padding: 0;
+	border: 1px solid var(--ui-border-strong);
+	border-radius: 4px;
+	background: var(--ui-raised);
+	cursor: pointer;
+	position: relative;
+	transition: background var(--motion-fast, 100ms) var(--ease-out, ease-out),
+		border-color var(--motion-fast, 100ms) var(--ease-out, ease-out);
+}
+.inspector input[type='checkbox']:hover {
+	border-color: rgb(var(--ui-accent-rgb));
+}
+.inspector input[type='checkbox']:checked {
+	background: rgb(var(--ui-accent-rgb));
+	border-color: rgb(var(--ui-accent-rgb));
+}
+/* The tick: a rotated box-corner centered in the 16px box. */
+.inspector input[type='checkbox']:checked::after {
+	content: '';
+	position: absolute;
+	left: 5px;
+	top: 2px;
+	width: 4px;
+	height: 8px;
+	border: solid var(--ui-accent-fg, #fff);
+	border-width: 0 2px 2px 0;
+	transform: rotate(45deg);
+}
+.inspector input[type='checkbox']:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 2px rgba(var(--ui-accent-rgb), 0.4);
+}
+
+/* A toggle config field: checkbox + label on one vertically-centered row (.check supplies row + center
+   + gap), with the reset button still pinned top-right and any help text wrapping below. */
+.inspector .cfg-toggle .check {
+	cursor: pointer;
+	padding-right: var(--space-4);
+}
+.inspector .cfg-toggle .check span {
+	user-select: none;
+}
+
 /* A crisp mint focus ring (the box-shadow IS the focus affordance, so the default outline is off). */
 .inspector input:focus,
 .inspector textarea:focus,
@@ -488,4 +541,43 @@
 
 .inspector .data-err {
 	color: var(--ui-danger-fg);
+}
+
+/* Add-palette hover preview (Tier 2): a floating card with a LIVE widget render + its name/description.
+   position:fixed so it escapes the rail's overflow; JS positions it to the left of the hovered chip.
+   pointer-events:none so it never steals the hover/click from the palette (which would make it flicker). */
+.inspector .palette-preview {
+	position: fixed;
+	z-index: 1000;
+	width: 216px;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	padding: var(--space-2);
+	background: var(--ui-raised);
+	border: 1px solid var(--ui-border-strong);
+	border-radius: var(--radius-md, 6px);
+	box-shadow: 0 6px 24px var(--ui-scrim, rgba(0, 0, 0, 0.45));
+	pointer-events: none;
+}
+.inspector .palette-preview .pp-stage {
+	width: 200px;
+	height: 120px;
+	overflow: hidden;
+	border-radius: var(--radius-sm, 4px);
+	background: var(--ui-sunken, rgba(0, 0, 0, 0.25));
+}
+.inspector .palette-preview .pp-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.inspector .palette-preview .pp-name {
+	font-weight: 600;
+	font-size: var(--text-md);
+}
+.inspector .palette-preview .pp-desc {
+	font-size: var(--text-sm);
+	color: var(--ui-fg-dim);
+	line-height: 1.3;
 }

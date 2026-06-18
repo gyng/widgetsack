@@ -2,7 +2,7 @@
 // the selected node — widget props (sensor / rect / config / dock·float) or container
 // props (kind / cols / gap / pad / align / justify / grow). Emits a single `op` event;
 // all state + persistence lives in Canvas.
-import { useEffect, useMemo, useState, type DragEvent as ReactDragEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent as ReactDragEvent } from 'react';
 import type {
 	Align,
 	AlignH,
@@ -22,6 +22,8 @@ import type { ConfigField } from '../core/widget';
 import { toYaml } from '../core/yaml';
 import { normalizeMacro } from '../core/macro';
 import MacroEditor from './MacroEditor';
+import MonitorSourcesEditor from './meters/MonitorSourcesEditor';
+import WidgetPreview from './WidgetPreview';
 import CssEditor from './CssEditor';
 import BoxField from './BoxField';
 import Select, { type SelectOption } from './Select';
@@ -87,6 +89,9 @@ type Props = {
 	audioOutputs?: { id: string; name: string }[];
 	// Runtime options for a `catalog:'microphones'` select (the transcribe widget's mic picker).
 	microphones?: { id: string; name: string }[];
+	// Runtime options for a `catalog:'displayNames'` select (the monitor-switch widget's monitor
+	// picker). `id` is the GDI device name (\\.\DISPLAYn), `name` the friendly/EDID label.
+	displayNames?: { id: string; name: string }[];
 	onOp?: (op: LayoutOp) => void;
 	// Deleting a library def from the Inspector routes through the container (which checks whether the
 	// def is in use and explains the block, matching the Widget-designer list) instead of the reducer's
@@ -286,6 +291,7 @@ export default function Inspector({
 	sensorMeta = {},
 	audioOutputs = [],
 	microphones = [],
+	displayNames = [],
 	onOp,
 	onDeleteDef,
 	onPreviewTemplate,
@@ -302,6 +308,40 @@ export default function Inspector({
 	// still user-toggleable in between, and re-opens when nothing is selected (the primary add affordance).
 	const hasSelection = !!(widget || container || groupUnit);
 	const [addOpen, setAddOpen] = useState(!hasSelection);
+
+	// Add-palette hover preview (Tier 2): a floating popover with a live demo render of the hovered
+	// widget type. Debounced so a quick pass over the chips doesn't spin up a render; positioned to the
+	// LEFT of the chip (the palette is the right rail) and clamped into the viewport.
+	const [palettePreview, setPalettePreview] = useState<{
+		type: string;
+		top: number;
+		left: number;
+	} | null>(null);
+	const previewTimer = useRef<number | null>(null);
+	const showPreview = (type: string, el: HTMLElement): void => {
+		if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+		previewTimer.current = window.setTimeout(() => {
+			const r = el.getBoundingClientRect();
+			const pw = 232;
+			const ph = 196;
+			const left = Math.max(8, r.left - pw - 10);
+			const top = Math.min(Math.max(8, r.top - 8), Math.max(8, window.innerHeight - ph - 8));
+			setPalettePreview({ type, top, left });
+		}, 280);
+	};
+	const hidePreview = (): void => {
+		if (previewTimer.current !== null) {
+			window.clearTimeout(previewTimer.current);
+			previewTimer.current = null;
+		}
+		setPalettePreview(null);
+	};
+	useEffect(
+		() => () => {
+			if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+		},
+		[]
+	);
 	useEffect(() => {
 		setAddOpen(!hasSelection);
 	}, [hasSelection]);
@@ -614,6 +654,26 @@ export default function Inspector({
 
 	return (
 		<div className={['inspector', docked && 'docked'].filter(Boolean).join(' ')}>
+			{/* Add-palette hover preview (Tier 2): a fixed popover with a live demo render of the hovered
+			    widget type, plus its name + one-line description. */}
+			{palettePreview ? (
+				<div
+					className="palette-preview"
+					style={{ top: palettePreview.top, left: palettePreview.left }}
+				>
+					<div className="pp-stage">
+						<WidgetPreview type={palettePreview.type} />
+					</div>
+					<div className="pp-meta">
+						<span className="pp-name">
+							{getMeta(palettePreview.type)?.label ?? palettePreview.type}
+						</span>
+						{getMeta(palettePreview.type)?.description ? (
+							<span className="pp-desc">{getMeta(palettePreview.type)?.description}</span>
+						) : null}
+					</div>
+				</div>
+			) : null}
 			<details
 				className="add-panel"
 				open={addOpen}
@@ -630,15 +690,24 @@ export default function Inspector({
 								key={w.type}
 								type="button"
 								draggable
-								title={
+								title={[
+									getMeta(w.type)?.description,
 									container
 										? `Add "${w.label}" into the selected ${container.kind} — or drag it onto the canvas / a container in the Outline to place it elsewhere`
 										: `Add "${w.label}" as a floating widget — or drag it onto the canvas / a container in the Outline`
-								}
-								onClick={() => op({ op: 'addWidget', widgetType: w.type })}
-								onDragStart={(e: ReactDragEvent) =>
-									e.dataTransfer?.setData('text/x-widget-type', w.type)
-								}
+								]
+									.filter(Boolean)
+									.join('\n\n')}
+								onClick={() => {
+									hidePreview();
+									op({ op: 'addWidget', widgetType: w.type });
+								}}
+								onMouseEnter={(e) => showPreview(w.type, e.currentTarget)}
+								onMouseLeave={hidePreview}
+								onDragStart={(e: ReactDragEvent) => {
+									hidePreview();
+									e.dataTransfer?.setData('text/x-widget-type', w.type);
+								}}
 							>
 								{w.label}
 							</button>
@@ -1143,6 +1212,73 @@ export default function Inspector({
 								</div>
 							);
 						}
+						// A monitor-sources field is a multi-row editor (checklist + rename), so like the
+						// macro field it renders outside the single-control <label> pattern below.
+						if (f.kind === 'monitorSources') {
+							return (
+								<div
+									className={['cfg-field', dirtyKeys.has('config.' + f.key) && 'dirty']
+										.filter(Boolean)
+										.join(' ')}
+									key={f.key}
+								>
+									<button
+										type="button"
+										className="reset-field"
+										title="Reset to default"
+										disabled={def === undefined}
+										onClick={() => setConfig(f.key, def)}
+									>
+										↺
+									</button>
+									<span className="hd" title={f.help}>
+										{f.label}
+									</span>
+									<MonitorSourcesEditor
+										value={cfgStr(widget.config[f.key])}
+										monitor={cfgStr(widget.config.monitor)}
+										onChange={(spec) => setConfig(f.key, spec || undefined)}
+									/>
+									{f.help ? <small className="field-help">{f.help}</small> : null}
+								</div>
+							);
+						}
+						// A toggle is a checkbox + its label on one aligned row (checkbox left, label
+						// vertically centred), help below — not the label-stacked-over-control layout the
+						// generic fields use.
+						if (f.kind === 'toggle') {
+							return (
+								<div
+									className={[
+										'cfg-field',
+										'cfg-toggle',
+										dirtyKeys.has('config.' + f.key) && 'dirty'
+									]
+										.filter(Boolean)
+										.join(' ')}
+									key={f.key}
+								>
+									<button
+										type="button"
+										className="reset-field"
+										title="Reset to default"
+										disabled={def === undefined}
+										onClick={() => setConfig(f.key, def)}
+									>
+										↺
+									</button>
+									<label className="check" title={f.help}>
+										<input
+											type="checkbox"
+											checked={cfgBool(widget.config[f.key])}
+											onChange={(e) => setConfig(f.key, e.currentTarget.checked)}
+										/>
+										<span>{f.label}</span>
+									</label>
+									{f.help ? <small className="field-help">{f.help}</small> : null}
+								</div>
+							);
+						}
 						return (
 							<div className="cfg-field" key={f.key}>
 								<button
@@ -1172,12 +1308,6 @@ export default function Inspector({
 												)
 											}
 										/>
-									) : f.kind === 'toggle' ? (
-										<input
-											type="checkbox"
-											checked={cfgBool(widget.config[f.key])}
-											onChange={(e) => setConfig(f.key, e.currentTarget.checked)}
-										/>
 									) : f.kind === 'select' ? (
 										<Select
 											value={cfgStr(widget.config[f.key])}
@@ -1191,6 +1321,11 @@ export default function Inspector({
 													? [
 															{ value: '', label: 'System default' },
 															...microphones.map((d) => ({ value: d.id, label: d.name }))
+													  ]
+													: f.catalog === 'displayNames'
+													? [
+															{ value: '', label: 'Primary monitor' },
+															...displayNames.map((d) => ({ value: d.id, label: d.name }))
 													  ]
 													: f.options.map((o) => ({ value: o, label: o }))
 											}

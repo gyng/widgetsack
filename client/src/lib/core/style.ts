@@ -58,22 +58,32 @@ export function assembleStyles(opts: {
 		if (s) parts.push(s);
 	}
 
-	const leafCss = (lf: Leaf): void => {
-		const sel = isGroup(lf.unit) ? `[data-group="${lf.id}"]` : `[data-w="${lf.id}"]`;
+	const leafCss = (lf: Leaf, prefix: string): void => {
+		const fullId = prefix + lf.id;
+		const sel = isGroup(lf.unit) ? `[data-group="${fullId}"]` : `[data-w="${fullId}"]`;
 		const tk = lf.unit.tokens;
 		if (tk && Object.keys(tk).length) parts.push(tokensToCss(tk, sel));
 		const s = scopeCss(lf.unit.css, sel);
 		if (s) parts.push(s);
 	};
-	const walk = (node: LayoutNode): void => {
+	const walk = (node: LayoutNode, prefix: string): void => {
 		if (isContainer(node)) {
-			node.children.forEach(walk);
+			node.children.forEach((c) => walk(c, prefix));
 			return;
 		}
-		if (isLeaf(node)) leafCss(node);
+		if (isLeaf(node)) {
+			leafCss(node, prefix);
+			// A group is a leaf here but owns a NESTED child tree whose widgets render with ids
+			// NAMESPACED by the group leaf id + '/' (FlowNode's prefixing — the load-bearing data-id
+			// invariant). Recurse with that same prefix so the inner css scopes to the [data-w] those
+			// widgets ACTUALLY render with — without this, anything inside a group (incl. the demoSeed
+			// templates) renders unstyled (e.g. a now-playing widget showing two stacked covers).
+			if (isGroup(node.unit)) walk(node.unit.child, `${prefix}${node.id}/`);
+		}
 	};
-	walk(opts.monitor.root);
-	opts.monitor.floating.forEach(leafCss);
+	walk(opts.monitor.root, '');
+	// Floating items can be groups too — walk (not just leafCss) so their nested widgets are collected.
+	opts.monitor.floating.forEach((lf) => walk(lf, ''));
 
 	return parts.join('\n');
 }

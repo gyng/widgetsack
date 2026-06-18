@@ -299,6 +299,50 @@ export async function fillOwnMonitor(key: string): Promise<void> {
 	}
 }
 
+/** Poll interval for the display-topology watcher. Relaxed — display changes are rare and a few
+ * seconds of lag before overlays re-fit is fine (the tray "Re-fit overlays" gives an instant trigger). */
+const DISPLAY_POLL_MS = 4000;
+
+/** Watch for DISPLAY TOPOLOGY changes (monitors added / removed / moved / resized) and call `onChange`.
+ * Windows fires no per-window JS event for this (only DPI scale-change is exposed via onScaleChanged),
+ * so poll `availableMonitors()` on a relaxed cadence + on window focus and fire when the set of monitor
+ * geometries differs from the last seen. Cheap (one fast call per tick). Returns a cleanup fn. Without
+ * this, overlays go stale on a topology change — e.g. dragging a monitor in Windows display settings
+ * leaves an overlay anchored to the old coordinates (clipped/misaligned) until the app restarts. */
+export function watchDisplayChanges(onChange: () => void): () => void {
+	const sig = (mons: Awaited<ReturnType<typeof availableMonitors>>): string =>
+		mons
+			.map(
+				(m) =>
+					`${m.name ?? ''}:${m.position.x},${m.position.y}:${m.size.width}x${m.size.height}@${
+						m.scaleFactor
+					}`
+			)
+			.sort()
+			.join('|');
+	let last: string | null = null;
+	let alive = true;
+	const tick = async (): Promise<void> => {
+		if (!alive) return;
+		try {
+			const s = sig(await availableMonitors());
+			if (last !== null && s !== last) onChange();
+			last = s;
+		} catch {
+			/* transient enumeration failure — retry next tick */
+		}
+	};
+	void tick(); // seed `last` without firing
+	const timer = window.setInterval(() => void tick(), DISPLAY_POLL_MS);
+	const onFocus = (): void => void tick();
+	window.addEventListener('focus', onFocus);
+	return () => {
+		alive = false;
+		window.clearInterval(timer);
+		window.removeEventListener('focus', onFocus);
+	};
+}
+
 /** Whole-window click-through: true = clicks pass through (passive overlay). */
 export async function setClickThrough(enabled: boolean): Promise<void> {
 	await getCurrentWindow().setIgnoreCursorEvents(enabled);

@@ -20,7 +20,8 @@ vi.mock('../../overlay', () => ({
 	monitorParam: () => monitorParamValue,
 	listThemes: vi.fn(async () => []),
 	openStudio: vi.fn(() => Promise.resolve()),
-	studioMonitorOptions: vi.fn(async () => [])
+	studioMonitorOptions: vi.fn(async () => []),
+	watchDisplayChanges: vi.fn(() => () => undefined)
 }));
 vi.mock('../../core/plugin', () => ({
 	startAllSources: vi.fn(async () => () => undefined)

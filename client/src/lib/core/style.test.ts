@@ -56,6 +56,23 @@ describe('assembleStyles', () => {
 		expect(css.indexOf('[data-def=')).toBeLessThan(css.indexOf('[data-w="flowA"'));
 	});
 
+	it('collects css of widgets nested INSIDE a group (recurses the group child tree)', () => {
+		// A group is a leaf in its parent tree but owns a nested child tree; its inner widgets' css must
+		// still be assembled, scoped to each inner [data-w] — in flow AND floating groups. Regression:
+		// the demoSeed now-playing widget (a floating group) rendered unstyled (two covers) because the
+		// inner leaf's crossfade css was skipped.
+		const monitor: MonitorLayout = {
+			root: container('root', 'col', [
+				leaf(group('gFlow', { w: 1, h: 1 }, leaf(prim('deep', 'color: red')), {}))
+			]),
+			floating: [leaf(group('gFloat', { w: 1, h: 1 }, leaf(prim('floatDeep', 'opacity: 0')), {}))]
+		};
+		const css = assembleStyles({ monitor });
+		// Inner ids are namespaced by the group leaf id + '/', matching FlowNode's rendered data-w.
+		expect(css).toContain(scopeCss('color: red', '[data-w="gFlow/deep"]'));
+		expect(css).toContain(scopeCss('opacity: 0', '[data-w="gFloat/floatDeep"]'));
+	});
+
 	it('scopes per-widget token overrides to [data-w], before that widget css', () => {
 		const w: WidgetInstance = {
 			id: 'w1',

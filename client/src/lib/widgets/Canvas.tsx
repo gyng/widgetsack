@@ -742,6 +742,26 @@ export default function Canvas({ studio = false }: Props) {
 			.catch(() => undefined);
 	}, [studio]);
 
+	// Monitors for the monitor-switch widget's monitor picker (studio only). Friendly EDID names where
+	// known, falling back to the GDI device tag. Empty list just leaves the "Primary monitor" option.
+	const [displayNames, setDisplayNames] = useState<{ id: string; name: string }[]>([]);
+	useEffect(() => {
+		if (!studio) return;
+		invoke<{ gdi: string; friendly: string }[]>(COMMANDS.listDisplayNames)
+			.then((list) => setDisplayNames(list.map((d) => ({ id: d.gdi, name: d.friendly || d.gdi }))))
+			.catch(() => undefined);
+	}, [studio]);
+
+	// Dev / extra-instance flag — drives the "dev" badge in the studio title bar (main.rs); lets you
+	// tell a --multi / debug instance apart from the installed release at a glance.
+	const [devInstance, setDevInstance] = useState(false);
+	useEffect(() => {
+		if (!studio) return;
+		invoke<boolean>(COMMANDS.isDevInstance)
+			.then((v) => setDevInstance(Boolean(v)))
+			.catch(() => undefined);
+	}, [studio]);
+
 	const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
 
 	// --- multi-selection (2+ widgets) → the common-properties details pane ---
@@ -2494,6 +2514,16 @@ export default function Canvas({ studio = false }: Props) {
 											Cancel
 										</button>
 									)}
+									{/* Dev/extra-instance badge (main.rs is_dev_instance): a --multi or debug build run
+									    alongside the installed release shows this so the two are distinguishable. */}
+									{devInstance && (
+										<span
+											className="dev-badge"
+											title="Dev / extra instance (--multi or debug build) — separate, isolated config"
+										>
+											dev
+										</span>
+									)}
 									{/* Window controls (the borderless window's min / maximize-restore / close). Pushed to
 									    the far right (margin-left:auto); the gap before them is a drag region. */}
 									<div className="win-controls">
@@ -3044,6 +3074,7 @@ export default function Canvas({ studio = false }: Props) {
 									sensorMeta={sensorMeta}
 									audioOutputs={audioOutputs}
 									microphones={microphones}
+									displayNames={displayNames}
 									docked={studio}
 									onOp={handleOp}
 									onDeleteDef={studio ? deleteWidget : undefined}

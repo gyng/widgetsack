@@ -53,6 +53,15 @@ jobs:
     permissions:
       checks: write
 
+  rustfmt_check:
+    name: Formatting for Rust backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: rustup update stable && rustup default stable && rustup component add rustfmt
+      # Source-only formatting check (no compile / no frontend build needed). Run `cargo fmt` to fix.
+      - run: cargo fmt --all --check
+
   client_test:
     name: Tests and linting for React client
     runs-on: ubuntu-latest

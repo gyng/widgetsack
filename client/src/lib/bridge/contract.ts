@@ -22,6 +22,8 @@ export const EVENTS = {
 	toggleEdit: 'toggle_edit',
 	openStudio: 'open_studio',
 	arrangeZones: 'arrange_zones',
+	// re-fit overlays to the current display layout (tray "Re-fit overlays" + auto on display change)
+	refitOverlays: 'refit_overlays',
 	// foreign-window drag watcher (windowmgr.rs)
 	winDragStart: 'win_drag_start',
 	winDragEnd: 'win_drag_end',
@@ -36,6 +38,8 @@ export const EVENTS = {
 export const COMMANDS = {
 	// media / now-playing (command.rs, media.rs)
 	getInitialSessions: 'get_initial_sessions',
+	// dev/extra-instance flag (main.rs) — drives the studio's "dev" badge
+	isDevInstance: 'is_dev_instance',
 	mediaControl: 'media_control',
 	mediaCapabilities: 'media_capabilities',
 	// layout persistence + saved layout profiles (command.rs)
@@ -76,6 +80,9 @@ export const COMMANDS = {
 	currentWorkArea: 'current_work_area',
 	setOverlayWallpaper: 'set_overlay_wallpaper',
 	listDisplayNames: 'list_display_names',
+	// monitor input-source switcher — DDC/CI VCP 0x60 (ddc.rs, the Monitor Switch widget)
+	listMonitorInputs: 'list_monitor_inputs',
+	setMonitorInput: 'set_monitor_input',
 	// devtools / diagnostics / recovery (command.rs, process_diag.rs, log.rs)
 	openDevtools: 'open_devtools',
 	listWindowLabels: 'list_window_labels',
