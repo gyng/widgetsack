@@ -60,6 +60,10 @@ export default defineConfig({
 				'src/lib/devMock.ts',
 				// e2e-driven (Playwright)
 				'src/lib/widgets/Canvas.tsx',
+				// DOM-measurement glue: reads getBoundingClientRect off every [data-id] + reacts to
+				// Resize/MutationObserver (happy-dom returns zero rects). Its pure seam screenRectToLayout
+				// is unit-tested in core/measureMath.test.ts; the rest is runtime/e2e only.
+				'src/lib/widgets/canvas/useMeasuredRects.ts',
 				// Tauri IO adapters (invoke/listen/emit + window/monitor manipulation)
 				'src/lib/overlay.ts',
 				'src/lib/diag.ts',
