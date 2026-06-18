@@ -1,10 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
 	brightnessToPct,
+	climateNextHvacMode,
 	climateNudge,
+	climateSetFanMode,
 	climateSetHvacMode,
 	climateSetTemperature,
 	climateUsesRange,
+	coverSetPosition,
+	entityDomain,
+	fanSetPercentage,
+	inputNumberSetValue,
+	inputSelectOption,
+	inputTextSetValue,
 	lightBrightnessPct,
 	lightColorTempKelvin,
 	lightRgb,
@@ -71,5 +79,58 @@ describe('haControls — climate', () => {
 			service: 'set_hvac_mode',
 			data: { hvac_mode: 'heat' }
 		});
+	});
+
+	it('cycles to the next hvac mode, wrapping', () => {
+		const attrs = { hvac_modes: ['off', 'cool', 'heat'] };
+		expect(climateNextHvacMode(attrs, 'off')).toBe('cool');
+		expect(climateNextHvacMode(attrs, 'heat')).toBe('off');
+		// Unknown current / empty list → unchanged.
+		expect(climateNextHvacMode(attrs, 'dry')).toBe('off');
+		expect(climateNextHvacMode({}, 'cool')).toBe('cool');
+	});
+
+	it('builds set_fan_mode (A/C fan speed)', () => {
+		expect(climateSetFanMode('high')).toEqual({
+			service: 'set_fan_mode',
+			data: { fan_mode: 'high' }
+		});
+	});
+});
+
+describe('haControls — fan / cover / input helpers', () => {
+	it('builds fan.set_percentage clamped + rounded', () => {
+		expect(fanSetPercentage(40)).toEqual({ service: 'set_percentage', data: { percentage: 40 } });
+		expect(fanSetPercentage(140).data.percentage).toBe(100);
+		expect(fanSetPercentage(-5).data.percentage).toBe(0);
+	});
+
+	it('builds cover.set_cover_position clamped + rounded', () => {
+		expect(coverSetPosition(75)).toEqual({
+			service: 'set_cover_position',
+			data: { position: 75 }
+		});
+		expect(coverSetPosition(120).data.position).toBe(100);
+	});
+
+	it('builds input_number.set_value clamped to min/max', () => {
+		const attrs = { min: 5, max: 30 };
+		expect(inputNumberSetValue(20, attrs).data.value).toBe(20);
+		expect(inputNumberSetValue(99, attrs).data.value).toBe(30);
+		expect(inputNumberSetValue(0, attrs).data.value).toBe(5);
+	});
+
+	it('builds input_select.select_option + input_text.set_value', () => {
+		expect(inputSelectOption('Home')).toEqual({
+			service: 'select_option',
+			data: { option: 'Home' }
+		});
+		expect(inputTextSetValue('hi')).toEqual({ service: 'set_value', data: { value: 'hi' } });
+	});
+
+	it('reads the domain from an entity_id', () => {
+		expect(entityDomain('input_number.x')).toBe('input_number');
+		expect(entityDomain('light.kitchen')).toBe('light');
+		expect(entityDomain(undefined)).toBe('');
 	});
 });

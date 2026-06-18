@@ -12,6 +12,13 @@ import HaSettings from './HaSettings';
 import HaSensor from '../meters/HaSensor';
 import HaLight from '../meters/HaLight';
 import HaClimate from '../meters/HaClimate';
+import HaSwitch from '../meters/HaSwitch';
+import HaScene from '../meters/HaScene';
+import HaFan from '../meters/HaFan';
+import HaCover from '../meters/HaCover';
+import HaLock from '../meters/HaLock';
+import HaBinarySensor from '../meters/HaBinarySensor';
+import HaInput from '../meters/HaInput';
 import { asMeter } from '../registry';
 
 // HA widgets have no defaultSensor — the entity is unknown until the user picks one from
@@ -44,12 +51,19 @@ export const registerHomeAssistantPlugin = (): void =>
 				}
 			}
 		],
+		// All grouped under a "Home Assistant" palette category. Read-only meters (sensor /
+		// binary_sensor) omit `interactive`; the control widgets set it so clicks aren't passed through
+		// the overlay. Every control just emits onControl — the `'*'` action above performs the
+		// ha_call_service, resolving the entity from the bound `ha.<entity>` sensor. The control
+		// widgets expose `show*` toggles so each sub-control (mode / fan / brightness / position …) can
+		// be turned off per widget.
 		widgets: [
 			{
 				meta: {
 					type: 'ha.sensor',
 					binds: 'json',
 					label: 'HA Sensor',
+					category: 'Home Assistant',
 					defaultSize: { w: 150, h: 44 },
 					defaultConfig: {},
 					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
@@ -58,27 +72,135 @@ export const registerHomeAssistantPlugin = (): void =>
 			},
 			{
 				meta: {
+					type: 'ha.binary_sensor',
+					binds: 'json',
+					label: 'HA Binary Sensor',
+					category: 'Home Assistant',
+					defaultSize: { w: 150, h: 44 },
+					defaultConfig: {},
+					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+				},
+				component: asMeter(HaBinarySensor)
+			},
+			{
+				meta: {
 					type: 'ha.light',
 					binds: 'json',
 					label: 'HA Light',
+					category: 'Home Assistant',
 					interactive: true,
 					defaultSize: { w: 120, h: 48 },
-					defaultConfig: {},
-					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+					defaultConfig: { showBrightness: true },
+					configFields: [
+						{ key: 'label', label: 'label', kind: 'text' },
+						{ key: 'showBrightness', label: 'brightness slider', kind: 'toggle' }
+					]
 				},
 				component: asMeter(HaLight)
 			},
 			{
 				meta: {
-					type: 'ha.climate',
+					type: 'ha.switch',
 					binds: 'json',
-					label: 'HA Climate',
+					label: 'HA Switch',
+					category: 'Home Assistant',
 					interactive: true,
-					defaultSize: { w: 160, h: 72 },
+					defaultSize: { w: 120, h: 48 },
 					defaultConfig: {},
 					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
 				},
+				component: asMeter(HaSwitch)
+			},
+			{
+				meta: {
+					type: 'ha.fan',
+					binds: 'json',
+					label: 'HA Fan',
+					category: 'Home Assistant',
+					interactive: true,
+					defaultSize: { w: 150, h: 56 },
+					defaultConfig: { showSpeed: true, showOscillate: true },
+					configFields: [
+						{ key: 'label', label: 'label', kind: 'text' },
+						{ key: 'showSpeed', label: 'speed slider', kind: 'toggle' },
+						{ key: 'showOscillate', label: 'oscillate toggle', kind: 'toggle' }
+					]
+				},
+				component: asMeter(HaFan)
+			},
+			{
+				meta: {
+					type: 'ha.climate',
+					binds: 'json',
+					label: 'HA Climate / A-C',
+					category: 'Home Assistant',
+					interactive: true,
+					defaultSize: { w: 170, h: 92 },
+					defaultConfig: { showMode: true, showTemp: true, showFan: true },
+					configFields: [
+						{ key: 'label', label: 'label', kind: 'text' },
+						{ key: 'showMode', label: 'mode toggle', kind: 'toggle' },
+						{ key: 'showTemp', label: 'temp buttons', kind: 'toggle' },
+						{ key: 'showFan', label: 'fan-mode select', kind: 'toggle' }
+					]
+				},
 				component: asMeter(HaClimate)
+			},
+			{
+				meta: {
+					type: 'ha.cover',
+					binds: 'json',
+					label: 'HA Cover',
+					category: 'Home Assistant',
+					interactive: true,
+					defaultSize: { w: 150, h: 76 },
+					defaultConfig: { showButtons: true, showPosition: true },
+					configFields: [
+						{ key: 'label', label: 'label', kind: 'text' },
+						{ key: 'showButtons', label: 'open / close buttons', kind: 'toggle' },
+						{ key: 'showPosition', label: 'position slider', kind: 'toggle' }
+					]
+				},
+				component: asMeter(HaCover)
+			},
+			{
+				meta: {
+					type: 'ha.lock',
+					binds: 'json',
+					label: 'HA Lock',
+					category: 'Home Assistant',
+					interactive: true,
+					defaultSize: { w: 120, h: 48 },
+					defaultConfig: {},
+					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+				},
+				component: asMeter(HaLock)
+			},
+			{
+				meta: {
+					type: 'ha.scene',
+					binds: 'json',
+					label: 'HA Scene',
+					category: 'Home Assistant',
+					interactive: true,
+					defaultSize: { w: 130, h: 40 },
+					defaultConfig: {},
+					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+				},
+				component: asMeter(HaScene)
+			},
+			{
+				meta: {
+					type: 'ha.input',
+					binds: 'json',
+					label: 'HA Input',
+					category: 'Home Assistant',
+					interactive: true,
+					defaultSize: { w: 160, h: 48 },
+					defaultConfig: {},
+					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+				},
+				component: asMeter(HaInput)
 			}
 		]
 	});

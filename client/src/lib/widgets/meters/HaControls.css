@@ -1,0 +1,183 @@
+/* Shared styling for the Home Assistant control family (switch / scene / fan / cover / lock / input /
+   binary_sensor). Follows the HA widgets' --np-* token conventions and .np-ha-* root scoping, so user
+   themes / per-widget css targeting [data-part] or the inner class names keep matching. */
+
+/* --- button-shaped roots: switch / scene / lock --- */
+.np-ha-switch,
+.np-ha-scene,
+.np-ha-lock {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	justify-content: center;
+	gap: 2px;
+	width: 100%;
+	height: 100%;
+	padding: 0 10px;
+	box-sizing: border-box;
+	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.8));
+	border-radius: var(--np-radius, 4px);
+	background: var(--np-bg, rgba(10, 10, 12, 0.6));
+	color: var(--np-fg, #fff);
+	font-family: var(--np-font, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	text-align: left;
+	cursor: pointer;
+}
+.np-ha-switch.on,
+.np-ha-lock.locked {
+	background: var(--np-accent, rgba(119, 196, 211, 0.85));
+	color: var(--np-bg, #0a0a0c);
+}
+.np-ha-switch .label,
+.np-ha-scene .label,
+.np-ha-lock .label,
+.np-ha-fan .label,
+.np-ha-cover .label,
+.np-ha-input .label,
+.np-ha-binary .label {
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	opacity: 0.8;
+}
+.np-ha-switch .state,
+.np-ha-lock .state {
+	font-size: 16px;
+	letter-spacing: 1px;
+}
+.np-ha-scene,
+.np-ha-lock {
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
+}
+.np-ha-scene .icon {
+	font-size: 14px;
+}
+.np-ha-scene .label {
+	font-size: 13px;
+	text-transform: none;
+}
+.np-ha-lock .icon {
+	font-size: 16px;
+}
+
+/* --- fan --- */
+.np-ha-fan,
+.np-ha-cover,
+.np-ha-input,
+.np-ha-binary {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 3px;
+	width: 100%;
+	height: 100%;
+	padding: 0 10px;
+	box-sizing: border-box;
+	color: var(--np-fg, #fff);
+	font-family: var(--np-font, 'Bahnschrift', 'Arial Narrow', sans-serif);
+}
+.np-ha-fan {
+	gap: 4px;
+	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.7));
+	border-radius: var(--np-radius, 4px);
+	background: var(--np-bg, rgba(10, 10, 12, 0.6));
+}
+.np-ha-fan.on {
+	border-color: var(--np-accent, rgba(119, 196, 211, 1));
+}
+.np-ha-fan .ha-fan-toggle {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 6px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.np-ha-fan .state {
+	font-size: 14px;
+}
+.np-ha-fan .ha-fan-speed,
+.np-ha-cover .ha-cover-pos,
+.np-ha-input .hi-range {
+	width: 100%;
+	accent-color: var(--np-accent, rgba(119, 196, 211, 0.9));
+	cursor: pointer;
+}
+.np-ha-fan .ha-fan-osc {
+	align-self: flex-end;
+	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.6));
+	border-radius: var(--np-radius, 3px);
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+}
+.np-ha-fan .ha-fan-osc.on {
+	background: var(--np-accent, rgba(119, 196, 211, 0.3));
+}
+
+/* --- cover --- */
+.np-ha-cover .state {
+	font-size: 14px;
+}
+.np-ha-cover .ha-cover-btns {
+	display: flex;
+	gap: 4px;
+}
+.np-ha-cover .ha-cover-btns button {
+	flex: 1;
+	padding: 1px 0;
+	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.6));
+	border-radius: var(--np-radius, 3px);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	line-height: 1;
+	cursor: pointer;
+}
+.np-ha-cover .ha-cover-btns button:hover {
+	background: var(--np-accent, rgba(119, 196, 211, 0.2));
+}
+
+/* --- input_* helpers --- */
+.np-ha-input .hi-toggle,
+.np-ha-input .hi-press {
+	align-self: flex-start;
+	padding: 2px 10px;
+	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.8));
+	border-radius: var(--np-radius, 3px);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.np-ha-input .hi-toggle.on {
+	background: var(--np-accent, rgba(119, 196, 211, 0.85));
+	color: var(--np-bg, #0a0a0c);
+}
+.np-ha-input .hi-select,
+.np-ha-input .hi-text {
+	width: 100%;
+	box-sizing: border-box;
+	background: var(--np-bg, rgba(10, 10, 12, 0.6));
+	color: inherit;
+	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.5));
+	border-radius: var(--np-radius, 3px);
+	font: inherit;
+}
+.np-ha-input .hi-num {
+	font-size: 14px;
+}
+
+/* --- binary_sensor --- */
+.np-ha-binary .value {
+	font-size: 16px;
+}
+.np-ha-binary.on .value {
+	color: var(--np-accent, rgb(119, 196, 211));
+}

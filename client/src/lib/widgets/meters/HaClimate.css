@@ -53,3 +53,27 @@
 .np-ha-climate .ha-climate-btn:hover {
 	background: var(--np-accent, rgba(119, 196, 211, 0.2));
 }
+
+/* Tap-to-cycle HVAC mode — shares .mode's look, dotted underline hints it's actionable. */
+.np-ha-climate .mode-btn {
+	align-self: flex-start;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+	text-decoration: underline dotted;
+	text-underline-offset: 2px;
+}
+
+.np-ha-climate .ha-climate-fan {
+	margin-top: 2px;
+	width: 100%;
+	box-sizing: border-box;
+	background: var(--np-bg, rgba(10, 10, 12, 0.6));
+	color: inherit;
+	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.5));
+	border-radius: var(--np-radius, 3px);
+	font: inherit;
+}

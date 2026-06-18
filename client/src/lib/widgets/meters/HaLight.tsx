@@ -18,14 +18,15 @@ type Props = {
 	value?: unknown;
 	label?: string;
 	onControl?: (e: ControlEvent) => void;
+	showBrightness?: boolean;
 };
 
-export default function HaLight({ value = null, label, onControl }: Props) {
+export default function HaLight({ value = null, label, onControl, showBrightness = true }: Props) {
 	const s = (value ?? null) as HaState | null;
 	const on = s?.state === 'on';
 	const attrs = (s?.attributes ?? {}) as LightAttrs & Record<string, unknown>;
 	const name = label ?? (attrs.friendly_name as string | undefined) ?? 'Light';
-	const dimmable = on && lightSupports(attrs, 'brightness');
+	const dimmable = showBrightness && on && lightSupports(attrs, 'brightness');
 	const pct = brightnessToPct(attrs.brightness as number | undefined);
 
 	const toggle = () => onControl?.({ domain: 'light', service: 'toggle' });
