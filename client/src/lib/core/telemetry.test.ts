@@ -33,6 +33,36 @@ describe('appendSample', () => {
 		);
 		expect(s.history).toEqual([3]);
 	});
+
+	it('keeps history ordered by ts_ms when samples arrive out of order (backfill)', () => {
+		let s = emptySensorState();
+		for (const t of [3, 1, 2]) {
+			s = appendSample(s, { sensor: 'x', ts_ms: t, value: { kind: 'scalar', value: t } }, 10);
+		}
+		expect(s.history).toEqual([1, 2, 3]);
+		expect(s.historyTs).toEqual([1, 2, 3]);
+		// `value` stays the most-recently-INGESTED sample (live current value), not the latest ts.
+		expect(s.value).toEqual({ kind: 'scalar', value: 2 });
+	});
+
+	it('merges back-dated backfill ahead of existing live samples, then appends fresh ones', () => {
+		let s = emptySensorState();
+		s = appendSample(s, { sensor: 'x', ts_ms: 100, value: { kind: 'scalar', value: 5 } }, 10);
+		s = appendSample(s, { sensor: 'x', ts_ms: 10, value: { kind: 'scalar', value: 1 } }, 10);
+		s = appendSample(s, { sensor: 'x', ts_ms: 20, value: { kind: 'scalar', value: 2 } }, 10);
+		s = appendSample(s, { sensor: 'x', ts_ms: 200, value: { kind: 'scalar', value: 9 } }, 10);
+		expect(s.history).toEqual([1, 2, 5, 9]);
+		expect(s.historyTs).toEqual([10, 20, 100, 200]);
+	});
+
+	it('caps to the most-recent-by-ts after ordering', () => {
+		let s = emptySensorState();
+		for (const t of [5, 4, 3, 2, 1]) {
+			s = appendSample(s, { sensor: 'x', ts_ms: t, value: { kind: 'scalar', value: t } }, 3);
+		}
+		expect(s.history).toEqual([3, 4, 5]);
+		expect(s.historyTs).toEqual([3, 4, 5]);
+	});
 });
 
 describe('createTelemetryHub', () => {
