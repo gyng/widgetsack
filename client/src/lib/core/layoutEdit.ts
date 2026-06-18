@@ -59,11 +59,15 @@ export function updateNode(
 }
 
 function rebuild(node: LayoutNode, id: string, fn: (n: LayoutNode) => LayoutNode): LayoutNode {
-	const replaced = node.id === id ? fn(node) : node;
-	if (isContainer(replaced)) {
-		return { ...replaced, children: replaced.children.map((c) => rebuild(c, id, fn)) };
+	// Matched node: apply fn and STOP — do NOT re-descend into the result. Re-descending re-ran fn
+	// whenever the replacement re-contained a node with the same id (e.g. wrapLeafWith nests the
+	// target inside a fresh cell), which recursed unboundedly on the merge-drop path. Ids are unique,
+	// so there is never a second node with this id to find below the match.
+	if (node.id === id) return fn(node);
+	if (isContainer(node)) {
+		return { ...node, children: node.children.map((c) => rebuild(c, id, fn)) };
 	}
-	return replaced;
+	return node;
 }
 
 /** Shallow-patch the container with `id` (kind/gap/pad/align/justify/cols/basis/…). */
