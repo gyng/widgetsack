@@ -330,4 +330,10 @@ describe('HaMediaPlayer', () => {
 		expect(gated.queryByLabelText('Next on Speaker')).toBeNull();
 		expect(gated.queryByRole('slider')).toBeNull();
 	});
+
+	it('renders album art when an art URL is provided', () => {
+		const { container } = render(<HaMediaPlayer value={playing} art="http://art.localhost/123" />);
+		const img = container.querySelector('img.art');
+		expect(img?.getAttribute('src')).toBe('http://art.localhost/123');
+	});
 });

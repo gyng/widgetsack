@@ -185,15 +185,36 @@
 /* --- media_player --- */
 .np-ha-media {
 	display: flex;
-	flex-direction: column;
-	justify-content: center;
-	gap: 3px;
+	flex-direction: row;
+	align-items: center;
+	gap: 8px;
 	width: 100%;
 	height: 100%;
 	padding: 0 10px;
 	box-sizing: border-box;
 	color: var(--np-fg, #fff);
 	font-family: var(--np-font, 'Bahnschrift', 'Arial Narrow', sans-serif);
+}
+.np-ha-media .art {
+	flex: 0 0 auto;
+	width: 56px;
+	height: 56px;
+	object-fit: cover;
+	border-radius: var(--np-radius, 4px);
+}
+.np-ha-media-body {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: 3px;
+}
+.np-ha-media .label {
+	font-size: 10px;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	opacity: 0.8;
 }
 .np-ha-media .now {
 	font-size: 13px;

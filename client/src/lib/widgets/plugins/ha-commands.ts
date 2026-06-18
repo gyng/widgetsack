@@ -54,3 +54,8 @@ export const haCallService = (
  * for sparkline backfill. Returns [] when the entity has no numeric history in the window. */
 export const haHistory = (entityId: string, start: string, end: string): Promise<SensorSample[]> =>
 	invoke<SensorSample[]>(COMMANDS.haHistory, { entityId, start, end });
+
+/** Fetch an HA entity_picture (e.g. a media_player cover) and get back an art-scheme URL the webview
+ * can <img>-load — bytes are cached server-side, not shipped over the bridge. */
+export const haMediaArt = (path: string): Promise<string> =>
+	invoke<string>(COMMANDS.haMediaArt, { path });

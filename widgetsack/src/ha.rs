@@ -239,6 +239,15 @@ fn valid_entity_id(id: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
+/// A safe HA `entity_picture` path to fetch: host-absolute (`/api/...`), no scheme/host (`//`), no
+/// traversal (`..`) or whitespace. The path is appended raw to the REST base, so this guards it.
+fn valid_art_path(path: &str) -> bool {
+    path.starts_with('/')
+        && !path.starts_with("//")
+        && !path.contains("..")
+        && !path.contains([' ', '\n', '\r', '\t'])
+}
+
 /// Parse an ISO-8601 UTC timestamp (HA's `last_changed`/`last_updated`, e.g.
 /// "2026-06-17T12:34:56.789+00:00") to epoch milliseconds. HA stores these in UTC, so any zone
 /// suffix is ignored (the wall-clock fields are treated as UTC). `None` on a malformed prefix.
@@ -893,6 +902,45 @@ pub async fn ha_history<R: Runtime>(
         .unwrap_or_default())
 }
 
+/// Fetch an HA `entity_picture` (e.g. a media_player cover) over REST using the server-side token +
+/// insecure opt-in, store the bytes in the shared album-art registry, and return the
+/// `http://art.localhost/<hash>` URL the webview can `<img>`-load. Reuses the now-playing art scheme
+/// (already allowed by the CSP), so no bytes cross the JSON bridge and no CSP change is needed. The
+/// token never crosses the bridge; errors never include it.
+#[tauri::command]
+pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result<String, String> {
+    if !valid_art_path(&path) {
+        return Err("invalid art path".to_string());
+    }
+    let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
+    let client = ha_http_client(cfg.insecure)?;
+    let resp = client
+        .get(format!("{}{}", rest_base(&cfg.url, &cfg.base_path), path))
+        .bearer_auth(&cfg.token)
+        .timeout(std::time::Duration::from_secs(20))
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("GET art failed: {}", resp.status()));
+    }
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/jpeg")
+        .to_string();
+    let bytes = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
+    let img = std::sync::Arc::new(crate::listener::ImageWrapper::new(content_type, bytes));
+    let hash = img.hash;
+    app.state::<crate::art::ArtState>()
+        .0
+        .lock()
+        .unwrap()
+        .insert(hash, img);
+    Ok(crate::art::art_url(hash))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -908,6 +956,18 @@ mod tests {
         assert!(!valid_entity_id(""));
         assert!(!valid_entity_id("sensor."));
         assert!(!valid_entity_id("Sensor.X")); // uppercase is not a slug
+    }
+
+    #[test]
+    fn valid_art_path_requires_host_absolute_no_traversal() {
+        assert!(valid_art_path(
+            "/api/media_player_proxy/media_player.x?token=abc&cache=1"
+        ));
+        assert!(!valid_art_path("http://evil/x")); // not host-absolute
+        assert!(!valid_art_path("//evil/x")); // protocol-relative
+        assert!(!valid_art_path("/a/../../etc")); // traversal
+        assert!(!valid_art_path("/a b")); // whitespace
+        assert!(!valid_art_path(""));
     }
 
     #[test]

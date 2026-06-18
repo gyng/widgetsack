@@ -19,7 +19,7 @@ import HaCover from '../meters/HaCover';
 import HaLock from '../meters/HaLock';
 import HaBinarySensor from '../meters/HaBinarySensor';
 import HaInput from '../meters/HaInput';
-import HaMediaPlayer from '../meters/HaMediaPlayer';
+import HaMediaPlayerHost from './HaMediaPlayerHost';
 import { asMeter } from '../registry';
 
 // HA widgets have no defaultSensor — the entity is unknown until the user picks one from
@@ -218,7 +218,7 @@ export const registerHomeAssistantPlugin = (): void =>
 						{ key: 'showVolume', label: 'volume slider', kind: 'toggle' }
 					]
 				},
-				component: asMeter(HaMediaPlayer)
+				component: asMeter(HaMediaPlayerHost)
 			}
 		]
 	});
