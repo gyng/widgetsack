@@ -287,14 +287,16 @@ export const fakeSpectrum: SpectrumSource = {
 	latestFrame: () => spectrumFrame()
 };
 
-/** Composite the branding icon onto a deterministic gradient and return PNG bytes — the now-playing
- * placeholder cover. Falls back to the gradient alone if the icon can't be drawn. */
-async function coverBytes(): Promise<number[]> {
+/** Composite the branding icon onto a deterministic gradient and return a PNG data: URL — the
+ * now-playing cover. (ThumbnailInfo carries a `url`, not bytes; in the app that's an `art://` URL
+ * from art.rs, but a data: URL renders identically and needs no backend.) Falls back to the
+ * gradient alone if the icon can't be drawn. */
+async function coverDataUrl(): Promise<string> {
 	const c = document.createElement('canvas');
 	c.width = 240;
 	c.height = 240;
 	const ctx = c.getContext('2d');
-	if (!ctx) return [];
+	if (!ctx) return '';
 	const g = ctx.createLinearGradient(0, 0, 240, 240);
 	g.addColorStop(0, '#1c3a44');
 	g.addColorStop(0.55, '#122a31');
@@ -308,8 +310,7 @@ async function coverBytes(): Promise<number[]> {
 	} catch {
 		// gradient-only fallback
 	}
-	const bytes = atob(c.toDataURL('image/png').split(',')[1]);
-	return Array.from(bytes, (ch) => ch.charCodeAt(0));
+	return c.toDataURL('image/png');
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -323,7 +324,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 
 /** Seed the module-level media store with one playing session (so NowPlaying renders a real track). */
 export async function seedMedia(): Promise<void> {
-	const data = await coverBytes();
+	const url = await coverDataUrl();
 	const model: SessionModel = {
 		source: 'foobar2000',
 		playback: { auto_repeat: 'None', rate: 1, shuffle: false, status: 'Playing', type: 'Music' },
@@ -343,7 +344,7 @@ export async function seedMedia(): Promise<void> {
 		source: 'foobar2000',
 		timestamp_created: null,
 		timestamp_updated: null,
-		last_media_update: { Media: [model, { content_type: 'image/png', data }] },
+		last_media_update: { Media: [model, { content_type: 'image/png', url }] },
 		last_model_update: { Model: model }
 	};
 	handleUpdate({ sessionRecord: record });

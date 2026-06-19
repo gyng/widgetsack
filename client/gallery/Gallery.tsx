@@ -203,7 +203,7 @@ const DEMO: WidgetInstance[] = [
 	// Column E (x 900, w 150) — DDC/CI monitor input switcher (VCP 0x60): the active input highlighted
 	// among the panel's supported sources, with the current display mode beneath.
 	buildInstance('monitorswitch', 'd-ddc', {
-		rect: { x: 900, y: 36, w: 150, h: 308 },
+		rect: { x: 900, y: 58, w: 150, h: 264 },
 		config: { showStats: true }
 	})
 ];
