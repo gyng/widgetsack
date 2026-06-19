@@ -586,6 +586,24 @@
 }
 
 /* The window-control cluster (— ▢ ✕), pushed to the far right; the gap before it is a drag region. */
+/* Dev/extra-instance badge: an amber pill that takes the title bar's free space (margin-left:auto), so
+   it sits immediately left of the window controls (whose own auto-margin then collapses to 0). */
+.canvas .studio-bar .dev-badge {
+	margin-left: auto;
+	align-self: center;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: var(--text-sm, 0.72rem);
+	font-weight: 700;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+	color: #1a1a1a;
+	background: rgba(230, 170, 0, 0.92);
+	white-space: nowrap;
+	user-select: none;
+	-webkit-user-select: none;
+}
+
 .canvas .studio-bar .win-controls {
 	margin-left: auto;
 	display: flex;

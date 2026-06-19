@@ -32,6 +32,10 @@ pub const CONTROLS_CHANGED_EVENT: &str = "controls_changed";
 pub const TOGGLE_EDIT_EVENT: &str = "toggle_edit";
 pub const OPEN_STUDIO_EVENT: &str = "open_studio";
 pub const ARRANGE_ZONES_EVENT: &str = "arrange_zones";
+/// Re-fit every overlay to the CURRENT display layout (tray "Re-fit overlays" + the manual trigger).
+/// Each overlay/studio listens and re-runs its fit/reconcile — used when monitors are
+/// added/removed/moved/resized at runtime, which fires no per-window scale-change event.
+pub const REFIT_OVERLAYS_EVENT: &str = "refit_overlays";
 
 /// Foreign-window drag watcher (windowmgr.rs → DragSnapLayer.tsx).
 pub const WIN_DRAG_START_EVENT: &str = "win_drag_start";

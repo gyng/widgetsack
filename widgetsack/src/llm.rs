@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tauri::async_runtime::{JoinHandle, Mutex};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
@@ -374,7 +374,10 @@ fn mime_ext(mime: &str) -> &'static str {
 
 /// Pull the transcript text out of a transcription response (`{ "text": "..." }`).
 fn parse_transcription(v: &Value) -> Option<String> {
-    v["text"].as_str().map(str::to_string).filter(|s| !s.is_empty())
+    v["text"]
+        .as_str()
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())
 }
 
 /// The OpenAI-style text-to-speech endpoint. Shares `supports_transcription`'s provider gate (the same
@@ -536,11 +539,7 @@ fn parse_chat_text(provider: &str, v: &Value) -> Option<String> {
             .unwrap_or("")
             .to_string(),
     };
-    if text.is_empty() {
-        None
-    } else {
-        Some(text)
-    }
+    if text.is_empty() { None } else { Some(text) }
 }
 
 /// Pull a human-readable error message out of an error response body (best-effort).
@@ -651,7 +650,11 @@ fn llm_http_client(insecure: bool) -> Result<reqwest::Client, String> {
 }
 
 /// Attach the provider's auth headers to a request. The key never leaves this process.
-fn apply_auth(rb: reqwest::RequestBuilder, provider: &str, api_key: &str) -> reqwest::RequestBuilder {
+fn apply_auth(
+    rb: reqwest::RequestBuilder,
+    provider: &str,
+    api_key: &str,
+) -> reqwest::RequestBuilder {
     match provider {
         "anthropic" => rb
             .header("x-api-key", api_key)
@@ -911,7 +914,12 @@ pub async fn llm_list_models<R: Runtime>(
         }
         None => {
             let cfg = load_llm_config(&app)?.ok_or("AI provider not configured")?;
-            (cfg.provider.clone(), effective_base(&cfg), cfg.api_key, cfg.insecure)
+            (
+                cfg.provider.clone(),
+                effective_base(&cfg),
+                cfg.api_key,
+                cfg.insecure,
+            )
         }
     };
     let url = models_endpoint(&provider, &base);
@@ -1003,7 +1011,10 @@ pub async fn llm_transcribe<R: Runtime>(
 /// expose this — anthropic + ollama do not (the frontend falls back to the browser's Web Speech voice).
 /// NOT studio-guarded: the overlay's widgets read it aloud too; the key never crosses the bridge.
 #[tauri::command]
-pub async fn llm_synthesize<R: Runtime>(app: AppHandle<R>, text: String) -> Result<LlmAudio, String> {
+pub async fn llm_synthesize<R: Runtime>(
+    app: AppHandle<R>,
+    text: String,
+) -> Result<LlmAudio, String> {
     let cfg = load_llm_config(&app)?.ok_or("AI provider not configured")?;
     if !supports_tts(&cfg.provider) {
         return Err(format!(
@@ -1059,7 +1070,13 @@ pub async fn llm_synthesize<R: Runtime>(app: AppHandle<R>, text: String) -> Resu
     Ok(LlmAudio { audio, mime })
 }
 
-fn emit_delta<R: Runtime>(app: &AppHandle<R>, request_id: &str, token: &str, done: bool, error: Option<String>) {
+fn emit_delta<R: Runtime>(
+    app: &AppHandle<R>,
+    request_id: &str,
+    token: &str,
+    done: bool,
+    error: Option<String>,
+) {
     let _ = app.emit(
         LLM_DELTA_EVENT,
         &LlmDelta {
@@ -1073,9 +1090,20 @@ fn emit_delta<R: Runtime>(app: &AppHandle<R>, request_id: &str, token: &str, don
 
 /// The streaming worker: open the streamed response and emit `llm_delta` frames token-by-token, then a
 /// final `{ done: true }`. Errors emit a `{ done: true, error }` frame so the UI always terminates.
-async fn run_stream<R: Runtime>(app: AppHandle<R>, request_id: String, cfg: LlmConfig, messages: Vec<ChatMessage>) {
+async fn run_stream<R: Runtime>(
+    app: AppHandle<R>,
+    request_id: String,
+    cfg: LlmConfig,
+    messages: Vec<ChatMessage>,
+) {
     if needs_key(&cfg.provider) && cfg.api_key.trim().is_empty() {
-        emit_delta(&app, &request_id, "", true, Some("no API key configured".into()));
+        emit_delta(
+            &app,
+            &request_id,
+            "",
+            true,
+            Some("no API key configured".into()),
+        );
         return;
     }
     let base = effective_base(&cfg);
@@ -1182,7 +1210,9 @@ pub async fn llm_cancel<R: Runtime>(
 ) -> Result<(), String> {
     if let Some((_, handle)) = state.streams.lock().await.remove(&request_id) {
         handle.abort();
-        log::info("llm", "stream cancelled").field("id", &request_id).emit();
+        log::info("llm", "stream cancelled")
+            .field("id", &request_id)
+            .emit();
         emit_delta(&app, &request_id, "", true, None);
     }
     Ok(())
@@ -1286,7 +1316,10 @@ mod tests {
     #[test]
     fn parse_text_per_provider() {
         let anth = serde_json::json!({ "content": [ { "type": "text", "text": "he" }, { "type": "text", "text": "llo" } ] });
-        assert_eq!(parse_chat_text("anthropic", &anth).as_deref(), Some("hello"));
+        assert_eq!(
+            parse_chat_text("anthropic", &anth).as_deref(),
+            Some("hello")
+        );
         let oai = serde_json::json!({ "choices": [ { "message": { "content": "hi there" } } ] });
         assert_eq!(parse_chat_text("openai", &oai).as_deref(), Some("hi there"));
         let oll = serde_json::json!({ "message": { "content": "yo" } });
@@ -1307,8 +1340,19 @@ mod tests {
 
     #[test]
     fn uses_completion_tokens_matches_next_gen_families() {
-        for m in ["gpt-5", "gpt-5-nano", "gpt-5.1", "o1", "o1-mini", "o3-mini", "o4-mini"] {
-            assert!(uses_completion_tokens(m), "{m} should use max_completion_tokens");
+        for m in [
+            "gpt-5",
+            "gpt-5-nano",
+            "gpt-5.1",
+            "o1",
+            "o1-mini",
+            "o3-mini",
+            "o4-mini",
+        ] {
+            assert!(
+                uses_completion_tokens(m),
+                "{m} should use max_completion_tokens"
+            );
         }
         for m in ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "llama3.2", ""] {
             assert!(!uses_completion_tokens(m), "{m} should keep max_tokens");
@@ -1344,13 +1388,22 @@ mod tests {
     #[test]
     fn openai_sse_lines() {
         assert_eq!(
-            stream_event_from_line("openai", "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}"),
+            stream_event_from_line(
+                "openai",
+                "data: {\"choices\":[{\"delta\":{\"content\":\"Hi\"}}]}"
+            ),
             StreamEvent::Token("Hi".into())
         );
-        assert_eq!(stream_event_from_line("openai", "data: [DONE]"), StreamEvent::Done);
+        assert_eq!(
+            stream_event_from_line("openai", "data: [DONE]"),
+            StreamEvent::Done
+        );
         // a role-only opening delta carries no content -> Ignore
         assert_eq!(
-            stream_event_from_line("openai", "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}"),
+            stream_event_from_line(
+                "openai",
+                "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\"}}]}"
+            ),
             StreamEvent::Ignore
         );
         assert_eq!(stream_event_from_line("openai", ""), StreamEvent::Ignore);
@@ -1379,7 +1432,10 @@ mod tests {
     #[test]
     fn ollama_stream_lines() {
         assert_eq!(
-            stream_event_from_line("ollama", "{\"message\":{\"content\":\"yo\"},\"done\":false}"),
+            stream_event_from_line(
+                "ollama",
+                "{\"message\":{\"content\":\"yo\"},\"done\":false}"
+            ),
             StreamEvent::Token("yo".into())
         );
         assert_eq!(
@@ -1405,7 +1461,10 @@ mod tests {
             parse_transcription(&serde_json::json!({ "text": "hello world" })).as_deref(),
             Some("hello world")
         );
-        assert_eq!(parse_transcription(&serde_json::json!({ "text": "" })), None);
+        assert_eq!(
+            parse_transcription(&serde_json::json!({ "text": "" })),
+            None
+        );
     }
 
     #[test]
@@ -1449,7 +1508,10 @@ mod tests {
         .unwrap();
         assert!(v.get("api_key").is_none() && v.get("apiKey").is_none());
         assert_eq!(v["providers"]["openai"]["hasKey"], true);
-        assert_eq!(v["providers"]["openai"]["baseUrl"], "https://api.openai.com/v1");
+        assert_eq!(
+            v["providers"]["openai"]["baseUrl"],
+            "https://api.openai.com/v1"
+        );
         assert_eq!(v["maxTokens"], 1024);
     }
 
@@ -1457,9 +1519,9 @@ mod tests {
     fn migrates_legacy_flat_config_into_providers_map() {
         // A pre-multi-provider file (no `providers` key) → one entry, active = its provider, globals kept.
         let file = parse_config_json(
-            r#"{ "provider": "anthropic", "api_key": "sk-x", "model": "claude-x", "max_tokens": 2048 }"#,
-        )
-        .unwrap();
+			r#"{ "provider": "anthropic", "api_key": "sk-x", "model": "claude-x", "max_tokens": 2048 }"#,
+		)
+		.unwrap();
         assert_eq!(file.active, "anthropic");
         assert_eq!(file.max_tokens, 2048);
         let entry = file.providers.get("anthropic").unwrap();

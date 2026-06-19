@@ -49,12 +49,24 @@ export async function previewTemplate(page: Page, name: string): Promise<void> {
 	await page.getByRole('button', { name, exact: true }).click();
 }
 
-/** Add a widget from the Inspector palette (Layouts section) and return the now-selected host. */
+/**
+ * Add a widget from the Inspector palette (Layouts section) and return the now-selected host.
+ * `type` is the palette LABEL (e.g. "Gauge", "Analog Clock"). The palette button's accessible name
+ * is "<label> — <description>" (the description was folded into the aria-label), so we anchor on the
+ * label: the accessible name is exactly the label, or the label followed by the " — " separator. The
+ * anchor avoids the substring collisions a bare name match would hit (e.g. "Bar" ⊂ Gauge's
+ * "…linear bar…", "Text" ⊂ Transcribe's "…speech-to-text…").
+ */
 export async function addWidget(page: Page, type: string): Promise<Locator> {
 	await openSection(page, 'layouts');
+	// The Add palette lives in a <details> that auto-collapses once a node is selected, so re-open it
+	// (a no-op on a fresh boot where nothing is selected) before reaching for a palette button.
+	const summary = page.locator('.inspector .add-panel > summary');
+	if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
+	const label = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape regex metachars in the label
 	await page
 		.locator('.inspector .palette')
-		.getByRole('button', { name: type, exact: true })
+		.getByRole('button', { name: new RegExp(`^${label}( — |$)`) })
 		.click();
 	const selected = page.locator('.widget.selected');
 	await expect(selected).toBeVisible();

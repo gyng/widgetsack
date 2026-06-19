@@ -32,6 +32,7 @@ import Timer from './meters/Timer';
 import Recyclebin from './meters/Recyclebin';
 import StickyNote from './meters/StickyNote';
 import AudioSwitcherHost from './AudioSwitcherHost';
+import MonitorSwitchHost from './MonitorSwitchHost';
 import VolumeHost from './VolumeHost';
 import ImageHost from './ImageHost';
 
@@ -64,6 +65,7 @@ const components: Record<string, MeterComponent> = {
 	timer: asMeter(Timer),
 	recyclebin: asMeter(Recyclebin),
 	audioswitch: asMeter(AudioSwitcherHost),
+	monitorswitch: asMeter(MonitorSwitchHost),
 	volume: asMeter(VolumeHost),
 	image: asMeter(ImageHost),
 	note: asMeter(StickyNote)

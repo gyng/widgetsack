@@ -93,7 +93,7 @@ fn resolve_ipv4(host: &str) -> Option<Ipv4Addr> {
 #[cfg(target_os = "windows")]
 fn icmp_ping(addr: Ipv4Addr, timeout_ms: u32) -> Option<f64> {
     use windows::Win32::NetworkManagement::IpHelper::{
-        IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho, ICMP_ECHO_REPLY,
+        ICMP_ECHO_REPLY, IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho,
     };
 
     // SAFETY: IcmpCreateFile returns a handle (Err / INVALID_HANDLE_VALUE on failure).
@@ -192,7 +192,12 @@ mod tests {
     fn active(entries: &[(&str, &[&str])]) -> HashMap<String, HashSet<String>> {
         entries
             .iter()
-            .map(|(label, ids)| (label.to_string(), ids.iter().map(|s| s.to_string()).collect()))
+            .map(|(label, ids)| {
+                (
+                    label.to_string(),
+                    ids.iter().map(|s| s.to_string()).collect(),
+                )
+            })
             .collect()
     }
 
@@ -200,7 +205,10 @@ mod tests {
     fn host_of_strips_prefix_and_suffix_even_with_dotted_ips() {
         assert_eq!(host_of("net.ping.1.1.1.1.ms"), Some("1.1.1.1"));
         assert_eq!(host_of("net.ping.8.8.8.8.up"), Some("8.8.8.8"));
-        assert_eq!(host_of("net.ping.cloudflare.com.ms"), Some("cloudflare.com"));
+        assert_eq!(
+            host_of("net.ping.cloudflare.com.ms"),
+            Some("cloudflare.com")
+        );
         assert_eq!(host_of("net.ping..ms"), None); // empty host
         assert_eq!(host_of("net.down"), None);
         assert_eq!(host_of("*"), None);
@@ -209,7 +217,10 @@ mod tests {
     #[test]
     fn hosts_from_active_dedupes_sorts_and_ignores_wildcard() {
         let a = active(&[
-            ("studio", &["*", "net.ping.1.1.1.1.ms", "net.ping.1.1.1.1.up"]),
+            (
+                "studio",
+                &["*", "net.ping.1.1.1.1.ms", "net.ping.1.1.1.1.up"],
+            ),
             ("main", &["net.ping.8.8.8.8.ms", "cpu.total"]),
         ]);
         assert_eq!(hosts_from_active(&a), vec!["1.1.1.1", "8.8.8.8"]);

@@ -32,6 +32,17 @@ describe('parseTemplate', () => {
 		expect(parseTemplate('{ {a: 1}.a }')).toEqual([{ kind: 'expr', src: '{a: 1}.a' }]);
 	});
 
+	it('keeps an escaped quote inside an expr string literal (escape + char both retained)', () => {
+		// The backslash-escaped quote must NOT end the string early — both the \ and the quote
+		// stay in the expr src, and the brace that follows the real closing quote still closes it.
+		expect(parseTemplate(`{ 'a\\'b' }`)).toEqual([{ kind: 'expr', src: `'a\\'b'` }]);
+		expect(parseTemplate(`pre { "x\\"}y" } post`)).toEqual([
+			{ kind: 'text', text: 'pre ' },
+			{ kind: 'expr', src: `"x\\"}y"` },
+			{ kind: 'text', text: ' post' }
+		]);
+	});
+
 	it('returns plain text unchanged', () => {
 		expect(parseTemplate('just text')).toEqual([{ kind: 'text', text: 'just text' }]);
 	});
@@ -44,6 +55,38 @@ describe('exprRefs / templateRefs', () => {
 
 	it('ignores ids written inside string literals', () => {
 		expect(exprRefs(`'cpu.total' + net.down`)).toEqual(['net.down']);
+	});
+
+	it('ignores ids written inside double-quoted string literals', () => {
+		expect(exprRefs('"cpu.total" + net.down')).toEqual(['net.down']);
+	});
+
+	it('ignores ids written inside template (backtick) literals', () => {
+		expect(exprRefs('`cpu.total` + net.down')).toEqual(['net.down']);
+	});
+
+	it('tolerates an unterminated string literal (runs to end of source)', () => {
+		// The string never closes, so the strip loop exhausts the source (the `i < length` guard,
+		// not the closing quote, ends it). cpu.total inside the open string is still ignored.
+		expect(exprRefs("net.down + 'cpu.total")).toEqual(['net.down']);
+	});
+
+	it('tolerates a trailing open-quote (the strip loop exits before testing the char)', () => {
+		// The opening quote is the LAST char: after stepping past it i === length, so the inner
+		// `src[i] !== quote` is never evaluated (the `i < length` guard short-circuits).
+		expect(exprRefs("net.down + '")).toEqual(['net.down']);
+	});
+
+	it('honours backslash escapes inside a string so an escaped quote does not end it early', () => {
+		// The \' is skipped as one unit; the string only closes at the real trailing quote, so the
+		// cpu.total written AFTER the escaped quote is still inside the string and ignored.
+		expect(exprRefs("net.down + 'a\\'cpu.total'")).toEqual(['net.down']);
+	});
+
+	it('returns [] when an expression has no dotted sensor chains', () => {
+		// match() returns null here (no `a.b` chains at all) → the `?? []` fallback.
+		expect(exprRefs('42 + 7')).toEqual([]);
+		expect(exprRefs('round(x)')).toEqual([]);
 	});
 
 	it('filters to known ids when a catalog is supplied', () => {

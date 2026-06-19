@@ -8,8 +8,8 @@
 //! imposes — e.g. a 5 ms process refresh at 1 Hz = 5 ms/s ≈ 0.5% of one core.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;

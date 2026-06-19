@@ -84,3 +84,38 @@ describe('Cpu (per-core grid)', () => {
 		expect(cap.props?.color).toBe('red');
 	});
 });
+
+describe('Cpu (combined gauge)', () => {
+	it("renders a Gauge of cpu.total (not the per-core canvas) when mode is 'combined'", () => {
+		// The hub seeds cpu.total = 10; combined mode composes the real Gauge (only CpuCoresCanvas is
+		// mocked), so the rounded total + unit + label must show up in the gauge text.
+		const { container } = renderCpu(<Cpu mode="combined" label="Load" />, 4);
+		expect(cap.props).toBeNull(); // the per-core canvas is NOT rendered in combined mode
+		expect(container.querySelector('[data-part="value"]')?.textContent).toBe('10%');
+		expect(container.querySelector('[data-part="label"]')?.textContent).toBe('Load');
+	});
+
+	it('shows a dash in combined mode before any cpu.total sample arrives', () => {
+		cap.props = null;
+		const { container } = render(
+			<TelemetryHubContext.Provider value={createTelemetryHub()}>
+				<Cpu mode="combined" />
+			</TelemetryHubContext.Provider>
+		);
+		// Gauge renders the en-dash placeholder for a null value.
+		expect(container.querySelector('[data-part="value"]')?.textContent).toBe('–%');
+	});
+});
+
+describe('Cpu (no hub)', () => {
+	it('renders an empty gauge without throwing when there is no telemetry hub', () => {
+		// Outside a provider the context is null; the effect bails (no subscription) and combined mode
+		// still renders the null-value placeholder gauge.
+		const { container } = render(
+			<TelemetryHubContext.Provider value={null}>
+				<Cpu mode="combined" />
+			</TelemetryHubContext.Provider>
+		);
+		expect(container.querySelector('[data-part="value"]')?.textContent).toBe('–%');
+	});
+});

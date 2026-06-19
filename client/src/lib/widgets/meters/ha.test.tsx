@@ -112,4 +112,134 @@ describe('HaClimate', () => {
 		const { queryByLabelText } = render(<HaClimate value={range} onControl={() => undefined} />);
 		expect(queryByLabelText('Raise X setpoint')).toBeNull();
 	});
+
+	it('lowers the setpoint with the − button', () => {
+		const climate = {
+			state: 'cool',
+			attributes: {
+				friendly_name: 'Bedroom',
+				temperature: 21,
+				target_temp_step: 0.5,
+				min_temp: 7,
+				max_temp: 35
+			}
+		};
+		let detail: unknown = null;
+		const { getByLabelText } = render(
+			<HaClimate value={climate} onControl={(e) => (detail = e)} />
+		);
+		fireEvent.click(getByLabelText('Lower Bedroom setpoint'));
+		expect(detail).toEqual({
+			domain: 'climate',
+			service: 'set_temperature',
+			data: { temperature: 20.5 }
+		});
+	});
+
+	it('cycles the HVAC mode with the mode button', () => {
+		const climate = {
+			state: 'off',
+			attributes: { friendly_name: 'Bedroom', hvac_modes: ['off', 'cool', 'heat'] }
+		};
+		let detail: unknown = null;
+		const { getByLabelText } = render(
+			<HaClimate value={climate} onControl={(e) => (detail = e)} />
+		);
+		const btn = getByLabelText('Bedroom mode (tap to change)');
+		expect(btn.tagName).toBe('BUTTON');
+		expect(btn.textContent).toBe('off');
+		fireEvent.click(btn);
+		expect(detail).toEqual({
+			domain: 'climate',
+			service: 'set_hvac_mode',
+			data: { hvac_mode: 'cool' }
+		});
+	});
+
+	it('shows the mode read-only when there is no controllable mode list', () => {
+		const climate = {
+			state: 'heat',
+			attributes: { friendly_name: 'Bedroom', hvac_modes: ['heat'] }
+		};
+		const { getByText, queryByLabelText } = render(
+			<HaClimate value={climate} onControl={() => undefined} />
+		);
+		// Single-entry list → not a button, just a span.
+		expect(queryByLabelText('Bedroom mode (tap to change)')).toBeNull();
+		expect(getByText('heat').tagName).toBe('SPAN');
+	});
+
+	it('selects an A/C fan mode from the dropdown', () => {
+		const climate = {
+			state: 'cool',
+			attributes: {
+				friendly_name: 'Bedroom',
+				fan_modes: ['auto', 'low', 'high'],
+				fan_mode: 'auto'
+			}
+		};
+		let detail: unknown = null;
+		const { getByLabelText } = render(
+			<HaClimate value={climate} onControl={(e) => (detail = e)} />
+		);
+		const select = getByLabelText('Bedroom fan mode') as HTMLSelectElement;
+		expect(select.value).toBe('auto');
+		fireEvent.change(select, { target: { value: 'high' } });
+		expect(detail).toEqual({
+			domain: 'climate',
+			service: 'set_fan_mode',
+			data: { fan_mode: 'high' }
+		});
+	});
+
+	it('offers a "fan…" placeholder when no fan mode is reported', () => {
+		const climate = {
+			state: 'cool',
+			attributes: { friendly_name: 'Bedroom', fan_modes: ['auto', 'low'] }
+		};
+		const { getByLabelText, getByText } = render(
+			<HaClimate value={climate} onControl={() => undefined} />
+		);
+		const select = getByLabelText('Bedroom fan mode') as HTMLSelectElement;
+		expect(select.value).toBe('');
+		expect(getByText('fan…').tagName).toBe('OPTION');
+	});
+
+	it('keeps an unlisted reported fan mode selectable', () => {
+		const climate = {
+			state: 'cool',
+			attributes: { friendly_name: 'Bedroom', fan_modes: ['low', 'high'], fan_mode: 'turbo' }
+		};
+		const { getByLabelText, getByText } = render(
+			<HaClimate value={climate} onControl={() => undefined} />
+		);
+		const select = getByLabelText('Bedroom fan mode') as HTMLSelectElement;
+		expect(select.value).toBe('turbo');
+		// The reported-but-unlisted mode is added as its own option so the value stays matched.
+		expect(getByText('turbo').tagName).toBe('OPTION');
+	});
+
+	it('falls back to placeholders and defaults when value is null', () => {
+		const { getByText, getAllByText } = render(<HaClimate value={null} />);
+		// label ?? friendly_name ?? 'Climate'; state ?? '—'; current/target → '—'.
+		expect(() => getByText('Climate')).not.toThrow();
+		expect(getAllByText('—').length).toBeGreaterThan(0);
+		expect(() => getByText(/—\s*→\s*—/)).not.toThrow();
+	});
+
+	it('renders read-only (no controls) without an onControl handler', () => {
+		const climate = {
+			state: 'cool',
+			attributes: {
+				friendly_name: 'Bedroom',
+				temperature: 21,
+				hvac_modes: ['off', 'cool', 'heat'],
+				fan_modes: ['auto', 'low']
+			}
+		};
+		const { queryByLabelText } = render(<HaClimate value={climate} />);
+		expect(queryByLabelText('Bedroom mode (tap to change)')).toBeNull();
+		expect(queryByLabelText('Raise Bedroom setpoint')).toBeNull();
+		expect(queryByLabelText('Bedroom fan mode')).toBeNull();
+	});
 });

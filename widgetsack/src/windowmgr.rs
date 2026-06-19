@@ -66,7 +66,13 @@ const MAX_DWM_BORDER: f64 = 24.0;
 /// (negative — classic theme / DWM off / no frame; or implausibly large — a bad read) clamp to 0.
 /// Twin of `frameMargins` in core/snapMath.ts.
 fn frame_margins(window: ScreenRect, frame: Option<ScreenRect>) -> (f64, f64, f64) {
-    let clamp = |m: f64| if (0.0..=MAX_DWM_BORDER).contains(&m) { m } else { 0.0 };
+    let clamp = |m: f64| {
+        if (0.0..=MAX_DWM_BORDER).contains(&m) {
+            m
+        } else {
+            0.0
+        }
+    };
     match frame {
         None => (0.0, 0.0, 0.0),
         Some(f) => {
@@ -262,8 +268,15 @@ pub struct PointerState {
 /// (not the studio) polls it during a drag.
 #[tauri::command]
 pub fn pointer_probe(app: tauri::AppHandle) -> PointerState {
-    let (x, y) = app.cursor_position().map(|p| (p.x, p.y)).unwrap_or((0.0, 0.0));
-    PointerState { x, y, shift: shift_held() }
+    let (x, y) = app
+        .cursor_position()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    PointerState {
+        x,
+        y,
+        shift: shift_held(),
+    }
 }
 
 /// Payload for `win_drag_start` / `win_drag_end`.
@@ -308,8 +321,8 @@ fn spawn_drag_pump() {
     std::thread::spawn(|| unsafe {
         use windows::Win32::UI::Accessibility::SetWinEventHook;
         use windows::Win32::UI::WindowsAndMessaging::{
-            DispatchMessageW, GetMessageW, EVENT_OBJECT_LOCATIONCHANGE, EVENT_SYSTEM_MOVESIZEEND,
-            EVENT_SYSTEM_MOVESIZESTART, MSG, WINEVENT_OUTOFCONTEXT, WM_TIMER,
+            DispatchMessageW, EVENT_OBJECT_LOCATIONCHANGE, EVENT_SYSTEM_MOVESIZEEND,
+            EVENT_SYSTEM_MOVESIZESTART, GetMessageW, MSG, WINEVENT_OUTOFCONTEXT, WM_TIMER,
         };
         // Hook 1: the standard modal move/size loop (classic titlebars) → real drags.
         let move_hook = SetWinEventHook(
@@ -380,10 +393,11 @@ fn arrangeable_hwnd(hwnd: windows::Win32::Foundation::HWND) -> bool {
     use std::ffi::c_void;
     use std::mem::size_of;
     use windows::Win32::Foundation::RECT;
-    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextLengthW, GetWindowThreadProcessId,
-        IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, GW_OWNER, WS_CHILD, WS_EX_TOOLWINDOW,
+        GW_OWNER, GWL_EXSTYLE, GWL_STYLE, GetWindow, GetWindowLongW, GetWindowRect,
+        GetWindowTextLengthW, GetWindowThreadProcessId, IsWindowVisible, WS_CHILD,
+        WS_EX_TOOLWINDOW,
     };
     unsafe {
         let ex_style = GetWindowLongW(hwnd, GWL_EXSTYLE) as u32;
@@ -488,11 +502,14 @@ static SNAPPED: std::sync::LazyLock<std::sync::Mutex<std::collections::HashMap<i
 unsafe fn restore_on_drag_out(hwnd: windows::Win32::Foundation::HWND) {
     use windows::Win32::Foundation::{POINT, RECT};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetCursorPos, GetWindowRect, SetWindowPos, SWP_NOACTIVATE, SWP_NOZORDER,
+        GetCursorPos, GetWindowRect, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos,
     };
 
     let id = hwnd.0 as isize as i64;
-    let size = SNAPPED.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
+    let size = SNAPPED
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(&id);
     let Some((rw, rh)) = size else { return };
     if rw <= 0 || rh <= 0 {
         return;
@@ -513,8 +530,17 @@ unsafe fn restore_on_drag_out(hwnd: windows::Win32::Foundation::HWND) {
         h: (rc.bottom - rc.top) as f64,
     };
     let (nx, ny) = restore_top_left(snapped, (cur.x as f64, cur.y as f64), rw as f64, rh as f64);
-    let _ =
-        unsafe { SetWindowPos(hwnd, None, nx as i32, ny as i32, rw, rh, SWP_NOACTIVATE | SWP_NOZORDER) };
+    let _ = unsafe {
+        SetWindowPos(
+            hwnd,
+            None,
+            nx as i32,
+            ny as i32,
+            rw,
+            rh,
+            SWP_NOACTIVATE | SWP_NOZORDER,
+        )
+    };
 }
 
 #[cfg(target_os = "windows")]
@@ -528,7 +554,8 @@ unsafe extern "system" fn win_event_proc(
     _time: u32,
 ) {
     use windows::Win32::UI::WindowsAndMessaging::{
-        EVENT_OBJECT_LOCATIONCHANGE, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART, OBJID_WINDOW,
+        EVENT_OBJECT_LOCATIONCHANGE, EVENT_SYSTEM_MOVESIZEEND, EVENT_SYSTEM_MOVESIZESTART,
+        OBJID_WINDOW,
     };
     // Only the window itself (OBJID_WINDOW), not its caret/cursor/child accessible objects — the
     // LOCATIONCHANGE stream is otherwise very noisy.
@@ -560,14 +587,14 @@ unsafe extern "system" fn win_event_proc(
 fn list_arrangeable() -> Result<Vec<WindowDescriptor>, String> {
     use std::ffi::c_void;
     use std::mem::size_of;
-    use windows::core::BOOL;
     use windows::Win32::Foundation::{HWND, LPARAM, RECT};
-    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_CLOAKED};
+    use windows::Win32::Graphics::Dwm::{DWMWA_CLOAKED, DwmGetWindowAttribute};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetClassNameW, GetWindow, GetWindowLongW, GetWindowRect, GetWindowTextW,
-        GetWindowThreadProcessId, IsWindowVisible, GWL_EXSTYLE, GWL_STYLE, GW_OWNER,
-        WS_CHILD, WS_EX_TOOLWINDOW,
+        EnumWindows, GW_OWNER, GWL_EXSTYLE, GWL_STYLE, GetClassNameW, GetWindow, GetWindowLongW,
+        GetWindowRect, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible, WS_CHILD,
+        WS_EX_TOOLWINDOW,
     };
+    use windows::core::BOOL;
 
     // Collect raw HWNDs first (do nothing heavy inside the enum callback). The body is push-only and
     // cannot panic, so no `catch_unwind` is needed across the `extern "system"` FFI boundary.
@@ -662,12 +689,12 @@ fn list_arrangeable() -> Result<Vec<WindowDescriptor>, String> {
 /// protected processes — those return None and matching falls back to class/title.
 #[cfg(target_os = "windows")]
 fn exe_path(pid: u32) -> Option<String> {
-    use windows::core::PWSTR;
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Threading::{
-        OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32,
-        PROCESS_QUERY_LIMITED_INFORMATION,
+        OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        QueryFullProcessImageNameW,
     };
+    use windows::core::PWSTR;
 
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
@@ -692,10 +719,10 @@ fn snap(hwnd: i64, zone: ScreenRect) -> Result<(), String> {
     use std::thread::sleep;
     use std::time::Duration;
     use windows::Win32::Foundation::{HWND, RECT};
-    use windows::Win32::Graphics::Dwm::{DwmGetWindowAttribute, DWMWA_EXTENDED_FRAME_BOUNDS};
+    use windows::Win32::Graphics::Dwm::{DWMWA_EXTENDED_FRAME_BOUNDS, DwmGetWindowAttribute};
     use windows::Win32::UI::WindowsAndMessaging::{
-        GetWindowRect, IsIconic, IsZoomed, SetWindowPos, ShowWindow, SWP_NOACTIVATE, SWP_NOZORDER,
-        SW_RESTORE,
+        GetWindowRect, IsIconic, IsZoomed, SW_RESTORE, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos,
+        ShowWindow,
     };
 
     let hwnd_id = hwnd;
@@ -708,7 +735,7 @@ fn snap(hwnd: i64, zone: ScreenRect) -> Result<(), String> {
         (Some(x), Some(y)) => {
             x.left == y.left && x.top == y.top && x.right == y.right && x.bottom == y.bottom
         }
-        _ => false
+        _ => false,
     };
     unsafe {
         // A maximized/minimized window ignores SetWindowPos (it snaps back), so restore it first —
@@ -796,20 +823,39 @@ mod tests {
 
     #[test]
     fn is_arrangeable_requires_visible_titled_real_unowned_window() {
-        assert!(is_arrangeable(true, false, false, true, 800, 600, false, false));
-        assert!(!is_arrangeable(false, false, false, true, 800, 600, false, false)); // hidden
-        assert!(!is_arrangeable(true, true, false, true, 800, 600, false, false)); // tool window
-        assert!(!is_arrangeable(true, false, true, true, 800, 600, false, false)); // cloaked
-        assert!(!is_arrangeable(true, false, false, false, 800, 600, false, false)); // no title
-        assert!(!is_arrangeable(true, false, false, true, 0, 600, false, false)); // zero width
-        assert!(!is_arrangeable(true, false, false, true, 800, 600, true, false)); // our own window
-        assert!(!is_arrangeable(true, false, false, true, 800, 600, false, true)); // owned/child popup
+        assert!(is_arrangeable(
+            true, false, false, true, 800, 600, false, false
+        ));
+        assert!(!is_arrangeable(
+            false, false, false, true, 800, 600, false, false
+        )); // hidden
+        assert!(!is_arrangeable(
+            true, true, false, true, 800, 600, false, false
+        )); // tool window
+        assert!(!is_arrangeable(
+            true, false, true, true, 800, 600, false, false
+        )); // cloaked
+        assert!(!is_arrangeable(
+            true, false, false, false, 800, 600, false, false
+        )); // no title
+        assert!(!is_arrangeable(
+            true, false, false, true, 0, 600, false, false
+        )); // zero width
+        assert!(!is_arrangeable(
+            true, false, false, true, 800, 600, true, false
+        )); // our own window
+        assert!(!is_arrangeable(
+            true, false, false, true, 800, 600, false, true
+        )); // owned/child popup
     }
 
     #[test]
     fn adjust_returns_zone_unchanged_without_a_frame() {
         let zone = rect(100.0, 200.0, 800.0, 600.0);
-        assert_eq!(adjust_for_frame_bounds(zone, rect(0.0, 0.0, 800.0, 600.0), None), zone);
+        assert_eq!(
+            adjust_for_frame_bounds(zone, rect(0.0, 0.0, 800.0, 600.0), None),
+            zone
+        );
     }
 
     #[test]
@@ -818,7 +864,10 @@ mod tests {
         let zone = rect(100.0, 200.0, 800.0, 600.0);
         let window = rect(0.0, 0.0, 814.0, 607.0);
         let frame = Some(rect(7.0, 0.0, 800.0, 600.0));
-        assert_eq!(adjust_for_frame_bounds(zone, window, frame), rect(93.0, 200.0, 814.0, 607.0));
+        assert_eq!(
+            adjust_for_frame_bounds(zone, window, frame),
+            rect(93.0, 200.0, 814.0, 607.0)
+        );
     }
 
     #[test]
@@ -841,7 +890,10 @@ mod tests {
 
     #[test]
     fn exe_basename_lowercases_and_strips_dir() {
-        assert_eq!(exe_basename("C:\\Program Files\\Spotify\\Spotify.exe"), "spotify.exe");
+        assert_eq!(
+            exe_basename("C:\\Program Files\\Spotify\\Spotify.exe"),
+            "spotify.exe"
+        );
         assert_eq!(exe_basename("/usr/bin/Foo"), "foo");
         assert_eq!(exe_basename("Code.exe"), "code.exe");
     }
@@ -918,13 +970,21 @@ mod tests {
             exe: "C:\\X\\app.exe".to_string(),
             class_name: "Chrome_WidgetWin_1".to_string(),
             title: "Title".to_string(),
-            rect: ScreenRect { x: 1.0, y: 2.0, w: 3.0, h: 4.0 },
+            rect: ScreenRect {
+                x: 1.0,
+                y: 2.0,
+                w: 3.0,
+                h: 4.0,
+            },
         };
         let json = serde_json::to_value(&d).unwrap();
         assert_eq!(json["hwnd"], 123);
         assert_eq!(json["exe"], "C:\\X\\app.exe");
         assert_eq!(json["className"], "Chrome_WidgetWin_1"); // camelCase, NOT class_name
-        assert!(json.get("class_name").is_none(), "snake_case class_name must not leak to the bridge");
+        assert!(
+            json.get("class_name").is_none(),
+            "snake_case class_name must not leak to the bridge"
+        );
         assert_eq!(json["title"], "Title");
         assert_eq!(json["rect"]["x"], 1.0);
         assert_eq!(json["rect"]["w"], 3.0);
@@ -933,7 +993,12 @@ mod tests {
     #[test]
     fn pointer_state_serializes_to_the_ts_bridge_shape() {
         // Mirrors `Pointer` in core/dragSnap.ts ({ x, y, shift }) — the overlay's drag poll reads these.
-        let json = serde_json::to_value(PointerState { x: 10.0, y: 20.0, shift: true }).unwrap();
+        let json = serde_json::to_value(PointerState {
+            x: 10.0,
+            y: 20.0,
+            shift: true,
+        })
+        .unwrap();
         assert_eq!(json["x"], 10.0);
         assert_eq!(json["y"], 20.0);
         assert_eq!(json["shift"], true);
@@ -960,7 +1025,10 @@ mod manual_smoke {
     }
 
     fn rect_of(hwnd: i64) -> Option<ScreenRect> {
-        arrangeable().into_iter().find(|w| w.hwnd == hwnd).map(|w| w.rect)
+        arrangeable()
+            .into_iter()
+            .find(|w| w.hwnd == hwnd)
+            .map(|w| w.rect)
     }
 
     fn close_window(hwnd: i64) {
@@ -975,7 +1043,9 @@ mod manual_smoke {
     #[ignore = "spawns + moves a real Notepad window; run explicitly with --ignored"]
     fn snap_moves_a_real_window() {
         let before: HashSet<i64> = arrangeable().into_iter().map(|w| w.hwnd).collect();
-        let mut child = Command::new("notepad.exe").spawn().expect("failed to spawn notepad.exe");
+        let mut child = Command::new("notepad.exe")
+            .spawn()
+            .expect("failed to spawn notepad.exe");
 
         // Wait for a NEW arrangeable window (ours) — prefer one whose exe is notepad.exe.
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -993,13 +1063,18 @@ mod manual_smoke {
             Some(h) => h,
             None => {
                 let _ = child.kill();
-        let _ = child.wait(); // reap the process so clippy's zombie_processes lint is satisfied
+                let _ = child.wait(); // reap the process so clippy's zombie_processes lint is satisfied
                 panic!("no new window appeared within 5s — did Notepad open?");
             }
         };
 
         let start = rect_of(hwnd);
-        let target = ScreenRect { x: 200.0, y: 200.0, w: 800.0, h: 600.0 };
+        let target = ScreenRect {
+            x: 200.0,
+            y: 200.0,
+            w: 800.0,
+            h: 600.0,
+        };
         let snapped = snap(hwnd, target);
         sleep(Duration::from_millis(250));
         let end = rect_of(hwnd);
@@ -1017,17 +1092,32 @@ mod manual_smoke {
         snapped.expect("snap returned Err");
         let end = end.expect("could not read the window rect after snapping");
         // The VISIBLE frame fills ~the target; the window rect sits within a small DWM border of it.
-        assert!((end.x - target.x).abs() < 16.0, "x off target: {} vs {}", end.x, target.x);
-        assert!((end.y - target.y).abs() < 16.0, "y off target: {} vs {}", end.y, target.y);
-        assert!((end.w - target.w).abs() < 32.0, "w off target: {} vs {}", end.w, target.w);
+        assert!(
+            (end.x - target.x).abs() < 16.0,
+            "x off target: {} vs {}",
+            end.x,
+            target.x
+        );
+        assert!(
+            (end.y - target.y).abs() < 16.0,
+            "y off target: {} vs {}",
+            end.y,
+            target.y
+        );
+        assert!(
+            (end.w - target.w).abs() < 32.0,
+            "w off target: {} vs {}",
+            end.w,
+            target.w
+        );
     }
 
     /// Synthesize the left mouse button down/up (so `GetAsyncKeyState(VK_LBUTTON)` — the synthetic-drag
     /// arming gate — reads it). Injected at the current cursor position.
     fn send_lmb(down: bool) {
         use windows::Win32::UI::Input::KeyboardAndMouse::{
-            SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
-            MOUSEINPUT,
+            INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP, MOUSEINPUT,
+            SendInput,
         };
         let input = INPUT {
             r#type: INPUT_MOUSE,
@@ -1036,7 +1126,11 @@ mod manual_smoke {
                     dx: 0,
                     dy: 0,
                     mouseData: 0,
-                    dwFlags: if down { MOUSEEVENTF_LEFTDOWN } else { MOUSEEVENTF_LEFTUP },
+                    dwFlags: if down {
+                        MOUSEEVENTF_LEFTDOWN
+                    } else {
+                        MOUSEEVENTF_LEFTUP
+                    },
                     time: 0,
                     dwExtraInfo: 0,
                 },
@@ -1061,7 +1155,7 @@ mod manual_smoke {
         use std::sync::mpsc;
         use windows::Win32::Foundation::{HWND, RECT};
         use windows::Win32::UI::WindowsAndMessaging::{
-            GetWindowRect, SetCursorPos, SetWindowPos, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER,
+            GetWindowRect, SWP_NOACTIVATE, SWP_NOSIZE, SWP_NOZORDER, SetCursorPos, SetWindowPos,
         };
 
         // Capture drag signals (no Tauri), then start the REAL hook pipeline.
@@ -1074,12 +1168,17 @@ mod manual_smoke {
 
         // Spawn a throwaway window; identify it by diffing the arrangeable set across the spawn.
         let before: HashSet<i64> = arrangeable().into_iter().map(|w| w.hwnd).collect();
-        let mut child = Command::new("notepad.exe").spawn().expect("failed to spawn notepad.exe");
+        let mut child = Command::new("notepad.exe")
+            .spawn()
+            .expect("failed to spawn notepad.exe");
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut hwnd_id = None;
         while Instant::now() < deadline && hwnd_id.is_none() {
             sleep(Duration::from_millis(150));
-            hwnd_id = arrangeable().into_iter().find(|w| !before.contains(&w.hwnd)).map(|w| w.hwnd);
+            hwnd_id = arrangeable()
+                .into_iter()
+                .find(|w| !before.contains(&w.hwnd))
+                .map(|w| w.hwnd);
         }
         let Some(hwnd_id) = hwnd_id else {
             let _ = child.kill();
@@ -1124,11 +1223,15 @@ mod manual_smoke {
         let signals: Vec<DragAction> = rx.try_iter().collect();
         println!("captured drag signals: {signals:?}");
         assert!(
-            signals.iter().any(|a| matches!(a, DragAction::Start(h) if *h == hwnd_id)),
+            signals
+                .iter()
+                .any(|a| matches!(a, DragAction::Start(h) if *h == hwnd_id)),
             "expected a synthetic Start for the dragged window; got {signals:?}"
         );
         assert!(
-            signals.iter().any(|a| matches!(a, DragAction::End(h) if *h == hwnd_id)),
+            signals
+                .iter()
+                .any(|a| matches!(a, DragAction::End(h) if *h == hwnd_id)),
             "expected an End after the button release; got {signals:?}"
         );
     }

@@ -103,7 +103,9 @@ fn mqtt_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
 pub fn load_mqtt_config<R: Runtime>(app: &AppHandle<R>) -> Result<Option<MqttConfig>, String> {
     let path = mqtt_config_path(app)?;
     match std::fs::read_to_string(&path) {
-        Ok(txt) => serde_json::from_str(&txt).map(Some).map_err(|e| e.to_string()),
+        Ok(txt) => serde_json::from_str(&txt)
+            .map(Some)
+            .map_err(|e| e.to_string()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err.to_string()),
     }
@@ -307,12 +309,13 @@ pub async fn run_mqtt_client<R: Runtime>(
                 }
                 // Record the seen topic (keeps a discovered entry's friendly label if already set).
                 if let Ok(mut cat) = catalog.lock() {
-                    cat.entry(p.topic.clone()).or_insert_with(|| MqttCatalogEntry {
-                        id: topic_to_id(&p.topic),
-                        topic: p.topic.clone(),
-                        label: None,
-                        unit: None,
-                    });
+                    cat.entry(p.topic.clone())
+                        .or_insert_with(|| MqttCatalogEntry {
+                            id: topic_to_id(&p.topic),
+                            topic: p.topic.clone(),
+                            label: None,
+                            unit: None,
+                        });
                 }
                 let batch = payload_to_samples(&p.topic, &payload, now_ms());
                 let _ = app.emit(TELEMETRY_EVENT, &batch);
@@ -483,7 +486,10 @@ mod tests {
         assert!(ids.contains(&"mqtt.t/dev.name")); // string field → text
         assert!(ids.contains(&"mqtt.t/dev.on")); // bool field → text
         let temp = s.iter().find(|x| x.sensor == "mqtt.t/dev.temp").unwrap();
-        assert_eq!(serde_json::to_value(temp).unwrap()["value"]["kind"], "scalar");
+        assert_eq!(
+            serde_json::to_value(temp).unwrap()["value"]["kind"],
+            "scalar"
+        );
     }
 
     #[test]

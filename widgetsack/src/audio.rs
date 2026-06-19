@@ -27,8 +27,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use realfft::num_complex::Complex;
 use realfft::{RealFftPlanner, RealToComplex};
 use serde::Serialize;
-use tauri::ipc::Channel;
 use tauri::Runtime;
+use tauri::ipc::Channel;
 
 use crate::log;
 
@@ -160,14 +160,22 @@ fn band_edges(band_count: usize, fmin: f32, fmax: f32, linear: bool) -> Vec<f32>
             .collect();
     }
     let ratio = (fmax / fmin).powf(1.0 / band_count as f32);
-    (0..=band_count).map(|i| fmin * ratio.powi(i as i32)).collect()
+    (0..=band_count)
+        .map(|i| fmin * ratio.powi(i as i32))
+        .collect()
 }
 
 /// Group linear FFT-bin magnitudes into `band_count` display bands over [`FMIN_HZ`, `FMAX_HZ`]
 /// (log- or `linear`-spaced), each the dB-normalised (0..1) PEAK magnitude within its frequency span.
 /// Peak (not average) keeps narrow tones visible. The frequency range and dB floor are the fixed
 /// app constants, so they aren't parameters.
-fn to_bands(mags: &[f32], sample_rate: u32, fft_size: usize, band_count: usize, linear: bool) -> Vec<f32> {
+fn to_bands(
+    mags: &[f32],
+    sample_rate: u32,
+    fft_size: usize,
+    band_count: usize,
+    linear: bool,
+) -> Vec<f32> {
     if band_count == 0 || mags.is_empty() || fft_size == 0 {
         return vec![0.0; band_count];
     }
@@ -249,7 +257,11 @@ impl SpectrumProcessor {
             *slot = window.get(i).copied().unwrap_or(0.0) * self.window[i];
         }
         // realfft uses `input` as scratch and writes N/2+1 complex bins into `spectrum`.
-        if self.fft.process(&mut self.input, &mut self.spectrum).is_ok() {
+        if self
+            .fft
+            .process(&mut self.input, &mut self.spectrum)
+            .is_ok()
+        {
             let mags = magnitudes(&self.spectrum);
             let bands = to_bands(&mags, self.sample_rate, self.fft_size, band_count, linear);
             if self.smoothed.len() != band_count {
@@ -338,7 +350,7 @@ pub fn stop_spectrum<R: Runtime>(
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub fn list_audio_outputs() -> Result<Vec<AudioDevice>, String> {
-    use wasapi::{initialize_mta, Direction};
+    use wasapi::{Direction, initialize_mta};
     // The command may run on a COM-uninitialised pool thread; init MTA (a no-op / harmless
     // RPC_E_CHANGED_MODE if COM is already up on this thread — enumeration works either way).
     let _ = initialize_mta().ok();
@@ -374,7 +386,7 @@ pub fn list_audio_outputs() -> Result<Vec<AudioDevice>, String> {
 #[cfg(target_os = "windows")]
 #[tauri::command]
 pub fn default_audio_output() -> Option<String> {
-    use wasapi::{initialize_mta, Direction};
+    use wasapi::{Direction, initialize_mta};
     let _ = initialize_mta().ok();
     let enumerator = wasapi::DeviceEnumerator::new().ok()?;
     enumerator
@@ -397,19 +409,71 @@ pub fn default_audio_output() -> Option<String> {
 #[cfg(target_os = "windows")]
 #[windows::core::interface("f8679f50-850a-41cf-9c72-430f290290c8")]
 unsafe trait IPolicyConfig: windows::core::IUnknown {
-    unsafe fn get_mix_format(&self, id: windows::core::PCWSTR, fmt: *mut *mut ::core::ffi::c_void) -> windows::core::HRESULT;
-    unsafe fn get_device_format(&self, id: windows::core::PCWSTR, default: i32, fmt: *mut *mut ::core::ffi::c_void) -> windows::core::HRESULT;
+    unsafe fn get_mix_format(
+        &self,
+        id: windows::core::PCWSTR,
+        fmt: *mut *mut ::core::ffi::c_void,
+    ) -> windows::core::HRESULT;
+    unsafe fn get_device_format(
+        &self,
+        id: windows::core::PCWSTR,
+        default: i32,
+        fmt: *mut *mut ::core::ffi::c_void,
+    ) -> windows::core::HRESULT;
     unsafe fn reset_device_format(&self, id: windows::core::PCWSTR) -> windows::core::HRESULT;
-    unsafe fn set_device_format(&self, id: windows::core::PCWSTR, endpoint_fmt: *mut ::core::ffi::c_void, mix_fmt: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
-    unsafe fn get_processing_period(&self, id: windows::core::PCWSTR, default: i32, default_period: *mut i64, min_period: *mut i64) -> windows::core::HRESULT;
-    unsafe fn set_processing_period(&self, id: windows::core::PCWSTR, period: *mut i64) -> windows::core::HRESULT;
-    unsafe fn get_share_mode(&self, id: windows::core::PCWSTR, mode: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
-    unsafe fn set_share_mode(&self, id: windows::core::PCWSTR, mode: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
-    unsafe fn get_property_value(&self, id: windows::core::PCWSTR, key: i32, value: *const ::core::ffi::c_void, out: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
-    unsafe fn set_property_value(&self, id: windows::core::PCWSTR, key: i32, value: *const ::core::ffi::c_void, out: *mut ::core::ffi::c_void) -> windows::core::HRESULT;
+    unsafe fn set_device_format(
+        &self,
+        id: windows::core::PCWSTR,
+        endpoint_fmt: *mut ::core::ffi::c_void,
+        mix_fmt: *mut ::core::ffi::c_void,
+    ) -> windows::core::HRESULT;
+    unsafe fn get_processing_period(
+        &self,
+        id: windows::core::PCWSTR,
+        default: i32,
+        default_period: *mut i64,
+        min_period: *mut i64,
+    ) -> windows::core::HRESULT;
+    unsafe fn set_processing_period(
+        &self,
+        id: windows::core::PCWSTR,
+        period: *mut i64,
+    ) -> windows::core::HRESULT;
+    unsafe fn get_share_mode(
+        &self,
+        id: windows::core::PCWSTR,
+        mode: *mut ::core::ffi::c_void,
+    ) -> windows::core::HRESULT;
+    unsafe fn set_share_mode(
+        &self,
+        id: windows::core::PCWSTR,
+        mode: *mut ::core::ffi::c_void,
+    ) -> windows::core::HRESULT;
+    unsafe fn get_property_value(
+        &self,
+        id: windows::core::PCWSTR,
+        key: i32,
+        value: *const ::core::ffi::c_void,
+        out: *mut ::core::ffi::c_void,
+    ) -> windows::core::HRESULT;
+    unsafe fn set_property_value(
+        &self,
+        id: windows::core::PCWSTR,
+        key: i32,
+        value: *const ::core::ffi::c_void,
+        out: *mut ::core::ffi::c_void,
+    ) -> windows::core::HRESULT;
     /// SetDefaultEndpoint(wszDeviceId, eRole) — the one we call. role: 0 eConsole, 1 eMultimedia, 2 eCommunications.
-    unsafe fn set_default_endpoint(&self, device_id: windows::core::PCWSTR, role: u32) -> windows::core::HRESULT;
-    unsafe fn set_endpoint_visibility(&self, id: windows::core::PCWSTR, visible: i32) -> windows::core::HRESULT;
+    unsafe fn set_default_endpoint(
+        &self,
+        device_id: windows::core::PCWSTR,
+        role: u32,
+    ) -> windows::core::HRESULT;
+    unsafe fn set_endpoint_visibility(
+        &self,
+        id: windows::core::PCWSTR,
+        visible: i32,
+    ) -> windows::core::HRESULT;
 }
 
 /// Make `id` the default render endpoint for ALL roles (console + multimedia + communications), like
@@ -419,10 +483,10 @@ unsafe trait IPolicyConfig: windows::core::IUnknown {
 #[tauri::command]
 pub fn set_default_audio_output(id: String) -> Result<(), String> {
     use std::iter::once;
-    use windows::core::PCWSTR;
     use windows::Win32::System::Com::{
-        CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED,
+        CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
     };
+    use windows::core::PCWSTR;
 
     // CPolicyConfigClient.
     const CLSID_POLICY_CONFIG: windows::core::GUID =
@@ -471,15 +535,20 @@ pub struct AudioVolume {
 /// Acquire the default render endpoint's `IAudioEndpointVolume`. COM is initialised MTA on the calling
 /// (pool) thread; `RPC_E_CHANGED_MODE` if already up in another mode is harmless.
 #[cfg(target_os = "windows")]
-fn endpoint_volume() -> windows::core::Result<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume>
-{
-    use windows::Win32::Media::Audio::{eConsole, eRender, IMMDeviceEnumerator, MMDeviceEnumerator};
-    use windows::Win32::System::Com::{CoCreateInstance, CoInitializeEx, CLSCTX_ALL, COINIT_MULTITHREADED};
+fn endpoint_volume()
+-> windows::core::Result<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
+    use windows::Win32::Media::Audio::{
+        IMMDeviceEnumerator, MMDeviceEnumerator, eConsole, eRender,
+    };
+    use windows::Win32::System::Com::{
+        CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
+    };
 
     // SAFETY: standard COM create/activate; every interface is released on drop.
     unsafe {
         let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
-        let enumerator: IMMDeviceEnumerator = CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
+        let enumerator: IMMDeviceEnumerator =
+            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
         let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
         device.Activate(CLSCTX_ALL, None)
     }
@@ -529,7 +598,8 @@ pub fn set_audio_mute(muted: bool) -> Result<(), String> {
     // SAFETY: writes the mute flag; eventcontext is null.
     unsafe {
         let vol = endpoint_volume().map_err(|e| e.to_string())?;
-        vol.SetMute(muted, std::ptr::null()).map_err(|e| e.to_string())
+        vol.SetMute(muted, std::ptr::null())
+            .map_err(|e| e.to_string())
     }
 }
 
@@ -560,9 +630,7 @@ mod capture {
     use super::*;
     use std::collections::VecDeque;
     use std::time::{Duration, Instant};
-    use wasapi::{
-        initialize_mta, Direction, SampleType, StreamMode, WaveFormat,
-    };
+    use wasapi::{Direction, SampleType, StreamMode, WaveFormat, initialize_mta};
 
     /// How long to wait before re-initialising after a recoverable device error / switch.
     const RETRY_BACKOFF: Duration = Duration::from_millis(500);
@@ -620,7 +688,11 @@ mod capture {
                 }
             }
             if failures >= MAX_CONSECUTIVE_FAILURES {
-                log::error("audio", "spectrum: giving up after repeated capture failures").emit();
+                log::error(
+                    "audio",
+                    "spectrum: giving up after repeated capture failures",
+                )
+                .emit();
                 state.lock().running = false;
                 return;
             }
@@ -664,7 +736,14 @@ mod capture {
             .unwrap_or_else(|_| "unknown".to_string());
         let mut audio_client = device.get_iaudioclient()?;
 
-        let format = WaveFormat::new(32, 32, &SampleType::Float, SAMPLE_RATE as usize, CHANNELS as usize, None);
+        let format = WaveFormat::new(
+            32,
+            32,
+            &SampleType::Float,
+            SAMPLE_RATE as usize,
+            CHANNELS as usize,
+            None,
+        );
         let (_default_period, min_period) = audio_client.get_device_period()?;
         // Polling (not event-driven): loopback is incompatible with EVENTCALLBACK in shared mode.
         let mode = StreamMode::PollingShared {
@@ -866,7 +945,10 @@ mod tests {
         mags[bin] = FFT_SIZE as f32 / 4.0; // ≈ full scale
         let bands = to_bands(&mags, SAMPLE_RATE, FFT_SIZE, 32, false);
         assert!(bands.iter().all(|&b| (0.0..=1.0).contains(&b)));
-        assert!(bands.iter().cloned().fold(0.0_f32, f32::max) > 0.9, "1 kHz band should be near full");
+        assert!(
+            bands.iter().cloned().fold(0.0_f32, f32::max) > 0.9,
+            "1 kHz band should be near full"
+        );
     }
 
     #[test]
@@ -899,7 +981,12 @@ mod tests {
         assert!(frame.bands.iter().all(|&b| (0.0..=1.0).contains(&b)));
 
         // Which band owns 1 kHz?
-        let edges = band_edges(band_count, FMIN_HZ, FMAX_HZ.min(SAMPLE_RATE as f32 / 2.0), false);
+        let edges = band_edges(
+            band_count,
+            FMIN_HZ,
+            FMAX_HZ.min(SAMPLE_RATE as f32 / 2.0),
+            false,
+        );
         let tone_band = (0..band_count)
             .find(|&b| freq >= edges[b] && freq < edges[b + 1])
             .expect("1 kHz within range");
@@ -907,10 +994,12 @@ mod tests {
         assert!(peak > 0.5, "tone band should be strong, got {peak}");
 
         // A far-away band (well below the tone, e.g. ~50 Hz) should be near silent.
-        let low_band = (0..band_count)
-            .find(|&b| edges[b + 1] < 100.0)
-            .unwrap_or(0);
-        assert!(frame.bands[low_band] < 0.2, "low band should be quiet, got {}", frame.bands[low_band]);
+        let low_band = (0..band_count).find(|&b| edges[b + 1] < 100.0).unwrap_or(0);
+        assert!(
+            frame.bands[low_band] < 0.2,
+            "low band should be quiet, got {}",
+            frame.bands[low_band]
+        );
     }
 
     #[test]

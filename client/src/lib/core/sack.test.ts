@@ -69,6 +69,23 @@ describe('mergeLibrary', () => {
 		expect(grp.def).toBe('b-2'); // points to B's NEW id
 	});
 
+	it('rewrites group refs nested inside a CONTAINER child (recursion)', () => {
+		const into: Library = { version: 1, defs: [mkDef('a'), mkDef('b')] };
+		// A's child is a container whose descendant is a group referencing B — exercises the
+		// container-recursion branch of remapRefs (not just a top-level group leaf).
+		const incomingA: WidgetDef = {
+			id: 'a',
+			name: 'A',
+			size: { w: 10, h: 10 },
+			child: { id: 'row', kind: 'row', children: [groupLeaf('g', 'b')] }
+		};
+		const { library, idMap } = mergeLibrary(into, [incomingA, mkDef('b')]);
+		const mergedA = library.defs.find((d) => d.id === idMap.a);
+		const cont = mergedA?.child as { children: Leaf[] };
+		const grp = cont.children[0].unit as { def: string };
+		expect(grp.def).toBe(idMap.b);
+	});
+
 	it('does not mutate the incoming defs', () => {
 		const incoming = mkDef('a', groupLeaf('g', 'a'));
 		const into: Library = { version: 1, defs: [mkDef('a')] };

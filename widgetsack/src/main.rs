@@ -3,11 +3,11 @@
     windows_subsystem = "windows"
 )]
 
-use listener::{session_listener_windows_gsmtc, ManagerEventWrapper, SessionUpdateEventWrapper};
+use listener::{ManagerEventWrapper, SessionUpdateEventWrapper, session_listener_windows_gsmtc};
 use state::SessionRecord;
 use std::collections::HashMap;
 use tauri::async_runtime::Mutex;
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -25,6 +25,7 @@ pub mod bridge;
 pub mod clickthrough;
 pub mod command;
 pub mod control;
+pub mod ddc;
 pub mod display;
 pub mod event;
 pub mod ha;
@@ -39,8 +40,8 @@ pub mod process_diag;
 pub mod recyclebin;
 pub mod rss;
 pub mod sensors;
-pub mod stocks;
 pub mod state;
+pub mod stocks;
 pub mod timings;
 pub mod weather;
 pub mod wifi;
@@ -54,7 +55,7 @@ pub struct AppState {
 /// studio construction (it listens for `open_studio`) — but `main` is DESTROYED to reclaim its renderer
 /// when the primary monitor is empty (overlay.ts `setMainWindowVisible` / command.rs `watch_layout`),
 /// and a dead window can't host that listener. So when `main` is absent we build the studio directly
-/// here, mirroring overlay.ts `openStudio`, keeping the tray "Open designer", the tray left-click, and
+/// here, mirroring overlay.ts `openStudio`, keeping the tray "Open studio", the tray left-click, and
 /// the single-instance second-launch working even with no primary overlay present. Runs on the main
 /// thread (its callers are tray/single-instance handlers on the event loop).
 fn open_or_focus_studio(app: &tauri::AppHandle) {
@@ -101,6 +102,31 @@ fn launched_with_studio_flag() -> bool {
     std::env::args().any(|arg| arg == "--studio")
 }
 
+/// Whether this process should run as an independent EXTRA instance — typically a dev/debug build run
+/// alongside the installed release. When set, the single-instance lock is skipped (so this process
+/// doesn't just focus the already-running one and exit) AND the config dir is isolated to a `multi/`
+/// subfolder (see `command::config_root`), so it never clobbers the release's widgets.json / themes /
+/// layouts. Enabled by the `--multi` flag or `WIDGETSACK_MULTI=1`. Memoized — args/env are fixed for
+/// the process lifetime.
+pub fn multi_instance() -> bool {
+    use std::sync::OnceLock;
+    static MULTI: OnceLock<bool> = OnceLock::new();
+    *MULTI.get_or_init(|| {
+        std::env::args().any(|arg| arg == "--multi")
+            || std::env::var("WIDGETSACK_MULTI")
+                .map(|v| !v.is_empty() && v != "0")
+                .unwrap_or(false)
+    })
+}
+
+/// Whether this is a dev / extra instance — launched with `--multi` (run alongside the installed
+/// release) or built in debug. The studio shows a small "dev" badge by the window controls so it's
+/// distinguishable from the real release at a glance.
+#[tauri::command]
+fn is_dev_instance() -> bool {
+    multi_instance() || cfg!(debug_assertions)
+}
+
 /// The window-state the app persists across runs: size / position / maximized / fullscreen, but NOT
 /// decorations or visibility (config + the frontend own those — see the plugin registration). Shared
 /// by the plugin (what it saves + restores) AND the studio-close flush below, so both agree.
@@ -124,13 +150,23 @@ async fn main() -> Result<(), ()> {
     // SessionUpdateEvents) can't briefly block the gsmtc listener task on a full channel.
     let (tx_gsmtc, mut rx_gsmtc) = mpsc::channel(16);
 
-    tauri::Builder::default()
-        // Single-instance MUST be the first plugin (its callback fires synchronously on a second
-        // launch, before windows exist). A second launch focuses the running app by emitting
-        // open_studio (the primary overlay opens the studio), then that process exits.
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+    // Single-instance MUST be the first plugin (its callback fires synchronously on a second
+    // launch, before windows exist). A second launch focuses the running app by emitting
+    // open_studio (the primary overlay opens the studio), then that process exits. SKIPPED for an
+    // extra dev instance (`--multi` / WIDGETSACK_MULTI), so it can run alongside the installed
+    // release instead of just focusing it — see `multi_instance`.
+    let builder = tauri::Builder::default();
+    let builder = if multi_instance() {
+        eprintln!(
+            "[widgetsack] multi-instance: single-instance lock skipped; config isolated to <app config>/multi"
+        );
+        builder
+    } else {
+        builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
             open_or_focus_studio(app);
         }))
+    };
+    builder
         // "Launch at login" support. The Settings toggle enables/disables it via the granted
         // autostart:* commands (overlay.json capability); registering it here just makes them work.
         .plugin(tauri_plugin_autostart::init(
@@ -200,6 +236,7 @@ async fn main() -> Result<(), ()> {
         .register_uri_scheme_protocol("art", |ctx, request| art::serve_art(ctx, request))
         .invoke_handler(tauri::generate_handler![
             get_initial_sessions,
+            is_dev_instance,
             command::load_layout,
             command::save_layout,
             command::load_controls,
@@ -237,6 +274,8 @@ async fn main() -> Result<(), ()> {
             command::check_app_update,
             command::system_fonts,
             display::list_display_names,
+            ddc::list_monitor_inputs,
+            ddc::set_monitor_input,
             clickthrough::set_interactive_rects,
             clickthrough::current_work_area,
             clickthrough::set_overlay_wallpaper,
@@ -257,6 +296,8 @@ async fn main() -> Result<(), ()> {
             ha::list_ha_entities,
             ha::ha_registry_snapshot,
             ha::ha_call_service,
+            ha::ha_history,
+            ha::ha_media_art,
             ha::save_ha_config,
             ha::ha_config_status,
             ha::ha_test_connection,
@@ -385,27 +426,47 @@ async fn main() -> Result<(), ()> {
             // clickthrough watcher has no message pump). No-op off Windows.
             windowmgr::run_drag_watcher(app.handle().clone());
 
-            // Tray menu: the only reliable way to toggle edit mode while the overlay
-            // is click-through (a passive window receives no in-app keys).
-            let edit_item = MenuItemBuilder::with_id("edit", "Edit layout").build(app)?;
-            let designer_item = MenuItemBuilder::with_id("designer", "Open designer").build(app)?;
+            // Tray menu (right-click): open the studio, the two overlay utilities, a launch-at-login
+            // toggle, then Quit (separated). Edit mode is NOT here — it lives on Ctrl+E and the global
+            // hotkey; a tray toggle for it read as confusing chrome.
+            let designer_item = MenuItemBuilder::with_id("designer", "Open studio").build(app)?;
             // Snap every open window that matches a zone widget's rule into that zone (overlays handle it).
             let arrange_item = MenuItemBuilder::with_id("arrange", "Arrange windows").build(app)?;
+            // Re-fit overlays to the current display layout — for when monitors are moved/added/removed
+            // at runtime (no per-window scale-change event fires for that, so overlays go stale).
+            let refit_item =
+                MenuItemBuilder::with_id("refit", "Re-fit overlays to displays").build(app)?;
+            // "Start at login" — a check item mirroring the Settings toggle (the durable HKCU pref). Read
+            // the current state for the initial check; the handler flips it via the same autostart path.
+            let autostart_on =
+                autostart::get_autostart_enabled(app.handle().clone()).unwrap_or(false);
+            let autostart_item = CheckMenuItemBuilder::with_id("autostart", "Start at login")
+                .checked(autostart_on)
+                .build(app)?;
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
             let tray_menu = MenuBuilder::new(app)
-                .item(&edit_item)
                 .item(&designer_item)
                 .item(&arrange_item)
+                .item(&refit_item)
+                .item(&autostart_item)
+                .separator()
                 .item(&quit_item)
                 .build()?;
+            // Mark a dev / extra instance in the tooltip too (matches the studio "dev" badge), so a
+            // --multi / debug instance is identifiable from the tray.
+            let dev_suffix = if is_dev_instance() { " (dev)" } else { "" };
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
-                .tooltip("Widget overlay — right-click for menu")
+                .tooltip(format!(
+                    "widgetsack v{}{}: click to open studio",
+                    app.package_info().version,
+                    dev_suffix
+                ))
                 .menu(&tray_menu)
-                .on_menu_event(|app, event| match event.id().as_ref() {
-                    "edit" => {
-                        let _ = app.emit(bridge::TOGGLE_EDIT_EVENT, ());
-                    }
+                // The menu is RIGHT-click only; left-click opens the studio (on_tray_icon_event below).
+                // Tauri's default ALSO pops the menu on left-click, so a left-click would do both — off.
+                .show_menu_on_left_click(false)
+                .on_menu_event(move |app, event| match event.id().as_ref() {
                     "designer" => {
                         // Opens (or focuses) the studio. Falls back to building it directly when the
                         // primary overlay (`main`) was reclaimed and can't host the open_studio listener.
@@ -414,6 +475,18 @@ async fn main() -> Result<(), ()> {
                     "arrange" => {
                         // Each overlay snaps the windows matching ITS monitor's zone rules.
                         let _ = app.emit(bridge::ARRANGE_ZONES_EVENT, ());
+                    }
+                    "refit" => {
+                        // Re-fit every overlay to the CURRENT display layout (monitors moved/added/removed).
+                        let _ = app.emit(bridge::REFIT_OVERLAYS_EVENT, ());
+                    }
+                    "autostart" => {
+                        // Flip launch-at-login via the same durable-pref path as Settings, then reflect the
+                        // applied state on the check item (clicking a check item doesn't auto-toggle it).
+                        let now = autostart::get_autostart_enabled(app.clone()).unwrap_or(false);
+                        let applied =
+                            autostart::set_autostart_enabled(app.clone(), !now).unwrap_or(now);
+                        let _ = autostart_item.set_checked(applied);
                     }
                     "quit" => app.exit(0),
                     _ => {}

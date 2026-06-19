@@ -84,7 +84,9 @@ fn stocks_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String>
 pub fn load_stocks_config<R: Runtime>(app: &AppHandle<R>) -> Result<Option<StocksConfig>, String> {
     let path = stocks_config_path(app)?;
     match std::fs::read_to_string(&path) {
-        Ok(txt) => serde_json::from_str(&txt).map(Some).map_err(|e| e.to_string()),
+        Ok(txt) => serde_json::from_str(&txt)
+            .map(Some)
+            .map_err(|e| e.to_string()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err.to_string()),
     }
@@ -96,7 +98,9 @@ pub fn load_stocks_config<R: Runtime>(app: &AppHandle<R>) -> Result<Option<Stock
 /// `^GSPC`) is percent-encoded; plain tickers and `BTC-USD` need no encoding.
 fn yahoo_chart_url(symbol: &str, interval: &str, range: &str) -> String {
     let enc = symbol.trim().to_uppercase().replace('^', "%5E");
-    format!("https://query1.finance.yahoo.com/v8/finance/chart/{enc}?range={range}&interval={interval}")
+    format!(
+        "https://query1.finance.yahoo.com/v8/finance/chart/{enc}?range={range}&interval={interval}"
+    )
 }
 
 /// Percent change of `price` vs `prev_close`, or `None` when prev is missing / zero (avoids a /0 and a
@@ -144,7 +148,11 @@ fn quote_to_samples(symbol: &str, chart: &Value, ts_ms: u64) -> Vec<SensorSample
             if let Some(pct) = change_pct(p, pc) {
                 out.push(SensorSample::scalar(format!("{base}.change"), ts_ms, pct));
             }
-            out.push(SensorSample::scalar(format!("{base}.changeAbs"), ts_ms, p - pc));
+            out.push(SensorSample::scalar(
+                format!("{base}.changeAbs"),
+                ts_ms,
+                p - pc,
+            ));
         }
     }
     if let Some(pc) = prev {
@@ -178,7 +186,13 @@ fn quote_to_samples(symbol: &str, chart: &Value, ts_ms: u64) -> Vec<SensorSample
 /// `client/src/lib/widgets/plugins/stocks-source.ts`. Used to tell a real `stocks.<SYM>.<field>` id
 /// apart from the `stocks.status` sentinel when reverse-deriving which symbols are in demand.
 const SYMBOL_FIELDS: &[&str] = &[
-    "price", "change", "changeAbs", "prevClose", "currency", "state", "series",
+    "price",
+    "change",
+    "changeAbs",
+    "prevClose",
+    "currency",
+    "state",
+    "series",
 ];
 
 /// Reverse-derive the uppercased stock symbols implied by a set of active sensor ids. An id shaped
@@ -248,7 +262,12 @@ fn stocks_wanted<R: Runtime>(app: &AppHandle<R>) -> bool {
 fn active_stock_symbols<R: Runtime>(app: &AppHandle<R>) -> Vec<String> {
     let active: State<ActiveSensors> = app.state();
     let guard = active.0.lock().unwrap_or_else(|e| e.into_inner());
-    symbols_from_active(guard.values().flat_map(|set| set.iter()).map(String::as_str))
+    symbols_from_active(
+        guard
+            .values()
+            .flat_map(|set| set.iter())
+            .map(String::as_str),
+    )
 }
 
 // ---- connection / poll task ----
@@ -302,7 +321,10 @@ pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig)
         .filter(|s| !s.is_empty())
         .collect();
     if cfg.provider != "yahoo" {
-        eprintln!("stocks: provider '{}' is not implemented; using yahoo", cfg.provider);
+        eprintln!(
+            "stocks: provider '{}' is not implemented; using yahoo",
+            cfg.provider
+        );
     }
 
     // `idle` re-emits a fresh "connecting" when a ticker (re)mounts after an idle gap; `fails` drives
@@ -503,15 +525,16 @@ mod tests {
         assert_eq!(pv["value"]["value"], 110.0);
 
         let change = find(&s, "stocks.AAPL.change").unwrap();
-        assert_eq!(serde_json::to_value(change).unwrap()["value"]["value"], 10.0);
         assert_eq!(
-            serde_json::to_value(find(&s, "stocks.AAPL.changeAbs").unwrap()).unwrap()["value"]
-                ["value"],
+            serde_json::to_value(change).unwrap()["value"]["value"],
             10.0
         );
         assert_eq!(
-            serde_json::to_value(find(&s, "stocks.AAPL.currency").unwrap()).unwrap()["value"]
-                ["value"],
+            serde_json::to_value(find(&s, "stocks.AAPL.changeAbs").unwrap()).unwrap()["value"]["value"],
+            10.0
+        );
+        assert_eq!(
+            serde_json::to_value(find(&s, "stocks.AAPL.currency").unwrap()).unwrap()["value"]["value"],
             "USD"
         );
         assert_eq!(
@@ -548,7 +571,7 @@ mod tests {
     fn symbols_from_active_extracts_symbols_and_skips_sentinels() {
         let ids = [
             "stocks.NVDA.price",
-            "stocks.NVDA.change",   // duplicate symbol — deduped
+            "stocks.NVDA.change", // duplicate symbol — deduped
             "stocks.AAPL.series",
             "stocks.status",        // status sentinel: not a symbol
             "*",                    // studio wildcard: not a symbol

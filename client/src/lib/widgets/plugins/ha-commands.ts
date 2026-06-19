@@ -6,6 +6,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from '../../bridge/contract';
+import type { SensorSample } from '../../core/telemetry';
 import type { HaEntity, HaRegistry, HaStatus, HaTestResult } from './ha-types';
 
 /** Whether HA is configured + its URL + the self-signed opt-in — NEVER the token. */
@@ -48,3 +49,13 @@ export const haCallService = (
 	service: string,
 	data: Record<string, unknown>
 ): Promise<unknown> => invoke(COMMANDS.haCallService, { domain, service, data });
+
+/** Numeric history for one entity over [start, end] (ISO-8601 UTC), as `ha.<entity>.state` samples —
+ * for sparkline backfill. Returns [] when the entity has no numeric history in the window. */
+export const haHistory = (entityId: string, start: string, end: string): Promise<SensorSample[]> =>
+	invoke<SensorSample[]>(COMMANDS.haHistory, { entityId, start, end });
+
+/** Fetch an HA entity_picture (e.g. a media_player cover) and get back an art-scheme URL the webview
+ * can <img>-load — bytes are cached server-side, not shipped over the bridge. */
+export const haMediaArt = (path: string): Promise<string> =>
+	invoke<string>(COMMANDS.haMediaArt, { path });

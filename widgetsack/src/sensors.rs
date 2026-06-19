@@ -41,7 +41,10 @@ use std::path::Path;
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use nvml_wrapper::{enum_wrappers::device::{Clock, TemperatureSensor}, Nvml};
+use nvml_wrapper::{
+    Nvml,
+    enum_wrappers::device::{Clock, TemperatureSensor},
+};
 use serde::Serialize;
 use sysinfo::{Disks, Networks, ProcessesToUpdate, System};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
@@ -171,7 +174,9 @@ fn name_matches(proc_name: &str, watched: &str) -> bool {
 
 /// Flatten the latest-value map to a `{ id: number|string }` JSON object — Scalar and Text only
 /// (Series/Json are dropped; not useful in a flat snapshot). Pure seam for the MCP live-state file.
-fn flatten_latest(latest: &HashMap<String, SensorValue>) -> serde_json::Map<String, serde_json::Value> {
+fn flatten_latest(
+    latest: &HashMap<String, SensorValue>,
+) -> serde_json::Map<String, serde_json::Value> {
     let mut out = serde_json::Map::new();
     for (id, v) in latest {
         match v {
@@ -301,19 +306,38 @@ fn perf_info_samples(ts: u64) -> Vec<SensorSample> {
     use windows::Win32::System::ProcessStatus::{GetPerformanceInfo, PERFORMANCE_INFORMATION};
 
     let cb = std::mem::size_of::<PERFORMANCE_INFORMATION>() as u32;
-    let mut pi = PERFORMANCE_INFORMATION { cb, ..Default::default() };
+    let mut pi = PERFORMANCE_INFORMATION {
+        cb,
+        ..Default::default()
+    };
     // SAFETY: pi is a valid owned struct and cb is its byte size; GetPerformanceInfo fills it.
     if unsafe { GetPerformanceInfo(&mut pi, cb) }.is_err() {
         return Vec::new();
     }
     let page = pi.PageSize;
     vec![
-        SensorSample::scalar("mem.commit.used", ts, bytes_from_pages(pi.CommitTotal, page)),
-        SensorSample::scalar("mem.commit.limit", ts, bytes_from_pages(pi.CommitLimit, page)),
+        SensorSample::scalar(
+            "mem.commit.used",
+            ts,
+            bytes_from_pages(pi.CommitTotal, page),
+        ),
+        SensorSample::scalar(
+            "mem.commit.limit",
+            ts,
+            bytes_from_pages(pi.CommitLimit, page),
+        ),
         SensorSample::scalar("mem.commit.peak", ts, bytes_from_pages(pi.CommitPeak, page)),
         SensorSample::scalar("mem.cached", ts, bytes_from_pages(pi.SystemCache, page)),
-        SensorSample::scalar("mem.kernel.paged", ts, bytes_from_pages(pi.KernelPaged, page)),
-        SensorSample::scalar("mem.kernel.nonpaged", ts, bytes_from_pages(pi.KernelNonpaged, page)),
+        SensorSample::scalar(
+            "mem.kernel.paged",
+            ts,
+            bytes_from_pages(pi.KernelPaged, page),
+        ),
+        SensorSample::scalar(
+            "mem.kernel.nonpaged",
+            ts,
+            bytes_from_pages(pi.KernelNonpaged, page),
+        ),
         SensorSample::scalar("host.handles", ts, f64::from(pi.HandleCount)),
         SensorSample::scalar("host.threads", ts, f64::from(pi.ThreadCount)),
     ]
@@ -333,7 +357,7 @@ fn perf_info_samples(_ts: u64) -> Vec<SensorSample> {
 #[cfg(target_os = "windows")]
 fn cpu_freq_samples(ts: u64, logical_cores: usize) -> Vec<SensorSample> {
     use windows::Win32::System::Power::{
-        CallNtPowerInformation, ProcessorInformation, PROCESSOR_POWER_INFORMATION,
+        CallNtPowerInformation, PROCESSOR_POWER_INFORMATION, ProcessorInformation,
     };
 
     if logical_cores == 0 {
@@ -367,8 +391,16 @@ fn cpu_freq_samples(ts: u64, logical_cores: usize) -> Vec<SensorSample> {
         current_max = current_max.max(p.CurrentMhz);
         rated_max = rated_max.max(p.MaxMhz);
     }
-    out.push(SensorSample::scalar("cpu.freq.current", ts, f64::from(current_max)));
-    out.push(SensorSample::scalar("cpu.freq.max", ts, f64::from(rated_max)));
+    out.push(SensorSample::scalar(
+        "cpu.freq.current",
+        ts,
+        f64::from(current_max),
+    ));
+    out.push(SensorSample::scalar(
+        "cpu.freq.max",
+        ts,
+        f64::from(rated_max),
+    ));
     out
 }
 
@@ -461,14 +493,14 @@ fn utf16_to_string(buf: &[u16]) -> String {
 /// volume handle is opened with zero access rights (no admin needed). `None` on any failure.
 #[cfg(target_os = "windows")]
 fn read_disk_io(letter: &str) -> Option<DiskIo> {
-    use windows::core::PCWSTR;
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::Storage::FileSystem::{
         CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_SHARE_MODE, FILE_SHARE_READ, FILE_SHARE_WRITE,
         OPEN_EXISTING,
     };
-    use windows::Win32::System::Ioctl::{DISK_PERFORMANCE, IOCTL_DISK_PERFORMANCE};
     use windows::Win32::System::IO::DeviceIoControl;
+    use windows::Win32::System::Ioctl::{DISK_PERFORMANCE, IOCTL_DISK_PERFORMANCE};
+    use windows::core::PCWSTR;
 
     let path: Vec<u16> = format!("\\\\.\\{}:", letter.to_uppercase())
         .encode_utf16()
@@ -527,7 +559,7 @@ fn read_disk_io(_letter: &str) -> Option<DiskIo> {
 #[cfg(target_os = "windows")]
 fn battery_power_samples(ts: u64) -> Vec<SensorSample> {
     use windows::Win32::System::Power::{
-        CallNtPowerInformation, SystemBatteryState, SYSTEM_BATTERY_STATE,
+        CallNtPowerInformation, SYSTEM_BATTERY_STATE, SystemBatteryState,
     };
 
     // SAFETY: a zeroed POD output buffer, filled by CallNtPowerInformation.
@@ -548,10 +580,18 @@ fn battery_power_samples(ts: u64) -> Vec<SensorSample> {
     // Rate is mW, signed (reinterpret the u32 as i32); 0x8000_0000 is the "unknown" sentinel.
     let rate = sbs.Rate as i32;
     if rate != i32::MIN {
-        out.push(SensorSample::scalar("battery.rate", ts, f64::from(rate) / 1000.0));
+        out.push(SensorSample::scalar(
+            "battery.rate",
+            ts,
+            f64::from(rate) / 1000.0,
+        ));
     }
     if sbs.MaxCapacity != u32::MAX {
-        out.push(SensorSample::scalar("battery.capacity.full", ts, f64::from(sbs.MaxCapacity) / 1000.0));
+        out.push(SensorSample::scalar(
+            "battery.capacity.full",
+            ts,
+            f64::from(sbs.MaxCapacity) / 1000.0,
+        ));
     }
     if sbs.RemainingCapacity != u32::MAX {
         out.push(SensorSample::scalar(
@@ -600,11 +640,23 @@ fn net_link_samples(ts: u64) -> Vec<SensorSample> {
     let mut out = vec![SensorSample::text(
         "net.state",
         ts,
-        if any_connected { "connected" } else { "disconnected" },
+        if any_connected {
+            "connected"
+        } else {
+            "disconnected"
+        },
     )];
     if let Some(r) = best {
-        out.push(SensorSample::scalar("net.linkspeed.rx", ts, (r.ReceiveLinkSpeed / 8) as f64));
-        out.push(SensorSample::scalar("net.linkspeed.tx", ts, (r.TransmitLinkSpeed / 8) as f64));
+        out.push(SensorSample::scalar(
+            "net.linkspeed.rx",
+            ts,
+            (r.ReceiveLinkSpeed / 8) as f64,
+        ));
+        out.push(SensorSample::scalar(
+            "net.linkspeed.tx",
+            ts,
+            (r.TransmitLinkSpeed / 8) as f64,
+        ));
         let name = utf16_to_string(&r.Alias);
         if !name.is_empty() {
             out.push(SensorSample::text("net.adapter", ts, name));
@@ -648,7 +700,10 @@ pub async fn set_active_sensors<R: Runtime>(
 /// counts when the union of every window's reported set is EMPTY (nobody has reported yet, so don't
 /// blank sensors at startup), OR any window asked for everything (`"*"`), OR any window's id
 /// satisfies `pred`.
-pub(crate) fn any_wanted(active: &HashMap<String, HashSet<String>>, pred: impl Fn(&str) -> bool) -> bool {
+pub(crate) fn any_wanted(
+    active: &HashMap<String, HashSet<String>>,
+    pred: impl Fn(&str) -> bool,
+) -> bool {
     if active.values().all(|ids| ids.is_empty()) {
         return true;
     }
@@ -824,14 +879,32 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         }
 
         for (i, cpu) in sys.cpus().iter().enumerate() {
-            batch.push(SensorSample::scalar(core_sensor_id(i), ts, f64::from(cpu.cpu_usage())));
+            batch.push(SensorSample::scalar(
+                core_sensor_id(i),
+                ts,
+                f64::from(cpu.cpu_usage()),
+            ));
         }
 
         // Compute all demand-gates under ONE brief lock, then DROP it before any expensive I/O
         // (NVML, process enumeration, disk refresh, frequency refresh) — the std Mutex must never be
         // held across an await or a blocking driver call.
         #[allow(clippy::type_complexity)]
-        let (want_gpu, want_disks, want_disk_io, want_procs, proc_w, proc_watch, want_freq, want_perf, want_cpufreq, want_netlink, want_conns, want_wifi, want_recyclebin) = {
+        let (
+            want_gpu,
+            want_disks,
+            want_disk_io,
+            want_procs,
+            proc_w,
+            proc_watch,
+            want_freq,
+            want_perf,
+            want_cpufreq,
+            want_netlink,
+            want_conns,
+            want_wifi,
+            want_recyclebin,
+        ) = {
             let active: tauri::State<ActiveSensors> = app.state();
             let g = active.0.lock().unwrap_or_else(|e| e.into_inner());
             let pw = |p: &str| any_wanted(&g, |id| id.starts_with(p));
@@ -898,10 +971,22 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
                     ts,
                     if count > 0 { 1.0 } else { 0.0 },
                 ));
-                batch.push(SensorSample::scalar(format!("proc.watch.{watched}.count"), ts, count as f64));
+                batch.push(SensorSample::scalar(
+                    format!("proc.watch.{watched}.count"),
+                    ts,
+                    count as f64,
+                ));
                 if count > 0 {
-                    batch.push(SensorSample::scalar(format!("proc.watch.{watched}.cpu"), ts, cpu));
-                    batch.push(SensorSample::scalar(format!("proc.watch.{watched}.mem"), ts, mem));
+                    batch.push(SensorSample::scalar(
+                        format!("proc.watch.{watched}.cpu"),
+                        ts,
+                        cpu,
+                    ));
+                    batch.push(SensorSample::scalar(
+                        format!("proc.watch.{watched}.mem"),
+                        ts,
+                        mem,
+                    ));
                 }
             }
 
@@ -966,9 +1051,21 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
                     let total = disk.total_space();
                     let avail = disk.available_space();
                     let used = total.saturating_sub(avail);
-                    batch.push(SensorSample::scalar(format!("disk.{letter}.total"), ts, total as f64));
-                    batch.push(SensorSample::scalar(format!("disk.{letter}.free"), ts, avail as f64));
-                    batch.push(SensorSample::scalar(format!("disk.{letter}.used"), ts, used as f64));
+                    batch.push(SensorSample::scalar(
+                        format!("disk.{letter}.total"),
+                        ts,
+                        total as f64,
+                    ));
+                    batch.push(SensorSample::scalar(
+                        format!("disk.{letter}.free"),
+                        ts,
+                        avail as f64,
+                    ));
+                    batch.push(SensorSample::scalar(
+                        format!("disk.{letter}.used"),
+                        ts,
+                        used as f64,
+                    ));
                     batch.push(SensorSample::scalar(
                         format!("disk.{letter}.used.pct"),
                         ts,
@@ -989,10 +1086,18 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
             let _t = timings.start("sensors.gpu");
             if let Ok(util) = device.utilization_rates() {
                 batch.push(SensorSample::scalar("gpu.util", ts, f64::from(util.gpu)));
-                batch.push(SensorSample::scalar("gpu.mem.util", ts, f64::from(util.memory)));
+                batch.push(SensorSample::scalar(
+                    "gpu.mem.util",
+                    ts,
+                    f64::from(util.memory),
+                ));
             }
             if let Ok(mem) = device.memory_info() {
-                batch.push(SensorSample::scalar("gpu.vram", ts, percent(mem.used, mem.total)));
+                batch.push(SensorSample::scalar(
+                    "gpu.vram",
+                    ts,
+                    percent(mem.used, mem.total),
+                ));
                 batch.push(SensorSample::scalar("gpu.vram.total", ts, mem.total as f64));
                 batch.push(SensorSample::scalar("gpu.vram.used", ts, mem.used as f64));
                 batch.push(SensorSample::scalar("gpu.vram.free", ts, mem.free as f64));
@@ -1008,10 +1113,18 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
             }
             // NVML reports power in milliwatts; emit watts. NotSupported on some boards → skip.
             if let Ok(mw) = device.power_usage() {
-                batch.push(SensorSample::scalar("gpu.power", ts, f64::from(mw) / 1000.0));
+                batch.push(SensorSample::scalar(
+                    "gpu.power",
+                    ts,
+                    f64::from(mw) / 1000.0,
+                ));
             }
             if let Ok(mw) = device.enforced_power_limit() {
-                batch.push(SensorSample::scalar("gpu.power.limit", ts, f64::from(mw) / 1000.0));
+                batch.push(SensorSample::scalar(
+                    "gpu.power.limit",
+                    ts,
+                    f64::from(mw) / 1000.0,
+                ));
             }
             // fan_speed is a driver setpoint percent; frequently NotSupported on laptop GPUs.
             if let Ok(pct) = device.fan_speed(0) {
@@ -1209,8 +1322,18 @@ mod tests {
     #[test]
     fn disk_io_samples_derive_rates_and_busy() {
         // query delta = 10_000_000 ×100ns = 1.0s; idle delta = 4_000_000 ×100ns = 0.4s.
-        let prev = DiskIo { idle: 0, query: 0, read: 0, written: 0 };
-        let cur = DiskIo { idle: 4_000_000, query: 10_000_000, read: 2048, written: 1024 };
+        let prev = DiskIo {
+            idle: 0,
+            query: 0,
+            read: 0,
+            written: 0,
+        };
+        let cur = DiskIo {
+            idle: 4_000_000,
+            query: 10_000_000,
+            read: 2048,
+            written: 1024,
+        };
         let s = disk_io_samples_for("c", 1, prev, cur);
         assert_eq!(s[0].sensor, "disk.c.busy.pct");
         assert_eq!(s[1].sensor, "disk.c.read");
@@ -1225,8 +1348,18 @@ mod tests {
 
         // After a demand-gate gap the query delta widens with real time, so the byte delta is spread
         // over the true elapsed and the rate stays sane — never an N× spike. 5120 B over a 5s gap.
-        let gap_prev = DiskIo { idle: 0, query: 0, read: 0, written: 0 };
-        let gap_cur = DiskIo { idle: 0, query: 50_000_000, read: 5120, written: 0 };
+        let gap_prev = DiskIo {
+            idle: 0,
+            query: 0,
+            read: 0,
+            written: 0,
+        };
+        let gap_cur = DiskIo {
+            idle: 0,
+            query: 50_000_000,
+            read: 5120,
+            written: 0,
+        };
         let g = disk_io_samples_for("c", 1, gap_prev, gap_cur);
         assert_eq!(val(&g[1].value), 1024.0); // 5120 B / 5s, not 5120 B/s
     }
@@ -1276,7 +1409,10 @@ mod tests {
         entries
             .iter()
             .map(|(label, ids)| {
-                (label.to_string(), ids.iter().map(|s| s.to_string()).collect())
+                (
+                    label.to_string(),
+                    ids.iter().map(|s| s.to_string()).collect(),
+                )
             })
             .collect()
     }
@@ -1341,22 +1477,34 @@ mod tests {
         latest.insert("cpu.series".into(), SensorValue::Series(vec![1.0, 2.0]));
         let flat = flatten_latest(&latest);
         assert_eq!(flat.get("cpu.total"), Some(&serde_json::json!(42.0)));
-        assert_eq!(flat.get("net.adapter"), Some(&serde_json::json!("Ethernet")));
+        assert_eq!(
+            flat.get("net.adapter"),
+            Some(&serde_json::json!("Ethernet"))
+        );
         assert!(!flat.contains_key("cpu.series")); // Series dropped
     }
 
     #[test]
     fn proc_watch_helpers_parse_and_match() {
         // Name extraction tolerates dots in the process name + every suffix.
-        assert_eq!(proc_watch_name_of("proc.watch.chrome.exe.running"), Some("chrome.exe"));
+        assert_eq!(
+            proc_watch_name_of("proc.watch.chrome.exe.running"),
+            Some("chrome.exe")
+        );
         assert_eq!(proc_watch_name_of("proc.watch.obs64.cpu"), Some("obs64"));
         assert_eq!(proc_watch_name_of("proc.watch.steam.mem"), Some("steam"));
         assert_eq!(proc_watch_name_of("proc.watch..running"), None);
         assert_eq!(proc_watch_name_of("proc.cpu.top.name"), None);
 
         let a = active(&[
-            ("main", &["proc.watch.chrome.exe.running", "proc.watch.chrome.exe.cpu"]),
-            ("overlay-1", &["proc.watch.Spotify.exe.running", "cpu.total"]),
+            (
+                "main",
+                &["proc.watch.chrome.exe.running", "proc.watch.chrome.exe.cpu"],
+            ),
+            (
+                "overlay-1",
+                &["proc.watch.Spotify.exe.running", "cpu.total"],
+            ),
         ]);
         assert_eq!(proc_watch_names(&a), vec!["Spotify.exe", "chrome.exe"]);
 

@@ -7,7 +7,7 @@ use serde::Serialize;
 use tauri::{Emitter, Manager};
 
 use crate::bridge::{CONTROLS_CHANGED_EVENT, LAYOUT_CHANGED_EVENT, THEMES_CHANGED_EVENT};
-use crate::{log, AppState, SessionRecord};
+use crate::{AppState, SessionRecord, log};
 
 #[derive(Serialize)]
 pub struct UpdateResponse {
@@ -34,9 +34,22 @@ pub async fn get_initial_sessions(
     Ok(UpdateResponse { sessions: cloned })
 }
 
+/// The app config dir — isolated into a `multi/` subfolder for an extra dev instance
+/// (`crate::multi_instance`), so a dev build run alongside the installed release never reads or writes
+/// the release's widgets.json / themes / layouts / sacks. The real config dir otherwise. All the
+/// config/theme/layout/sack/wallpaper/plugin paths (and their file watchers) go through this.
+fn config_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let base = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    Ok(if crate::multi_instance() {
+        base.join("multi")
+    } else {
+        base
+    })
+}
+
 /// Path to the persisted widget layout (`widgets.json` in the app config dir).
 fn layout_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = config_root(app)?;
     Ok(dir.join("widgets.json"))
 }
 
@@ -64,7 +77,7 @@ pub async fn save_layout(app: tauri::AppHandle, contents: String) -> Result<(), 
 
 /// Path to the persisted control remaps (`controls.json` in the app config dir).
 fn controls_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = config_root(app)?;
     Ok(dir.join("controls.json"))
 }
 
@@ -229,7 +242,7 @@ pub fn system_fonts() -> Vec<SystemFont> {
 // ---- themes (Phase 7c): a `themes/<name>.css` plugin folder in the app config dir ----
 
 fn themes_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = config_root(app)?;
     Ok(dir.join("themes"))
 }
 
@@ -323,7 +336,7 @@ pub fn delete_theme(app: tauri::AppHandle, name: String) -> Result<(), String> {
 // stores the bare filename; the frontend resolves it to an asset URL via `wallpaper_path`.
 
 fn wallpapers_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = config_root(app)?;
     Ok(dir.join("wallpapers"))
 }
 
@@ -399,7 +412,7 @@ pub fn open_wallpapers_dir(app: tauri::AppHandle) -> Result<(), String> {
 // owns the format + merge logic (core/sack.ts).
 
 fn sacks_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = config_root(app)?;
     Ok(dir.join("sacks"))
 }
 
@@ -477,7 +490,7 @@ pub fn write_sack(app: tauri::AppHandle, name: String, contents: String) -> Resu
 // frontend owns the JSON format + the load/replace logic (core/savedLayout.ts).
 
 fn layouts_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = config_root(app)?;
     Ok(dir.join("layouts"))
 }
 
@@ -516,7 +529,11 @@ pub fn read_layout(app: tauri::AppHandle, name: String) -> Result<Option<String>
 
 /// Write saved layout `name` (creates `layouts/`). Returns the absolute path written.
 #[tauri::command]
-pub fn save_layout_as(app: tauri::AppHandle, name: String, contents: String) -> Result<String, String> {
+pub fn save_layout_as(
+    app: tauri::AppHandle,
+    name: String,
+    contents: String,
+) -> Result<String, String> {
     if !valid_name(&name) {
         return Err("invalid layout name".to_string());
     }
@@ -548,7 +565,7 @@ pub fn delete_layout(app: tauri::AppHandle, name: String) -> Result<(), String> 
 // parses/validates the manifest (core/pluginPackage.ts) and decides what to register.
 
 fn plugins_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = config_root(app)?;
     Ok(dir.join("plugins"))
 }
 
@@ -1068,8 +1085,8 @@ pub async fn package_fetch(
     }
     let raw = fs::read_to_string(plugins_dir(&app)?.join(&id).join("plugin.json"))
         .map_err(|_| "package manifest not found".to_string())?;
-    let json: serde_json::Value = serde_json::from_str(&raw)
-        .map_err(|_| "package manifest is not valid JSON".to_string())?;
+    let json: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|_| "package manifest is not valid JSON".to_string())?;
     let hosts: Vec<String> = json
         .pointer("/source/hosts")
         .and_then(|v| v.as_array())
@@ -1170,7 +1187,9 @@ fn watch_and_emit(
             }
         };
         if let Err(err) = watcher.watch(&dir, notify::RecursiveMode::NonRecursive) {
-            log::error("watch", format!("{label} watch failed")).field("error", err).emit();
+            log::error("watch", format!("{label} watch failed"))
+                .field("error", err)
+                .emit();
             return;
         }
         // Keep `watcher` alive by blocking on the channel for the app's lifetime.
@@ -1182,9 +1201,9 @@ fn watch_and_emit(
                         on_match(&app);
                     }
                 }
-                Err(err) => {
-                    log::warn("watch", format!("{label} watch error")).field("error", err).emit()
-                }
+                Err(err) => log::warn("watch", format!("{label} watch error"))
+                    .field("error", err)
+                    .emit(),
             }
         }
     });
@@ -1231,9 +1250,14 @@ fn respawn_main_hidden(app: &tauri::AppHandle) {
         .disable_drag_drop_handler()
         .build()
     {
-        Ok(_) => log::info("reclaim", "respawned primary overlay (main) after external layout change")
+        Ok(_) => log::info(
+            "reclaim",
+            "respawned primary overlay (main) after external layout change",
+        )
+        .emit(),
+        Err(err) => log::warn("reclaim", "failed to respawn main")
+            .field("error", err)
             .emit(),
-        Err(err) => log::warn("reclaim", "failed to respawn main").field("error", err).emit(),
     }
 }
 
@@ -1251,7 +1275,12 @@ pub fn watch_layout(app: tauri::AppHandle) -> Result<(), String> {
         dir,
         "layout",
         LAYOUT_CHANGED_EVENT,
-        move |event| event.paths.iter().any(|p| p.file_name() == path.file_name()),
+        move |event| {
+            event
+                .paths
+                .iter()
+                .any(|p| p.file_name() == path.file_name())
+        },
         |app| {
             // Reclaim: `main` is DESTROYED (not hidden) to free its renderer when the primary
             // monitor is empty (overlay.ts setMainWindowVisible). While it's gone, no window
@@ -1288,7 +1317,12 @@ pub fn watch_controls(app: tauri::AppHandle) -> Result<(), String> {
         dir,
         "controls",
         CONTROLS_CHANGED_EVENT,
-        move |event| event.paths.iter().any(|p| p.file_name() == path.file_name()),
+        move |event| {
+            event
+                .paths
+                .iter()
+                .any(|p| p.file_name() == path.file_name())
+        },
         |_| {},
     );
     Ok(())
@@ -1372,10 +1406,16 @@ mod tests {
         assert!(super::host_allowed("https://example.org:443/", &hosts));
         // Subdomains are NOT implied — they must be listed.
         assert!(!super::host_allowed("https://sub.example.org/", &hosts));
-        assert!(!super::host_allowed("https://example.org.evil.com/", &hosts));
+        assert!(!super::host_allowed(
+            "https://example.org.evil.com/",
+            &hosts
+        ));
         // https only, no explicit ports, no credentials, no IP literals.
         assert!(!super::host_allowed("http://api.open-meteo.com/", &hosts));
-        assert!(!super::host_allowed("https://api.open-meteo.com:8443/", &hosts));
+        assert!(!super::host_allowed(
+            "https://api.open-meteo.com:8443/",
+            &hosts
+        ));
         assert!(!super::host_allowed("https://user@example.org/", &hosts));
         assert!(!super::host_allowed(
             "https://93.184.216.34/",
@@ -1386,7 +1426,10 @@ mod tests {
             "https://example.org/",
             &["EXAMPLE.ORG".to_string()]
         ));
-        assert!(!super::host_allowed("https://evil.com/?q=example.org", &hosts));
+        assert!(!super::host_allowed(
+            "https://evil.com/?q=example.org",
+            &hosts
+        ));
         assert!(!super::host_allowed("not a url", &hosts));
         assert!(!super::host_allowed("https://example.org/", &[]));
     }
@@ -1417,10 +1460,16 @@ mod tests {
         );
         assert_eq!(r.reff, "feature/x");
         // Any https URL ending in /plugin.json is used verbatim with ref "direct".
-        let r = super::resolve_package_source("https://example.com/packs/clock/plugin.json")
-            .unwrap();
-        assert_eq!(r.manifest_url, "https://example.com/packs/clock/plugin.json");
-        assert_eq!(r.display_source, "https://example.com/packs/clock/plugin.json");
+        let r =
+            super::resolve_package_source("https://example.com/packs/clock/plugin.json").unwrap();
+        assert_eq!(
+            r.manifest_url,
+            "https://example.com/packs/clock/plugin.json"
+        );
+        assert_eq!(
+            r.display_source,
+            "https://example.com/packs/clock/plugin.json"
+        );
         assert_eq!(r.reff, "direct");
     }
 
@@ -1468,8 +1517,10 @@ mod tests {
             Some("https://example.com/p/plugin.json")
         );
         // Tampered sidecars fail closed.
-        assert!(super::manifest_url_from_sidecar("http://example.com/p/plugin.json", "direct")
-            .is_none());
+        assert!(
+            super::manifest_url_from_sidecar("http://example.com/p/plugin.json", "direct")
+                .is_none()
+        );
         assert!(super::manifest_url_from_sidecar("https://example.com/p", "direct").is_none());
         assert!(super::manifest_url_from_sidecar("acme/pack", "..").is_none());
         assert!(super::manifest_url_from_sidecar("acme", "main").is_none());

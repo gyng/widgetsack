@@ -44,4 +44,27 @@ describe('stocks plugin', () => {
 	it('always exposes the global stocks.status sensor in the catalog', () => {
 		expect(sourceCatalogEntries().map((e) => e.id)).toContain('stocks.status');
 	});
+
+	it('the ticker sensors resolver derives stocks.<SYMBOL>.* ids, upper-cased + trimmed', () => {
+		const sensors = getMeta('ticker')?.sensors as (
+			c: Record<string, unknown>
+		) => Record<string, string>;
+		expect(typeof sensors).toBe('function');
+		const map = sensors({ symbol: '  aapl ' });
+		expect(map).toEqual({
+			price: 'stocks.AAPL.price',
+			change: 'stocks.AAPL.change',
+			series: 'stocks.AAPL.series',
+			currency: 'stocks.AAPL.currency',
+			state: 'stocks.AAPL.state'
+		});
+	});
+
+	it('the ticker sensors resolver binds nothing without a symbol', () => {
+		const sensors = getMeta('ticker')?.sensors as (
+			c: Record<string, unknown>
+		) => Record<string, string>;
+		expect(sensors({})).toEqual({});
+		expect(sensors({ symbol: '   ' })).toEqual({});
+	});
 });

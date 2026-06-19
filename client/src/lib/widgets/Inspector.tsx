@@ -2,7 +2,14 @@
 // the selected node — widget props (sensor / rect / config / dock·float) or container
 // props (kind / cols / gap / pad / align / justify / grow). Emits a single `op` event;
 // all state + persistence lives in Canvas.
-import { useEffect, useMemo, useState, type DragEvent as ReactDragEvent } from 'react';
+import {
+	useEffect,
+	useLayoutEffect,
+	useMemo,
+	useRef,
+	useState,
+	type DragEvent as ReactDragEvent
+} from 'react';
 import type {
 	Align,
 	AlignH,
@@ -22,6 +29,8 @@ import type { ConfigField } from '../core/widget';
 import { toYaml } from '../core/yaml';
 import { normalizeMacro } from '../core/macro';
 import MacroEditor from './MacroEditor';
+import MonitorSourcesEditor from './meters/MonitorSourcesEditor';
+import WidgetPreview from './WidgetPreview';
 import CssEditor from './CssEditor';
 import BoxField from './BoxField';
 import Select, { type SelectOption } from './Select';
@@ -87,6 +96,9 @@ type Props = {
 	audioOutputs?: { id: string; name: string }[];
 	// Runtime options for a `catalog:'microphones'` select (the transcribe widget's mic picker).
 	microphones?: { id: string; name: string }[];
+	// Runtime options for a `catalog:'displayNames'` select (the monitor-switch widget's monitor
+	// picker). `id` is the GDI device name (\\.\DISPLAYn), `name` the friendly/EDID label.
+	displayNames?: { id: string; name: string }[];
 	onOp?: (op: LayoutOp) => void;
 	// Deleting a library def from the Inspector routes through the container (which checks whether the
 	// def is in use and explains the block, matching the Widget-designer list) instead of the reducer's
@@ -286,6 +298,7 @@ export default function Inspector({
 	sensorMeta = {},
 	audioOutputs = [],
 	microphones = [],
+	displayNames = [],
 	onOp,
 	onDeleteDef,
 	onPreviewTemplate,
@@ -302,11 +315,82 @@ export default function Inspector({
 	// still user-toggleable in between, and re-opens when nothing is selected (the primary add affordance).
 	const hasSelection = !!(widget || container || groupUnit);
 	const [addOpen, setAddOpen] = useState(!hasSelection);
+
+	// Add-palette hover preview (Tier 2): a floating popover with a live demo render of the hovered
+	// entry — a widget type, OR a library def / template tree. Debounced so a quick pass doesn't spin up
+	// a render; positioned to the LEFT (the palette is the right rail) and clamped into the viewport.
+	type PreviewSpec = {
+		label: string;
+		desc?: string;
+		hint: string;
+		type?: string; // a single widget
+		node?: LayoutNode; // a def / template tree (with its native size)
+		size?: { w: number; h: number };
+	};
+	const [palettePreview, setPalettePreview] = useState<
+		(PreviewSpec & { top: number; left: number }) | null
+	>(null);
+	const previewTimer = useRef<number | null>(null);
+	const previewRef = useRef<HTMLDivElement | null>(null);
+	const showPreview = (spec: PreviewSpec, el: HTMLElement): void => {
+		if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+		previewTimer.current = window.setTimeout(() => {
+			const r = el.getBoundingClientRect();
+			const left = Math.max(8, r.left - 232 - 10);
+			setPalettePreview({ ...spec, top: Math.max(8, r.top - 8), left });
+		}, 280);
+	};
+	const hidePreview = (): void => {
+		if (previewTimer.current !== null) {
+			window.clearTimeout(previewTimer.current);
+			previewTimer.current = null;
+		}
+		setPalettePreview(null);
+	};
+	useEffect(
+		() => () => {
+			if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
+		},
+		[]
+	);
+	// Keep the popover on-screen: after render, clamp its top so the bottom isn't cut off (its height
+	// varies with the description, so a fixed estimate clipped tall cards hovered near the bottom).
+	useLayoutEffect(() => {
+		const el = previewRef.current;
+		if (!el || !palettePreview) return;
+		const top = Math.min(palettePreview.top, Math.max(8, window.innerHeight - el.offsetHeight - 8));
+		el.style.top = `${Math.max(8, top)}px`;
+	}, [palettePreview]);
 	useEffect(() => {
 		setAddOpen(!hasSelection);
 	}, [hasSelection]);
 	// Built-ins + one group per enabled plugin package (re-renders on package toggle).
 	const templateGroups = useTemplateGroups();
+
+	// Add-palette filter: one search box narrows widgets + templates + library by name/type/description.
+	const [paletteFilter, setPaletteFilter] = useState('');
+	const pq = paletteFilter.trim().toLowerCase();
+	const pmatch = (...parts: (string | undefined)[]): boolean =>
+		!pq || parts.some((p) => p?.toLowerCase().includes(pq));
+	const fWidgetGroups = groupPalette(
+		widgetTypes.filter((w) => pmatch(w.label, w.type, getMeta(w.type)?.description))
+	);
+	const fDefs = defs.filter((d) => pmatch(d.name));
+	const fTemplateGroups = templateGroups
+		.map((g) => ({ ...g, templates: g.templates.filter((t) => pmatch(t.name, t.description)) }))
+		.filter((g) => g.templates.length);
+	const paletteEmpty = !fWidgetGroups.length && !fDefs.length && !fTemplateGroups.length;
+
+	// HA entity ids (e.g. "light.kitchen") for the macro editor's entity picker — from the json
+	// `ha.<id>` catalog entries (not the `.state` scalars, nor the `ha.status` connection sensor).
+	const haEntityIds = useMemo(
+		() =>
+			sensors
+				.filter((s) => s.startsWith('ha.') && !s.endsWith('.state'))
+				.map((s) => s.slice('ha.'.length))
+				.filter((e) => e.includes('.')),
+		[sensors]
+	);
 
 	// Sensor combobox options: friendly "Name (unit)" label, the raw id kept as the value + shown as a
 	// dim hint. A bare id (no metadata) is its own label with no hint. Drives the typeahead sensor field.
@@ -614,15 +698,47 @@ export default function Inspector({
 
 	return (
 		<div className={['inspector', docked && 'docked'].filter(Boolean).join(' ')}>
+			{/* Add-palette hover preview (Tier 2): a fixed popover with a live demo render of the hovered
+			    entry (a widget type, or a library def / template tree), its name, description + a hint. */}
+			{palettePreview ? (
+				<div
+					ref={previewRef}
+					className="palette-preview"
+					style={{ top: palettePreview.top, left: palettePreview.left }}
+				>
+					<div className="pp-stage">
+						<WidgetPreview
+							type={palettePreview.type}
+							node={palettePreview.node}
+							size={palettePreview.size}
+						/>
+					</div>
+					<div className="pp-meta">
+						<span className="pp-name">{palettePreview.label}</span>
+						{palettePreview.desc ? <span className="pp-desc">{palettePreview.desc}</span> : null}
+						<span className="pp-hint">{palettePreview.hint}</span>
+					</div>
+				</div>
+			) : null}
 			<details
 				className="add-panel"
 				open={addOpen}
 				onToggle={(e) => setAddOpen(e.currentTarget.open)}
 			>
 				<summary>＋ Add widget · {addDest}</summary>
-				{/* Grouped by meta.category in first-seen order (uncategorized falls into "Other") —
-				    ~20 ungrouped same-weight chips made find-by-scan fail. */}
-				{groupPalette(widgetTypes).map((g) => (
+				{/* One search box narrows widgets + templates + library at once — ~20 widgets plus
+				    templates + library made find-by-scan slow. */}
+				<input
+					className="palette-filter"
+					type="search"
+					placeholder="Filter widgets, templates, library…"
+					value={paletteFilter}
+					onChange={(e) => setPaletteFilter(e.currentTarget.value)}
+					aria-label="Filter the add palette"
+				/>
+
+				{/* Widgets, grouped by meta.category (first-seen order; uncategorized falls into "Other"). */}
+				{fWidgetGroups.map((g) => (
 					<div key={g.category} className="palette">
 						<span className="hd2">{g.category}</span>
 						{g.items.map((w) => (
@@ -630,15 +746,31 @@ export default function Inspector({
 								key={w.type}
 								type="button"
 								draggable
-								title={
-									container
-										? `Add "${w.label}" into the selected ${container.kind} — or drag it onto the canvas / a container in the Outline to place it elsewhere`
-										: `Add "${w.label}" as a floating widget — or drag it onto the canvas / a container in the Outline`
+								// No native `title` tooltip — the hover preview popover is the richer replacement
+								// (both at once was redundant). The description stays as the aria-label for a11y.
+								aria-label={[w.label, getMeta(w.type)?.description].filter(Boolean).join(' — ')}
+								onClick={() => {
+									hidePreview();
+									op({ op: 'addWidget', widgetType: w.type });
+								}}
+								onMouseEnter={(e) =>
+									showPreview(
+										{
+											label: w.label,
+											desc: getMeta(w.type)?.description,
+											hint: container
+												? `Click to add into the ${container.kind} · drag to place`
+												: 'Click to add · drag to place',
+											type: w.type
+										},
+										e.currentTarget
+									)
 								}
-								onClick={() => op({ op: 'addWidget', widgetType: w.type })}
-								onDragStart={(e: ReactDragEvent) =>
-									e.dataTransfer?.setData('text/x-widget-type', w.type)
-								}
+								onMouseLeave={hidePreview}
+								onDragStart={(e: ReactDragEvent) => {
+									hidePreview();
+									e.dataTransfer?.setData('text/x-widget-type', w.type);
+								}}
 							>
 								{w.label}
 							</button>
@@ -646,15 +778,76 @@ export default function Inspector({
 					</div>
 				))}
 
-				{defs.length ? (
+				{/* Templates: insert a STANDALONE inline copy (the designer rail's ⎘ clones one into an
+				    editable library widget instead). 👁 jumps to the designer's read-only preview. Groups
+				    come from the registry: built-ins first, then one per enabled plugin package. */}
+				{fTemplateGroups.map((g) => (
+					<div key={g.group} className="palette">
+						<span className="hd">
+							{g.group === BUILTIN_TEMPLATE_GROUP ? 'Templates' : `Templates · ${g.group}`}
+						</span>
+						{g.templates.map((t) =>
+							t.params?.length ? (
+								<TemplateOptionsForm
+									key={t.id}
+									t={t}
+									onInsert={(options) => op({ op: 'insertTemplate', templateId: t.id, options })}
+									onPreview={onPreviewTemplate}
+								/>
+							) : (
+								<span key={t.id} className="libitem">
+									<button
+										type="button"
+										aria-label={[t.name, t.description].filter(Boolean).join(' — ')}
+										onClick={() => {
+											hidePreview();
+											op({ op: 'insertTemplate', templateId: t.id });
+										}}
+										onMouseEnter={(e) =>
+											showPreview(
+												{
+													label: t.name,
+													desc: t.description,
+													hint: 'Click to insert a standalone copy',
+													node: t.tree(),
+													size: t.size
+												},
+												e.currentTarget
+											)
+										}
+										onMouseLeave={hidePreview}
+									>
+										{t.name}
+									</button>
+									{onPreviewTemplate && (
+										<TemplatePreviewButton t={t} onPreview={onPreviewTemplate} />
+									)}
+								</span>
+							)
+						)}
+					</div>
+				))}
+
+				{/* Library: your saved widget defs (insert an instance linked to the def). */}
+				{fDefs.length ? (
 					<div className="palette">
 						<span className="hd">Library</span>
-						{defs.map((d) => (
+						{fDefs.map((d) => (
 							<span key={d.id} className="libitem">
 								<button
 									type="button"
-									title={d.name}
-									onClick={() => op({ op: 'insertWidget', defId: d.id })}
+									aria-label={d.name}
+									onClick={() => {
+										hidePreview();
+										op({ op: 'insertWidget', defId: d.id });
+									}}
+									onMouseEnter={(e) =>
+										showPreview(
+											{ label: d.name, hint: 'Click to insert', node: d.child, size: d.size },
+											e.currentTarget
+										)
+									}
+									onMouseLeave={hidePreview}
 								>
 									{d.name}
 								</button>
@@ -674,41 +867,9 @@ export default function Inspector({
 					</div>
 				) : null}
 
-				{/* Inserting from here drops a STANDALONE inline copy (no library def) — the designer
-				    rail's ⎘ is the path that clones a template into an editable library widget. The
-				    titles say which is which; 👁 jumps to the designer's read-only preview. Groups come
-				    from the template registry: built-ins first, then one group per enabled plugin
-				    package (under the package's name). */}
-				{templateGroups.map((g) => (
-					<div key={g.group} className="palette">
-						<span className="hd">
-							{g.group === BUILTIN_TEMPLATE_GROUP ? 'Templates' : `Templates · ${g.group}`}
-						</span>
-						{g.templates.map((t) =>
-							t.params?.length ? (
-								<TemplateOptionsForm
-									key={t.id}
-									t={t}
-									onInsert={(options) => op({ op: 'insertTemplate', templateId: t.id, options })}
-									onPreview={onPreviewTemplate}
-								/>
-							) : (
-								<span key={t.id} className="libitem">
-									<button
-										type="button"
-										title={`${t.description} — inserts a standalone copy onto the canvas (not linked to the library)`}
-										onClick={() => op({ op: 'insertTemplate', templateId: t.id })}
-									>
-										{t.name}
-									</button>
-									{onPreviewTemplate && (
-										<TemplatePreviewButton t={t} onPreview={onPreviewTemplate} />
-									)}
-								</span>
-							)
-						)}
-					</div>
-				))}
+				{paletteEmpty ? (
+					<div className="palette-empty">No matches for “{paletteFilter}”.</div>
+				) : null}
 			</details>
 
 			{node && (
@@ -1138,7 +1299,75 @@ export default function Inspector({
 									<MacroEditor
 										value={normalizeMacro(widget.config[f.key])}
 										onChange={(next) => setConfig(f.key, next)}
+										entities={haEntityIds}
 									/>
+									{f.help ? <small className="field-help">{f.help}</small> : null}
+								</div>
+							);
+						}
+						// A monitor-sources field is a multi-row editor (checklist + rename), so like the
+						// macro field it renders outside the single-control <label> pattern below.
+						if (f.kind === 'monitorSources') {
+							return (
+								<div
+									className={['cfg-field', dirtyKeys.has('config.' + f.key) && 'dirty']
+										.filter(Boolean)
+										.join(' ')}
+									key={f.key}
+								>
+									<button
+										type="button"
+										className="reset-field"
+										title="Reset to default"
+										disabled={def === undefined}
+										onClick={() => setConfig(f.key, def)}
+									>
+										↺
+									</button>
+									<span className="hd" title={f.help}>
+										{f.label}
+									</span>
+									<MonitorSourcesEditor
+										value={cfgStr(widget.config[f.key])}
+										monitor={cfgStr(widget.config.monitor)}
+										onChange={(spec) => setConfig(f.key, spec || undefined)}
+									/>
+									{f.help ? <small className="field-help">{f.help}</small> : null}
+								</div>
+							);
+						}
+						// A toggle is a checkbox + its label on one aligned row (checkbox left, label
+						// vertically centred), help below — not the label-stacked-over-control layout the
+						// generic fields use.
+						if (f.kind === 'toggle') {
+							return (
+								<div
+									className={[
+										'cfg-field',
+										'cfg-toggle',
+										dirtyKeys.has('config.' + f.key) && 'dirty'
+									]
+										.filter(Boolean)
+										.join(' ')}
+									key={f.key}
+								>
+									<button
+										type="button"
+										className="reset-field"
+										title="Reset to default"
+										disabled={def === undefined}
+										onClick={() => setConfig(f.key, def)}
+									>
+										↺
+									</button>
+									<label className="check" title={f.help}>
+										<input
+											type="checkbox"
+											checked={cfgBool(widget.config[f.key])}
+											onChange={(e) => setConfig(f.key, e.currentTarget.checked)}
+										/>
+										<span>{f.label}</span>
+									</label>
 									{f.help ? <small className="field-help">{f.help}</small> : null}
 								</div>
 							);
@@ -1172,12 +1401,6 @@ export default function Inspector({
 												)
 											}
 										/>
-									) : f.kind === 'toggle' ? (
-										<input
-											type="checkbox"
-											checked={cfgBool(widget.config[f.key])}
-											onChange={(e) => setConfig(f.key, e.currentTarget.checked)}
-										/>
 									) : f.kind === 'select' ? (
 										<Select
 											value={cfgStr(widget.config[f.key])}
@@ -1191,6 +1414,11 @@ export default function Inspector({
 													? [
 															{ value: '', label: 'System default' },
 															...microphones.map((d) => ({ value: d.id, label: d.name }))
+													  ]
+													: f.catalog === 'displayNames'
+													? [
+															{ value: '', label: 'Primary monitor' },
+															...displayNames.map((d) => ({ value: d.id, label: d.name }))
 													  ]
 													: f.options.map((o) => ({ value: o, label: o }))
 											}

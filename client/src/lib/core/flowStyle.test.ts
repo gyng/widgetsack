@@ -72,6 +72,22 @@ describe('containerStyle', () => {
 		expect(s.gridTemplateRows).toBe('50px 1fr');
 	});
 
+	it('grid without an explicit cols defaults to a single column', () => {
+		// cols unset → `cols ?? 1` → one column; two children → two rows.
+		const s = containerStyle(container('g', 'grid', [leaf(prim('A')), leaf(prim('B'))]));
+		expect(s.display).toBe('grid');
+		expect(s.gridTemplateColumns).toBe('repeat(1, 1fr)');
+		expect(s.gridTemplateRows).toBe('repeat(2, 1fr)');
+	});
+
+	it('grid without cols still derives fixed tracks from a cell (cols ?? 1 path in gridFixedTracks)', () => {
+		// A fixed-height cell with no cols on the parent → single-column grid, row 0 pinned to 40px.
+		const c0 = container('c0', 'col', [], { cellH: 40 });
+		const s = containerStyle(container('g', 'grid', [c0, leaf(prim('B'))]));
+		expect(s.gridTemplateColumns).toBe('repeat(1, 1fr)');
+		expect(s.gridTemplateRows).toBe('40px 1fr');
+	});
+
 	it('overlap → single-cell grid stack', () => {
 		const s = containerStyle(container('o', 'col', [], { overlap: true }));
 		expect(s.display).toBe('grid');
@@ -167,6 +183,14 @@ describe('itemStyle (sizing)', () => {
 	it('a CONTAINER with auto basis shrink-wraps (flex-basis:auto)', () => {
 		expect(itemStyle(container('c', 'col', []), 'row').flexBasis).toBe('auto');
 	});
+
+	it('a GROUP with auto/unset basis takes its STORED group size as the main-axis basis', () => {
+		// The group is a leaf-with-group-unit; on the fall-through (auto) path the basis is the group's
+		// size on the parent's main axis (rect would be wrong — a group has `size`, not `rect`).
+		const g = group('g', { w: 80, h: 120 }, container('c', 'col', []));
+		expect(itemStyle(leaf(g), 'row').flexBasis).toBe('80px'); // row → width
+		expect(itemStyle(leaf(g), 'col').flexBasis).toBe('120px'); // col → height
+	});
 });
 
 describe('itemStyle (per-leaf alignment)', () => {
@@ -183,6 +207,12 @@ describe('itemStyle (per-leaf alignment)', () => {
 		const s = itemStyle(node, 'col');
 		expect(s.alignSelf).toBe('center'); // halign center on the horizontal cross axis
 		expect(s.marginTop).toBe('auto'); // valign bottom pushes it down the vertical main axis
+	});
+
+	it('col parent: valign middle → centered via dual auto margins on the vertical main axis', () => {
+		const s = itemStyle({ ...leaf(textPrim('A')), valign: 'middle' }, 'col');
+		expect(s.marginTop).toBe('auto');
+		expect(s.marginBottom).toBe('auto');
 	});
 
 	it('row parent: halign center → centered via dual auto margins', () => {

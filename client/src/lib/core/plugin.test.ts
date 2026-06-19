@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createTelemetryHub } from './telemetry';
 import {
 	listSources,
@@ -34,6 +34,33 @@ describe('sensor sources', () => {
 		expect(hub.sensorIds()).toContain('fake.a');
 		stop();
 		expect(stopped).toBe(2);
+	});
+
+	it('skips (does not reject on) a source whose start() throws, still stopping the rest', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		let stopped = 0;
+		registerSource({
+			id: 'boom',
+			start: async () => {
+				throw new Error('unreachable HA');
+			}
+		});
+		registerSource({
+			id: 'survivor',
+			start: async () => () => {
+				stopped += 1;
+			}
+		});
+
+		const hub = createTelemetryHub();
+		const stop = await startAllSources(hub); // must resolve despite 'boom' rejecting
+		expect(warn).toHaveBeenCalledWith('source "boom" failed to start', expect.any(Error));
+		// stop() runs every source's stopper, including the failed source's no-op (must not throw).
+		expect(() => stop()).not.toThrow();
+		expect(stopped).toBe(1);
+		warn.mockRestore();
+		unregisterSource('boom');
+		unregisterSource('survivor');
 	});
 
 	it('registering by id replaces; catalog ids are the deduped union', () => {

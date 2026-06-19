@@ -33,4 +33,26 @@ describe('useSensors', () => {
 		});
 		expect(result.current).toEqual({ 'np.title': 'Song', 'cpu.total': 3 });
 	});
+
+	it('an empty series yields null (no latest point)', () => {
+		const hub = createTelemetryHub();
+		const { result } = renderHook(() => useSensors(hub, ['cpu.total']));
+		act(() => hub.ingest({ sensor: 'cpu.total', ts_ms: 0, value: { kind: 'series', value: [] } }));
+		expect(result.current).toEqual({ 'cpu.total': null }); // .at(-1) ?? null
+	});
+
+	it('treats an opaque json value as null (a formula can not read it)', () => {
+		const hub = createTelemetryHub();
+		const { result } = renderHook(() => useSensors(hub, ['ha.entity']));
+		act(() =>
+			hub.ingest({ sensor: 'ha.entity', ts_ms: 0, value: { kind: 'json', value: { on: true } } })
+		);
+		expect(result.current).toEqual({ 'ha.entity': null });
+	});
+
+	it('returns an empty snapshot for no ids (no subscriptions)', () => {
+		const hub = createTelemetryHub();
+		const { result } = renderHook(() => useSensors(hub, []));
+		expect(result.current).toEqual({});
+	});
 });

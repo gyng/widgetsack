@@ -56,6 +56,8 @@ export function lightRgb(r: number, g: number, b: number): ServiceCall {
 
 export type ClimateAttrs = {
 	hvac_modes?: string[];
+	fan_modes?: string[];
+	fan_mode?: string;
 	min_temp?: number;
 	max_temp?: number;
 	target_temp_step?: number;
@@ -87,4 +89,74 @@ export function climateNudge(attrs: ClimateAttrs, dir: 1 | -1): ServiceCall {
 /** climate.set_hvac_mode (e.g. 'heat', 'cool', 'off'). */
 export function climateSetHvacMode(mode: string): ServiceCall {
 	return { service: 'set_hvac_mode', data: { hvac_mode: mode } };
+}
+
+/** The next hvac mode in the entity's supported list, wrapping — for a tap-to-cycle mode button. */
+export function climateNextHvacMode(attrs: ClimateAttrs, current: string): string {
+	const modes = attrs.hvac_modes ?? [];
+	if (modes.length === 0) return current;
+	const i = modes.indexOf(current);
+	return modes[(i + 1) % modes.length];
+}
+
+/** climate.set_fan_mode (e.g. 'auto', 'low', 'high') — A/C fan speed. */
+export function climateSetFanMode(mode: string): ServiceCall {
+	return { service: 'set_fan_mode', data: { fan_mode: mode } };
+}
+
+// ---- generic ----
+
+/** The domain of an entity_id, e.g. 'light.kitchen' → 'light' ('' when unknown). */
+export function entityDomain(entityId?: string): string {
+	return entityId ? entityId.split('.')[0] : '';
+}
+
+// ---- fan ----
+
+export type FanAttrs = {
+	percentage?: number | null;
+	percentage_step?: number;
+	preset_modes?: string[];
+	preset_mode?: string;
+	oscillating?: boolean;
+};
+
+/** fan.set_percentage (0..100, clamped + rounded). */
+export function fanSetPercentage(pct: number): ServiceCall {
+	return { service: 'set_percentage', data: { percentage: Math.round(clamp(pct, 0, 100)) } };
+}
+
+// ---- cover ----
+
+/** cover.set_cover_position (0 = closed … 100 = open, clamped + rounded). */
+export function coverSetPosition(pct: number): ServiceCall {
+	return { service: 'set_cover_position', data: { position: Math.round(clamp(pct, 0, 100)) } };
+}
+
+// ---- input_* helpers ----
+
+export type InputNumberAttrs = { min?: number; max?: number; step?: number };
+
+/** input_number.set_value, clamped to the helper's configured min/max. */
+export function inputNumberSetValue(value: number, attrs: InputNumberAttrs): ServiceCall {
+	const lo = attrs.min ?? 0;
+	const hi = attrs.max ?? 100;
+	return { service: 'set_value', data: { value: round1(clamp(value, lo, hi)) } };
+}
+
+/** input_select.select_option. */
+export function inputSelectOption(option: string): ServiceCall {
+	return { service: 'select_option', data: { option } };
+}
+
+/** input_text.set_value. */
+export function inputTextSetValue(value: string): ServiceCall {
+	return { service: 'set_value', data: { value } };
+}
+
+// ---- media_player ----
+
+/** media_player.volume_set: a 0..100 percentage → HA's 0..1 `volume_level`. */
+export function mediaVolumeSet(pct: number): ServiceCall {
+	return { service: 'volume_set', data: { volume_level: Math.round(clamp(pct, 0, 100)) / 100 } };
 }

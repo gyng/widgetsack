@@ -156,3 +156,18 @@ html.overlay-windowed body {
 	outline: 2px solid var(--ui-accent-fg);
 	outline-offset: 1px;
 }
+
+/* View Transitions — the studio section cross-fade (see lib/viewTransition.ts wraps the section
+   swap). Keep it snappy. The JS already skips the transition under prefers-reduced-motion; this is a
+   belt-and-suspenders guard that also covers any future view-transition-driven change. */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 200ms;
+}
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-group(*),
+	::view-transition-old(*),
+	::view-transition-new(*) {
+		animation: none !important;
+	}
+}

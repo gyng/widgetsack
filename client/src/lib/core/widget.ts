@@ -50,7 +50,12 @@ export type ConfigField =
 	// A macro field: an ordered list of {domain, service, data?} action calls (core/macro.ts), edited
 	// as rows in the inspector and run in sequence when the widget is pressed. The value is a
 	// MacroAction[]; the side-effecting dispatch lives in Canvas.onWidgetControl (domain 'macro').
-	| ({ key: string; label: string; kind: 'macro' } & FieldMeta);
+	| ({ key: string; label: string; kind: 'macro' } & FieldMeta)
+	// A monitor-sources field (the Monitor Switch widget): a friendly checklist of the chosen monitor's
+	// detected DDC inputs — pick which to show and optionally rename each. The value is the same
+	// `code=label` spec string `text` would hold (core/monitorInputs); the editor just builds it. The
+	// inspector renders MonitorSourcesEditor (it detects inputs via a Tauri command — studio-only).
+	| ({ key: string; label: string; kind: 'monitorSources' } & FieldMeta);
 
 export type SensorKind = 'scalar' | 'series' | 'text' | 'json' | 'none';
 
@@ -437,7 +442,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		description:
 			'Pressable button that runs a macro of {domain, service, data} calls (HA services or media transport).',
 		binds: 'none',
-		label: 'Button',
+		label: 'Button / Macro',
 		category: 'Utility',
 		defaultSize: { w: 90, h: 44 },
 		defaultConfig: { label: 'tap', actions: [] },
@@ -1036,6 +1041,57 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 			},
 			text('label', 'label', { help: 'header text' }),
 			color('color', 'color', { help: 'text colour (blank = theme)' })
+		]
+	},
+	{
+		// Monitor input-source switcher (binds:'none', interactive): switches a monitor's active input
+		// (HDMI / DisplayPort / …) over DDC/CI (VCP 0x60). Bespoke wiring lives in MonitorSwitchHost
+		// (ddc.rs commands); the meter stays props-only. interactive:true so the rows catch clicks on the
+		// passive overlay. DDC/CI must be enabled in the OSD; input codes are vendor-specific (auto-detected).
+		type: 'monitorswitch',
+		description:
+			'Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DDC/CI. Shows the current source and, optionally, the resolution + refresh rate. Requires DDC/CI enabled on the monitor; input codes are vendor-specific (auto-detected). Windows.',
+		binds: 'none',
+		interactive: true,
+		label: 'Monitor Switch',
+		category: 'Utility',
+		defaultSize: { w: 220, h: 150 },
+		defaultConfig: { showCurrent: true, showStats: false, compact: false },
+		configFields: [
+			{
+				key: 'monitor',
+				label: 'monitor',
+				kind: 'select',
+				options: [],
+				catalog: 'displayNames',
+				help: 'which monitor to control (blank = the primary monitor)'
+			},
+			{
+				key: 'sources',
+				label: 'sources',
+				kind: 'monitorSources',
+				help: 'pick which inputs to show, and rename them (e.g. HDMI 2 → Switch 2); blank = show all detected'
+			},
+			text('label', 'label', { help: 'title override (blank = the monitor’s name)' }),
+			{
+				key: 'showCurrent',
+				label: 'show current',
+				kind: 'toggle',
+				help: 'highlight the currently-selected input'
+			},
+			{
+				key: 'showStats',
+				label: 'show stats',
+				kind: 'toggle',
+				help: 'show the current resolution + refresh rate'
+			},
+			{
+				key: 'compact',
+				label: 'compact list',
+				kind: 'toggle',
+				help: 'show a compact list instead of large touch buttons'
+			},
+			color('color', 'accent')
 		]
 	}
 ];

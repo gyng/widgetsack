@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import Inspector, { groupPalette } from './Inspector';
-import { container, leaf, type WidgetInstance } from '../core/layoutTree';
+import {
+	container,
+	leaf,
+	type Group,
+	type WidgetDef,
+	type WidgetInstance
+} from '../core/layoutTree';
 import type { LayoutOp } from './ops';
 
 describe('groupPalette', () => {
@@ -176,5 +182,134 @@ describe('Inspector sensor typeahead options', () => {
 		).toBeInTheDocument();
 		// An id without metadata is its own label, with no separate hint.
 		expect(screen.getByText('cpu.total', { selector: '.np-select-opt-label' })).toBeInTheDocument();
+	});
+});
+
+describe('Inspector group + def params block', () => {
+	const child = leaf({
+		id: 'g1.child',
+		type: 'clock',
+		rect: { x: 0, y: 0, w: 80, h: 40 },
+		config: {}
+	});
+	const groupUnit: Group = {
+		id: 'g1',
+		kind: 'group',
+		name: 'My clock',
+		def: 'd1',
+		size: { w: 120, h: 60 },
+		child,
+		params: { tz: 'UTC' },
+		config: { x: 10, y: 20 }
+	};
+	const def: WidgetDef = {
+		id: 'd1',
+		name: 'ClockDef',
+		size: { w: 120, h: 60 },
+		child,
+		params: [
+			{ key: 'tz', label: 'Timezone', target: 'unit.config.tz' },
+			{
+				key: 'hours',
+				label: 'Clock',
+				default: '24',
+				choices: [
+					{ value: '12', label: '12-hour' },
+					{ value: '24', label: '24-hour' }
+				]
+			}
+		]
+	};
+
+	it('renders the def fields + params and emits ops for every editable control (floating)', () => {
+		const onOp = vi.fn<(op: LayoutOp) => void>();
+		const {
+			getByText,
+			getByLabelText,
+			container: root
+		} = render(<Inspector groupUnit={groupUnit} def={def} placement="floating" onOp={onOp} />);
+		const lastOp = (pred: (o: LayoutOp) => boolean) => onOp.mock.calls.map((c) => c[0]).find(pred);
+
+		// The group header + name field.
+		expect(getByText('group · g1')).toBeTruthy();
+		const name = root.querySelector('input[value="My clock"]') as HTMLInputElement;
+		fireEvent.input(name, { target: { value: 'Renamed' } });
+		expect(lastOp((o) => o.op === 'patchGroup' && !!o.patch.name)).toMatchObject({
+			op: 'patchGroup',
+			id: 'g1',
+			patch: { name: 'Renamed' }
+		});
+
+		// Floating x/y/w/h write into the group's config (anchor + size override).
+		const floatRow = root.querySelector('.row') as HTMLElement;
+		const numInputs = [...floatRow.querySelectorAll('input[type="number"]')];
+		fireEvent.input(numInputs[0], { target: { value: '99' } }); // x
+		expect(lastOp((o) => o.op === 'patchGroup' && o.patch.config?.x === 99)).toBeTruthy();
+
+		// def name / def w / def h. The def w/h live in their own `.row2` (the floating row also has a w
+		// input at value 120, so scope to .row2 to hit the def-size inputs specifically).
+		const defName = root.querySelector('input[value="ClockDef"]') as HTMLInputElement;
+		fireEvent.input(defName, { target: { value: 'NewName' } });
+		expect(lastOp((o) => o.op === 'renameDef')).toMatchObject({ op: 'renameDef', defId: 'd1' });
+		const row2 = root.querySelector('.row2') as HTMLElement;
+		const [defW, defH] = [...row2.querySelectorAll('input[type="number"]')];
+		fireEvent.input(defW, { target: { value: '200' } });
+		expect(lastOp((o) => o.op === 'setDefSize' && o.w === 200)).toBeTruthy();
+		fireEvent.input(defH, { target: { value: '80' } });
+		expect(lastOp((o) => o.op === 'setDefSize' && o.h === 80)).toBeTruthy();
+
+		// Edit def…
+		fireEvent.click(getByText('Edit def…'));
+		expect(lastOp((o) => o.op === 'editDef')).toMatchObject({ op: 'editDef', defId: 'd1' });
+
+		// A text param writes the override into group.params.
+		const tz = root.querySelector('input[value="UTC"]') as HTMLInputElement;
+		fireEvent.input(tz, { target: { value: 'Asia/Tokyo' } });
+		expect(
+			lastOp((o) => o.op === 'patchGroup' && o.patch.params?.tz === 'Asia/Tokyo')
+		).toBeTruthy();
+
+		// A select param (the 12/24-hour choice) — open the combobox + pick 12-hour.
+		fireEvent.click(getByLabelText('param Clock'));
+		fireEvent.click(screen.getByText('12-hour', { selector: '.np-select-opt-label' }));
+		expect(lastOp((o) => o.op === 'patchGroup' && o.patch.params?.hours === '12')).toBeTruthy();
+
+		// Add a new param from the key/target inputs (the row above the "Add param" button).
+		const addRow = getByText('Add param').previousElementSibling as HTMLElement;
+		const [keyInput, targetInput] = [...addRow.querySelectorAll('input')];
+		fireEvent.change(keyInput, { target: { value: 'fmt' } });
+		fireEvent.change(targetInput, { target: { value: 'unit.config.fmt' } });
+		fireEvent.click(getByText('Add param'));
+		expect(lastOp((o) => o.op === 'addDefParam')).toMatchObject({
+			op: 'addDefParam',
+			defId: 'd1',
+			key: 'fmt',
+			target: 'unit.config.fmt'
+		});
+
+		// Unlink + Remove.
+		fireEvent.click(getByText('⛓ Unlink'));
+		expect(lastOp((o) => o.op === 'ungroup')).toMatchObject({ op: 'ungroup', id: 'g1' });
+		fireEvent.click(getByText('Remove'));
+		expect(lastOp((o) => o.op === 'remove')).toMatchObject({ op: 'remove', id: 'g1' });
+	});
+
+	it('shows the "inline group (no def)" hint when the group has no def, and flow sizing controls', () => {
+		const inline: Group = { ...groupUnit, def: undefined, params: undefined };
+		const { getByText, getByLabelText } = render(
+			<Inspector groupUnit={inline} placement="flow" onOp={vi.fn()} />
+		);
+		expect(getByText('inline group (no def)')).toBeTruthy();
+		// flow placement shows the group's leaf sizing control (aria-label "size in parent").
+		expect(getByLabelText('size in parent')).toBeTruthy();
+	});
+
+	it('does not render the Params section when the def declares none', () => {
+		const noParams: WidgetDef = { ...def, params: [] };
+		const noParamGroup: Group = { ...groupUnit, params: undefined };
+		const { queryByText } = render(
+			<Inspector groupUnit={noParamGroup} def={noParams} placement="floating" onOp={vi.fn()} />
+		);
+		expect(queryByText('Params')).toBeNull();
 	});
 });

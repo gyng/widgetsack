@@ -46,9 +46,10 @@ export function findParent(root: Container, id: string): Container | null {
 }
 
 /**
- * Rebuild the tree, replacing the node whose id matches via `fn` (applied before
- * recursing into the result's children). Returns a new root; a no-op clone if `id` is
- * absent. `fn` is expected to preserve node kind.
+ * Rebuild the tree, replacing the matched node with `fn(node)`. Recursion STOPS at the
+ * match — `fn`'s result is returned as-is and is NOT re-descended into (so a replacement
+ * that re-nests a node with the same id never re-runs `fn`). Returns a new root, or a
+ * no-op clone if `id` is absent. `fn` is expected to preserve node kind.
  */
 export function updateNode(
 	root: Container,
@@ -59,11 +60,15 @@ export function updateNode(
 }
 
 function rebuild(node: LayoutNode, id: string, fn: (n: LayoutNode) => LayoutNode): LayoutNode {
-	const replaced = node.id === id ? fn(node) : node;
-	if (isContainer(replaced)) {
-		return { ...replaced, children: replaced.children.map((c) => rebuild(c, id, fn)) };
+	// Matched node: apply fn and STOP — do NOT re-descend into the result. Re-descending re-ran fn
+	// whenever the replacement re-contained a node with the same id (e.g. wrapLeafWith nests the
+	// target inside a fresh cell), which recursed unboundedly on the merge-drop path. Ids are unique,
+	// so there is never a second node with this id to find below the match.
+	if (node.id === id) return fn(node);
+	if (isContainer(node)) {
+		return { ...node, children: node.children.map((c) => rebuild(c, id, fn)) };
 	}
-	return replaced;
+	return node;
 }
 
 /** Shallow-patch the container with `id` (kind/gap/pad/align/justify/cols/basis/…). */

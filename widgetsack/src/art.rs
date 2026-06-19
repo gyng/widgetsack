@@ -26,7 +26,7 @@ use std::collections::{HashMap, VecDeque};
 use std::hash::{Hash, Hasher};
 use std::sync::{Arc, Mutex};
 
-use tauri::http::{header, Request, Response, StatusCode};
+use tauri::http::{Request, Response, StatusCode, header};
 use tauri::{AppHandle, Manager, Runtime, UriSchemeContext};
 
 use crate::listener::{ImageWrapper, SessionUpdateEventWrapper};
@@ -164,7 +164,10 @@ pub fn build_response(art: Option<&ImageWrapper>) -> Response<Cow<'static, [u8]>
     match art {
         Some(img) => Response::builder()
             .status(StatusCode::OK)
-            .header(header::CONTENT_TYPE, content_type_for(&img.content_type, &img.data))
+            .header(
+                header::CONTENT_TYPE,
+                content_type_for(&img.content_type, &img.data),
+            )
             .header(header::CACHE_CONTROL, "no-store")
             .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
             .body(Cow::Owned(img.data.clone()))
@@ -234,7 +237,10 @@ mod tests {
         assert_eq!(content_type_for("IMAGE/JPG", &[]), "image/jpeg");
         // Unknown declared type → sniff the magic bytes.
         assert_eq!(content_type_for("", &[0x89, 0x50, 0x4E, 0x47]), "image/png");
-        assert_eq!(content_type_for("application/octet-stream", &[0xFF, 0xD8, 0xFF]), "image/jpeg");
+        assert_eq!(
+            content_type_for("application/octet-stream", &[0xFF, 0xD8, 0xFF]),
+            "image/jpeg"
+        );
         // Unrecognisable → jpeg default (never an invalid header value).
         assert_eq!(content_type_for("", &[0, 0, 0]), "image/jpeg");
     }
@@ -309,12 +315,18 @@ mod tests {
 
         let state = ArtState::default();
         note_record(&state, &rec);
-        assert!(state.0.lock().unwrap().get(hash).is_some(), "media cover is registered");
+        assert!(
+            state.0.lock().unwrap().get(hash).is_some(),
+            "media cover is registered"
+        );
 
         // A model/timeline update carries no cover → nothing new registered.
         rec.last_media_update = Some(SessionUpdateEventWrapper::Model(model));
         let state2 = ArtState::default();
         note_record(&state2, &rec);
-        assert!(state2.0.lock().unwrap().is_empty(), "model update registers no cover");
+        assert!(
+            state2.0.lock().unwrap().is_empty(),
+            "model update registers no cover"
+        );
     }
 }

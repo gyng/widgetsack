@@ -17,8 +17,8 @@ pub fn recyclebin_samples_from(items: i64, bytes: i64, ts: u64) -> Vec<SensorSam
 /// so the per-tick cost is small.
 #[cfg(target_os = "windows")]
 fn query() -> Option<(i64, i64)> {
+    use windows::Win32::UI::Shell::{SHQUERYRBINFO, SHQueryRecycleBinW};
     use windows::core::PCWSTR;
-    use windows::Win32::UI::Shell::{SHQueryRecycleBinW, SHQUERYRBINFO};
 
     let mut info = SHQUERYRBINFO {
         cbSize: std::mem::size_of::<SHQUERYRBINFO>() as u32,

@@ -1,0 +1,118 @@
+/* Monitor Switch — a title (+ optional resolution/refresh stats) and one clickable row per input
+   source; the active input is marked. Rows are bare buttons (overlay-interactive). Themeable via
+   --np-* / --ms-* tokens (mirrors the Audio Switcher). */
+.monitorswitch {
+	display: flex;
+	flex-direction: column;
+	gap: var(--ms-gap, 3px);
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	overflow: hidden;
+	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	color: var(--np-fg, rgb(255, 255, 255));
+}
+
+.ms-head {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+}
+.ms-title {
+	font-size: var(--ms-title-size, 0.66em);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--np-label, rgba(255, 255, 255, 0.5));
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.ms-stats {
+	flex: 0 0 auto;
+	font-size: var(--ms-stats-size, 0.6em);
+	color: var(--np-label, rgba(255, 255, 255, 0.4));
+	white-space: nowrap;
+}
+
+.ms-list {
+	display: flex;
+	flex-flow: row wrap;
+	gap: var(--ms-row-gap, 6px);
+	align-content: flex-start;
+	min-height: 0;
+	overflow: auto;
+}
+.ms-row {
+	/* Big, tiled, finger-friendly buttons (wrap to fill the widget). */
+	flex: 1 1 var(--ms-btn-min, 84px);
+	min-width: var(--ms-btn-min, 84px);
+	min-height: var(--ms-btn-h, 44px); /* >= 44px: the common minimum touch target */
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 8px 12px;
+	border: 1px solid var(--ms-border, rgba(255, 255, 255, 0.16));
+	border-radius: var(--ms-radius, 8px);
+	background: var(--ms-row-bg, rgba(255, 255, 255, 0.06));
+	color: inherit;
+	font: inherit;
+	font-size: var(--ms-row-size, 0.95em);
+	text-align: center;
+	cursor: pointer;
+	transition: background 0.12s ease, border-color 0.12s ease;
+	/* Touch ergonomics: no tap flash, no double-tap zoom, no text selection on press. */
+	-webkit-tap-highlight-color: transparent;
+	touch-action: manipulation;
+	user-select: none;
+}
+.ms-row:hover {
+	background: var(--ms-row-hover, rgba(255, 255, 255, 0.14));
+}
+.ms-row:active {
+	transform: translateY(1px);
+}
+.ms-row[data-active] {
+	background: var(--ms-active-bg, rgba(119, 196, 211, 0.22));
+	border-color: var(--ms-accent, var(--np-accent, rgb(119, 196, 211)));
+	font-weight: 600;
+}
+.ms-row[data-busy] {
+	opacity: 0.6;
+	cursor: progress;
+}
+
+.ms-name {
+	min-width: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Compact mode: a tight single-column list (the original look) instead of large touch buttons. */
+.monitorswitch[data-compact] .ms-list {
+	flex-direction: column;
+	flex-wrap: nowrap;
+	gap: var(--ms-row-gap, 2px);
+}
+.monitorswitch[data-compact] .ms-row {
+	flex: 0 0 auto;
+	min-width: 0;
+	min-height: 0;
+	justify-content: flex-start;
+	padding: 2px 8px;
+	border: 0;
+	border-radius: var(--ms-radius, 5px);
+	font-size: var(--ms-row-size-compact, 0.86em);
+	font-weight: 400;
+	text-align: left;
+}
+.monitorswitch[data-compact] .ms-row[data-active] {
+	font-weight: 600;
+}
+
+.ms-empty {
+	color: var(--np-label, rgba(255, 255, 255, 0.4));
+	font-size: 0.9em;
+}

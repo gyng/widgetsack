@@ -47,6 +47,85 @@ describe('intrinsicSize', () => {
 		const c = container('c', 'col', [leaf(prim('A', 50, 40)), leaf(prim('B', 80, 20))]);
 		expect(intrinsicSize(c)).toEqual({ w: 80, h: 60 });
 	});
+
+	it('a bare primitive leaf reports its own rect', () => {
+		expect(intrinsicSize(leaf(prim('A', 64, 24)))).toEqual({ w: 64, h: 24 });
+	});
+
+	it('an explicit `bounds` overrides the derived size on both axes', () => {
+		const c = container('c', 'col', [leaf(prim('A', 50, 40))], {
+			bounds: { x: 0, y: 0, w: 7, h: 9 }
+		});
+		expect(intrinsicSize(c)).toEqual({ w: 7, h: 9 });
+	});
+
+	it('an empty container collapses to just its padding', () => {
+		const c = container('c', 'col', [], { pad: { t: 3, r: 5, b: 7, l: 11 } });
+		// padAlong horizontal = l+r = 16, vertical = t+b = 10.
+		expect(intrinsicSize(c)).toEqual({ w: 16, h: 10 });
+	});
+
+	it('an overlap container is only as big as its largest child (plus pad)', () => {
+		const c = container('c', 'row', [leaf(prim('A', 50, 40)), leaf(prim('B', 80, 20))], {
+			overlap: true,
+			pad: 5
+		});
+		// max width 80 + 2*5, max height 40 + 2*5 — children share one box, not summed.
+		expect(intrinsicSize(c)).toEqual({ w: 90, h: 50 });
+	});
+
+	it('a group leaf reports its resolved def size as its intrinsic box', () => {
+		const lib: Library = {
+			version: 1,
+			defs: [{ id: 'cg', name: 'cg', size: { w: 40, h: 26 }, child: leaf(prim('spk', 1, 1)) }]
+		};
+		const g = leaf(group('g0', { w: 999, h: 999 }, leaf(prim('fb', 1, 1)), { def: 'cg' }));
+		// resolveGroup picks the def's size (40×26), not the inline 999×999.
+		expect(intrinsicSize(g, lib)).toEqual({ w: 40, h: 26 });
+	});
+
+	describe('grid intrinsic sizing', () => {
+		it('a uniform grid is cols × max-child-width + gaps wide, rows × max-child-height + gaps tall', () => {
+			// 2 cols, 2 children → 1 row. max child 30×20, gap 4.
+			const g = container('g', 'grid', [leaf(prim('A', 30, 20)), leaf(prim('B', 10, 10))], {
+				cols: 2,
+				gap: 4
+			});
+			// w = 30*2 + 4*(2-1) = 64 ; h = 20*1 + 4*0 = 20.
+			expect(intrinsicSize(g)).toEqual({ w: 64, h: 20 });
+		});
+
+		it('a bounds-less grid with no explicit cols defaults to a single track', () => {
+			// no cols → cols defaults to 1; 3 children → 3 rows.
+			const g = container('g', 'grid', [
+				leaf(prim('A', 30, 20)),
+				leaf(prim('B', 10, 10)),
+				leaf(prim('C', 10, 10))
+			]);
+			// w = max-child-width 30 * 1 col ; h = max-child-height 20 * 3 rows.
+			expect(intrinsicSize(g)).toEqual({ w: 30, h: 60 });
+		});
+
+		it('an explicit `rows` minimum grows the intrinsic height even with few children', () => {
+			const g = container('g', 'grid', [leaf(prim('A', 30, 20))], { cols: 1, rows: 3, gap: 2 });
+			// rows = max(3, ceil(1/1)) = 3 → h = 20*3 + 2*(3-1) = 64.
+			expect(intrinsicSize(g).h).toBe(64);
+		});
+
+		it('a grid with per-cell fixed widths sums each track (fixed size, else its largest child)', () => {
+			const c0 = container('c0', 'col', [leaf(prim('A', 5, 5))], { cellW: 100 });
+			const g = container('g', 'grid', [c0, leaf(prim('B', 30, 10))], { cols: 2, gap: 6 });
+			// track 0 fixed 100, track 1 = max child width 30 → w = 100 + 30 + 6*(2-1) = 136.
+			expect(intrinsicSize(g).w).toBe(136);
+		});
+
+		it('a grid with per-cell fixed heights sums each row track', () => {
+			const c0 = container('c0', 'col', [leaf(prim('A', 5, 5))], { cellH: 80 });
+			const g = container('g', 'grid', [c0, leaf(prim('B', 10, 40))], { cols: 1 });
+			// 1 col → 2 rows; row 0 fixed 80, row 1 = max child height 40 → h = 80 + 40 = 120.
+			expect(intrinsicSize(g).h).toBe(120);
+		});
+	});
 });
 
 // ---- groups (resolveGroup only — the solver-driven cases are gone) -------
@@ -135,6 +214,58 @@ describe('groups', () => {
 		expect((defChild.children[0] as Leaf).unit).toMatchObject({ config: { locale: 'en' } });
 	});
 
+	it('no def and no library: uses the inline child + size verbatim', () => {
+		const inline = leaf(prim('inl', 12, 8));
+		const r = resolveGroup(group('inst', { w: 12, h: 8 }, inline)); // no library arg at all
+		expect(r.size).toEqual({ w: 12, h: 8 });
+		expect((r.child as Leaf).id).toBe('inl');
+	});
+
+	it('a group with no resolvable child falls back to an empty col + zero size', () => {
+		// Bypass the constructor to model a malformed/empty group instance (no def, no inline child).
+		const grp = { id: 'g', kind: 'group' as const } as unknown as Parameters<
+			typeof resolveGroup
+		>[0];
+		const r = resolveGroup(grp);
+		expect(r.size).toEqual({ w: 0, h: 0 }); // grp.size missing → {w:0,h:0} fallback
+		const child = r.child as Container;
+		expect(child.kind).toBe('col');
+		expect(child.children).toEqual([]);
+		expect(child.id).toBe('g:empty');
+	});
+
+	it('inline child WITH params but NO def specs: applyParams is a no-op (no specs to drive)', () => {
+		const inline = leaf(prim('inl', 1, 1, { config: { core: 'orig' } }));
+		// def-less group carrying params; there are no ParamSpecs (those live on the def) → no writes.
+		const r = resolveGroup(group('inst', { w: 1, h: 1 }, inline, { params: { core: 'changed' } }));
+		expect(((r.child as Leaf).unit as WidgetInstance).config?.core).toBe('orig');
+	});
+
+	it('a spec whose key is absent from the instance params is skipped', () => {
+		const defChild = leaf(prim('spk', 10, 10, { config: { core: 'orig', label: 'orig' } }));
+		const def = {
+			id: 'd',
+			name: 'd',
+			size: { w: 40, h: 26 },
+			child: defChild,
+			params: [
+				{ key: 'core', target: 'unit.config.core' },
+				{ key: 'label', target: 'unit.config.label' } // this key is NOT supplied below
+			]
+		};
+		const lib: Library = { version: 1, defs: [def] };
+		const r = resolveGroup(
+			group('g', { w: 40, h: 26 }, leaf(prim('x', 1, 1)), {
+				def: 'd',
+				params: { core: 'cpu.7' } // only `core`; `label` absent → its spec is skipped
+			}),
+			lib
+		);
+		const unit = (r.child as Leaf).unit as WidgetInstance;
+		expect(unit.config?.core).toBe('cpu.7'); // applied
+		expect(unit.config?.label).toBe('orig'); // untouched (key not in params)
+	});
+
 	it('default param target is fail-closed on a container-rooted child (no bogus unit grafted)', () => {
 		const containerChild = container('inner', 'col', []);
 		const def = {
@@ -211,6 +342,70 @@ describe('collectRenderables', () => {
 		});
 		expect(spk?.instance.type).toBe('sparkline');
 		expect(rs.find((r) => r.id === 'g0')).toBeUndefined();
+	});
+
+	it('descends a group that sits IN THE FLOW TREE (not floating), namespacing + selecting it', () => {
+		const def = {
+			id: 'cg',
+			name: 'core-graph',
+			size: { w: 40, h: 26 },
+			child: leaf(prim('spk', 40, 26, { type: 'sparkline' }))
+		};
+		const lib: Library = { version: 1, defs: [def] };
+		// The group leaf lives inside the flow root (the `walk(monitor.root, …)` path), carrying its
+		// own `def` so defSel falls through to node.unit.def.
+		const g = group('gf', { w: 40, h: 26 }, leaf(prim('fb', 1, 1)), { def: 'cg' });
+		const root = container('root', 'col', [leaf(g)], { align: 'stretch' });
+		const mon: MonitorLayout = { root, floating: [] };
+		const solved: Solved = new Map([
+			['root', { x: 0, y: 0, w: 1000, h: 200 }],
+			['gf/spk', { x: 0, y: 0, w: 40, h: 26 }]
+		]);
+		const rs = collectRenderables(mon, solved, lib);
+		const spk = rs.find((r) => r.id === 'gf/spk');
+		expect(spk).toMatchObject({
+			selectId: 'gf', // the group is the selectable unit
+			movable: false, // flow-tree group descendants are never movable
+			groupId: 'gf',
+			defId: 'cg', // node.unit.def threads through as defSel
+			rect: { x: 0, y: 0, w: 40, h: 26 }
+		});
+		expect(spk?.instance.type).toBe('sparkline');
+	});
+
+	it('a FLOW-TREE group WITHOUT a def descends its inline child (no defId)', () => {
+		// node.unit.def is undefined → `defSel ?? node.unit.def ?? null` takes the trailing `?? null`.
+		const g = group('gn', { w: 30, h: 20 }, leaf(prim('inl', 30, 20, { type: 'text' })));
+		const root = container('root', 'col', [leaf(g)], { align: 'stretch' });
+		const mon: MonitorLayout = { root, floating: [] };
+		const solved: Solved = new Map([
+			['root', { x: 0, y: 0, w: 100, h: 100 }],
+			['gn/inl', { x: 1, y: 2, w: 30, h: 20 }]
+		]);
+		const rs = collectRenderables(mon, solved);
+		const inl = rs.find((r) => r.id === 'gn/inl');
+		expect(inl).toMatchObject({ selectId: 'gn', groupId: 'gn', movable: false });
+		expect(inl?.defId).toBeUndefined();
+	});
+
+	it('a FLOATING group WITHOUT a def resolves its inline child (defId omitted)', () => {
+		// No def → resolveGroup falls back to the inline child; `lf.unit.def ?? null` takes the null arm.
+		const g = group('gi', { w: 40, h: 26 }, leaf(prim('inl', 40, 26, { type: 'bar' })));
+		const mon: MonitorLayout = { root: container('root', 'col', []), floating: [leaf(g)] };
+		const solved: Solved = new Map([
+			['root', { x: 0, y: 0, w: 1000, h: 200 }],
+			['gi/inl', { x: 5, y: 6, w: 40, h: 26 }]
+		]);
+		const rs = collectRenderables(mon, solved);
+		const inl = rs.find((r) => r.id === 'gi/inl');
+		expect(inl).toMatchObject({
+			selectId: 'gi',
+			groupId: 'gi',
+			movable: false,
+			rect: { x: 5, y: 6, w: 40, h: 26 }
+		});
+		expect(inl?.defId).toBeUndefined(); // def-less group → no defId css hook
+		expect(inl?.instance.type).toBe('bar');
 	});
 });
 
@@ -356,6 +551,26 @@ describe('non-uniform grid (fixed cell width/height + aspect)', () => {
 		expect(cells[1]).toEqual({ x: 0, y: 50, w: 100, h: 150 });
 	});
 
+	it('a grid with no explicit cols lays out a single column per row', () => {
+		// cols omitted → 1; two children → two rows over a 100×200 box → two stacked 100×100 cells.
+		const grid = container('g', 'grid', [leaf(prim('A', 10, 10)), leaf(prim('B', 10, 10))]);
+		const cells = gridCellRects(grid, { x: 0, y: 0, w: 100, h: 200 });
+		expect(cells).toHaveLength(2);
+		expect(cells[0]).toEqual({ x: 0, y: 0, w: 100, h: 100 });
+		expect(cells[1]).toEqual({ x: 0, y: 100, w: 100, h: 100 });
+	});
+
+	it('when every column is fixed there is no flexible pool to split (tracks take their fixed px)', () => {
+		// Both columns carry a cellW → flexWeight is 0; each track is exactly its fixed width regardless
+		// of the box width (the box is wider than the fixed total).
+		const c0 = container('c0', 'col', [leaf(prim('A', 5, 5))], { cellW: 60 });
+		const c1 = container('c1', 'col', [leaf(prim('B', 5, 5))], { cellW: 40 });
+		const grid = container('g', 'grid', [c0, c1], { cols: 2 });
+		const cells = gridCellRects(grid, { x: 0, y: 0, w: 300, h: 100 });
+		expect(cells[0].w).toBe(60);
+		expect(cells[1].w).toBe(40);
+	});
+
 	it('a fixed column is untouched by colFr; only the FLEXIBLE rest is weighted', () => {
 		// col 0 fixed 100; cols 1,2 flexible with weights 1:3 over the remaining 200 → 50 / 150.
 		const c0 = container('c0', 'col', [leaf(prim('A', 10, 10))], { cellW: 100 });
@@ -406,6 +621,14 @@ describe('collectSplitters', () => {
 			['a', { x: 0, y: 0, w: 100, h: 50 }],
 			['b', { x: 100, y: 0, w: 100, h: 50 }]
 		]);
+		expect(collectSplitters(mon, solved)).toHaveLength(0);
+	});
+
+	it('skips an fr↔fr pair when a child has no measured rect yet', () => {
+		const row = container('r', 'row', [frLeaf('a'), frLeaf('b')]);
+		const mon: MonitorLayout = { root: container('root', 'col', [row]), floating: [] };
+		// `b` is absent from the solved map (not yet measured) → the boundary can't be placed.
+		const solved: Solved = new Map([['a', { x: 0, y: 0, w: 100, h: 50 }]]);
 		expect(collectSplitters(mon, solved)).toHaveLength(0);
 	});
 
@@ -475,6 +698,28 @@ describe('collectSplitters — grid tracks', () => {
 		const solved: Solved = new Map([['g', { x: 0, y: 0, w: 200, h: 100 }]]);
 		expect(collectSplitters(mon, solved)).toHaveLength(0);
 	});
+
+	it('skips a row boundary whose TRAILING row track is fixed (cellH on the next row)', () => {
+		// 1 col × 2 rows; row 0 flexible, row 1 fixed (cellH). Boundary 0↔1: rowFixed[0] null (left arm
+		// false) but rowFixed[1] non-null (right arm true) → the boundary is skipped.
+		const r1 = container('r1', 'col', [leaf(prim('B', 10, 10))], { cellH: 40 });
+		const grid = container('g', 'grid', [leaf(prim('A', 10, 10)), r1], { cols: 1 });
+		const mon: MonitorLayout = { root: container('root', 'col', [grid]), floating: [] };
+		const solved: Solved = new Map([['g', { x: 0, y: 0, w: 100, h: 200 }]]);
+		expect(collectSplitters(mon, solved).filter((s) => s.track?.which === 'row')).toHaveLength(0);
+	});
+
+	it('a grid with no explicit cols (1-col default) and an explicit rows minimum yields row splitters', () => {
+		// cols omitted → 1; rows:3 minimum with 2 children → 3 row tracks → 2 row splitters, 0 col.
+		const grid = container('g', 'grid', [leaf(prim('A', 10, 10)), leaf(prim('B', 10, 10))], {
+			rows: 3
+		});
+		const mon: MonitorLayout = { root: container('root', 'col', [grid]), floating: [] };
+		const solved: Solved = new Map([['g', { x: 0, y: 0, w: 200, h: 300 }]]);
+		const sp = collectSplitters(mon, solved);
+		expect(sp.filter((s) => s.track?.which === 'col')).toHaveLength(0);
+		expect(sp.filter((s) => s.track?.which === 'row')).toHaveLength(2);
+	});
 });
 
 describe('resizeSplit', () => {
@@ -495,5 +740,23 @@ describe('resizeSplit', () => {
 	it('clamps so neither side drops below the minimum', () => {
 		const { frA } = resizeSplit(100, 100, 1, 1, -500, { minPx: 16, snapPx: 0 });
 		expect(frA).toBeCloseTo((16 / 200) * 2, 2); // newA pinned to 16px
+	});
+
+	it('uses default snapPx/minPx when no opts are passed', () => {
+		// No opts arg → snapPx 14, minPx 16. delta +200 over 200px clamps A to total-minPx = 184.
+		const { frA, frB } = resizeSplit(100, 100, 1, 1, 200);
+		expect(frA + frB).toBeCloseTo(2);
+		// 184/200 = 0.92, within 14px of no snap; raw fraction 0.92 → frA = 0.92*2 = 1.84.
+		expect(frA).toBeCloseTo(1.84, 2);
+	});
+
+	it('returns the weights unchanged when the combined size is non-positive', () => {
+		// total = 0 → the divide-by-zero guard returns the inputs verbatim.
+		expect(resizeSplit(0, 0, 1, 1, 50)).toEqual({ frA: 1, frB: 1 });
+	});
+
+	it('returns the weights unchanged when the combined fr is non-positive', () => {
+		// combinedFr = 0 → same guard.
+		expect(resizeSplit(100, 100, 0, 0, 50)).toEqual({ frA: 0, frB: 0 });
 	});
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
 	actionHandlerFor,
 	listPlugins,
+	pluginSensorNames,
 	pluginSensorNamesFrom,
 	registerPlugin,
 	statusDotFrom,
@@ -163,5 +164,33 @@ describe('pluginSensorNamesFrom', () => {
 		const names = pluginSensorNamesFrom(list);
 		expect(names.has('cpu.total')).toBe(false);
 		expect(names.has('mem.used')).toBe(false);
+	});
+
+	it('tolerates a source with no catalog() (no ids contributed)', () => {
+		const names = pluginSensorNamesFrom([
+			{
+				id: 'catless',
+				name: 'Catless',
+				sources: [{ id: 'catless', start: async () => () => undefined }]
+			}
+		]);
+		expect(names.size).toBe(0);
+	});
+});
+
+describe('pluginSensorNames (live registry)', () => {
+	it('reads the live plugin registry', () => {
+		registerPlugin({
+			id: 'test.livesensor',
+			name: 'Live Sensor Plugin',
+			sources: [
+				{
+					id: 'test.livesensor',
+					start: async () => () => undefined,
+					catalog: () => ['live.sensor.one']
+				}
+			]
+		});
+		expect(pluginSensorNames().get('live.sensor.one')).toBe('Live Sensor Plugin');
 	});
 });
