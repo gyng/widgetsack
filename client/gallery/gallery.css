@@ -81,7 +81,7 @@ figcaption {
    Landscape (four columns) so it embeds well in the README — see the DEMO array in Gallery.tsx. */
 .demo-panel {
 	position: relative;
-	width: 900px;
+	width: 1074px;
 	height: 380px;
 	border-radius: 12px;
 	background: linear-gradient(180deg, rgba(12, 22, 28, 0.82), rgba(8, 14, 18, 0.88)), var(--shot-bg);

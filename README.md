@@ -1,7 +1,7 @@
 # <img src="branding/icon-transparent.png" alt="" width="40" align="top"> widgetsack
 
 <p align="center">
-  <img src="docs/img/demo.png" alt="widgetsack demo layout: clock, CPU/GPU gauges, a countdown timer, memory/VRAM bars, up/down network graphs, an audio spectrum, a now-playing card, a stock ticker, an analog clock, and Home Assistant temperature/climate/light tiles" width="900">
+  <img src="docs/img/demo.png" alt="widgetsack demo layout: clock, CPU/GPU gauges, a countdown timer, memory/VRAM bars, up/down network graphs, an audio spectrum, a now-playing card, a stock ticker, an analog clock, Home Assistant temperature/climate/light tiles, and a DDC monitor input switcher" width="900">
 </p>
 
 [**👉 installer download for the latest release**](https://github.com/gyng/widgetsack/releases/latest)
@@ -30,14 +30,16 @@ docs regenerate from the code with `npm run gen:docs`.
 - **Widgets:** gauges, bars, sparklines, text, digital + analog clocks, a month calendar, a per-core
   CPU grid, a GPU panel, a battery indicator, a disk/storage panel, a top-process monitor, an audio
   spectrum, a now-playing card, a weather card, a stock ticker, an application fence or zone, a web
-  iframe, action buttons, and Home Assistant tiles — sensor- or [formula-driven](docs/templating.md)
+  iframe, action buttons, a DDC monitor input switcher, an audio output switcher, and Home Assistant
+  tiles — sensor- or [formula-driven](docs/templating.md)
   and fully restylable ([reference](docs/widgets.md)).
 - **Sensors:** CPU (total/per-core/freq), memory + swap, network, disks (+ I/O), uptime, battery, the
   busiest process (by CPU/RAM/disk/GPU), and NVIDIA GPU (NVML) — demand-gated, so only what's on screen
   is sampled.
 - **Now playing:** Windows media via GSMTC — Spotify, foobar2000, browsers, and more
   ([support table](https://github.com/ModernFlyouts-Community/ModernFlyouts/blob/main/docs/GSMTC-Support-And-Popular-Apps.md)).
-- **Integrations:** Home Assistant (live states + light/climate controls), MQTT, stock quotes, and
+- **Integrations:** Home Assistant (live states + light/climate/fan/cover/lock/scene/switch/media
+  controls), MQTT, stock quotes, and
   weather (Open-Meteo, keyless).
 - **Overlay:** transparent, click-through, always-on-top, one per monitor — per-widget
   click-through still lets buttons/controls catch clicks. Single-instance, optional autostart.

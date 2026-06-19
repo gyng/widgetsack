@@ -19,7 +19,21 @@ const GALLERY_INVOKE: Record<string, unknown> = {
 		{ id: 'hdmi', name: 'HDMI Display' }
 	],
 	default_audio_output: 'spk',
-	get_audio_volume: { level: 0.62, muted: false }
+	get_audio_volume: { level: 0.62, muted: false },
+	// The Monitor Switch sources its rows from list_monitor_inputs (DDC/CI VCP 0x60), not the hub —
+	// canned a representative 4K monitor (current = HDMI 1; DP/HDMI×2/USB-C supported) so it renders.
+	list_monitor_inputs: [
+		{
+			gdi: '\\\\.\\DISPLAY1',
+			friendly: 'Dell U2723QE',
+			primary: true,
+			current_input: 0x11, // HDMI 1
+			supported: [0x0f, 0x11, 0x12, 0x15], // DisplayPort 1, HDMI 1, HDMI 2, USB-C
+			width: 2560,
+			height: 1440,
+			refresh_hz: 144
+		}
+	]
 };
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).__TAURI_INTERNALS__ = {
