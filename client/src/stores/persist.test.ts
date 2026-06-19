@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { createPersistedStore, readJson, readString, writeJson, writeString } from './persist';
+
+afterEach(() => vi.restoreAllMocks());
 
 describe('readJson / writeJson', () => {
 	beforeEach(() => localStorage.clear());
@@ -17,6 +19,15 @@ describe('readJson / writeJson', () => {
 		localStorage.setItem('t.corrupt', '{not json');
 		expect(readJson('t.corrupt')).toBeNull();
 	});
+
+	it('swallows a setItem failure (quota / unavailable) on writeJson', () => {
+		const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+			throw new DOMException('QuotaExceededError');
+		});
+		expect(() => writeJson('t.json', { a: 1 })).not.toThrow();
+		expect(spy).toHaveBeenCalledWith('t.json', JSON.stringify({ a: 1 }));
+		spy.mockRestore();
+	});
 });
 
 describe('readString / writeString', () => {
@@ -30,6 +41,23 @@ describe('readString / writeString', () => {
 
 	it('returns null for a missing key', () => {
 		expect(readString('t.missing')).toBeNull();
+	});
+
+	it('returns null instead of throwing when getItem is unavailable', () => {
+		const spy = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+			throw new DOMException('SecurityError');
+		});
+		expect(readString('t.str')).toBeNull();
+		spy.mockRestore();
+	});
+
+	it('swallows a setItem failure on writeString', () => {
+		const spy = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+			throw new DOMException('QuotaExceededError');
+		});
+		expect(() => writeString('t.str', 'value')).not.toThrow();
+		expect(spy).toHaveBeenCalledWith('t.str', 'value');
+		spy.mockRestore();
 	});
 });
 

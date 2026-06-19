@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createTelemetryHub } from '../../core/telemetry';
 
 // Mock the Tauri command adapter so the orchestration test stays I/O-free.
@@ -6,6 +6,10 @@ const haHistory = vi.fn();
 vi.mock('./ha-commands', () => ({ haHistory: (...a: unknown[]) => haHistory(...a) }));
 
 import { haEntityForHistory, startHaBackfill } from './ha-backfill';
+
+// The mock is module-level (shared across tests); reset its call log so each test asserts
+// absolute call counts from a clean baseline.
+beforeEach(() => haHistory.mockReset());
 
 describe('haEntityForHistory', () => {
 	it('maps a numeric .state id to its entity_id', () => {
@@ -63,5 +67,45 @@ describe('startHaBackfill', () => {
 		await Promise.resolve();
 		await Promise.resolve();
 		expect(hub.sensor('ha.sensor.temp.state').getSnapshot().history).toEqual([21, 22]);
+	});
+
+	it('does not ingest when the history is empty (no samples to merge)', async () => {
+		haHistory.mockResolvedValue([]);
+		const hub = createTelemetryHub();
+		const ingest = vi.spyOn(hub, 'ingestBatch');
+		startHaBackfill(hub);
+		hub.sensor('ha.sensor.temp.state').subscribe(() => undefined);
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(ingest).not.toHaveBeenCalled();
+	});
+
+	it('warns and releases the claim on a failed fetch so a later tick can retry', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		// First fetch rejects (HA blip at mount); every later fetch (the retry + other entities) is
+		// an empty success so the test produces no unhandled rejections.
+		haHistory.mockResolvedValue([]).mockRejectedValueOnce(new Error('HA blip'));
+		const hub = createTelemetryHub();
+		startHaBackfill(hub);
+
+		hub.sensor('ha.sensor.temp.state').subscribe(() => undefined);
+		expect(haHistory).toHaveBeenCalledTimes(1);
+		// Let the rejected backfill settle so the entity's claim is released.
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(warn).toHaveBeenCalledWith(
+			'HA history backfill failed for',
+			'sensor.temp',
+			expect.any(Error)
+		);
+
+		// A later active-change tick (another sensor mounts) retries the still-unfilled entity.
+		hub.sensor('ha.sensor.other.state').subscribe(() => undefined);
+		expect(haHistory.mock.calls.filter((c) => c[0] === 'sensor.temp')).toHaveLength(2);
+		// Let the retry + sibling fetch settle before restoring the console spy.
+		await Promise.resolve();
+		await Promise.resolve();
+
+		warn.mockRestore();
 	});
 });

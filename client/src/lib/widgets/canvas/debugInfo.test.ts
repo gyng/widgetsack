@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { buildDebugInfo } from './debugInfo';
-import { container, type MonitorLayout } from '../../core/layoutTree';
+import { buildDebugInfo, type DebugArgs } from './debugInfo';
+import { container, group, leaf, type MonitorLayout } from '../../core/layoutTree';
+import { createWidget } from '../../core/widget';
 import type { Solved } from '../../core/solve';
 
 describe('buildDebugInfo', () => {
@@ -61,6 +62,110 @@ describe('buildDebugInfo', () => {
 	it('reports no issues for a sane pad where the cells fill the canvas', () => {
 		const out = buildDebugInfo(argsFor(clockDef(8), 8));
 		expect(out).toContain('issues: none detected');
+		expect(out).not.toContain('COLLAPSED');
+	});
+
+	// A monitor whose root holds a single placed leaf (widget instance or group). Used to drive the
+	// `isLeaf(sel)` summary branch — the existing tests only ever select a container.
+	function withLeaf(leafNode: ReturnType<typeof leaf>): MonitorLayout {
+		return { root: container('root', 'col', [leafNode], { pad: 8 }), floating: [] };
+	}
+
+	const leafArgs = (mon: MonitorLayout, selectedId: string | null): DebugArgs => ({
+		designing: false,
+		editingDef: null,
+		monitorKey: 'default',
+		workArea: { x: 0, y: 0, w: 200, h: 100 },
+		stageSize: { w: 200, h: 100 },
+		zoom: 1,
+		panX: 0,
+		panY: 0,
+		monitor: mon,
+		solved: new Map([
+			['root', { x: 0, y: 0, w: 200, h: 100 }],
+			['w1', { x: 8, y: 8, w: 184, h: 84 }]
+		]),
+		selectedId,
+		defs: []
+	});
+
+	it('summarises a selected widget-instance leaf by its type and box', () => {
+		const w = createWidget('gauge', 'w1');
+		const out = buildDebugInfo(leafArgs(withLeaf(leaf(w)), 'w1'));
+		expect(out).toContain('selected: w1 (gauge) box {x:8, y:8, w:184, h:84}');
+		expect(out).toContain('mode: layout');
+		expect(out).toContain('floating widgets: 0');
+		expect(out).not.toContain('editing def:');
+		expect(out).not.toContain('library defs:');
+	});
+
+	it('summarises a selected group leaf that references a library def', () => {
+		const g = group('w1', { w: 80, h: 40 }, leaf(createWidget('clock', 'inner')), { def: 'def-x' });
+		const out = buildDebugInfo(leafArgs(withLeaf(leaf(g)), 'w1'));
+		expect(out).toContain('selected: w1 (group:def-x) box');
+	});
+
+	it('summarises an inline group leaf (no def) as group:inline', () => {
+		const g = group('w1', { w: 80, h: 40 }, leaf(createWidget('clock', 'inner')));
+		const out = buildDebugInfo(leafArgs(withLeaf(leaf(g)), 'w1'));
+		expect(out).toContain('selected: w1 (group:inline) box');
+	});
+
+	it('finds a selected leaf in the floating layer (not just the flow tree)', () => {
+		const w = createWidget('text', 'w1');
+		const mon: MonitorLayout = {
+			root: container('root', 'col', [], { pad: 8 }),
+			floating: [leaf(w)]
+		};
+		const out = buildDebugInfo(leafArgs(mon, 'w1'));
+		expect(out).toContain('selected: w1 (text)');
+		expect(out).toContain('floating widgets: 1');
+	});
+
+	it('reports "(none)" when nothing is selected', () => {
+		const out = buildDebugInfo(leafArgs(withLeaf(leaf(createWidget('gauge', 'w1'))), null));
+		expect(out).toContain('selected: (none)');
+	});
+
+	it('reports "(none)" when the selected id matches no node anywhere', () => {
+		// findNode → null AND floating.find → null exercises the final `?? null` fallback.
+		const out = buildDebugInfo(leafArgs(withLeaf(leaf(createWidget('gauge', 'w1'))), 'ghost'));
+		expect(out).toContain('selected: (none)');
+	});
+
+	it('renders an em dash for a selected node with no solved box (container + leaf)', () => {
+		// A container with no `basis`/`pad`/`gap` exercises the padGap fallbacks; an empty `solved`
+		// map exercises the `box ? … : '—'` else-arms for both the container and the leaf branches.
+		const cont: MonitorLayout = { root: container('root', 'col', []), floating: [] };
+		const cOut = buildDebugInfo({
+			...leafArgs(cont, 'root'),
+			solved: new Map() as Solved
+		});
+		expect(cOut).toContain('selected: root (col) box —');
+		expect(cOut).toContain('basis="auto"'); // c.basis ?? 'auto' fallback
+
+		const leafMon = withLeaf(leaf(createWidget('gauge', 'w1')));
+		const lOut = buildDebugInfo({
+			...leafArgs(leafMon, 'w1'),
+			solved: new Map() as Solved
+		});
+		expect(lOut).toContain('selected: w1 (gauge) box —');
+	});
+
+	it('flags an out-of-bounds (but non-collapsed) container', () => {
+		const mon: MonitorLayout = {
+			root: container('root', 'col', [container('cell', 'col', [], { basis: { fr: 1 } })], {
+				pad: 8
+			}),
+			floating: []
+		};
+		const solved: Solved = new Map([
+			['root', { x: 0, y: 0, w: 200, h: 100 }],
+			// extends past the 200×100 work area on the right/bottom — escapes, but has real size
+			['cell', { x: 150, y: 80, w: 100, h: 60 }]
+		]);
+		const out = buildDebugInfo({ ...leafArgs(mon, null), solved });
+		expect(out).toContain('OUT-OF-BOUNDS');
 		expect(out).not.toContain('COLLAPSED');
 	});
 });

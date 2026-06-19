@@ -84,6 +84,28 @@ describe('mcp tools', () => {
 		expect(describeLayoutText(null)).toMatch(/No layout yet/);
 	});
 
+	it('describeLayoutText defaults to every monitor and omits sensor for self-sourcing widgets', () => {
+		// No monitor arg => the `keys` (all monitors) branch. A clock has no sensor => the no-sensor arm.
+		const { file } = applyOpsToFile(
+			fileWith('DELL-1'),
+			[{ op: 'addWidget', widgetType: 'clock' }],
+			counter()
+		);
+		const out = describeLayoutText(file);
+		expect(out).toContain('## DELL-1');
+		expect(out).toMatch(/- .*: clock in /);
+		expect(out).not.toMatch(/clock \(sensor=/);
+	});
+
+	it('describeLayoutText flags a requested monitor that does not exist', () => {
+		// The file HAS a monitor (so keys is non-empty), but the requested key is not among them —
+		// each requested target prints "(no such monitor)".
+		const out = describeLayoutText(fileWith('DELL-1'), 'NOPE-9');
+		expect(out).toContain('Monitors: DELL-1');
+		expect(out).toContain('## NOPE-9');
+		expect(out).toContain('(no such monitor)');
+	});
+
 	it('sets and reads the active theme, preserving the rest of the file', () => {
 		const before = fileWith('DELL-1'); // the helper seeds theme:'neon'
 		expect(currentTheme(before)).toBe('neon');
@@ -97,6 +119,13 @@ describe('mcp tools', () => {
 		expect(currentTheme(setThemeInFile(null, 'cool'))).toBe('cool');
 	});
 
+	it('setThemeInFile back-fills version:2 on a versionless file and preserves extra keys', () => {
+		const themed = setThemeInFile({ monitors: {}, custom: 'keep' }, 'aurora');
+		expect(themed.version).toBe(2);
+		expect(themed.theme).toBe('aurora');
+		expect(themed.custom).toBe('keep');
+	});
+
 	it('describeNowPlayingText formats entries or reports nothing playing', () => {
 		expect(describeNowPlayingText(null)).toMatch(/Nothing is playing/);
 		expect(describeNowPlayingText([])).toMatch(/Nothing is playing/);
@@ -104,6 +133,11 @@ describe('mcp tools', () => {
 			{ title: 'Song', artist: 'Band', status: 'Playing', source: 'Spotify' }
 		]);
 		expect(out).toBe('Playing: Song — Band [Spotify]');
+	});
+
+	it('describeNowPlayingText falls back for an entry missing every field', () => {
+		// Exercises the `status ?? '?'`, `title ?? '(unknown)'`, and the absent artist/source arms.
+		expect(describeNowPlayingText([{}])).toBe('?: (unknown)');
 	});
 
 	it('describeSensorsText lists live readings (sorted) or hints when absent', () => {
