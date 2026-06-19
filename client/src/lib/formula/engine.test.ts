@@ -3,7 +3,8 @@ import {
 	__disposeFormulaEngine,
 	evalExpr,
 	initFormulaEngine,
-	isFormulaEngineReady
+	isFormulaEngineReady,
+	onFormulaEngineReady
 } from './engine';
 import { TEMPLATE_FUNCTIONS } from '../core/templateFns';
 
@@ -69,5 +70,61 @@ describe('formula engine', () => {
 		expect(evalExpr('cpu.total', { 'cpu.total': 99 })).toBe(99);
 		// A later eval that doesn't provide cpu must not see the previous 99.
 		expect(evalExpr('typeof cpu', {})).toBe('undefined');
+	});
+
+	it('stringifies a boolean result', () => {
+		expect(evalExpr('cpu.total > 50', { 'cpu.total': 75 })).toBe('true');
+		expect(evalExpr('cpu.total > 50', { 'cpu.total': 10 })).toBe('false');
+	});
+
+	it('returns null for a non-number/string/boolean result (object / array / undefined)', () => {
+		expect(evalExpr('({ a: 1 })', {})).toBeNull();
+		expect(evalExpr('[1, 2, 3]', {})).toBeNull();
+		expect(evalExpr('undefined', {})).toBeNull();
+	});
+
+	it('omits a null sensor value (treated as absent) so a bare ref yields null, not 0', () => {
+		// cpu.total is null → omitted from scope → bare reference throws (caught) → null, NOT 0.
+		expect(evalExpr('cpu.total', { 'cpu.total': null })).toBeNull();
+		// a present sensor alongside a null one still resolves.
+		expect(evalExpr('mem.used + 1', { 'mem.used': 4, 'cpu.total': null })).toBe(5);
+	});
+});
+
+describe('onFormulaEngineReady', () => {
+	it('returns an unsubscribe that removes the listener (no double-fire, no leak)', async () => {
+		// The engine is already ready (beforeAll), so a fresh subscriber won't be called by a future
+		// transition — but subscribe/unsubscribe must still add then drop the listener cleanly.
+		let calls = 0;
+		const off = onFormulaEngineReady(() => {
+			calls += 1;
+		});
+		off(); // unsubscribe
+		// Re-init is idempotent (cached promise) and does not re-run listeners.
+		await initFormulaEngine();
+		expect(calls).toBe(0);
+	});
+
+	it('fires registered ready listeners when init transitions from cold', async () => {
+		__disposeFormulaEngine(); // clears the cached promise + listeners
+		expect(isFormulaEngineReady()).toBe(false);
+		let fired = false;
+		const off = onFormulaEngineReady(() => {
+			fired = true;
+		});
+		await initFormulaEngine();
+		expect(fired).toBe(true);
+		expect(isFormulaEngineReady()).toBe(true);
+		off();
+	});
+});
+
+describe('evalExpr before init', () => {
+	it('returns null when the engine is not ready (no ctx/runtime), then restores', async () => {
+		__disposeFormulaEngine();
+		expect(isFormulaEngineReady()).toBe(false);
+		expect(evalExpr('1 + 1', {})).toBeNull(); // the !ctx || !runtime guard
+		await initFormulaEngine(); // restore so afterAll's dispose has something to tear down
+		expect(isFormulaEngineReady()).toBe(true);
 	});
 });

@@ -5,6 +5,7 @@ import {
 	applyDelta,
 	buildAssistantMessages,
 	buildBriefingMessages,
+	buildLayoutUserPrompt,
 	buildTranslateMessages,
 	buildLayoutSystemPrompt,
 	describeLayout,
@@ -12,10 +13,14 @@ import {
 	formatReadings,
 	parseAssistantReply,
 	providerMeta,
+	pushUser,
 	startTurn,
+	toMessages,
 	type AssistantOp
 } from './llm';
-import { listMetas } from './widget';
+import { container, group, leaf } from './layoutTree';
+import { createWidget, registerMeta } from './widget';
+import { listMetas, type WidgetMeta } from './widget';
 
 const monitor = (): MonitorLayout => ({ root: emptyRoot(), floating: [] });
 
@@ -68,6 +73,38 @@ describe('chat reducer (applyDelta)', () => {
 		// a done for an id we never opened is also a no-op
 		expect(applyDelta(base, { requestId: 'ghost', token: '', done: true })).toBe(base);
 	});
+
+	it('seeds an unknown-id turn already in the error state when the first frame is an error', () => {
+		// not done, unknown id, but carries an error → seed a non-streaming turn that records it.
+		const s = applyDelta(emptyChat(), {
+			requestId: 'z',
+			token: '',
+			done: false,
+			error: 'rate limited'
+		});
+		expect(s.turns).toHaveLength(1);
+		expect(s.turns[0].error).toBe('rate limited');
+		expect(s.turns[0].streaming).toBe(false);
+	});
+});
+
+describe('pushUser / toMessages', () => {
+	it('appends a user turn', () => {
+		const s = pushUser(emptyChat(), 'u1', 'hello there');
+		expect(s.turns).toEqual([{ id: 'u1', role: 'user', content: 'hello there' }]);
+	});
+
+	it('flattens the transcript to ChatMessages, dropping empty + errored turns', () => {
+		let s = pushUser(emptyChat(), 'u1', 'hi');
+		s = startTurn(s, 'a1'); // empty streaming assistant turn → dropped (content.length 0)
+		s = applyDelta(s, { requestId: 'a1', token: 'hey', done: true });
+		s = startTurn(s, 'a2'); // a second turn we mark errored → dropped
+		s = applyDelta(s, { requestId: 'a2', token: 'partial', done: true, error: 'boom' });
+		expect(toMessages(s)).toEqual([
+			{ role: 'user', content: 'hi' },
+			{ role: 'assistant', content: 'hey' }
+		]);
+	});
 });
 
 describe('parseAssistantReply', () => {
@@ -102,6 +139,32 @@ describe('parseAssistantReply', () => {
 		expect(parseAssistantReply('no json here')).toBeNull();
 		expect(parseAssistantReply('{"summary":"x"}')).toBeNull();
 	});
+
+	it('skips a candidate that parses to a non-object (a bare JSON value)', () => {
+		// `{ "x": 5 }` has no ops, then the whole string parses but is not the ops shape; a leading
+		// candidate that JSON.parses to null/number is skipped via the typeof guard.
+		const r = parseAssistantReply('{"v": null}\n{"ops":[{"op":"clear"}]}');
+		expect(r?.ops).toEqual([{ op: 'clear' }]);
+	});
+
+	it('ignores braces inside string literals (escapes do not miscount depth)', () => {
+		// The summary string contains an escaped quote and a brace; the brace-counter must not be
+		// fooled into ending the object early.
+		const r = parseAssistantReply('{"ops":[{"op":"clear"}],"summary":"a \\" and a } brace"}');
+		expect(r?.ops).toEqual([{ op: 'clear' }]);
+		expect(r?.summary).toBe('a " and a } brace');
+	});
+
+	it('returns null when the only brace opens an unbalanced (never-closed) object', () => {
+		// No balanced candidate yields, and the whole-string fallback fails to parse → null.
+		expect(parseAssistantReply('prefix {"ops":[{"op":"clear"}')).toBeNull();
+	});
+
+	it('skips a whole-string candidate that JSON-parses to a falsy value (null)', () => {
+		// No `{` → jsonObjectCandidates yields nothing; the whole-string fallback parses to `null`,
+		// which the `!parsed` guard rejects → null.
+		expect(parseAssistantReply('null')).toBeNull();
+	});
 });
 
 describe('briefing', () => {
@@ -126,6 +189,11 @@ describe('briefing', () => {
 		expect(m[1].content).toContain('cpu.total=50');
 	});
 
+	it('falls back to a default instruction when the assistant prompt is blank', () => {
+		const m = buildAssistantMessages('   ', { 'cpu.total': 50 });
+		expect(m[1].content).toContain('Summarize my system status in one short sentence.');
+	});
+
 	it('builds translate messages targeting a language', () => {
 		const m = buildTranslateMessages('hello', 'Spanish');
 		expect(m[0].content).toContain('Spanish');
@@ -143,6 +211,77 @@ describe('buildLayoutSystemPrompt', () => {
 		expect(prompt).toContain('gpu.util');
 		// the op grammar is taught
 		expect(prompt).toContain('addWidget');
+	});
+
+	it('filters out the spacer and exercises the meta-default fallbacks', () => {
+		// A bare meta with no defaultConfig/binds/description/label exercises every `??` fallback:
+		// binds defaults to 'scalar' ("takes a sensor"), no config string, falls back to the type as label.
+		const metas: WidgetMeta[] = [
+			{ type: 'spacer' }, // filtered out
+			{ type: 'bare' }, // no binds → 'scalar' → "takes a sensor"; no cfg; label/desc → type
+			{ type: 'selfsrc', binds: 'none', label: 'Self', description: 'a self-sourcing widget' }
+		];
+		const prompt = buildLayoutSystemPrompt(metas, []);
+		expect(prompt).not.toContain('- spacer:');
+		expect(prompt).toContain('- bare: bare takes a sensor.');
+		expect(prompt).toContain('- selfsrc: a self-sourcing widget self-sourcing (no sensor).');
+		// empty sensor list renders the placeholder
+		expect(prompt).toContain('(none reported yet)');
+	});
+
+	it('uses the label when there is no description', () => {
+		const prompt = buildLayoutSystemPrompt(
+			[{ type: 'x', label: 'Labelled', defaultConfig: { color: 'red' } }],
+			['cpu.total']
+		);
+		// label is used as the description fallback, and config keys are listed
+		expect(prompt).toContain('- x: Labelled takes a sensor. config: color.');
+	});
+});
+
+describe('buildLayoutUserPrompt', () => {
+	it('renders an empty layout placeholder and the instruction', () => {
+		const p = buildLayoutUserPrompt('add a clock', monitor());
+		expect(p).toContain('Current layout:\n(empty)');
+		expect(p).toContain('Request: add a clock');
+	});
+
+	it('lists each placed widget with its container and sensor', () => {
+		const res = applyAssistantOps(
+			monitor(),
+			[{ op: 'addWidget', widgetType: 'gauge', sensor: 'cpu.total' }],
+			counter()
+		);
+		const id = res.addedIds[0];
+		const p = buildLayoutUserPrompt('tweak it', res.monitor);
+		expect(p).toContain(`${id} (gauge, sensor=cpu.total) in`);
+	});
+
+	it('omits the sensor= clause for a self-sourcing (sensorless) widget', () => {
+		const res = applyAssistantOps(monitor(), [{ op: 'addWidget', widgetType: 'clock' }], counter());
+		const id = res.addedIds[0];
+		const p = buildLayoutUserPrompt('go', res.monitor);
+		// clock self-sources → no `sensor=` clause for that line
+		expect(p).toContain(`${id} (clock) in`);
+		expect(p).not.toContain(`${id} (clock, sensor=`);
+	});
+});
+
+describe('describeLayout', () => {
+	it('describes a group leaf as type "group" and walks floating nodes', () => {
+		const clock = leaf(createWidget('clock', 'c1'));
+		const g = leaf(group('g1', { w: 100, h: 100 }, clock));
+		const floatingGauge = leaf(createWidget('gauge', 'f1'));
+		const m: MonitorLayout = {
+			root: container('root', 'col', [g]),
+			floating: [floatingGauge]
+		};
+		const items = describeLayout(m);
+		const grp = items.find((i) => i.id === 'g1');
+		expect(grp?.type).toBe('group');
+		expect(grp?.container).toBe('root');
+		const flt = items.find((i) => i.id === 'f1');
+		expect(flt?.container).toBe('floating');
 	});
 });
 
@@ -202,6 +341,27 @@ describe('applyAssistantOps', () => {
 		expect(describeLayout(res.monitor)[0].sensor).toBe('cpu.total');
 	});
 
+	it("defaults a meta with no explicit binds to 'scalar' (sensor is accepted)", () => {
+		// Every built-in meta declares binds; register a synthetic one with binds undefined to drive
+		// the `meta.binds ?? 'scalar'` fallback in addWidget — the sensor must then be accepted.
+		registerMeta({ type: 'no-binds-test', label: 'NoBinds' });
+		let res = applyAssistantOps(
+			monitor(),
+			[{ op: 'addWidget', widgetType: 'no-binds-test', sensor: 'cpu.total' }],
+			counter()
+		);
+		expect(res.applied).toBe(1);
+		expect(res.errors).toHaveLength(0);
+		expect(describeLayout(res.monitor)[0].sensor).toBe('cpu.total');
+
+		// setSensor on the same leaf drives leafBinds' `?? 'scalar'` fallback (meta.binds undefined),
+		// which the SENSOR_BINDS gate then accepts.
+		const id = res.addedIds[0];
+		res = applyAssistantOps(res.monitor, [{ op: 'setSensor', id, sensor: 'gpu.util' }], counter());
+		expect(res.applied).toBe(1);
+		expect(describeLayout(res.monitor)[0].sensor).toBe('gpu.util');
+	});
+
 	it('reports an unknown widget type without aborting the batch', () => {
 		const res = applyAssistantOps(
 			monitor(),
@@ -257,5 +417,70 @@ describe('applyAssistantOps', () => {
 		const before = JSON.stringify(m);
 		applyAssistantOps(m, [{ op: 'addWidget', widgetType: 'clock' }], counter());
 		expect(JSON.stringify(m)).toBe(before);
+	});
+
+	it('falls back to the root for an unknown parent container (with an error note)', () => {
+		const res = applyAssistantOps(
+			monitor(),
+			[{ op: 'addWidget', widgetType: 'clock', parent: 'no-such-container' }],
+			counter()
+		);
+		expect(res.applied).toBe(1);
+		expect(res.errors.join(' ')).toMatch(/unknown container "no-such-container"/);
+		// landed on root anyway
+		expect(describeLayout(res.monitor)[0].container).toBe(res.monitor.root.id);
+	});
+
+	it('rejects a parent id that resolves to a widget leaf (not a container) → root', () => {
+		let res = applyAssistantOps(monitor(), [{ op: 'addWidget', widgetType: 'clock' }], counter());
+		const leafId = res.addedIds[0];
+		res = applyAssistantOps(
+			res.monitor,
+			[{ op: 'addWidget', widgetType: 'gauge', parent: leafId }],
+			counter()
+		);
+		expect(res.errors.join(' ')).toMatch(/unknown container/);
+		expect(describeLayout(res.monitor).find((i) => i.type === 'gauge')?.container).toBe(
+			res.monitor.root.id
+		);
+	});
+
+	it('creates a grid container with its grid defaults', () => {
+		const res = applyAssistantOps(monitor(), [{ op: 'addContainer', kind: 'grid' }], counter());
+		expect(res.applied).toBe(1);
+		const node = res.monitor.root.children[0];
+		expect(isContainer(node) && node.kind).toBe('grid');
+		expect(isContainer(node) && node.cols).toBe(2);
+		expect(isContainer(node) && node.rows).toBe(2);
+	});
+
+	it('reports removeWidget on a missing id without aborting', () => {
+		const res = applyAssistantOps(monitor(), [{ op: 'removeWidget', id: 'ghost' }], counter());
+		expect(res.applied).toBe(0);
+		expect(res.errors.join(' ')).toMatch(/cannot remove "ghost" — not found/);
+	});
+
+	it('reports setConfig on a non-widget (a container) without aborting', () => {
+		let res = applyAssistantOps(monitor(), [{ op: 'addContainer', kind: 'row' }], counter());
+		const containerId = res.addedIds[0];
+		res = applyAssistantOps(
+			res.monitor,
+			[{ op: 'setConfig', id: containerId, config: { x: 1 } }],
+			counter()
+		);
+		expect(res.applied).toBe(0);
+		expect(res.errors.join(' ')).toMatch(/cannot configure ".*" — not a widget/);
+	});
+
+	it('reports setSensor on a non-widget (a container) — leafBinds returns null', () => {
+		let res = applyAssistantOps(monitor(), [{ op: 'addContainer', kind: 'row' }], counter());
+		const containerId = res.addedIds[0];
+		res = applyAssistantOps(
+			res.monitor,
+			[{ op: 'setSensor', id: containerId, sensor: 'cpu.total' }],
+			counter()
+		);
+		expect(res.applied).toBe(0);
+		expect(res.errors.join(' ')).toMatch(/cannot set sensor on ".*" — not a widget/);
 	});
 });

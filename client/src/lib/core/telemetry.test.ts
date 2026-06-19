@@ -63,6 +63,63 @@ describe('appendSample', () => {
 		expect(s.history).toEqual([3, 4, 5]);
 		expect(s.historyTs).toEqual([3, 4, 5]);
 	});
+
+	it('zero-fills the ts of a LEGACY state that has history but no historyTs', () => {
+		// Older snapshots lack historyTs; the reducer must zero-fill it (oldest) to stay in lockstep with
+		// history. A fresh ts ≥ 0 then appends after those zeros.
+		const legacy = { value: { kind: 'scalar', value: 1 } as const, history: [1, 2] }; // no historyTs
+		const s = appendSample(
+			legacy,
+			{ sensor: 'x', ts_ms: 5, value: { kind: 'scalar', value: 3 } },
+			10
+		);
+		expect(s.history).toEqual([1, 2, 3]);
+		expect(s.historyTs).toEqual([0, 0, 5]); // legacy points back-filled to ts 0
+	});
+
+	it('zero-fills when historyTs length is out of sync with history', () => {
+		// A mismatched-length historyTs is treated as missing (defensive) → rebuilt as zeros.
+		const desynced = { value: null, history: [7, 8, 9], historyTs: [100] };
+		const s = appendSample(
+			desynced,
+			{ sensor: 'x', ts_ms: 200, value: { kind: 'scalar', value: 10 } },
+			10
+		);
+		expect(s.history).toEqual([7, 8, 9, 10]);
+		expect(s.historyTs).toEqual([0, 0, 0, 200]);
+	});
+
+	it('drops history entirely when historyLen <= 0 (keeps only the latest value)', () => {
+		const s = appendSample(
+			emptySensorState(),
+			{ sensor: 'x', ts_ms: 1, value: { kind: 'scalar', value: 42 } },
+			0
+		);
+		expect(s.history).toEqual([]);
+		expect(s.historyTs).toEqual([]);
+		expect(s.value).toEqual({ kind: 'scalar', value: 42 });
+	});
+
+	it('treats an EMPTY series sample as non-numeric (no history point)', () => {
+		const s = appendSample(
+			emptySensorState(),
+			{ sensor: 'x', ts_ms: 1, value: { kind: 'series', value: [] } },
+			10
+		);
+		expect(s.history).toEqual([]);
+		expect(s.value).toEqual({ kind: 'series', value: [] });
+	});
+
+	it('treats a json sample as non-numeric (latest value kept, history untouched)', () => {
+		let s = appendSample(
+			emptySensorState(),
+			{ sensor: 'x', ts_ms: 1, value: { kind: 'scalar', value: 5 } },
+			10
+		);
+		s = appendSample(s, { sensor: 'x', ts_ms: 2, value: { kind: 'json', value: { a: 1 } } }, 10);
+		expect(s.history).toEqual([5]); // unchanged by the non-numeric json sample
+		expect(s.value).toEqual({ kind: 'json', value: { a: 1 } });
+	});
 });
 
 describe('createTelemetryHub', () => {
@@ -151,6 +208,21 @@ describe('active-sensor tracking (demand-gating)', () => {
 		b(); // last listener gone — 1→0 transition
 		expect(hub.activeSensorIds()).toEqual([]);
 		expect(changes).toBe(2);
+	});
+
+	it('calling a sensor unsubscribe twice is a no-op (no extra onActiveChange)', () => {
+		const hub = createTelemetryHub();
+		let changes = 0;
+		hub.onActiveChange(() => changes++);
+
+		const off = hub.sensor('gpu.fan').subscribe(() => undefined);
+		expect(changes).toBe(1);
+		off(); // last listener gone → 1→0 transition
+		expect(hub.activeSensorIds()).toEqual([]);
+		expect(changes).toBe(2);
+		off(); // already removed → the `!set.delete(cb)` guard returns early, no further notify
+		expect(changes).toBe(2);
+		expect(hub.activeSensorIds()).toEqual([]);
 	});
 
 	it('onActiveChange unsubscribe stops further notifications', () => {

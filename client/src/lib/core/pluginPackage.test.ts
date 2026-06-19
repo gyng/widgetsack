@@ -105,6 +105,221 @@ describe('parsePluginPackage', () => {
 		expect(r.pkg.manifest.theme).toBeUndefined();
 		expect(r.pkg.warnings[0]).toContain('theme dropped');
 	});
+
+	it('carries optional metadata (description/author/homepage) through when present', () => {
+		const r = parsePluginPackage(
+			'weather-pack',
+			manifest({ description: 'Live weather', author: 'Acme', homepage: 'https://acme.dev' })
+		);
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.pkg.manifest.description).toBe('Live weather');
+		expect(r.pkg.manifest.author).toBe('Acme');
+		expect(r.pkg.manifest.homepage).toBe('https://acme.dev');
+	});
+
+	it('accepts a valid theme and a template with a description', () => {
+		const r = parsePluginPackage(
+			'weather-pack',
+			manifest({
+				theme: { name: 'Sky', file: 'sky.css' },
+				templates: [
+					{
+						id: 'desc-tpl',
+						name: 'Has desc',
+						description: 'a described template',
+						size: { w: 10, h: 10 },
+						tree: leafNode()
+					}
+				]
+			})
+		);
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.pkg.manifest.theme).toEqual({ name: 'Sky', file: 'sky.css' });
+		expect(r.pkg.manifest.templates[0].description).toBe('a described template');
+		expect(r.pkg.warnings).toEqual([]);
+	});
+
+	it('rejects the manifest-level required-string fields when missing/blank/non-string', () => {
+		// non-object / array JSON
+		expect(parsePluginPackage('weather-pack', '"a string"').ok).toBe(false);
+		expect(parsePluginPackage('weather-pack', '[1,2]').ok).toBe(false);
+		// id missing
+		const noId = parsePluginPackage('weather-pack', JSON.stringify({ manifestVersion: 1 }));
+		expect(noId.ok).toBe(false);
+		if (!noId.ok) expect(noId.reason).toContain('"id"');
+		// name blank (string but trims empty) and non-string version
+		const blankName = parsePluginPackage('weather-pack', manifest({ name: '   ' }));
+		expect(blankName.ok).toBe(false);
+		if (!blankName.ok) expect(blankName.reason).toContain('"name"');
+		const badVer = parsePluginPackage('weather-pack', manifest({ version: 42 }));
+		expect(badVer.ok).toBe(false);
+		if (!badVer.ok) expect(badVer.reason).toContain('"version"');
+	});
+
+	it('rejects non-string optional metadata (description/author/homepage)', () => {
+		for (const [field, label] of [
+			['description', '"description"'],
+			['author', '"author"'],
+			['homepage', '"homepage"']
+		] as const) {
+			const r = parsePluginPackage('weather-pack', manifest({ [field]: 123 }));
+			expect(r.ok).toBe(false);
+			if (!r.ok) expect(r.reason).toContain(label);
+		}
+	});
+
+	it('rejects a non-array "templates" outright', () => {
+		const r = parsePluginPackage('weather-pack', manifest({ templates: 'nope' }));
+		expect(r.ok).toBe(false);
+		if (!r.ok) expect(r.reason).toContain('"templates" must be an array');
+	});
+
+	it('drops a duplicate template id (second occurrence) with a warning', () => {
+		const r = parsePluginPackage(
+			'weather-pack',
+			manifest({
+				templates: [
+					{ id: 'dup', name: 'First', size: { w: 10, h: 10 }, tree: leafNode('a') },
+					{ id: 'dup', name: 'Second', size: { w: 10, h: 10 }, tree: leafNode('b') }
+				]
+			})
+		);
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.pkg.manifest.templates.map((t) => t.name)).toEqual(['First']);
+		expect(r.pkg.warnings.some((w) => w.includes('duplicate id'))).toBe(true);
+	});
+});
+
+describe('parsePluginPackage — template + param validation', () => {
+	const tpl = (over: Record<string, unknown>) =>
+		parsePluginPackage(
+			'weather-pack',
+			manifest({
+				templates: [{ id: 't', name: 'T', size: { w: 10, h: 10 }, tree: leafNode(), ...over }]
+			})
+		);
+	const warn = (over: Record<string, unknown>): string => {
+		const r = tpl(over);
+		expect(r.ok).toBe(true);
+		if (!r.ok) throw new Error('unreachable');
+		expect(r.pkg.manifest.templates).toEqual([]); // the only template was dropped
+		return r.pkg.warnings[0];
+	};
+
+	it('drops a template that is not an object', () => {
+		const r = parsePluginPackage('weather-pack', manifest({ templates: ['nope'] }));
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.pkg.warnings[0]).toContain('not an object');
+	});
+
+	it('drops a template with a missing id, blank name, non-string description, or bad size', () => {
+		expect(
+			parsePluginPackage(
+				'weather-pack',
+				manifest({ templates: [{ name: 'X', size: { w: 1, h: 1 }, tree: leafNode() }] })
+			)
+		).toMatchObject({ ok: true });
+		// blank name (string-but-trims-empty)
+		expect(warn({ name: '  ' })).toContain('missing "name"');
+		// non-string description
+		expect(warn({ description: 9 })).toContain('"description" must be a string');
+		// bad size: missing, non-numeric, zero/negative, NaN
+		expect(warn({ size: undefined })).toContain('"size"');
+		expect(warn({ size: { w: 'x', h: 1 } })).toContain('"size"');
+		expect(warn({ size: { w: 0, h: 5 } })).toContain('"size"');
+		expect(warn({ size: { w: NaN, h: 5 } })).toContain('"size"');
+		expect(warn({ size: null })).toContain('"size"');
+	});
+
+	it('drops a template whose "params" is not an array', () => {
+		expect(warn({ params: 'nope' })).toContain('"params" must be an array');
+	});
+
+	it('drops a template with a non-object param spec or an invalid key', () => {
+		expect(warn({ params: ['nope'] })).toContain('malformed param spec');
+		expect(warn({ params: [{ key: '' }] })).toContain('malformed param spec'); // empty key
+		expect(warn({ params: [{}] })).toContain('malformed param spec'); // missing key
+	});
+
+	it('drops a param whose key has an empty path segment (a.. / trailing dot)', () => {
+		// isSafePath rejects empty segments — `a..b` splits to ['a','','b'] (length-0 middle segment).
+		expect(warn({ params: [{ key: 'a..b' }] })).toContain('malformed param spec');
+	});
+
+	it('drops a param whose target is an empty string (isSafePath rejects the empty path)', () => {
+		// key passes (non-empty), but the empty-string target trips isSafePath's `!v.length` guard.
+		expect(warn({ params: [{ key: 'k', target: '' }] })).toContain('malformed param spec');
+	});
+
+	it('drops a param with a non-string label, bad target, bad targets, or bad choices', () => {
+		expect(warn({ params: [{ key: 'k', label: 42 }] })).toContain('malformed param spec');
+		expect(warn({ params: [{ key: 'k', target: '__proto__.x' }] })).toContain('malformed');
+		expect(warn({ params: [{ key: 'k', targets: 'nope' }] })).toContain('malformed');
+		expect(warn({ params: [{ key: 'k', targets: ['ok', 'constructor'] }] })).toContain('malformed');
+		expect(warn({ params: [{ key: 'k', choices: 'nope' }] })).toContain('malformed');
+		expect(warn({ params: [{ key: 'k', choices: [{ value: 'v' }] }] })).toContain('malformed'); // no label
+		expect(warn({ params: [{ key: 'k', choices: ['nope'] }] })).toContain('malformed'); // non-object choice
+	});
+
+	it('accepts a fully-populated param (label/default/target/targets/choices) and clones it', () => {
+		const r = tpl({
+			params: [
+				{
+					key: 'k',
+					label: 'K',
+					default: 7,
+					target: 'unit.config.k',
+					targets: ['unit.config.a', 'unit.config.b'],
+					choices: [
+						{ value: 'x', label: 'X' },
+						{ value: 'y', label: 'Y' }
+					]
+				}
+			]
+		});
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		const spec = r.pkg.manifest.templates[0].params![0];
+		expect(spec).toEqual({
+			key: 'k',
+			label: 'K',
+			default: 7,
+			target: 'unit.config.k',
+			targets: ['unit.config.a', 'unit.config.b'],
+			choices: [
+				{ value: 'x', label: 'X' },
+				{ value: 'y', label: 'Y' }
+			]
+		});
+	});
+
+	it('keeps a template whose empty params array yields no "params" key', () => {
+		const r = tpl({ params: [] });
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.pkg.manifest.templates[0].params).toBeUndefined();
+	});
+});
+
+describe('parsePluginPackage — theme validation', () => {
+	const theme = (t: unknown) => {
+		const r = parsePluginPackage('weather-pack', manifest({ theme: t }));
+		expect(r.ok).toBe(true);
+		if (!r.ok) throw new Error('unreachable');
+		return r.pkg;
+	};
+
+	it('drops a non-object theme, a theme with a blank name, and a non-string file', () => {
+		expect(theme('nope').warnings[0]).toContain('theme dropped: not an object');
+		expect(theme({ name: '  ', file: 'a.css' }).warnings[0]).toContain('missing "name"');
+		expect(theme({ name: 'Ok', file: 123 }).warnings[0]).toContain('"file"'); // non-string file
+		expect(theme({ name: 'Ok', file: 'a.b.css' }).warnings[0]).toContain('"file"'); // extra dot
+		expect(theme({ name: 'Ok', file: 'a.json' }).warnings[0]).toContain('"file"'); // wrong ext
+	});
 });
 
 describe('parsePluginPackage — source + sensors (Phase 2)', () => {
@@ -185,6 +400,15 @@ describe('parsePluginPackage — source + sensors (Phase 2)', () => {
 		expect(pkg.warnings[0]).toContain('pollSeconds');
 	});
 
+	it('drops a non-object source (e.g. null) and a non-array sensors block', () => {
+		const nullSrc = parse({ source: null });
+		expect(nullSrc.manifest.source).toBeUndefined();
+		expect(nullSrc.warnings[0]).toContain('source dropped: not an object');
+		const badSensors = parse({ source: source(), sensors: 'not-an-array' });
+		expect(badSensors.manifest.sensors).toEqual([]);
+		expect(badSensors.warnings[0]).toContain('sensors dropped: not an array');
+	});
+
 	it('drops malformed sensors (bad id, duplicate, non-string label) but keeps the package', () => {
 		for (const bad of [
 			[{ id: 'a/b' }],
@@ -225,6 +449,15 @@ describe('packageSensorId / consentFingerprint / enableConsentMessage', () => {
 		});
 		expect(both).toContain('theme contains');
 		expect(both).toContain('every 300s: a.com, b.com');
+	});
+
+	it('falls back to the default poll interval (60s) when hosts are given without pollSeconds', () => {
+		const msg = enableConsentMessage({ hosts: ['a.com'] });
+		expect(msg).toContain('polls the network every 60s: a.com');
+	});
+
+	it('renders an empty message (just the trailing prompt) when nothing is consent-worthy', () => {
+		expect(enableConsentMessage({})).toBe('Enable?');
 	});
 });
 
@@ -349,5 +582,21 @@ describe('packageTemplates', () => {
 		expect(a).toEqual(b);
 		expect(a).not.toBe(b); // private copy per insert
 		expect(isLeaf(a)).toBe(true);
+	});
+
+	it('omits the params key for a template that declares none', () => {
+		const r = parsePluginPackage(
+			'weather-pack',
+			manifest({
+				templates: [
+					{ id: 'no-params', name: 'No params', size: { w: 10, h: 10 }, tree: leafNode() }
+				]
+			})
+		);
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		const [tpl] = packageTemplates(r.pkg.manifest);
+		expect(tpl.params).toBeUndefined();
+		expect(tpl.description).toBe(''); // default when the template had no description
 	});
 });

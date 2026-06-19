@@ -6,8 +6,13 @@ describe('intervalMs', () => {
 		expect(intervalMs('30s')).toBe(30_000);
 		expect(intervalMs('5m')).toBe(300_000);
 		expect(intervalMs('2h')).toBe(7_200_000);
+		expect(intervalMs('1d')).toBe(86_400_000); // days
 		expect(intervalMs('90')).toBe(90_000); // bare = seconds
 		expect(intervalMs('500ms')).toBe(500);
+	});
+	it('accepts a fractional value and trims/normalizes whitespace + case', () => {
+		expect(intervalMs('1.5h')).toBe(5_400_000);
+		expect(intervalMs('  2 M ')).toBe(120_000); // padding + space before unit + uppercase
 	});
 	it('rejects non-intervals', () => {
 		expect(intervalMs('manual')).toBeNull();
@@ -64,6 +69,26 @@ describe('cronMatches', () => {
 	it('returns false for malformed input', () => {
 		expect(cronMatches('not cron', mon0900)).toBe(false);
 		expect(cronMatches('0 9 * *', mon0900)).toBe(false);
+	});
+
+	it('treats an unparseable step as 1 (every value in the range matches)', () => {
+		// "*/x" → step parses to NaN → `|| 1` falls back to 1, so every minute in [0,59] matches.
+		expect(cronMatches('*/x 9 * * *', mon0900)).toBe(true); // minute 0, step 1 → match
+		expect(cronMatches('*/x 9 * * *', new Date(2026, 0, 5, 9, 37))).toBe(true);
+		// "*/0" would divide by zero; the `|| 1` guard turns the 0 step into 1 too.
+		expect(cronMatches('*/0 9 * * *', mon0900)).toBe(true);
+	});
+
+	it('a list comma-separates alternatives (any part may match)', () => {
+		expect(cronMatches('0,30 9 * * *', mon0900)).toBe(true); // minute 0 is the first alternative
+		expect(cronMatches('15,30 9 * * *', mon0900)).toBe(false); // minute 0 is neither
+	});
+
+	it('rejects a range with a non-numeric bound (NaN bounds → that part never matches)', () => {
+		// "a-b" → lo/hi are NaN → the part is skipped; with no other alternative the field never matches.
+		expect(cronMatches('a-b 9 * * *', mon0900)).toBe(false);
+		// …but a sibling numeric alternative still matches around the bogus range.
+		expect(cronMatches('a-b,0 9 * * *', mon0900)).toBe(true);
 	});
 });
 

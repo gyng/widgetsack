@@ -1,17 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import {
+	BUILTIN_TEMPLATE_GROUP,
 	TEMPLATES,
 	demoSeed,
 	freshIds,
 	getTemplate,
 	instantiateTemplate,
+	listTemplateGroups,
+	registerTemplates,
 	resolveTemplateOptions,
+	subscribeTemplates,
+	unregisterTemplates,
 	type Template
 } from './templates';
 import {
+	container,
+	group,
 	isContainer,
 	isGroup,
 	isLeaf,
+	leaf,
 	type Container,
 	type LayoutNode,
 	type Leaf,
@@ -240,5 +248,133 @@ describe('demoSeed (the default skin = the templates, single source of truth)', 
 		const a = ids(demoSeed());
 		const b = ids(demoSeed());
 		expect(new Set([...a, ...b]).size).toBe(a.length + b.length);
+	});
+});
+
+describe('getTemplate', () => {
+	it('returns undefined for an unknown id', () => {
+		expect(getTemplate('does-not-exist')).toBeUndefined();
+	});
+});
+
+describe('freshIds (group leaf)', () => {
+	it('remaps a leaf whose unit is a GROUP with a group-* id (not the unit type)', () => {
+		// The clock-jp trees only carry primitive leaves, so the group-unit arm of freshIds needs a leaf
+		// that wraps a GROUP unit. Its fresh id must use the `group-` prefix and the leaf id mirrors it.
+		const g = group('g-orig', { w: 50, h: 50 }, container('c', 'col', []), { name: 'Wrapped' });
+		const out = freshIds(leaf(g));
+		if (!isLeaf(out) || !isGroup(out.unit)) throw new Error('expected a group leaf');
+		expect(out.unit.id).toMatch(/^group-/);
+		expect(out.unit.id).not.toBe('g-orig');
+		expect(out.id).toBe(out.unit.id); // leaf id mirrors the unit id
+		expect(out.unit.name).toBe('Wrapped'); // non-id fields survive
+	});
+});
+
+describe('resolveTemplateOptions (non-select params)', () => {
+	// A synthetic template exercising the param-without-choices skip and the undefined-default fallback —
+	// the built-in templates only carry select params, so these arms need a hand-built spec.
+	const tpl: Template = {
+		id: 'synthetic',
+		name: 'Synthetic',
+		description: '',
+		size: { w: 10, h: 10 },
+		params: [
+			{ key: 'note', label: 'Note', default: 'x', target: 'a' }, // no `choices` → skipped (not a select)
+			{ key: 'pick', label: 'Pick', target: 'b', choices: [{ value: 'one', label: 'One' }] } // no default
+		],
+		tree: () => leaf({ id: 'w', type: 'text', rect: { x: 0, y: 0, w: 10, h: 10 }, config: {} })
+	};
+
+	it('skips params with no choices and defaults a choice-param with no `default` to an empty string', () => {
+		// 'note' (no choices) is dropped entirely; 'pick' (choices, no default) → '' (the `?? ''` fallback).
+		expect(resolveTemplateOptions(tpl)).toEqual({ pick: '' });
+		// A valid override for the select still takes; the non-select is still skipped.
+		expect(resolveTemplateOptions(tpl, { pick: 'one', note: 'ignored' })).toEqual({ pick: 'one' });
+	});
+});
+
+describe('template registry (register / unregister / list / subscribe)', () => {
+	const PLUGIN_GROUP = 'Test Plugin';
+	const sample: Template = {
+		id: 'plugin-widget',
+		name: 'Plugin Widget',
+		description: '',
+		size: { w: 20, h: 20 },
+		tree: () => leaf({ id: 'pw', type: 'text', rect: { x: 0, y: 0, w: 20, h: 20 }, config: {} })
+	};
+
+	afterEach(() => {
+		// Module-level registry state — always clean up so tests stay independent.
+		unregisterTemplates(PLUGIN_GROUP);
+	});
+
+	it('lists exactly the built-in group when nothing is registered (stable identity between calls)', () => {
+		const a = listTemplateGroups();
+		const b = listTemplateGroups();
+		expect(a).toBe(b); // cached snapshot — referentially stable
+		expect(a).toEqual([{ group: BUILTIN_TEMPLATE_GROUP, templates: TEMPLATES }]);
+	});
+
+	it('registering a group appends it after the built-ins, notifies, and invalidates the snapshot', () => {
+		let notified = 0;
+		const unsub = subscribeTemplates(() => notified++);
+		const before = listTemplateGroups();
+
+		registerTemplates(PLUGIN_GROUP, [sample]);
+		expect(notified).toBe(1);
+		const after = listTemplateGroups();
+		expect(after).not.toBe(before); // snapshot rebuilt after the change
+		expect(after[0].group).toBe(BUILTIN_TEMPLATE_GROUP); // built-ins stay first
+		expect(after.find((g) => g.group === PLUGIN_GROUP)?.templates).toEqual([sample]);
+
+		unsub();
+	});
+
+	it('copies the registered list (later caller mutation does not leak into the registry)', () => {
+		const list = [sample];
+		registerTemplates(PLUGIN_GROUP, list);
+		list.push({ ...sample, id: 'extra' }); // mutate the caller's array after registering
+		expect(listTemplateGroups().find((g) => g.group === PLUGIN_GROUP)?.templates).toEqual([sample]);
+	});
+
+	it('getTemplate finds a template contributed by a registered group (loop continues past built-ins)', () => {
+		expect(getTemplate('plugin-widget')).toBeUndefined();
+		registerTemplates(PLUGIN_GROUP, [sample]);
+		expect(getTemplate('plugin-widget')).toBe(sample);
+	});
+
+	it('the built-in group cannot be overwritten or removed', () => {
+		registerTemplates(BUILTIN_TEMPLATE_GROUP, []); // ignored
+		expect(getTemplate('system')).toBeTruthy();
+		unregisterTemplates(BUILTIN_TEMPLATE_GROUP); // ignored
+		expect(listTemplateGroups()[0]).toEqual({
+			group: BUILTIN_TEMPLATE_GROUP,
+			templates: TEMPLATES
+		});
+	});
+
+	it('unregistering a group notifies once; unregistering an unknown group is a silent no-op', () => {
+		let notified = 0;
+		const unsub = subscribeTemplates(() => notified++);
+
+		registerTemplates(PLUGIN_GROUP, [sample]);
+		expect(notified).toBe(1);
+		unregisterTemplates(PLUGIN_GROUP);
+		expect(notified).toBe(2);
+		expect(listTemplateGroups().some((g) => g.group === PLUGIN_GROUP)).toBe(false);
+
+		unregisterTemplates('never-registered'); // delete() returns false → no notify
+		expect(notified).toBe(2);
+
+		unsub();
+	});
+
+	it('subscribe returns an unsubscribe that stops further notifications', () => {
+		let notified = 0;
+		const unsub = subscribeTemplates(() => notified++);
+		unsub();
+		registerTemplates(PLUGIN_GROUP, [sample]);
+		expect(notified).toBe(0);
 	});
 });

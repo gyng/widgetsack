@@ -38,6 +38,9 @@ const widget = (id: string, x: number, y: number, w: number, h: number): WidgetI
 	config: {}
 });
 
+// A minimal valid primitive unit (passes isUnit) for node-level parse tests.
+const validWidgetNode: WidgetInstance = widget('w1', 0, 0, 10, 10);
+
 describe('migrateV1', () => {
 	it('wraps every widget as a floating leaf under an empty root, rects verbatim', () => {
 		const v1: LayoutV1 = {
@@ -250,6 +253,229 @@ describe('parseLayoutAny', () => {
 		expect(
 			parseLayoutAny({ version: '1', monitors: { default: { widgets: [validWidget] } } })
 		).toBeNull();
+	});
+
+	it('returns null when an explicit-v1 file fails v1 validation', () => {
+		// version === 1 takes the `v1raw = raw` path; the monitor has no widgets[] so parseLayoutV1
+		// returns null → parseLayoutAny returns null (the `if (v1 === null)` arm).
+		expect(parseLayoutAny({ version: 1, monitors: { default: {} } })).toBeNull();
+	});
+
+	it('returns null when a monitor entry is null (the raw === null guard)', () => {
+		expect(parseLayoutAny({ version: 2, monitors: { m: null } })).toBeNull();
+	});
+
+	it('returns null when floating is present but not an array', () => {
+		expect(
+			parseLayoutAny({
+				version: 2,
+				monitors: { m: { root: { id: 'r', kind: 'col', children: [] }, floating: 42 } }
+			})
+		).toBeNull();
+	});
+
+	it('fails the monitor when the container id is not a string', () => {
+		expect(
+			parseLayoutAny({
+				version: 2,
+				monitors: { m: { root: { id: 5, kind: 'col', children: [] } } }
+			})
+		).toBeNull();
+	});
+
+	it('defaults floating to [] when the key is absent (not undefined-but-present)', () => {
+		const r = parseLayoutAny({
+			version: 2,
+			monitors: { m: { root: { id: 'r', kind: 'col', children: [] } } }
+		});
+		expect(r?.monitors.m.floating).toEqual([]);
+	});
+});
+
+describe('parseLayoutNode (node-level whitelist, exercises parseContainer / parseLeaf)', () => {
+	it('returns null for a non-object / null node', () => {
+		expect(parseLayoutNode(null)).toBeNull();
+		expect(parseLayoutNode(42)).toBeNull();
+	});
+
+	it('returns null for an object that is neither a container kind nor a leaf (no "unit")', () => {
+		expect(parseLayoutNode({ foo: 'bar' })).toBeNull();
+	});
+
+	it('keeps every whitelisted container field when valid', () => {
+		const n = parseLayoutNode({
+			id: 'c',
+			kind: 'row',
+			children: [],
+			basis: 'auto',
+			cols: 3,
+			rows: 2,
+			gap: 8,
+			pad: 4,
+			margin: { t: 1, r: 2, b: 3, l: 4 },
+			align: 'center',
+			justify: 'between',
+			bounds: { x: 0, y: 0, w: 100, h: 50 },
+			overlap: false
+		});
+		expect(n).toMatchObject({
+			id: 'c',
+			kind: 'row',
+			basis: 'auto',
+			cols: 3,
+			rows: 2,
+			gap: 8,
+			pad: 4,
+			margin: { t: 1, r: 2, b: 3, l: 4 },
+			align: 'center',
+			justify: 'between',
+			bounds: { x: 0, y: 0, w: 100, h: 50 },
+			overlap: false
+		});
+	});
+
+	it('drops invalid optional container fields (the implicit-false arms)', () => {
+		const n = parseLayoutNode({
+			id: 'c',
+			kind: 'col',
+			children: [],
+			basis: 'nonsense',
+			cols: 'x',
+			rows: null,
+			gap: '8',
+			pad: { t: 1 }, // missing r/b/l → not a Pad
+			margin: 'no',
+			align: 'middle', // not a valid Align
+			justify: 'evenly', // not a valid Justify
+			bounds: { x: 0 }, // not a full Rect
+			overlap: 'yes',
+			cellW: 'no',
+			cellH: null,
+			aspect: 'x',
+			colFr: [1, 'x'], // not all finite numbers
+			rowFr: 'no'
+		}) as Record<string, unknown>;
+		expect(n).toEqual({ id: 'c', kind: 'col', children: [] });
+	});
+
+	it('drops malformed children inside a container (children filter null-drop)', () => {
+		const n = parseLayoutNode({
+			id: 'c',
+			kind: 'col',
+			children: [{ id: 'L', unit: validWidgetNode }, { nope: true }, 99]
+		}) as { children: unknown[] };
+		expect(n.children).toHaveLength(1);
+	});
+
+	it('treats a non-array children as empty', () => {
+		const n = parseLayoutNode({ id: 'c', kind: 'grid', children: 'oops' }) as {
+			children: unknown[];
+		};
+		expect(n.children).toEqual([]);
+	});
+
+	it('falls back to the unit id when the leaf has no string id', () => {
+		const n = parseLayoutNode({ unit: validWidgetNode }) as { id: string };
+		expect(n.id).toBe('w1'); // taken from unit.id
+	});
+
+	it('keeps every whitelisted leaf field when valid', () => {
+		const n = parseLayoutNode({
+			id: 'lf',
+			unit: validWidgetNode,
+			basis: { fr: 2 },
+			margin: 6,
+			pad: { t: 1, r: 1, b: 1, l: 1 },
+			halign: 'right',
+			valign: 'bottom'
+		});
+		expect(n).toMatchObject({
+			id: 'lf',
+			basis: { fr: 2 },
+			margin: 6,
+			pad: { t: 1, r: 1, b: 1, l: 1 },
+			halign: 'right',
+			valign: 'bottom'
+		});
+	});
+
+	it('drops invalid optional leaf fields (the implicit-false arms)', () => {
+		const n = parseLayoutNode({
+			id: 'lf',
+			unit: validWidgetNode,
+			basis: 'bad',
+			margin: 'no',
+			pad: { t: 1 }, // not a full Pad
+			halign: 'middle', // not a valid HAlign
+			valign: 'center' // not a valid VAlign (center is HAlign, not VAlign)
+		}) as Record<string, unknown>;
+		expect(n).toEqual({ id: 'lf', unit: validWidgetNode });
+	});
+
+	it('rejects a leaf whose unit is not a valid unit', () => {
+		expect(parseLayoutNode({ id: 'lf', unit: 42 })).toBeNull();
+		expect(parseLayoutNode({ id: 'lf', unit: null })).toBeNull();
+	});
+
+	it('accepts a group unit by def id or by inline child, rejects an empty group', () => {
+		// def-id group
+		expect(
+			parseLayoutNode({ id: 'g', unit: { id: 'g', kind: 'group', def: 'lib1' } })
+		).not.toBeNull();
+		// inline-child group
+		expect(
+			parseLayoutNode({
+				id: 'g',
+				unit: { id: 'g', kind: 'group', child: { id: 'c', kind: 'col', children: [] } }
+			})
+		).not.toBeNull();
+		// a group with neither def nor a non-null child is not a valid unit → leaf rejected
+		expect(parseLayoutNode({ id: 'g', unit: { id: 'g', kind: 'group', child: null } })).toBeNull();
+		expect(parseLayoutNode({ id: 'g', unit: { id: 'g', kind: 'group' } })).toBeNull();
+	});
+
+	it('validates each Align / HAlign / VAlign / Justify alternative', () => {
+		const withField = (field: string, value: unknown) =>
+			parseLayoutNode({ id: 'c', kind: 'row', children: [], [field]: value }) as Record<
+				string,
+				unknown
+			>;
+		for (const a of ['start', 'center', 'end', 'stretch'])
+			expect(withField('align', a).align).toBe(a);
+		for (const j of ['start', 'center', 'end', 'between', 'around'])
+			expect(withField('justify', j).justify).toBe(j);
+		const leafWith = (field: string, value: unknown) =>
+			parseLayoutNode({ id: 'lf', unit: validWidgetNode, [field]: value }) as Record<
+				string,
+				unknown
+			>;
+		for (const h of ['left', 'right', 'center', 'fill'])
+			expect(leafWith('halign', h).halign).toBe(h);
+		for (const v of ['top', 'middle', 'bottom', 'fill'])
+			expect(leafWith('valign', v).valign).toBe(v);
+	});
+
+	it('accepts every Length form for basis (number | auto | content | {fr}) and rejects others', () => {
+		const basisOf = (b: unknown) =>
+			(parseLayoutNode({ id: 'c', kind: 'row', children: [], basis: b }) as { basis?: unknown })
+				.basis;
+		expect(basisOf(120)).toBe(120);
+		expect(basisOf('auto')).toBe('auto');
+		expect(basisOf('content')).toBe('content');
+		expect(basisOf({ fr: 1 })).toEqual({ fr: 1 });
+		expect(basisOf({ fr: 'x' })).toBeUndefined(); // {fr} present but not a number
+		expect(basisOf(null)).toBeUndefined(); // object branch short-circuits on null
+		expect(basisOf('weird')).toBeUndefined();
+	});
+
+	it('accepts a numeric pad and a per-side pad, rejects partial / non-object', () => {
+		const padOf = (p: unknown) =>
+			(parseLayoutNode({ id: 'c', kind: 'row', children: [], pad: p }) as { pad?: unknown }).pad;
+		expect(padOf(4)).toBe(4); // number form
+		expect(padOf({ t: 1, r: 2, b: 3, l: 4 })).toEqual({ t: 1, r: 2, b: 3, l: 4 }); // per-side
+		expect(padOf({ t: 1, r: 2, b: 3 })).toBeUndefined(); // missing l
+		expect(padOf(null)).toBeUndefined(); // non-number, null object
+		expect(padOf('x')).toBeUndefined(); // non-number, non-object
 	});
 });
 
