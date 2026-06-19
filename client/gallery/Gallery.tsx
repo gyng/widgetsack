@@ -74,7 +74,8 @@ const OVERRIDES: Record<string, { sensor?: string; config?: Record<string, unkno
 	image: { config: { src: PHOTO, fit: 'cover' } },
 	'ha.sensor': { sensor: 'demo.temperature' },
 	'ha.light': { sensor: 'demo.light' },
-	'ha.climate': { sensor: 'demo.climate' }
+	'ha.climate': { sensor: 'demo.climate' },
+	monitorswitch: { config: { showStats: true } }
 };
 
 function buildInstance(
@@ -198,6 +199,12 @@ const DEMO: WidgetInstance[] = [
 	buildInstance('ha.light', 'd-ha-light', {
 		rect: { x: 748, y: 300, w: 128, h: 48 },
 		sensor: 'demo.light'
+	}),
+	// Column E (x 900, w 150) — DDC/CI monitor input switcher (VCP 0x60): the active input highlighted
+	// among the panel's supported sources, with the current display mode beneath.
+	buildInstance('monitorswitch', 'd-ddc', {
+		rect: { x: 900, y: 36, w: 150, h: 308 },
+		config: { showStats: true }
 	})
 ];
 
