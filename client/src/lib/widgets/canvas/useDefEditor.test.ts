@@ -4,7 +4,7 @@
 // window prompt/confirm/alert dialogs. The reducer itself is tested in useEditorModel.test.ts —
 // here we assert this hook's orchestration (which action fires, in what order, with what guards)
 // by spying on the injected dispatch / handleOp and stubbing the window dialogs.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import { useDefEditor } from './useDefEditor';
 import type { EditorState } from './types';
@@ -67,9 +67,9 @@ function setup(init: Partial<Deps> = {}) {
 	return { ...r, dispatch, handleOp, stateRef, base };
 }
 
-let prompt: ReturnType<typeof vi.spyOn>;
-let confirm: ReturnType<typeof vi.spyOn>;
-let alert: ReturnType<typeof vi.spyOn>;
+let prompt: MockInstance<typeof window.prompt>;
+let confirm: MockInstance<typeof window.confirm>;
+let alert: MockInstance<typeof window.alert>;
 
 beforeEach(() => {
 	prompt = vi.spyOn(window, 'prompt').mockReturnValue(null);

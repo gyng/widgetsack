@@ -136,7 +136,7 @@ describe('NowPlayingSettings', () => {
 	it('formats a fractional scalar sensor to one decimal place', () => {
 		// position 1 / end 3 → progress 33.333… → np.progress reads "33.3" (the toFixed(1) arm).
 		const s = session('spotify.exe', 'Track');
-		const model = s.last_media_update.Media![0]!;
+		const model = s.last_media_update!.Media![0]!;
 		model.timeline = { start: 0, end: 3, position: 1, last_updated_at_ms: 0 };
 		mediaStore.set({ ...defaultState, sourcePriority: '', ignoreList: '', sessions: { 1: s } });
 		const { container } = render(<NowPlayingSettings />);

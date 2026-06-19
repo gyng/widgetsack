@@ -8,7 +8,7 @@ import { TelemetryHubContext } from './telemetryContext';
 // prompt builder (core/llm) and the schedule math (core/schedule) stay REAL so we verify the
 // snapshot→prompt→complete flow and the interval/cron scheduling.
 const llmComplete = vi.fn();
-const speakSmart = vi.fn(() => Promise.resolve());
+const speakSmart = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve());
 const isStudioWindow = vi.fn(() => false);
 vi.mock('./plugins/llm-commands', () => ({ llmComplete: (...a: unknown[]) => llmComplete(...a) }));
 vi.mock('./plugins/llm-tts', () => ({ speakSmart: (t: string) => speakSmart(t) }));

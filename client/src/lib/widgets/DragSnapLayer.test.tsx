@@ -366,11 +366,15 @@ describe('DragSnapLayer (zone widgets)', () => {
 	it('unmounting before currentMonitor() resolves cancels the setup (alive guard)', async () => {
 		pointerProbe.mockResolvedValue({ x: 480, y: 540, shift: true });
 		const view = render(<DragSnapLayer />);
+		// A setState-after-unmount (the guard failing to bail) surfaces as a React act warning on
+		// console.error; test-setup.ts doesn't fail on it, so assert it explicitly.
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 		view.unmount(); // tear down before currentMonitor()/loadLayoutRaw() resolve
 		// Let the in-flight currentMonitor()/loadLayoutRaw() promises settle against the dead instance;
-		// the `!alive` guard must bail without throwing.
+		// the `!alive` guard must bail without throwing or writing state.
 		await act(async () => void (await new Promise((r) => setTimeout(r, 0))));
-		expect(true).toBe(true); // reached here = no unhandled rejection / setState-after-unmount throw
+		expect(errorSpy).not.toHaveBeenCalled();
+		errorSpy.mockRestore();
 	});
 
 	it('unmounting mid-reload cancels it (reload alive guard)', async () => {
@@ -380,13 +384,16 @@ describe('DragSnapLayer (zone widgets)', () => {
 
 		// Fire layout_changed (starts reload(), which suspends at `await loadLayoutRaw()`), then unmount
 		// synchronously in the same act() before the awaited continuation runs. When reload resumes its
-		// `!alive` guard must bail (line 73) without writing zone refs or throwing.
+		// `!alive` guard must bail without writing zone refs or throwing. A failed bail would setState on
+		// the dead instance → a React act warning on console.error (test-setup.ts doesn't fail on it).
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 		await act(async () => {
 			handlers['layout_changed']?.({ payload: {} });
 			view.unmount();
 			await new Promise((r) => setTimeout(r, 0));
 		});
-		expect(true).toBe(true); // reload's `!alive` branch returned cleanly
+		expect(errorSpy).not.toHaveBeenCalled(); // reload's `!alive` branch returned cleanly
+		errorSpy.mockRestore();
 	});
 
 	it('snaps a window dragged (Shift held) over a docked zone on release', async () => {

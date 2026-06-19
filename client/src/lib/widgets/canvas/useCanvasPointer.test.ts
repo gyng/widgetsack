@@ -32,6 +32,8 @@ type Over = Partial<{
 	button: number;
 	target: EventTarget;
 	shiftKey: boolean;
+	clientX: number;
+	clientY: number;
 }>;
 const ev = (o: Over) =>
 	({

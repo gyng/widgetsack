@@ -32,12 +32,12 @@ describe('sackSummary', () => {
 
 // --- the hook itself ---
 
-const listSacks = vi.fn<[], Promise<string[]>>();
-const readSack = vi.fn<[string], Promise<string | null>>();
-const writeSack = vi.fn<[string, string], Promise<string | null>>();
-const listThemes = vi.fn<[], Promise<string[]>>();
-const resolveThemeCss = vi.fn<[string], Promise<string>>();
-const saveThemeCss = vi.fn<[string, string], Promise<void>>();
+const listSacks = vi.fn<() => Promise<string[]>>();
+const readSack = vi.fn<(name: string) => Promise<string | null>>();
+const writeSack = vi.fn<(name: string, json: string) => Promise<string | null>>();
+const listThemes = vi.fn<() => Promise<string[]>>();
+const resolveThemeCss = vi.fn<(id: string) => Promise<string>>();
+const saveThemeCss = vi.fn<(name: string, css: string) => Promise<void>>();
 vi.mock('../../overlay', () => ({
 	listSacks: (...a: []) => listSacks(...a),
 	readSack: (...a: [string]) => readSack(...a),
@@ -48,8 +48,8 @@ vi.mock('../../overlay', () => ({
 }));
 
 const themeLabel = vi.fn((n: string) => n || '(default)');
-const setThemeList = vi.fn<[string[]], void>();
-const adoptTheme = vi.fn<[string], Promise<void>>();
+const setThemeList = vi.fn<(names: string[]) => void>();
+const adoptTheme = vi.fn<(name: string) => Promise<void>>();
 
 // A library with one def (so packSack keeps it).
 function libWith(id = 'd1'): Library {
@@ -60,14 +60,14 @@ function libWith(id = 'd1'): Library {
 }
 
 type Opts = {
-	navSection?: 'sacks' | 'widgets';
+	navSection?: 'sacks' | 'settings';
 	editingDefId?: string | null;
 	selectedTheme?: string;
 	library?: Library | undefined;
 	tokenOverrides?: Record<string, string>;
 };
 function setup(opts: Opts = {}) {
-	const commitOp = vi.fn<[(s: EditorState) => Partial<EditorState>], void>();
+	const commitOp = vi.fn<(run: (s: EditorState) => Partial<EditorState>) => void>();
 	const themes: Pick<Themes, 'themeLabel' | 'setThemeList' | 'adoptTheme'> = {
 		themeLabel,
 		setThemeList,
@@ -151,7 +151,7 @@ describe('refreshSacks (section-open peek)', () => {
 	});
 
 	it('does not load while a different section is open', async () => {
-		setup({ navSection: 'widgets' });
+		setup({ navSection: 'settings' });
 		expect(listSacks).not.toHaveBeenCalled();
 	});
 });
@@ -159,7 +159,7 @@ describe('refreshSacks (section-open peek)', () => {
 describe('exportSack', () => {
 	it('refuses (alerts) mid def-edit', async () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
-		const { result } = setup({ editingDefId: 'd1', navSection: 'widgets' });
+		const { result } = setup({ editingDefId: 'd1', navSection: 'settings' });
 		await act(async () => {
 			await result.current.exportSack();
 		});
@@ -169,7 +169,7 @@ describe('exportSack', () => {
 
 	it('aborts when the name prompt is cancelled', async () => {
 		vi.spyOn(window, 'prompt').mockReturnValue(null);
-		const { result } = setup({ navSection: 'widgets' });
+		const { result } = setup({ navSection: 'settings' });
 		await act(async () => {
 			await result.current.exportSack();
 		});
@@ -184,7 +184,7 @@ describe('exportSack', () => {
 		writeSack.mockResolvedValue('C:/cfg/sacks/my-sack.sack.json');
 		const lib = libWith();
 		const { result } = setup({
-			navSection: 'widgets',
+			navSection: 'settings',
 			selectedTheme: 'builtin:nord',
 			library: lib,
 			tokenOverrides: { '--x': '1' }
@@ -207,7 +207,7 @@ describe('exportSack', () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		writeSack.mockResolvedValue(null); // write produced no path
 		themeLabel.mockReturnValue(''); // empty label → prompt falls back to the 'my-sack' default
-		const { result } = setup({ navSection: 'widgets', selectedTheme: '' });
+		const { result } = setup({ navSection: 'settings', selectedTheme: '' });
 		await act(async () => {
 			await result.current.exportSack();
 		});
@@ -221,7 +221,7 @@ describe('exportSack', () => {
 describe('importSack', () => {
 	it('refuses (alerts) mid def-edit', async () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
-		const { result, commitOp } = setup({ editingDefId: 'd1', navSection: 'widgets' });
+		const { result, commitOp } = setup({ editingDefId: 'd1', navSection: 'settings' });
 		await act(async () => {
 			await result.current.importSack('s');
 		});
@@ -232,7 +232,7 @@ describe('importSack', () => {
 	it('alerts and bails on an unreadable sack', async () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		readSack.mockResolvedValue('garbage');
-		const { result, commitOp } = setup({ navSection: 'widgets' });
+		const { result, commitOp } = setup({ navSection: 'settings' });
 		await act(async () => {
 			await result.current.importSack('s');
 		});
@@ -243,7 +243,7 @@ describe('importSack', () => {
 	it('also bails when readSack returns null', async () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		readSack.mockResolvedValue(null);
-		const { result, commitOp } = setup({ navSection: 'widgets' });
+		const { result, commitOp } = setup({ navSection: 'settings' });
 		await act(async () => {
 			await result.current.importSack('gone');
 		});
@@ -260,7 +260,7 @@ describe('importSack', () => {
 		});
 		readSack.mockResolvedValue(JSON.stringify(sack));
 		listThemes.mockResolvedValue([]); // no collision
-		const { result, commitOp } = setup({ navSection: 'widgets' });
+		const { result, commitOp } = setup({ navSection: 'settings' });
 		await act(async () => {
 			await result.current.importSack('s');
 		});
@@ -284,7 +284,7 @@ describe('importSack', () => {
 		const sack = packSack({ name: 's', theme: { name: 'Nord', css: ':root{}' } });
 		readSack.mockResolvedValue(JSON.stringify(sack));
 		listThemes.mockResolvedValue(['Nord']); // collision!
-		const { result } = setup({ navSection: 'widgets' });
+		const { result } = setup({ navSection: 'settings' });
 		await act(async () => {
 			await result.current.importSack('s');
 		});
@@ -299,7 +299,7 @@ describe('importSack', () => {
 		});
 		readSack.mockResolvedValue(JSON.stringify(sack));
 		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-		const { result, commitOp } = setup({ navSection: 'widgets' });
+		const { result, commitOp } = setup({ navSection: 'settings' });
 		await act(async () => {
 			await result.current.importSack('s');
 		});
@@ -316,7 +316,7 @@ describe('importSack', () => {
 		readSack.mockResolvedValue(JSON.stringify(sack));
 		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		listThemes.mockResolvedValue([]);
-		const { result, commitOp } = setup({ navSection: 'widgets' });
+		const { result, commitOp } = setup({ navSection: 'settings' });
 		await act(async () => {
 			await result.current.importSack('s');
 		});
@@ -327,7 +327,7 @@ describe('importSack', () => {
 	it('imports a themeless sack: commit applies only library/tokens, no theme adopt', async () => {
 		const sack = packSack({ name: 's', library: libWith('only'), tokens: { '--z': '0' } });
 		readSack.mockResolvedValue(JSON.stringify(sack));
-		const { result, commitOp } = setup({ navSection: 'widgets' });
+		const { result, commitOp } = setup({ navSection: 'settings' });
 		await act(async () => {
 			await result.current.importSack('s');
 		});

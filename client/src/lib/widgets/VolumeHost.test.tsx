@@ -5,8 +5,8 @@ import { act, fireEvent, render, cleanup } from '@testing-library/react';
 // the presentational Volume meter. We assert the host's wiring: poll → state, optimistic set + the
 // drag-hold suppression, and the mute toggle.
 const getAudioVolume = vi.fn();
-const setAudioVolume = vi.fn(() => Promise.resolve());
-const setAudioMute = vi.fn(() => Promise.resolve());
+const setAudioVolume = vi.fn<(level: number) => Promise<void>>(() => Promise.resolve());
+const setAudioMute = vi.fn<(muted: boolean) => Promise<void>>(() => Promise.resolve());
 vi.mock('../audio/volume', () => ({
 	getAudioVolume: () => getAudioVolume(),
 	setAudioVolume: (l: number) => setAudioVolume(l),

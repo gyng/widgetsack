@@ -317,7 +317,7 @@ describe('togglePackage — theme CSS consent', () => {
 	});
 
 	it('prompts once for a threat-flagged theme and injects after accept', async () => {
-		const confirm = vi.fn(() => true);
+		const confirm = vi.fn<(message: string) => boolean>(() => true);
 		await togglePackage('pack-a', true, confirm);
 
 		expect(confirm).toHaveBeenCalledTimes(1);
@@ -370,7 +370,7 @@ describe('togglePackage — network source consent', () => {
 	});
 
 	it('registers catalog entries and starts the poll loop after net consent', async () => {
-		const confirm = vi.fn(() => true);
+		const confirm = vi.fn<(message: string) => boolean>(() => true);
 		await togglePackage('pack-a', true, confirm);
 
 		expect(confirm).toHaveBeenCalledTimes(1);

@@ -9,11 +9,11 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useThemes } from './useThemes';
 import type { EditorModel } from './useEditorModel';
 
-const resolveThemeCss = vi.fn<[string], Promise<string>>();
-const loadThemeCss = vi.fn<[string], Promise<string>>();
-const listThemes = vi.fn<[], Promise<string[]>>();
-const saveThemeCss = vi.fn<[string, string], Promise<void>>();
-const deleteThemeCss = vi.fn<[string], Promise<void>>();
+const resolveThemeCss = vi.fn<(name: string) => Promise<string>>();
+const loadThemeCss = vi.fn<(name: string) => Promise<string>>();
+const listThemes = vi.fn<() => Promise<string[]>>();
+const saveThemeCss = vi.fn<(name: string, css: string) => Promise<void>>();
+const deleteThemeCss = vi.fn<(name: string) => Promise<void>>();
 vi.mock('../../overlay', () => ({
 	resolveThemeCss: (...a: [string]) => resolveThemeCss(...a),
 	loadThemeCss: (...a: [string]) => loadThemeCss(...a),

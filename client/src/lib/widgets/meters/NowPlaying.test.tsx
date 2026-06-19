@@ -533,12 +533,16 @@ describe('NowPlaying — art clearing', () => {
 		const { rerender, unmount } = await renderWithLoadedCover();
 		vi.useFakeTimers();
 		rerender(<NowPlaying session={session('Song A', null)} />); // schedules the teardown timer
-		// Unmount with the timer still pending — the cleanup must cancel it.
-		unmount();
+		// A fired-after-unmount setState logs a React "setState on unmounted component" act warning via
+		// console.error. test-setup.ts doesn't fail on that, so assert it explicitly: the cleanup must
+		// cancel the timer so it never fires against the dead instance.
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		unmount(); // cleanup cancels the pending teardown timer
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(2000); // would have fired the teardown if not cleared
 		});
-		// No throw / no act warning means the timer was cancelled on unmount.
+		expect(errorSpy).not.toHaveBeenCalled();
+		errorSpy.mockRestore();
 	});
 });
 
@@ -631,9 +635,15 @@ describe('NowPlaying — grey cue edge cases', () => {
 		const { rerender, unmount } = await renderWithLoadedCover();
 		vi.useFakeTimers();
 		rerender(<NowPlaying session={session('Song B', ART)} />); // schedules the grey timer
-		unmount(); // cleanup must cancel the pending grey timer
+		// If the recovery timer fired after unmount it would setState on a dead instance, which React
+		// reports via a console.error act warning (test-setup.ts doesn't fail on it). Assert it never
+		// fires by checking console.error stays silent past the (would-be) recovery deadline.
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		unmount(); // cleanup cancels the pending grey timer
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(1000); // would have fired had it not been cleared
 		});
+		expect(errorSpy).not.toHaveBeenCalled();
+		errorSpy.mockRestore();
 	});
 });

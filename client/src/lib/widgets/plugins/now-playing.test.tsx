@@ -58,12 +58,12 @@ describe('now-playing plugin', () => {
 		};
 
 		it('routes a transport bang to the backend media controller with source + value', () => {
-			dispatch()({ domain: 'media', service: 'seek', data: { source: 'spotify', value: 42 } });
+			dispatch()({ domain: 'media', service: 'seek', data: { source: 'spotify', value: 42 } }, {});
 			expect(mediaControl).toHaveBeenCalledWith('seek', 'spotify', 42);
 		});
 
 		it('defaults missing source/value to null', () => {
-			dispatch()({ domain: 'media', service: 'next' });
+			dispatch()({ domain: 'media', service: 'next' }, {});
 			expect(mediaControl).toHaveBeenCalledWith('next', null, null);
 		});
 	});

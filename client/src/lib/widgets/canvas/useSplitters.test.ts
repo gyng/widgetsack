@@ -75,8 +75,8 @@ function ptr(over: Partial<Record<string, unknown>> = {}) {
 }
 
 function setup(zoom = 1) {
-	const commitOp = vi.fn<[(s: EditorState) => Partial<EditorState>], void>();
-	const mutateNoSave = vi.fn<[(s: EditorState) => Partial<EditorState>], void>();
+	const commitOp = vi.fn<(run: (s: EditorState) => Partial<EditorState>) => void>();
+	const mutateNoSave = vi.fn<(run: (s: EditorState) => Partial<EditorState>) => void>();
 	const { result } = renderHook(() => useSplitters({ zoom, commitOp, mutateNoSave }));
 	return { result, commitOp, mutateNoSave };
 }

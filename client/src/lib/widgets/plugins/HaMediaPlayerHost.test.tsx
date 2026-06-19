@@ -4,7 +4,9 @@ import { act, render, waitFor } from '@testing-library/react';
 // Stub the HA Tauri command adapter (no backend in tests): the host resolves entity_picture →
 // art-scheme URL through haMediaArt and feeds it to the prop-only meter. A deferred promise lets us
 // drive when (and whether) the fetch resolves, so we can exercise the cancelled-after-unmount guard.
-const { haMediaArt } = vi.hoisted(() => ({ haMediaArt: vi.fn<[string], Promise<string>>() }));
+const { haMediaArt } = vi.hoisted(() => ({
+	haMediaArt: vi.fn<(entity: string) => Promise<string>>()
+}));
 vi.mock('./ha-commands', () => ({ haMediaArt }));
 
 import HaMediaPlayerHost from './HaMediaPlayerHost';

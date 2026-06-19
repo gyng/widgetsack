@@ -6,9 +6,9 @@ import type { AudioDevice } from '../core/audioDevices';
 // read default / set default + the refresh cadence); these spies let us drive what it sees and
 // assert which command a row click fires.
 const { listAudioOutputs, getDefaultAudioOutput, setDefaultAudioOutput } = vi.hoisted(() => ({
-	listAudioOutputs: vi.fn<[], Promise<AudioDevice[]>>(),
-	getDefaultAudioOutput: vi.fn<[], Promise<string | null>>(),
-	setDefaultAudioOutput: vi.fn<[string], Promise<boolean>>()
+	listAudioOutputs: vi.fn<() => Promise<AudioDevice[]>>(),
+	getDefaultAudioOutput: vi.fn<() => Promise<string | null>>(),
+	setDefaultAudioOutput: vi.fn<(id: string) => Promise<boolean>>()
 }));
 vi.mock('../audio/devices', () => ({
 	listAudioOutputs,

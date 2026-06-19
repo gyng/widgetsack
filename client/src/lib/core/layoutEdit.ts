@@ -46,9 +46,10 @@ export function findParent(root: Container, id: string): Container | null {
 }
 
 /**
- * Rebuild the tree, replacing the node whose id matches via `fn` (applied before
- * recursing into the result's children). Returns a new root; a no-op clone if `id` is
- * absent. `fn` is expected to preserve node kind.
+ * Rebuild the tree, replacing the matched node with `fn(node)`. Recursion STOPS at the
+ * match — `fn`'s result is returned as-is and is NOT re-descended into (so a replacement
+ * that re-nests a node with the same id never re-runs `fn`). Returns a new root, or a
+ * no-op clone if `id` is absent. `fn` is expected to preserve node kind.
  */
 export function updateNode(
 	root: Container,

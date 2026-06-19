@@ -206,6 +206,7 @@ describe('Inspector group + def params block', () => {
 		id: 'd1',
 		name: 'ClockDef',
 		size: { w: 120, h: 60 },
+		child,
 		params: [
 			{ key: 'tz', label: 'Timezone', target: 'unit.config.tz' },
 			{

@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import type { ChatMessage } from '../../core/llm';
+import type { Recorder } from '../../stt';
 
 // Mock every outer-ring dependency the hook touches: the mic recorder (lib/stt), the two LLM Tauri
 // command adapters (transcribe + complete), and the TTS adapter. The hook's own branch logic
@@ -13,10 +15,21 @@ const { startRecording, llmTranscribe, llmComplete, speakSmart, makeRecorder } =
 	});
 	return {
 		makeRecorder,
-		startRecording: vi.fn(),
-		llmTranscribe: vi.fn(() => Promise.resolve('hello world')),
-		llmComplete: vi.fn(() => Promise.resolve('hola mundo')),
-		speakSmart: vi.fn(() => Promise.resolve())
+		startRecording: vi.fn<(deviceId?: string) => Promise<Recorder>>(),
+		llmTranscribe: vi.fn<
+			(
+				audio: Uint8Array,
+				mime: string,
+				opts?: { model?: string; language?: string }
+			) => Promise<string>
+		>(() => Promise.resolve('hello world')),
+		llmComplete: vi.fn<
+			(
+				messages: ChatMessage[],
+				opts?: { temperature?: number; maxTokens?: number }
+			) => Promise<string>
+		>(() => Promise.resolve('hola mundo')),
+		speakSmart: vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
 	};
 });
 vi.mock('../../stt', () => ({ startRecording }));
@@ -161,7 +174,7 @@ describe('useTranscribe — stop, transcribe, translate, speak', () => {
 
 		expect(result.current.source).toBe('hello world'); // raw transcript kept
 		expect(result.current.output).toBe('hola mundo'); // translated + trimmed
-		const [messages, opts] = llmComplete.mock.calls[0];
+		const [messages, opts] = llmComplete.mock.calls[0]!;
 		expect(opts).toEqual({ temperature: 0 });
 		// buildTranslateMessages (real) → a system translate instruction naming the target + the user text.
 		expect(messages[0].role).toBe('system');
@@ -282,7 +295,7 @@ describe('useTranscribe — lifecycle', () => {
 		});
 
 		expect(llmComplete).toHaveBeenCalledOnce();
-		expect(llmComplete.mock.calls[0][0][0].content).toContain('French');
+		expect(llmComplete.mock.calls[0]![0][0].content).toContain('French');
 		expect(result.current.output).toBe('bonjour le monde');
 	});
 });

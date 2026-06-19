@@ -28,7 +28,7 @@ describe('useBackground', () => {
 	it('exposes the monitor background spec', () => {
 		const m = monitor({ background: { kind: 'color', src: '#123' } });
 		const { result } = renderHook(() =>
-			useBackground({ studio: true, navSection: 'widgets', monitor: m, handleOp: vi.fn() })
+			useBackground({ studio: true, navSection: 'layouts', monitor: m, handleOp: vi.fn() })
 		);
 		expect(result.current.bg).toEqual({ kind: 'color', src: '#123' });
 	});
@@ -36,7 +36,7 @@ describe('useBackground', () => {
 	it('resolves an image/video src to an asset URL and caches it by name', async () => {
 		const m = monitor({ background: { kind: 'image', src: 'wall.png' } });
 		const { result } = renderHook(() =>
-			useBackground({ studio: true, navSection: 'widgets', monitor: m, handleOp: vi.fn() })
+			useBackground({ studio: true, navSection: 'layouts', monitor: m, handleOp: vi.fn() })
 		);
 		expect(result.current.resolveWallpaper('wall.png')).toBe(''); // not resolved yet
 		await waitFor(() =>
@@ -48,7 +48,7 @@ describe('useBackground', () => {
 	it('does not resolve a color/web background (src used verbatim)', () => {
 		const m = monitor({ background: { kind: 'web', src: 'https://x.test' } });
 		renderHook(() =>
-			useBackground({ studio: true, navSection: 'widgets', monitor: m, handleOp: vi.fn() })
+			useBackground({ studio: true, navSection: 'layouts', monitor: m, handleOp: vi.fn() })
 		);
 		expect(wallpaperAssetUrl).not.toHaveBeenCalled();
 	});

@@ -11,10 +11,10 @@ import { createWidget } from '../../core/widget';
 import { packLayout } from '../../core/savedLayout';
 import type { EditorState } from './types';
 
-const listLayouts = vi.fn<[], Promise<string[]>>();
-const readLayout = vi.fn<[string], Promise<string | null>>();
-const saveLayoutAs = vi.fn<[string, string], Promise<string | null>>();
-const deleteLayout = vi.fn<[string], Promise<boolean>>();
+const listLayouts = vi.fn<() => Promise<string[]>>();
+const readLayout = vi.fn<(name: string) => Promise<string | null>>();
+const saveLayoutAs = vi.fn<(name: string, json: string) => Promise<string | null>>();
+const deleteLayout = vi.fn<(name: string) => Promise<boolean>>();
 vi.mock('../../overlay', () => ({
 	listLayouts: (...a: []) => listLayouts(...a),
 	readLayout: (...a: [string]) => readLayout(...a),
@@ -28,12 +28,12 @@ function monitorWith(id = 'w1'): MonitorLayout {
 
 // The hook only reads `monitorRef` + the four scalar deps; build a minimal harness.
 type Opts = {
-	navSection?: 'saved-layouts' | 'widgets';
+	navSection?: 'saved-layouts' | 'settings';
 	editingDefId?: string | null;
 	monitor?: MonitorLayout;
 };
 function setup(opts: Opts = {}) {
-	const commitOp = vi.fn<[(s: EditorState) => Partial<EditorState>], void>();
+	const commitOp = vi.fn<(run: (s: EditorState) => Partial<EditorState>) => void>();
 	const monitorRef = { current: opts.monitor ?? monitorWith() } as React.RefObject<MonitorLayout>;
 	const hook = renderHook(() =>
 		useSavedLayouts({
@@ -63,7 +63,7 @@ describe('section load', () => {
 	});
 
 	it('does NOT load names while a different section is open', async () => {
-		setup({ navSection: 'widgets' });
+		setup({ navSection: 'settings' });
 		expect(listLayouts).not.toHaveBeenCalled();
 	});
 });
@@ -94,7 +94,7 @@ describe('saveCurrentLayout', () => {
 		// 'widgets' section → no mount auto-load; the pre-check sees no existing 'Gaming' (skip the
 		// overwrite confirm), then the post-save refresh returns the new name.
 		listLayouts.mockResolvedValueOnce([]).mockResolvedValueOnce(['Gaming']);
-		const { result } = setup({ monitor: mon, navSection: 'widgets' });
+		const { result } = setup({ monitor: mon, navSection: 'settings' });
 		await act(async () => {
 			await result.current.saveCurrentLayout();
 		});
@@ -212,7 +212,7 @@ describe('deleteSavedLayout', () => {
 	it('deletes + refreshes the list on confirm', async () => {
 		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		listLayouts.mockResolvedValue(['Work']); // post-delete list
-		const { result } = setup({ navSection: 'widgets' }); // avoid the section-open auto-load
+		const { result } = setup({ navSection: 'settings' }); // avoid the section-open auto-load
 		await act(async () => {
 			await result.current.deleteSavedLayout('Home');
 		});
