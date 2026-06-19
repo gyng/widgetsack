@@ -119,4 +119,66 @@ describe('<ThemeList>', () => {
 		const nordRow = screen.getByRole('button', { name: /^Nord/ });
 		expect(nordRow).toHaveAttribute('aria-pressed', 'true');
 	});
+
+	// The filter box only appears once the combined list is long enough to be worth searching
+	// (FILTER_THRESHOLD = 8 non-default items).
+	describe('filter box (long list)', () => {
+		// 10 user themes → comfortably over the threshold and easy to filter down deterministically.
+		const manyUser = Array.from({ length: 10 }, (_, i) => ({
+			value: `theme-${i}`,
+			label: i < 3 ? `alpha-${i}` : `beta-${i}`
+		}));
+
+		const renderMany = () =>
+			render(
+				<ThemeList
+					groups={[]}
+					userThemes={manyUser}
+					active=""
+					onPick={vi.fn()}
+					onEdit={vi.fn()}
+					onDuplicate={vi.fn()}
+					onDelete={vi.fn()}
+				/>
+			);
+
+		it('does NOT show the filter box for a short list', () => {
+			setup(); // 2 built-ins + 1 user = 3 non-default, below the threshold
+			expect(screen.queryByLabelText('Filter themes')).toBeNull();
+		});
+
+		it('shows the filter box and the total count once the list is long', () => {
+			renderMany();
+			expect(screen.getByLabelText('Filter themes')).toBeInTheDocument();
+			// total = 10 user + 1 default = 11; with no query shown === total so the bare total renders.
+			expect(screen.getByText('11')).toBeInTheDocument();
+		});
+
+		it('filters the visible rows and shows a "shown / total" count as you type', () => {
+			renderMany();
+			const input = screen.getByLabelText('Filter themes') as HTMLInputElement;
+			fireEvent.input(input, { target: { value: 'alpha' } });
+			// Only the 3 alpha-* user themes survive; the default no longer matches.
+			expect(screen.getByText('alpha-0')).toBeInTheDocument();
+			expect(screen.queryByText('beta-3')).toBeNull();
+			expect(screen.queryByText('(default)')).toBeNull();
+			expect(screen.getByText('3 / 11')).toBeInTheDocument();
+		});
+
+		it('keeps the "(default)" reset visible when the query matches it', () => {
+			renderMany();
+			const input = screen.getByLabelText('Filter themes') as HTMLInputElement;
+			fireEvent.input(input, { target: { value: 'default' } });
+			expect(screen.getByText('(default)')).toBeInTheDocument();
+			expect(screen.getByText('1 / 11')).toBeInTheDocument();
+		});
+
+		it('shows the empty stub when nothing matches the query', () => {
+			renderMany();
+			const input = screen.getByLabelText('Filter themes') as HTMLInputElement;
+			fireEvent.input(input, { target: { value: 'zzz-no-such-theme' } });
+			expect(screen.getByText('No themes match.')).toBeInTheDocument();
+			expect(screen.getByText('0 / 11')).toBeInTheDocument();
+		});
+	});
 });

@@ -123,4 +123,85 @@ describe('FlowNode — emitted CSS', () => {
 		expect(el.style.display).toBe('grid');
 		expect(el.style.gridTemplateColumns).toBe('repeat(3, 1fr)');
 	});
+
+	it('the top-level node fills its parent when fill is set (width/height 100%)', () => {
+		const view = render(
+			<FlowNode
+				node={container('root', 'col', [leaf(prim('A'))])}
+				parentKind="col"
+				renderLeaf={renderLeaf}
+				fill
+			/>
+		);
+		const el = view.container.querySelector('[data-id="root"]') as HTMLElement;
+		expect(el.style.width).toBe('100%');
+		expect(el.style.height).toBe('100%');
+	});
+});
+
+describe('FlowNode — overlap (stacking) parents', () => {
+	it('an overlap container stacks its children into the shared cell (grid 1/1)', () => {
+		const view = render(
+			<FlowNode
+				node={container('ov', 'col', [leaf(prim('A')), leaf(prim('B'))], { overlap: true })}
+				parentKind="col"
+				renderLeaf={renderLeaf}
+			/>
+		);
+		// overlapChildStyle puts every child in the same grid cell (gridArea 1 / 1 / …).
+		const a = view.container.querySelector('[data-id="A"]') as HTMLElement;
+		const b = view.container.querySelector('[data-id="B"]') as HTMLElement;
+		expect(a.style.gridArea).toBeTruthy();
+		expect(b.style.gridArea).toBe(a.style.gridArea);
+	});
+});
+
+describe('FlowNode — conditional containers (hiddenIds)', () => {
+	it('an unmet conditional container keeps its slot but hides its subtree', () => {
+		const node = container('cond', 'col', [leaf(prim('A'))]);
+		const view = render(
+			<FlowNode
+				node={node}
+				parentKind="col"
+				renderLeaf={renderLeaf}
+				hiddenIds={new Set(['cond'])}
+			/>
+		);
+		const el = view.container.querySelector('[data-id="cond"]') as HTMLElement;
+		expect(el.style.visibility).toBe('hidden');
+		expect(el.getAttribute('data-hidden')).toBe('');
+	});
+
+	it('a container not in hiddenIds is visible (no data-hidden marker)', () => {
+		const node = container('shown', 'col', [leaf(prim('A'))]);
+		const view = render(
+			<FlowNode
+				node={node}
+				parentKind="col"
+				renderLeaf={renderLeaf}
+				hiddenIds={new Set(['other'])}
+			/>
+		);
+		const el = view.container.querySelector('[data-id="shown"]') as HTMLElement;
+		expect(el.style.visibility).toBe('');
+		expect(el.getAttribute('data-hidden')).toBeNull();
+	});
+});
+
+describe('FlowNode — groups', () => {
+	it('renders an empty group box (resolveGroup yields an empty container) without throwing', () => {
+		// A group whose def has no child still resolves to a (col) container, so the group box renders
+		// its single empty-container child rather than nothing.
+		const emptyGroup = leaf(group('EG', { w: 20, h: 20 }, container('inner', 'col', [])));
+		const view = render(
+			<FlowNode node={emptyGroup} parentKind="col" renderLeaf={renderLeaf} library={lib} />
+		);
+		const box = view.container.querySelector('[data-id="EG"]') as HTMLElement;
+		expect(box.getAttribute('data-group')).toBe('');
+		expect(box.style.flexDirection).toBe('column');
+		// The namespaced empty container is rendered inside the group box and fills it.
+		const inner = view.container.querySelector('[data-id="EG/inner"]') as HTMLElement;
+		expect(inner).toBeTruthy();
+		expect(inner.style.width).toBe('100%');
+	});
 });

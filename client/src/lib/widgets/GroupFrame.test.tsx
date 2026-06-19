@@ -93,4 +93,178 @@ describe('GroupFrame', () => {
 		expect(container.querySelector('.drag-overlay')).toBeNull();
 		expect(container.querySelector('.handle')).toBeNull();
 	});
+
+	it('context menu in edit mode selects the group then opens the menu at the cursor', () => {
+		const onSelect = vi.fn();
+		const onContextMenu = vi.fn();
+		const { container } = render(
+			<GroupFrame
+				id="grp-1"
+				rect={rect}
+				editMode
+				onSelect={onSelect}
+				onContextMenu={onContextMenu}
+			/>
+		);
+		fireEvent.contextMenu(box(container), { clientX: 33, clientY: 44 });
+		expect(onSelect).toHaveBeenCalledWith({ id: 'grp-1' });
+		expect(onContextMenu).toHaveBeenCalledWith({ id: 'grp-1', x: 33, y: 44 });
+	});
+
+	it('context menu does nothing outside edit mode (passive overlay)', () => {
+		const onContextMenu = vi.fn();
+		const { container } = render(
+			<GroupFrame id="grp-1" rect={rect} onContextMenu={onContextMenu} />
+		);
+		fireEvent.contextMenu(box(container));
+		expect(onContextMenu).not.toHaveBeenCalled();
+	});
+
+	it('suppresses the context menu (and skips selection) when suppressContextMenu() is true', () => {
+		const onSelect = vi.fn();
+		const onContextMenu = vi.fn();
+		const { container } = render(
+			<GroupFrame
+				id="grp-1"
+				rect={rect}
+				editMode
+				onSelect={onSelect}
+				onContextMenu={onContextMenu}
+				suppressContextMenu={() => true}
+			/>
+		);
+		fireEvent.contextMenu(box(container));
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(onContextMenu).not.toHaveBeenCalled();
+	});
+
+	it('a press that never exceeds DRAG_SLOP is a click — no onChange, no commit', () => {
+		const onChange = vi.fn();
+		const onCommit = vi.fn();
+		const onSelect = vi.fn();
+		const { container } = render(
+			<GroupFrame
+				id="grp-1"
+				rect={rect}
+				editMode
+				selected
+				onChange={onChange}
+				onCommit={onCommit}
+				onSelect={onSelect}
+			/>
+		);
+		const ov = overlay(container);
+		fireEvent.pointerDown(ov, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerMove(ov, { pointerId: 1, clientX: 12, clientY: 11 }); // within DRAG_SLOP
+		expect(onChange).not.toHaveBeenCalled();
+		fireEvent.pointerUp(ov, { pointerId: 1, clientX: 12, clientY: 11 });
+		expect(onCommit).not.toHaveBeenCalled();
+		// A click (no drag) on an already-selected group collapses the multi-selection to just it.
+		expect(onSelect).toHaveBeenCalledWith({ id: 'grp-1' });
+	});
+
+	it('right-button press is a free-move (skipFlow): commit skips flow + suppresses the next menu', () => {
+		const onChange = vi.fn();
+		const onCommit = vi.fn();
+		const onSuppressContextMenu = vi.fn();
+		const { container } = render(
+			<GroupFrame
+				id="grp-1"
+				rect={rect}
+				editMode
+				selected
+				onChange={onChange}
+				onCommit={onCommit}
+				onSuppressContextMenu={onSuppressContextMenu}
+			/>
+		);
+		const ov = overlay(container);
+		fireEvent.pointerDown(ov, { button: 2, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerMove(ov, { pointerId: 1, clientX: 50, clientY: 10 }); // past DRAG_SLOP
+		expect(onChange).toHaveBeenCalled();
+		fireEvent.pointerUp(ov, { pointerId: 1, clientX: 50, clientY: 10 });
+		expect(onCommit).toHaveBeenCalledWith({ skipFlow: true });
+		expect(onSuppressContextMenu).toHaveBeenCalled();
+	});
+
+	it('right-button on a resize handle is ignored (free-move only applies to a move)', () => {
+		const onChange = vi.fn();
+		const onSelect = vi.fn();
+		const { container } = render(
+			<GroupFrame id="grp-1" rect={rect} editMode onChange={onChange} onSelect={onSelect} />
+		);
+		const handle = container.querySelector('.handle.se') as HTMLElement;
+		fireEvent.pointerDown(handle, { button: 2, pointerId: 1, clientX: 110, clientY: 80 });
+		fireEvent.pointerMove(handle, { pointerId: 1, clientX: 140, clientY: 110 });
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it('a middle-button press is reserved for panning — begin() bails, no select/change', () => {
+		const onChange = vi.fn();
+		const onSelect = vi.fn();
+		const { container } = render(
+			<GroupFrame id="grp-1" rect={rect} editMode onChange={onChange} onSelect={onSelect} />
+		);
+		const ov = overlay(container);
+		fireEvent.pointerDown(ov, { button: 1, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerMove(ov, { pointerId: 1, clientX: 50, clientY: 10 });
+		expect(onSelect).not.toHaveBeenCalled();
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it('pointer events without any callbacks bound are no-ops (no throw)', () => {
+		const { container } = render(<GroupFrame id="grp-1" rect={rect} editMode selected />);
+		const ov = overlay(container);
+		expect(() => {
+			fireEvent.pointerDown(ov, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+			fireEvent.pointerMove(ov, { pointerId: 1, clientX: 50, clientY: 10 });
+			fireEvent.pointerUp(ov, { pointerId: 1, clientX: 50, clientY: 10 });
+		}).not.toThrow();
+	});
+
+	it('pointerMove/Up with no active drag are no-ops (action === null guard)', () => {
+		const onChange = vi.fn();
+		const onCommit = vi.fn();
+		const { container } = render(
+			<GroupFrame id="grp-1" rect={rect} editMode onChange={onChange} onCommit={onCommit} />
+		);
+		const ov = overlay(container);
+		fireEvent.pointerMove(ov, { pointerId: 1, clientX: 50, clientY: 10 });
+		fireEvent.pointerUp(ov, { pointerId: 1, clientX: 50, clientY: 10 });
+		expect(onChange).not.toHaveBeenCalled();
+		expect(onCommit).not.toHaveBeenCalled();
+	});
+
+	it('applies multi / highlighted modifier classes', () => {
+		const { container } = render(
+			<GroupFrame id="grp-1" rect={rect} editMode selected multi highlighted name="My Group" />
+		);
+		const b = box(container);
+		expect(b.classList.contains('editable')).toBe(true);
+		expect(b.classList.contains('selected')).toBe(true);
+		expect(b.classList.contains('multi-member')).toBe(true);
+		expect(b.classList.contains('hl')).toBe(true);
+		// The move overlay uses the provided name in its aria-label.
+		expect(overlay(container).getAttribute('aria-label')).toBe('Move My Group widget');
+	});
+
+	it('adds the .active class while a drag is in progress', () => {
+		const { container } = render(<GroupFrame id="grp-1" rect={rect} editMode onChange={vi.fn()} />);
+		const ov = overlay(container);
+		expect(box(container).classList.contains('active')).toBe(false);
+		fireEvent.pointerDown(ov, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		expect(box(container).classList.contains('active')).toBe(true);
+		fireEvent.pointerUp(ov, { pointerId: 1, clientX: 10, clientY: 10 });
+		expect(box(container).classList.contains('active')).toBe(false);
+	});
+
+	it('fires onHover with the id on enter and null on leave', () => {
+		const onHover = vi.fn();
+		const { container } = render(<GroupFrame id="grp-1" rect={rect} onHover={onHover} />);
+		fireEvent.mouseEnter(box(container));
+		expect(onHover).toHaveBeenLastCalledWith('grp-1');
+		fireEvent.mouseLeave(box(container));
+		expect(onHover).toHaveBeenLastCalledWith(null);
+	});
 });

@@ -31,4 +31,17 @@ describe('toHexColor', () => {
 		expect(toHexColor('var(--np-accent)')).toBeNull();
 		expect(toHexColor('#ab')).toBeNull();
 	});
+	it('returns null for 5- and 7-digit hex (matched length but not a valid form)', () => {
+		expect(toHexColor('#abcde')).toBeNull(); // 5 nibbles
+		expect(toHexColor('#abcdef0')).toBeNull(); // 7 nibbles
+	});
+	it('rejects rgb() with fewer than three channels', () => {
+		expect(toHexColor('rgb(10, 20)')).toBeNull();
+	});
+	it('rejects rgb() with a non-numeric channel', () => {
+		expect(toHexColor('rgb(10, abc, 30)')).toBeNull();
+	});
+	it('treats a null value as empty', () => {
+		expect(toHexColor(null as unknown as string)).toBeNull();
+	});
 });

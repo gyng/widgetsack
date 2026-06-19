@@ -45,6 +45,61 @@ describe('MacroEditor', () => {
 		expect(data.className).toContain('error');
 	});
 
+	it('clears data when the JSON field is emptied (committing undefined)', () => {
+		const onChange = vi.fn();
+		const value: Macro = [{ domain: 'light', service: 'toggle', data: { brightness_pct: 60 } }];
+		const { getByPlaceholderText } = render(<MacroEditor value={value} onChange={onChange} />);
+		const data = getByPlaceholderText(/data \(JSON\)/i) as HTMLInputElement;
+		// Seeds from props, then user clears it.
+		expect(data.value).toBe('{"brightness_pct":60}');
+		fireEvent.change(data, { target: { value: '   ' } });
+		fireEvent.blur(data);
+		expect(onChange).toHaveBeenCalledWith([
+			{ domain: 'light', service: 'toggle', data: undefined }
+		]);
+		expect(data.className).not.toContain('error');
+	});
+
+	it('flags valid JSON that is not a plain object (array) and does not commit it', () => {
+		const onChange = vi.fn();
+		const value: Macro = [{ domain: 'light', service: 'toggle' }];
+		const { getByPlaceholderText } = render(<MacroEditor value={value} onChange={onChange} />);
+		const data = getByPlaceholderText(/data \(JSON\)/i);
+		fireEvent.change(data, { target: { value: '[1,2,3]' } });
+		fireEvent.blur(data);
+		expect(onChange).not.toHaveBeenCalled();
+		expect(data.className).toContain('error');
+	});
+
+	it('flags valid JSON that is a non-object scalar (number) and does not commit it', () => {
+		const onChange = vi.fn();
+		const value: Macro = [{ domain: 'light', service: 'toggle' }];
+		const { getByPlaceholderText } = render(<MacroEditor value={value} onChange={onChange} />);
+		const data = getByPlaceholderText(/data \(JSON\)/i);
+		fireEvent.change(data, { target: { value: '42' } });
+		fireEvent.blur(data);
+		expect(onChange).not.toHaveBeenCalled();
+		expect(data.className).toContain('error');
+	});
+
+	it('renders the empty hint only when there are no actions', () => {
+		const { queryByText, rerender } = render(<MacroEditor value={[]} onChange={vi.fn()} />);
+		expect(queryByText(/inert until you add one/i)).not.toBeNull();
+		rerender(<MacroEditor value={[{ domain: 'light', service: 'toggle' }]} onChange={vi.fn()} />);
+		expect(queryByText(/inert until you add one/i)).toBeNull();
+	});
+
+	it('tolerates a null value (treated as an empty macro)', () => {
+		// `value ?? []` guard — defensive for a config field that was never set.
+		const onChange = vi.fn();
+		const { getByText, queryByText } = render(
+			<MacroEditor value={null as unknown as Macro} onChange={onChange} />
+		);
+		expect(queryByText(/inert until you add one/i)).not.toBeNull();
+		fireEvent.click(getByText('+ action'));
+		expect(onChange).toHaveBeenCalledWith([{ domain: '', service: '' }]);
+	});
+
 	it('removes a row', () => {
 		const onChange = vi.fn();
 		const value: Macro = [
@@ -68,6 +123,22 @@ describe('MacroEditor', () => {
 		expect(up[0].disabled).toBe(true); // first row can't move up
 		expect(down[1].disabled).toBe(true); // last row can't move down
 		fireEvent.click(down[0]);
+		expect(onChange).toHaveBeenCalledWith([
+			{ domain: 'media', service: 'pause' },
+			{ domain: 'light', service: 'toggle' }
+		]);
+	});
+
+	it('reorders rows (move up) from the second row', () => {
+		const onChange = vi.fn();
+		const value: Macro = [
+			{ domain: 'light', service: 'toggle' },
+			{ domain: 'media', service: 'pause' }
+		];
+		const { getAllByTitle } = render(<MacroEditor value={value} onChange={onChange} />);
+		const up = getAllByTitle('Move up') as HTMLButtonElement[];
+		expect(up[1].disabled).toBe(false); // second row CAN move up
+		fireEvent.click(up[1]);
 		expect(onChange).toHaveBeenCalledWith([
 			{ domain: 'media', service: 'pause' },
 			{ domain: 'light', service: 'toggle' }
