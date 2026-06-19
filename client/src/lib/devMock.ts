@@ -76,6 +76,10 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.autostartSet:
 				return false;
 
+			// --- dev / multi instance badge: the e2e mock is a normal (non-dev, non-multi) instance ---
+			case COMMANDS.isDevInstance:
+				return false;
+
 			// --- app update check: pretend we're current ---
 			case COMMANDS.checkAppUpdate:
 				return {
