@@ -36,6 +36,23 @@ describe('stt', () => {
 
 		vi.stubGlobal('MediaRecorder', { isTypeSupported: () => false });
 		expect(pickMime()).toBe('');
+
+		// No isTypeSupported on the constructor -> empty (let the browser default).
+		vi.stubGlobal('MediaRecorder', class {});
+		expect(pickMime()).toBe('');
+	});
+
+	it('listMicrophones returns [] when enumerateDevices throws', async () => {
+		vi.stubGlobal('MediaRecorder', class {});
+		vi.stubGlobal('navigator', {
+			mediaDevices: {
+				getUserMedia: async () => ({}),
+				enumerateDevices: async () => {
+					throw new Error('blocked');
+				}
+			}
+		});
+		expect(await listMicrophones()).toEqual([]);
 	});
 
 	it('stop() resolves (does not hang) even when the recorder already went inactive', async () => {
@@ -76,5 +93,157 @@ describe('stt', () => {
 		const result = await rec.stop(); // must settle, not hang
 		expect(result.mime).toMatch(/audio/);
 		expect(tracks[0].stop).toHaveBeenCalled(); // mic released
+	});
+
+	it('records, applies the device constraint, and stop() returns the captured bytes', async () => {
+		const tracks = [{ stop: vi.fn() }, { stop: vi.fn() }];
+		let constraints: unknown;
+		const created: FakeRecorder[] = [];
+		class FakeRecorder {
+			state = 'recording';
+			mimeType = 'audio/webm;codecs=opus';
+			ondataavailable: ((e: { data: Blob }) => void) | null = null;
+			onstop: (() => void) | null = null;
+			onerror: (() => void) | null = null;
+			started = false;
+			constructor(public stream: unknown, public opts: unknown) {
+				created.push(this);
+			}
+			start(): void {
+				this.started = true;
+			}
+			stop(): void {
+				this.state = 'inactive';
+				this.onstop?.();
+			}
+			static isTypeSupported(m: string): boolean {
+				return m === 'audio/webm;codecs=opus';
+			}
+		}
+		vi.stubGlobal('MediaRecorder', FakeRecorder);
+		vi.stubGlobal('navigator', {
+			mediaDevices: {
+				getUserMedia: async (c: unknown) => {
+					constraints = c;
+					return { getTracks: () => tracks };
+				}
+			}
+		});
+		// happy-dom lacks Blob.arrayBuffer here; provide a minimal Blob that yields the chunk bytes.
+		vi.stubGlobal(
+			'Blob',
+			class {
+				type: string;
+				constructor(public parts: Uint8Array[], opts?: { type?: string }) {
+					this.type = opts?.type ?? '';
+				}
+				arrayBuffer(): Promise<ArrayBuffer> {
+					return Promise.resolve(new Uint8Array([7, 8, 9]).buffer);
+				}
+			}
+		);
+
+		const rec = await startRecording('mic-42');
+		const inst = created[0]!;
+		expect(inst.started).toBe(true);
+		expect((inst.opts as { mimeType: string }).mimeType).toBe('audio/webm;codecs=opus');
+		expect(constraints).toEqual({ audio: { deviceId: { exact: 'mic-42' } } });
+
+		// A non-empty data chunk is kept; an empty chunk is ignored.
+		inst.ondataavailable!({ data: { size: 3 } as Blob });
+		inst.ondataavailable!({ data: { size: 0 } as Blob }); // empty chunk ignored
+		const result = await rec.stop();
+		expect(Array.from(result.bytes)).toEqual([7, 8, 9]);
+		expect(result.mime).toBe('audio/webm;codecs=opus');
+		expect(tracks[0]!.stop).toHaveBeenCalled();
+		expect(tracks[1]!.stop).toHaveBeenCalled();
+	});
+
+	it('stop() falls back to audio/webm when neither the recorder nor the blob report a mime', async () => {
+		const tracks = [{ stop: vi.fn() }];
+		const created: FakeRecorder[] = [];
+		class FakeRecorder {
+			state = 'recording';
+			mimeType = ''; // -> falls through to `mime` (also '' here) -> 'audio/webm'
+			ondataavailable: ((e: { data: Blob }) => void) | null = null;
+			onstop: (() => void) | null = null;
+			onerror: (() => void) | null = null;
+			constructor() {
+				created.push(this);
+			}
+			start(): void {
+				/* no-op */
+			}
+			stop(): void {
+				this.state = 'inactive';
+				this.onstop?.();
+			}
+			static isTypeSupported(): boolean {
+				return false; // pickMime -> ''
+			}
+		}
+		vi.stubGlobal('MediaRecorder', FakeRecorder);
+		vi.stubGlobal('navigator', {
+			mediaDevices: { getUserMedia: async () => ({ getTracks: () => tracks }) }
+		});
+		vi.stubGlobal(
+			'Blob',
+			class {
+				type = ''; // -> mime fallback 'audio/webm'
+				constructor(public parts: unknown[]) {}
+				arrayBuffer(): Promise<ArrayBuffer> {
+					return Promise.resolve(new Uint8Array().buffer);
+				}
+			}
+		);
+
+		const rec = await startRecording();
+		const result = await rec.stop();
+		expect(result.mime).toBe('audio/webm');
+	});
+
+	it('stop() rejects when the recorder errors, and cancel() releases the mic', async () => {
+		const tracks = [{ stop: vi.fn() }];
+		const created: FakeRecorder[] = [];
+		class FakeRecorder {
+			state = 'recording';
+			mimeType = '';
+			ondataavailable: ((e: { data: Blob }) => void) | null = null;
+			onstop: (() => void) | null = null;
+			onerror: (() => void) | null = null;
+			constructor() {
+				created.push(this);
+			}
+			start(): void {
+				/* no-op */
+			}
+			stop(): void {
+				/* leave state 'recording' so stop()'s rec.stop() path runs onerror */
+			}
+			static isTypeSupported(): boolean {
+				return false; // -> pickMime returns '', MediaRecorder constructed with undefined opts
+			}
+		}
+		vi.stubGlobal('MediaRecorder', FakeRecorder);
+		vi.stubGlobal('navigator', {
+			mediaDevices: { getUserMedia: async () => ({ getTracks: () => tracks }) }
+		});
+
+		const rec = await startRecording(); // no deviceId -> audio:true
+		const inst = created[0]!;
+		const pending = rec.stop();
+		inst.onerror!(); // recorder fails
+		await expect(pending).rejects.toThrow(/recording failed/);
+		expect(tracks[0]!.stop).toHaveBeenCalled();
+
+		// cancel() on an active recorder also releases tracks (swallowing any stop() throw).
+		tracks[0]!.stop.mockClear();
+		const rec2 = await startRecording();
+		const inst2 = created[1]!;
+		inst2.stop = () => {
+			throw new Error('already stopped');
+		};
+		expect(() => rec2.cancel()).not.toThrow();
+		expect(tracks[0]!.stop).toHaveBeenCalled();
 	});
 });
