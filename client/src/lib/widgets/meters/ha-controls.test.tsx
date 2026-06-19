@@ -91,6 +91,8 @@ describe('HaCover', () => {
 		);
 		fireEvent.click(getByLabelText('Open Blind'));
 		expect(detail).toEqual({ domain: 'cover', service: 'open_cover' });
+		fireEvent.click(getByLabelText('Stop Blind'));
+		expect(detail).toEqual({ domain: 'cover', service: 'stop_cover' });
 		fireEvent.click(getByLabelText('Close Blind'));
 		expect(detail).toEqual({ domain: 'cover', service: 'close_cover' });
 		fireEvent.change(getByRole('slider'), { target: { value: '30' } });
@@ -300,6 +302,8 @@ describe('HaMediaPlayer', () => {
 		);
 		expect(() => getByText(/Song · Artist/)).not.toThrow();
 
+		fireEvent.click(getByLabelText('Previous on Speaker'));
+		expect(detail).toEqual({ domain: 'media_player', service: 'media_previous_track' });
 		fireEvent.click(getByLabelText('Pause Speaker'));
 		expect(detail).toEqual({ domain: 'media_player', service: 'media_play_pause' });
 		fireEvent.click(getByLabelText('Next on Speaker'));
@@ -335,5 +339,167 @@ describe('HaMediaPlayer', () => {
 		const { container } = render(<HaMediaPlayer value={playing} art="http://art.localhost/123" />);
 		const img = container.querySelector('img.art');
 		expect(img?.getAttribute('src')).toBe('http://art.localhost/123');
+	});
+});
+
+// Branch/fallback coverage: null value (default prop), missing friendly_name → the per-widget
+// default label, and the off/alternate state arms. These render-only paths don't need handlers.
+describe('HA control fallbacks (null value, default names, off/alt states)', () => {
+	it('HaSwitch: null value → OFF + "Switch" default, no className "on", click is a no-op without onControl', () => {
+		const { getByRole, getByText } = render(<HaSwitch />);
+		const btn = getByRole('button');
+		expect(getByText('Switch')).toBeTruthy();
+		expect(getByText('OFF')).toBeTruthy();
+		expect(btn.getAttribute('aria-pressed')).toBe('false');
+		expect(btn.className).not.toContain(' on');
+		// onControl is optional — clicking without it must not throw.
+		expect(() => fireEvent.click(btn)).not.toThrow();
+	});
+
+	it('HaScene: null value → "Scene" default; click without onControl is a no-op', () => {
+		const { getByRole, getByText } = render(<HaScene />);
+		expect(getByText('Scene')).toBeTruthy();
+		expect(() => fireEvent.click(getByRole('button'))).not.toThrow();
+	});
+
+	it('HaLock: null value → "Lock" + "—" state, not locked; click without onControl is a no-op', () => {
+		const { getByRole, getByText } = render(<HaLock />);
+		const btn = getByRole('button');
+		expect(getByText('Lock')).toBeTruthy();
+		expect(getByText('—')).toBeTruthy();
+		expect(btn.getAttribute('aria-pressed')).toBe('false');
+		expect(btn.className).not.toContain('locked');
+		expect(() => fireEvent.click(btn)).not.toThrow();
+	});
+
+	it('HaFan: null value → "Fan" + OFF, no slider/oscillate; toggle is a no-op without onControl', () => {
+		const { getByText, queryByRole, queryByLabelText } = render(<HaFan />);
+		expect(getByText('Fan')).toBeTruthy();
+		expect(getByText('OFF')).toBeTruthy();
+		expect(queryByRole('slider')).toBeNull();
+		expect(queryByLabelText('Fan oscillate')).toBeNull();
+		expect(() => fireEvent.click(getByText('Fan'))).not.toThrow();
+	});
+
+	it('HaFan: oscillating=true marks the oscillate button on', () => {
+		const { getByLabelText } = render(
+			<HaFan value={{ state: 'on', attributes: { friendly_name: 'Fan', oscillating: true } }} />
+		);
+		const osc = getByLabelText('Fan oscillate');
+		expect(osc.className).toContain('on');
+		expect(osc.getAttribute('aria-pressed')).toBe('true');
+	});
+
+	it('HaFan: on but no percentage → ON (no speed slider)', () => {
+		const { getByText, queryByRole } = render(
+			<HaFan value={{ state: 'on', attributes: { friendly_name: 'Fan' } }} />
+		);
+		expect(getByText('ON')).toBeTruthy();
+		expect(queryByRole('slider')).toBeNull();
+	});
+
+	it('HaCover: null value → "Cover" + "—" state; controls are no-ops without onControl', () => {
+		const { getByText, getByLabelText } = render(<HaCover />);
+		expect(getByText('Cover')).toBeTruthy();
+		expect(getByText('—')).toBeTruthy();
+		// Buttons render (showButtons defaults true) but have no position slider (no current_position).
+		expect(() => fireEvent.click(getByLabelText('Open Cover'))).not.toThrow();
+	});
+
+	it('HaCover: no-op setPos when onControl is absent', () => {
+		const { getByRole } = render(
+			<HaCover
+				value={{ state: 'open', attributes: { friendly_name: 'Blind', current_position: 60 } }}
+			/>
+		);
+		expect(() => fireEvent.change(getByRole('slider'), { target: { value: '30' } })).not.toThrow();
+	});
+
+	it('HaLight: null value → "Light" + OFF; toggle is a no-op without onControl', () => {
+		const { getByText } = render(<HaLight />);
+		expect(getByText('Light')).toBeTruthy();
+		expect(getByText('OFF')).toBeTruthy();
+		expect(() => fireEvent.click(getByText('Light'))).not.toThrow();
+	});
+
+	it('HaBinarySensor: null value → "—" name and "—" value', () => {
+		const { getAllByText } = render(<HaBinarySensor />);
+		expect(getAllByText('—').length).toBeGreaterThanOrEqual(2);
+	});
+
+	it('HaBinarySensor: device_class off → the off-word (words[1])', () => {
+		const { getByText } = render(
+			<HaBinarySensor
+				value={{ state: 'off', attributes: { friendly_name: 'Front', device_class: 'door' } }}
+			/>
+		);
+		expect(getByText('Closed')).toBeTruthy();
+	});
+
+	it('HaBinarySensor: an unknown state (neither on nor off) renders verbatim', () => {
+		const { getByText } = render(
+			<HaBinarySensor value={{ state: 'unavailable', attributes: { friendly_name: 'Front' } }} />
+		);
+		expect(getByText('unavailable')).toBeTruthy();
+	});
+
+	it('HaMediaPlayer: null value → "Media"; the "—" state is treated as active so transport shows', () => {
+		const { getByText, queryByLabelText } = render(<HaMediaPlayer />);
+		expect(getByText('Media')).toBeTruthy();
+		// state defaults to '—', which is NOT in the off/unavailable/standby exclusion list → active,
+		// so with no media_title the now-playing line shows the raw state and transport renders.
+		expect(getByText('—')).toBeTruthy();
+		expect(queryByLabelText(/Play|Pause/)).toBeTruthy();
+	});
+
+	it('HaMediaPlayer: an inactive state with no title shows "idle" and hides transport', () => {
+		const { getByText, queryByLabelText } = render(
+			<HaMediaPlayer value={{ state: 'off', attributes: { friendly_name: 'Speaker' } }} />
+		);
+		expect(getByText('idle')).toBeTruthy();
+		expect(queryByLabelText(/Play|Pause/)).toBeNull();
+	});
+
+	it('HaMediaPlayer: paused shows the play (▶) glyph and falls back through artist sources', () => {
+		const { getByLabelText, getByText } = render(
+			<HaMediaPlayer
+				value={{
+					state: 'paused',
+					attributes: { friendly_name: 'Speaker', media_title: 'Show', media_series_title: 'S1' }
+				}}
+			/>
+		);
+		// state==='paused' (active, not playing) → Play label + ▶ icon.
+		const playBtn = getByLabelText('Play Speaker');
+		expect(playBtn.textContent).toBe('▶');
+		expect(getByText(/Show · S1/)).toBeTruthy();
+	});
+
+	it('HaMediaPlayer: artist falls back to app_name when title/series/artist absent', () => {
+		const { getByText } = render(
+			<HaMediaPlayer
+				value={{ state: 'playing', attributes: { friendly_name: 'Speaker', app_name: 'Spotify' } }}
+			/>
+		);
+		// No media_title → shows the active state ('playing') then " · Spotify".
+		expect(getByText(/playing · Spotify/)).toBeTruthy();
+	});
+
+	it('HaMediaPlayer: muted shows 🔇 + "on" class; transport/volume are no-ops without onControl', () => {
+		const { getByLabelText, getByRole } = render(
+			<HaMediaPlayer
+				value={{
+					state: 'playing',
+					attributes: { friendly_name: 'Speaker', volume_level: 0.4, is_volume_muted: true }
+				}}
+			/>
+		);
+		const mute = getByLabelText('Mute Speaker');
+		expect(mute.textContent).toBe('🔇');
+		expect(mute.className).toContain('on');
+		expect(mute.getAttribute('aria-pressed')).toBe('true');
+		// No onControl → clicks/changes must not throw.
+		expect(() => fireEvent.click(getByLabelText('Next on Speaker'))).not.toThrow();
+		expect(() => fireEvent.change(getByRole('slider'), { target: { value: '70' } })).not.toThrow();
 	});
 });

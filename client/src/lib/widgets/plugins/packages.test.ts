@@ -49,7 +49,7 @@ vi.mock('./packages-source', () => ({
 
 import { createTelemetryHub } from '../../core/telemetry';
 import { listTemplateGroups } from '../../core/templates';
-import { sourceCatalogEntries } from '../../core/plugin';
+import { listSources, sourceCatalogEntries } from '../../core/plugin';
 import {
 	checkPackageUpdate,
 	enabledPackages,
@@ -405,6 +405,23 @@ describe('togglePackage — network source consent', () => {
 		expect(sourceStarts).toEqual(['pack-a']);
 		expect(sourceStops).toEqual(['pack-a']);
 	});
+
+	it('auto-approves via the default confirm when no callback is passed', async () => {
+		// Omitting confirmEnable uses the default `() => true`, so the consent gate auto-approves.
+		await togglePackage('pack-a', true);
+		expect(enabledPackages.getSnapshot()).toContain('pack-a');
+		expect(sourceStarts).toContain('pack-a');
+	});
+
+	it('registers an inert no-op start for the pkg source (lifecycle is owned here, not startAllSources)', async () => {
+		await togglePackage('pack-a', true, () => true);
+		const src = listSources().find((s) => s.id === 'pkg:pack-a')!;
+		expect(src).toBeDefined();
+		// The registered start is deliberately a no-op: invoking it just yields a no-op stop fn.
+		const stop = await src.start(hub);
+		expect(typeof stop).toBe('function');
+		expect(stop()).toBeUndefined();
+	});
 });
 
 // ---- installPackage ------------------------------------------------------------------------------
@@ -655,5 +672,44 @@ describe('resetPackagesForTest', () => {
 		expect(enabledPackages.getSnapshot()).toEqual([]);
 		expect(listTemplateGroups().find((g) => g.group === 'Pack A')).toBeUndefined();
 		expect(styleTagFor('pack-a')).toBeNull();
+	});
+});
+
+// ---- netConsent store parse (parseConsentMap) ----------------------------------------------------
+// The network-consent map is parsed once at module load from localStorage. Seed a populated map
+// (with a non-string entry to prove the typeof filter) and re-import the module so the parse runs
+// its object-iteration path; the loaded consent must then let an enable skip the net prompt.
+
+describe('netConsent persisted map parsing', () => {
+	it('loads a stored consent map (string values only) so a matching enable does not re-prompt', async () => {
+		// fingerprint of ['api.example.com'] is the sorted-join → the host itself. The `dropped: 123`
+		// entry proves parseConsentMap's `typeof v === 'string'` filter skips non-string values.
+		localStorage.setItem(
+			'widgetsack.packages.netConsent',
+			JSON.stringify({ 'pack-a': 'api.example.com', dropped: 123 })
+		);
+		// Fresh module instance: its module-level createPersistedStore(..., parseConsentMap) parses
+		// the seeded map (the object-iteration path). DON'T resetPackagesForTest — that clears it.
+		vi.resetModules();
+		const m = await import('./packages');
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({
+					source: { file: 'src.js', pollSeconds: 30, hosts: ['api.example.com'] },
+					sensors: [{ id: 'temp', label: 'Temp' }]
+				}),
+				install: null
+			}
+		]);
+		await m.initPackages(createTelemetryHub());
+		const confirm = vi.fn(() => true);
+		await m.togglePackage('pack-a', true, confirm);
+		// Consent for these exact hosts was already loaded from storage → no prompt.
+		expect(confirm).not.toHaveBeenCalled();
+		expect(sourceStarts).toContain('pack-a');
+		m.resetPackagesForTest();
+		localStorage.removeItem('widgetsack.packages.netConsent');
+		vi.resetModules();
 	});
 });

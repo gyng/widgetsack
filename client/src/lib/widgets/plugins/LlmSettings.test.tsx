@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 // Mock the LLM Tauri command adapter so the panel (the form + the model picker + the chat tester) can
 // be exercised without a backend. Every fn is a spy so we can assert call args. The api_key is
@@ -43,18 +43,37 @@ vi.mock('./llm-commands', () => ({
 	llmSynthesize: vi.fn(() => Promise.reject(new Error('no tts')))
 }));
 
+// happy-dom exposes no real mic/speech APIs, so the mic + read-aloud controls never render unless we
+// force the feature-detect adapters on. Mock them so the dictation / TTS branches are reachable.
+vi.mock('../../stt', () => ({
+	sttAvailable: vi.fn(() => true),
+	startRecording: vi.fn()
+}));
+vi.mock('../../tts', () => ({
+	ttsAvailable: vi.fn(() => true)
+}));
+vi.mock('./llm-tts', () => ({
+	speakSmart: vi.fn(() => Promise.resolve())
+}));
+
 import LlmSettings from './LlmSettings';
 import {
 	controlStart,
+	controlStop,
+	llmComplete,
 	llmConfigStatus,
 	llmListModels,
 	llmStream,
 	llmTestConnection,
+	llmTranscribe,
 	saveLlmConfig
 } from './llm-commands';
 import type { LlmStatus } from './llm-types';
 import { setLlmStudioApi } from './llm-studio';
-import { resetChat } from '../../../stores/llmStore';
+import { speakSmart } from './llm-tts';
+import { startRecording, type Recorder } from '../../stt';
+import { handleDelta, resetChat } from '../../../stores/llmStore';
+import { emptyMonitorLayout } from '../../core/layoutTree';
 import { createTelemetryHub, type TelemetryHub } from '../../core/telemetry';
 import { TelemetryHubContext } from '../telemetryContext';
 
@@ -368,5 +387,272 @@ describe('LlmSettings', () => {
 		);
 		// The input clears after sending.
 		expect(input.value).toBe('');
+	});
+
+	it('reports an agent-control toggle failure in the test line', async () => {
+		vi.mocked(saveLlmConfig).mockRejectedValueOnce('locked');
+		const { container, findByText } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const toggle = [...container.querySelectorAll('input[type="checkbox"]')].find((c) =>
+			c.closest('label')?.textContent?.includes('agent control')
+		) as HTMLInputElement;
+		fireEvent.click(toggle);
+		expect(await findByText(/Agent control: locked/)).toBeTruthy();
+		// The save rejected before the control server boot, so neither start nor stop ran.
+		expect(controlStart).not.toHaveBeenCalled();
+		expect(controlStop).not.toHaveBeenCalled();
+	});
+
+	it('marks the form dirty when the model / TTS-voice combobox is edited', async () => {
+		const { container } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const model = container.querySelector('input[aria-label="Model"]') as HTMLInputElement;
+		fireEvent.change(model, { target: { value: 'gpt-4o-mini' } });
+		// Change every speech picker to a NON-default value so each Select's onChange actually fires
+		// (Downshift skips onInputValueChange when the typed text equals the current value).
+		const stt = container.querySelector(
+			'input[aria-label="Speech-to-text model"]'
+		) as HTMLInputElement;
+		const ttsModel = container.querySelector(
+			'input[aria-label="Text-to-speech model"]'
+		) as HTMLInputElement;
+		const voice = container.querySelector(
+			'input[aria-label="Text-to-speech voice"]'
+		) as HTMLInputElement;
+		fireEvent.change(stt, { target: { value: 'gpt-4o-transcribe' } });
+		fireEvent.change(ttsModel, { target: { value: 'tts-1-hd' } });
+		fireEvent.change(voice, { target: { value: 'nova' } });
+		fireEvent.change(apiKeyInput(container), { target: { value: 'sk-x' } });
+		fireEvent.click(button(container, 'Save'));
+		await waitFor(() =>
+			expect(saveLlmConfig).toHaveBeenCalledWith(
+				expect.objectContaining({
+					model: 'gpt-4o-mini',
+					sttModel: 'gpt-4o-transcribe',
+					ttsModel: 'tts-1-hd',
+					ttsVoice: 'nova'
+				})
+			)
+		);
+	});
+
+	it('marks the form dirty when the self-signed-TLS checkbox is toggled', async () => {
+		const { container } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const insecure = [...container.querySelectorAll('input[type="checkbox"]')].find((c) =>
+			c.closest('label')?.textContent?.includes('self-signed')
+		) as HTMLInputElement;
+		fireEvent.click(insecure);
+		fireEvent.change(apiKeyInput(container), { target: { value: 'sk-tls' } });
+		fireEvent.click(button(container, 'Save'));
+		await waitFor(() =>
+			expect(saveLlmConfig).toHaveBeenCalledWith(expect.objectContaining({ insecure: true }))
+		);
+	});
+
+	// --- layout assistant: dictation + generate ---------------------------------------------
+
+	it('dictates into the prompt: starts the mic, then stops + transcribes on the second click', async () => {
+		const stop = vi.fn(() =>
+			Promise.resolve({ bytes: new Uint8Array([1, 2]), mime: 'audio/webm' })
+		);
+		const cancel = vi.fn();
+		const recorder: Recorder = { stop, cancel };
+		vi.mocked(startRecording).mockResolvedValue(recorder);
+		vi.mocked(llmTranscribe).mockResolvedValueOnce('hello world');
+
+		const { container, findByText, getByText } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		// First click starts the mic.
+		fireEvent.click(getByText('🎤 Speak'));
+		await waitFor(() => expect(startRecording).toHaveBeenCalled());
+		expect(await findByText(/Listening/)).toBeTruthy();
+		// Second click stops + transcribes the captured bytes into the prompt textarea.
+		fireEvent.click(getByText('■ Stop'));
+		await waitFor(() => expect(stop).toHaveBeenCalled());
+		await waitFor(() =>
+			expect(llmTranscribe).toHaveBeenCalledWith(new Uint8Array([1, 2]), 'audio/webm')
+		);
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		await waitFor(() => expect(textarea.value).toBe('hello world'));
+	});
+
+	it('appends a 2nd dictation to existing prompt text and surfaces a transcription failure', async () => {
+		const stop = vi.fn(() => Promise.resolve({ bytes: new Uint8Array([9]), mime: 'audio/webm' }));
+		vi.mocked(startRecording).mockResolvedValue({ stop, cancel: vi.fn() });
+		const { container, getByText, findByText } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		fireEvent.change(textarea, { target: { value: 'existing' } });
+		vi.mocked(llmTranscribe).mockResolvedValueOnce('more');
+		fireEvent.click(getByText('🎤 Speak'));
+		await waitFor(() => expect(startRecording).toHaveBeenCalled());
+		fireEvent.click(getByText('■ Stop'));
+		await waitFor(() => expect(textarea.value).toBe('existing more'));
+		// A subsequent recording whose transcription rejects shows the failure message.
+		vi.mocked(llmTranscribe).mockRejectedValueOnce('whisper 500');
+		fireEvent.click(getByText('🎤 Speak'));
+		await waitFor(() => expect(startRecording).toHaveBeenCalledTimes(2));
+		fireEvent.click(getByText('■ Stop'));
+		expect(await findByText(/Voice failed: whisper 500/)).toBeTruthy();
+	});
+
+	it('falls back to the openai provider when the saved status reports no active provider', async () => {
+		vi.mocked(llmConfigStatus).mockResolvedValue(configuredStatus({ active: '' }));
+		const { container } = renderPanel();
+		await waitFor(() => expect(providerSelect(container).value).toBe('openai'));
+	});
+
+	it('stops the agent-control server when the toggle is switched OFF', async () => {
+		// Start from a status with agent control already ON so the toggle's first flip turns it off.
+		vi.mocked(llmConfigStatus).mockResolvedValue(configuredStatus({ agentControl: true }));
+		const { container } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const toggle = [...container.querySelectorAll('input[type="checkbox"]')].find((c) =>
+			c.closest('label')?.textContent?.includes('agent control')
+		) as HTMLInputElement;
+		expect(toggle.checked).toBe(true);
+		fireEvent.click(toggle);
+		await waitFor(() =>
+			expect(saveLlmConfig).toHaveBeenCalledWith(expect.objectContaining({ agentControl: false }))
+		);
+		await waitFor(() => expect(controlStop).toHaveBeenCalled());
+		expect(controlStart).not.toHaveBeenCalled();
+	});
+
+	it('reports a single loaded model with singular wording', async () => {
+		const { getByText, findByText } = renderPanel();
+		await waitFor(() => expect(llmListModels).toHaveBeenCalled());
+		vi.mocked(llmListModels).mockResolvedValueOnce([{ id: 'gpt-4o', label: 'gpt-4o' }]);
+		fireEvent.click(getByText('↻ Models'));
+		expect(await findByText('Loaded 1 model')).toBeTruthy();
+	});
+
+	it('falls back to 1024 max-tokens when the field is cleared', async () => {
+		const { container } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const maxTok = container.querySelector('input[type="number"][max="32000"]') as HTMLInputElement;
+		fireEvent.change(maxTok, { target: { value: '' } });
+		fireEvent.change(apiKeyInput(container), { target: { value: 'sk-mt' } });
+		fireEvent.click(button(container, 'Save'));
+		await waitFor(() =>
+			expect(saveLlmConfig).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 1024 }))
+		);
+	});
+
+	it('shows a mic-unavailable message when starting the recorder rejects', async () => {
+		vi.mocked(startRecording).mockRejectedValueOnce('NotAllowedError');
+		const { container, getByText, findByText } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		fireEvent.click(getByText('🎤 Speak'));
+		expect(await findByText(/Mic unavailable: NotAllowedError/)).toBeTruthy();
+	});
+
+	it('ignores a Ctrl+Enter on an empty prompt (no completion call)', async () => {
+		setLlmStudioApi({ monitor: () => emptyMonitorLayout(), apply: vi.fn() });
+		const { container } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
+		expect(llmComplete).not.toHaveBeenCalled();
+	});
+
+	it('warns when generating with no monitor layout available', async () => {
+		setLlmStudioApi({
+			monitor: () => null as never,
+			apply: () => ({ applied: 0, addedIds: [], errors: [] })
+		});
+		const { container, getByText } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		fireEvent.change(textarea, { target: { value: 'add a clock' } });
+		fireEvent.click(getByText(/Generate/));
+		await waitFor(() => expect(getByText(/No layout to edit yet/)).toBeTruthy());
+	});
+
+	it('runs the layout assistant end-to-end via Ctrl+Enter when the studio is wired', async () => {
+		const apply = vi.fn(() => ({ applied: 2, addedIds: ['a', 'b'], errors: [] }));
+		const monitor = emptyMonitorLayout();
+		setLlmStudioApi({ monitor: () => monitor, apply });
+		const { container, findByText } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		fireEvent.change(textarea, { target: { value: 'add a clock and a gauge' } });
+		// Ctrl+Enter submits (covers the textarea keydown handler).
+		fireEvent.keyDown(textarea, { key: 'Enter', ctrlKey: true });
+		await waitFor(() => expect(llmComplete).toHaveBeenCalled());
+		await waitFor(() => expect(apply).toHaveBeenCalledWith([]));
+		// The summary + applied-count line renders, and the prompt clears.
+		expect(await findByText(/ok — 2 changes/)).toBeTruthy();
+		expect(textarea.value).toBe('');
+	});
+
+	it('reports applied errors and an invalid-reply / failed completion in the assistant', async () => {
+		const apply = vi.fn(() => ({ applied: 1, addedIds: [], errors: ['bad op'] }));
+		const monitor = emptyMonitorLayout();
+		setLlmStudioApi({ monitor: () => monitor, apply });
+		// First: a reply the parser rejects → "did not return valid layout ops".
+		vi.mocked(llmComplete).mockResolvedValueOnce('not json at all');
+		const { container, getByText, findByText } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		fireEvent.change(textarea, { target: { value: 'do a thing' } });
+		fireEvent.click(getByText(/Generate/));
+		expect(await findByText(/did not return valid layout ops/)).toBeTruthy();
+
+		// Next: a valid reply whose apply yields errors → summary includes the error tail (1 change).
+		fireEvent.change(textarea, { target: { value: 'again' } });
+		fireEvent.click(getByText(/Generate/));
+		expect(await findByText(/1 change \(bad op\)/)).toBeTruthy();
+
+		// A reply with no summary string falls back to "Done" in the result line.
+		vi.mocked(llmComplete).mockResolvedValueOnce('{"ops":[]}');
+		fireEvent.change(textarea, { target: { value: 'no summary' } });
+		fireEvent.click(getByText(/Generate/));
+		expect(await findByText(/Done — 1 change/)).toBeTruthy();
+
+		// Finally: llm_complete rejects → "Failed:" message.
+		vi.mocked(llmComplete).mockRejectedValueOnce('timeout');
+		fireEvent.change(textarea, { target: { value: 'boom' } });
+		fireEvent.click(getByText(/Generate/));
+		expect(await findByText(/Failed: timeout/)).toBeTruthy();
+	});
+
+	// --- chat tester: streamed assistant turn + read-aloud ----------------------------------
+
+	it('renders a finished assistant turn with a working read-aloud button, and sends on Enter', async () => {
+		const { container, findByPlaceholderText, findByText } = renderPanel();
+		const input = (await findByPlaceholderText('Ask anything…')) as HTMLInputElement;
+		fireEvent.change(input, { target: { value: 'hi' } });
+		// Enter (no modifier) sends — covers the chat input keydown handler.
+		fireEvent.keyDown(input, { key: 'Enter' });
+		await waitFor(() => expect(llmStream).toHaveBeenCalled());
+		const requestId = vi.mocked(llmStream).mock.calls[0][0] as string;
+		// Stream a completed assistant turn into the shared store so the read-aloud button renders.
+		act(() => {
+			handleDelta({ requestId, token: 'a reply', done: false });
+			handleDelta({ requestId, token: '', done: true });
+		});
+		const speak = (await findByText('🔊')) as HTMLButtonElement;
+		fireEvent.click(speak);
+		expect(speakSmart).toHaveBeenCalledWith('a reply');
+		// Clearing the transcript removes the turns + the Clear button.
+		fireEvent.click(button(container, 'Clear'));
+		await waitFor(() => expect(container.querySelector('.has-entity')).toBeNull());
+	});
+
+	it('ignores Enter with an empty chat input and renders an errored assistant turn', async () => {
+		const { findByPlaceholderText, findByText } = renderPanel();
+		const input = (await findByPlaceholderText('Ask anything…')) as HTMLInputElement;
+		// Enter on an empty input is a no-op (covers the onSend empty guard).
+		fireEvent.keyDown(input, { key: 'Enter' });
+		expect(llmStream).not.toHaveBeenCalled();
+		// A real send whose stream ends in an error renders the ⚠ error turn (no read-aloud button).
+		fireEvent.change(input, { target: { value: 'go' } });
+		fireEvent.keyDown(input, { key: 'Enter' });
+		await waitFor(() => expect(llmStream).toHaveBeenCalled());
+		const requestId = vi.mocked(llmStream).mock.calls[0][0] as string;
+		act(() => handleDelta({ requestId, token: '', done: true, error: 'rate limited' }));
+		expect(await findByText(/⚠ rate limited/)).toBeTruthy();
 	});
 });

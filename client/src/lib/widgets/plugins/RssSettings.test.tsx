@@ -62,16 +62,19 @@ describe('RssSettings', () => {
 		expect(rssConnect).toHaveBeenCalled();
 	});
 
-	it('shows "not configured" when status reports it', async () => {
+	it('shows "not configured" when status reports it, defaulting empty/zero fields', async () => {
 		vi.mocked(rssConfigStatus).mockResolvedValueOnce({
 			configured: false,
 			url: '',
-			count: 8,
+			count: 0, // falsy → default 8
 			title: '',
-			pollSeconds: 900
+			pollSeconds: 0 // falsy → default 900 → 15 min
 		});
-		const { getByText } = renderPanel();
+		const { container, getByText } = renderPanel();
 		await waitFor(() => expect(getByText('not configured')).toBeTruthy());
+		const numbers = container.querySelectorAll('input[type="number"]');
+		expect((numbers[0] as HTMLInputElement).value).toBe('8'); // default headline count
+		expect((numbers[1] as HTMLInputElement).value).toBe('15'); // default 900s / 60
 	});
 
 	it('edits update the inputs', async () => {
@@ -83,6 +86,36 @@ describe('RssSettings', () => {
 		const count = container.querySelectorAll('input[type="number"]')[0] as HTMLInputElement;
 		fireEvent.change(count, { target: { value: '5' } });
 		expect(count.value).toBe('5');
+	});
+
+	it('unmounting before rss_config_status resolves does not set state (alive guard)', async () => {
+		let resolve!: (v: {
+			configured: boolean;
+			url: string;
+			count: number;
+			title: string;
+			pollSeconds: number;
+		}) => void;
+		vi.mocked(rssConfigStatus).mockReturnValueOnce(new Promise((r) => (resolve = r)));
+		const { unmount } = renderPanel();
+		unmount();
+		await act(async () => {
+			resolve({ configured: true, url: 'x', count: 1, title: 't', pollSeconds: 60 });
+		});
+		// No throw / no act warning means the !alive early-return fired.
+		expect(rssConfigStatus).toHaveBeenCalled();
+	});
+
+	it('edits to the title and refresh (minutes) inputs update them too', async () => {
+		const { container } = renderPanel();
+		const url = container.querySelector('input[type="text"]') as HTMLInputElement;
+		await waitFor(() => expect(url.value).toBe('https://example.com/feed.xml'));
+		const title = container.querySelectorAll('input[type="text"]')[1] as HTMLInputElement;
+		fireEvent.change(title, { target: { value: 'Top Stories' } });
+		expect(title.value).toBe('Top Stories');
+		const poll = container.querySelectorAll('input[type="number"]')[1] as HTMLInputElement;
+		fireEvent.change(poll, { target: { value: '20' } });
+		expect(poll.value).toBe('20');
 	});
 
 	it('flags an invalid (non-http) URL and disables Save', async () => {

@@ -66,4 +66,20 @@ describe('MonitorSwitch meter', () => {
 		expect(container.querySelector('.ms-empty')?.textContent).toBe('monitor not found');
 		expect(container.querySelector('.ms-row')).toBeNull();
 	});
+
+	it('shows a dash placeholder when there are no input rows (and not missing)', () => {
+		const { container } = render(<MonitorSwitch title="Desk" rows={[]} onPick={() => undefined} />);
+		const empty = container.querySelector('.ms-empty');
+		expect(empty?.textContent).toBe('—');
+		expect(container.querySelector('.ms-row')).toBeNull();
+	});
+
+	it('applies the accent color var and compact attribute when set', () => {
+		const { container } = render(
+			<MonitorSwitch title="Desk" rows={rows} compact color="#abc" onPick={() => undefined} />
+		);
+		const root = container.querySelector('.monitorswitch') as HTMLElement;
+		expect(root.getAttribute('data-compact')).toBe('true');
+		expect(root.style.getPropertyValue('--ms-accent')).toBe('#abc');
+	});
 });
