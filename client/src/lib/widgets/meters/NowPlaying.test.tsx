@@ -74,6 +74,26 @@ const session = (title: string, art: string | null): SessionRecord => ({
 	last_model_update: { Model: { playback: null, timeline: null, media: null, source: '' } }
 });
 
+// A live session with NO current track: present (so hasSession is true) but its media update is gone,
+// so there's no title and no album art. Models a player that tears down / recreates its SMTC session on
+// pause — the prior track can't be carried forward (mergeMediaForward has nothing for the new id), so
+// the meter sees a session with nothing to show. The cover must leave WITH the (now-empty) title.
+const tracklessSession = (): SessionRecord => ({
+	session_id: 2,
+	source: 'spotify.exe',
+	timestamp_created: null,
+	timestamp_updated: null,
+	last_media_update: null,
+	last_model_update: {
+		Model: {
+			playback: { auto_repeat: 'None', rate: 1, shuffle: false, status: 'Paused', type: 'Music' },
+			timeline: null,
+			media: null,
+			source: 'spotify.exe'
+		}
+	}
+});
+
 // Render NowPlaying (props-driven — the NowPlayingHost container does the store wiring in the app)
 // showing a track whose cover has loaded (the visible, full-colour layer).
 async function renderWithLoadedCover() {
@@ -498,6 +518,20 @@ describe('NowPlaying — art clearing', () => {
 		await waitFor(() => expect(container.querySelectorAll('.np-thumb').length).toBe(0));
 		// With no title and no layers the whole body collapses (only the root remains).
 		expect(container.querySelector('[data-part="title"]')).toBeNull();
+	});
+
+	it('drops the cover at once when the session loses its track — not held (expanding) on the no-art grace', async () => {
+		const { container, rerender } = await renderWithLoadedCover();
+		expect(container.querySelectorAll('.np-thumb').length).toBe(1);
+		// The active session now carries no track (no media → no title, no art). The title disappears at
+		// once (it's read straight from props), so the cover must too — otherwise it lingers on the no-art
+		// grace, expanding to fill the box where the title/artist were before finally fading (the reported
+		// "cover expands for a short while then disappears" on pause). This differs from a genuine art-lag
+		// (a track IS present, its cover just hasn't arrived) below, where keeping the cover is correct.
+		rerender(<NowPlaying session={tracklessSession()} />);
+		expect(container.querySelectorAll('.np-thumb').length).toBe(0);
+		// The artist row is gone with the track — the cover did not outlive it.
+		expect(container.querySelector('[data-part="artist"]')).toBeNull();
 	});
 
 	it('keeps the stale cover during the grace window, then fades it out for a genuinely art-less track', async () => {
