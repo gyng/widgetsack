@@ -21,25 +21,26 @@ type Props = {
 export default function HaMediaPlayerHost(props: Props) {
 	const pic =
 		((props.value as HaState | null)?.attributes?.entity_picture as string | undefined) ?? '';
-	const [art, setArt] = useState<string | undefined>(undefined);
+	const [decoded, setDecoded] = useState<string | undefined>(undefined);
 
 	useEffect(() => {
-		if (!pic) {
-			setArt(undefined);
-			return;
-		}
+		if (!pic) return;
 		let cancelled = false;
 		haMediaArt(pic)
 			.then((url) => {
-				if (!cancelled) setArt(url);
+				if (!cancelled) setDecoded(url);
 			})
 			.catch(() => {
-				if (!cancelled) setArt(undefined);
+				if (!cancelled) setDecoded(undefined);
 			});
 		return () => {
 			cancelled = true;
 		};
 	}, [pic]);
+
+	// No picture → no art (don't linger on a previous track's cover); otherwise the async-decoded url.
+	// Deriving `art` in render replaces a synchronous `setArt(undefined)` in the effect.
+	const art = pic ? decoded : undefined;
 
 	return <HaMediaPlayer {...props} art={art} />;
 }

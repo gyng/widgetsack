@@ -40,16 +40,16 @@ export default function MonitorSwitchHost({
 	const refresh = useCallback(async (): Promise<void> => {
 		const list = await listMonitorInputs(target || undefined);
 		const found = target
-			? list.find((m) => m.gdi === target) ?? null
-			: list.find((m) => m.primary) ?? list[0] ?? null;
+			? (list.find((m) => m.gdi === target) ?? null)
+			: (list.find((m) => m.primary) ?? list[0] ?? null);
 		setSelected(found);
 		setMissing(Boolean(target) && found === null);
 	}, [target]);
 
 	useEffect(() => {
 		let alive = true;
-		void refresh();
 		const onFocus = (): void => void refresh();
+		onFocus(); // initial load (kept off the effect's sync path — refresh setStates after an await)
 		window.addEventListener('focus', onFocus);
 		const timer = window.setInterval(() => {
 			if (alive) void refresh();
@@ -75,7 +75,7 @@ export default function MonitorSwitchHost({
 		[selected, target, refresh]
 	);
 
-	const current = showCurrent ? selected?.current_input ?? null : null;
+	const current = showCurrent ? (selected?.current_input ?? null) : null;
 	const rows = useMemo(
 		() => monitorInputRows({ discovered: selected?.supported ?? [], spec: sources, current }),
 		[selected, sources, current]
@@ -86,7 +86,7 @@ export default function MonitorSwitchHost({
 				width: selected.width,
 				height: selected.height,
 				refreshHz: selected.refresh_hz
-		  })
+			})
 		: '';
 
 	return (

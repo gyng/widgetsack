@@ -244,7 +244,7 @@ export async function refreshPackages(): Promise<void> {
 						error: null,
 						warnings: result.pkg.warnings,
 						install
-				  }
+					}
 				: { id: f.id, manifest: null, error: result.reason, warnings: [], install }
 		);
 	}

@@ -58,7 +58,7 @@ function Outline({
 						e.preventDefault();
 						onNodeContextMenu({ id, x: e.clientX, y: e.clientY });
 					}
-			  }
+				}
 			: undefined;
 
 	const rows = useMemo(() => outlineRows(root), [root]);

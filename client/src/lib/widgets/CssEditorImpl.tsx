@@ -32,8 +32,11 @@ export default function CssEditorImpl({
 	const hostRef = useRef<HTMLDivElement>(null);
 	const viewRef = useRef<EditorView | null>(null);
 	// Latest callbacks, so the once-created view always calls the current handlers (no stale closures).
+	// Committed after render (not during it); the view only ever reads them inside CM callbacks, later.
 	const cbRef = useRef({ onChange, onBlur });
-	cbRef.current = { onChange, onBlur };
+	useEffect(() => {
+		cbRef.current = { onChange, onBlur };
+	});
 
 	useEffect(() => {
 		const host = hostRef.current;

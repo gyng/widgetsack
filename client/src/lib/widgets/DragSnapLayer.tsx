@@ -145,7 +145,7 @@ export default function DragSnapLayer() {
 			try {
 				const z = armedZone(physRef.current, await pointerProbe());
 				hoveredRef.current = z;
-				setHighlight(z ? localRef.current.get(z.id) ?? null : null);
+				setHighlight(z ? (localRef.current.get(z.id) ?? null) : null);
 			} finally {
 				busyRef.current = false;
 			}

@@ -57,7 +57,7 @@ function widgetSection(meta: WidgetMeta): string {
 			? '- **Sensor:** none (self-sourcing)'
 			: `- **Sensor:** binds a \`${binds}\` sensor${
 					meta.defaultSensor ? ` (default \`${meta.defaultSensor}\`)` : ''
-			  }`
+				}`
 	);
 	if (meta.defaultSize)
 		facts.push(`- **Default size:** ${meta.defaultSize.w}×${meta.defaultSize.h}`);

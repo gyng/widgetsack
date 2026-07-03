@@ -29,9 +29,17 @@ export default function StickyNote({
 }: Props) {
 	const [text, setText] = useState(() => (widgetId ? load(widgetId) : ''));
 
+	// Re-read from storage when the widget id changes — as an adjust-during-render (React re-renders
+	// before paint) rather than a setState-in-effect. Matches the old effect's `if (!widgetId) return`:
+	// an empty id keeps whatever is shown.
+	const [prevId, setPrevId] = useState(widgetId);
+	if (widgetId !== prevId) {
+		setPrevId(widgetId);
+		if (widgetId) setText(load(widgetId));
+	}
+
 	useEffect(() => {
 		if (!widgetId) return;
-		setText(load(widgetId));
 		// Sync edits made in the OTHER window (studio ↔ overlay share the origin → the storage event fires).
 		const onStorage = (e: StorageEvent): void => {
 			if (e.key === keyFor(widgetId)) setText(e.newValue ?? '');

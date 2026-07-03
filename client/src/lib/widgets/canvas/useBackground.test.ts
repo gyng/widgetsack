@@ -16,7 +16,7 @@ vi.mock('../../overlay', () => ({
 import { useBackground } from './useBackground';
 
 const monitor = (over: Partial<MonitorLayout> = {}): MonitorLayout =>
-	({ root: {}, floating: [], ...over } as MonitorLayout);
+	({ root: {}, floating: [], ...over }) as MonitorLayout;
 
 beforeEach(() => {
 	listWallpapers.mockResolvedValue(['a.png', 'b.mp4']);

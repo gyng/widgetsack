@@ -414,7 +414,7 @@ export function resolveGroup(grp: Group, library?: Library): ResolvedGroup {
 		grp.def && library ? library.defs.find((d) => d.id === grp.def) : undefined;
 
 	const baseChild: LayoutNode | undefined = def ? def.child : grp.child;
-	const size: Size = def ? def.size : grp.size ?? { w: 0, h: 0 };
+	const size: Size = def ? def.size : (grp.size ?? { w: 0, h: 0 });
 
 	if (!baseChild) return { child: emptyContainer(grp.id + ':empty'), size };
 

@@ -38,9 +38,12 @@ export type StudioInitDeps = {
 };
 
 export function useStudioInit(deps: StudioInitDeps): void {
-	// Hold deps in a ref so the mount effect reads the latest callbacks without re-running.
+	// Hold deps in a ref so the mount effect reads the latest callbacks without re-running. Mirrored in
+	// a commit effect (before the mount effect below, which only reads d.current from async callbacks).
 	const d = useRef(deps);
-	d.current = deps;
+	useEffect(() => {
+		d.current = deps;
+	});
 
 	useEffect(() => {
 		let cancelled = false;
@@ -201,7 +204,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			stopDisplayWatch?.();
 			d.current.clearPreviewWrite();
 		};
-		// Run once on mount (non-idempotent). eslint-disable to keep the empty dep list intentional.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// Run once on mount (non-idempotent). The body reads only the stable `d` ref, so the empty dep
+		// list is intentional and needs no exhaustive-deps suppression.
 	}, []);
 }

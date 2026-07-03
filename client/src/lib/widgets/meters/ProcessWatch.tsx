@@ -37,14 +37,14 @@ export default function ProcessWatch({ sensors = {}, name = 'chrome.exe', label,
 					{state === 'unknown'
 						? '—'
 						: state === 'stopped'
-						? 'not running'
-						: [
-								cpu != null ? `${cpu.toFixed(1)}%` : null,
-								mem != null ? formatBytes(mem, 0) : null,
-								count != null && count > 1 ? `×${count}` : null
-						  ]
-								.filter(Boolean)
-								.join(' · ') || 'running'}
+							? 'not running'
+							: [
+									cpu != null ? `${cpu.toFixed(1)}%` : null,
+									mem != null ? formatBytes(mem, 0) : null,
+									count != null && count > 1 ? `×${count}` : null
+								]
+									.filter(Boolean)
+									.join(' · ') || 'running'}
 				</span>
 			</div>
 		</div>

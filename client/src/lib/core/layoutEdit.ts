@@ -287,7 +287,7 @@ function gridCellInteriorDrop(
 								parentId: child.id,
 								index: child.children.filter((c) => c.id !== draggingId).length,
 								into: true
-						  }
+							}
 						: { parentId: node.id, index: i, merge: child.id };
 				}
 			}

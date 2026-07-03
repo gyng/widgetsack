@@ -79,14 +79,14 @@ export function containerAlignControls(c: Container): AlignControl[] {
 				field: 'justify',
 				value: c.justify ?? 'start',
 				options: optionsFor('horizontal', 'justify')
-		  }
+			}
 		: {
 				axis: 'horizontal',
 				label: 'Horizontal',
 				field: 'align',
 				value: c.align ?? 'stretch',
 				options: optionsFor('horizontal', 'align')
-		  };
+			};
 	const vertical: AlignControl = mainHorizontal
 		? {
 				axis: 'vertical',
@@ -94,14 +94,14 @@ export function containerAlignControls(c: Container): AlignControl[] {
 				field: 'align',
 				value: c.align ?? 'stretch',
 				options: optionsFor('vertical', 'align')
-		  }
+			}
 		: {
 				axis: 'vertical',
 				label: 'Vertical',
 				field: 'justify',
 				value: c.justify ?? 'start',
 				options: optionsFor('vertical', 'justify')
-		  };
+			};
 	return [horizontal, vertical];
 }
 

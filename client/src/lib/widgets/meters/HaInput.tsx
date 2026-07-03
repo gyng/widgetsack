@@ -84,7 +84,7 @@ export default function HaInput({ value = null, label, onControl }: Props) {
 				min={a.min ?? 0}
 				max={a.max ?? 100}
 				step={a.step ?? 1}
-				value={Number.isFinite(num) ? num : a.min ?? 0}
+				value={Number.isFinite(num) ? num : (a.min ?? 0)}
 				aria-label={`${name} value`}
 				onChange={(e) => {
 					const c = inputNumberSetValue(Number(e.currentTarget.value), a);

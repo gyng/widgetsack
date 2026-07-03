@@ -439,7 +439,7 @@ function reduceDefEdit(state: EditorState, action: DefEditAction): EditorState {
 				? {
 						...state.library,
 						defs: state.library.defs.map((d) => (d.id === editingDefId ? { ...d, child } : d))
-				  }
+					}
 				: state.library;
 			let next: EditorState = {
 				...state,

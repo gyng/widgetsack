@@ -64,6 +64,9 @@ export function useCanvasPointer(deps: CanvasPointerDeps): CanvasPointer {
 	const marqueeStart = useRef<{ x: number; y: number } | null>(null);
 	const marqueeAdditive = useRef(false);
 	const panStart = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+	// The live marquee rect, tracked in a ref (written by the mousedown/mousemove handlers alongside
+	// setMarquee) so onMarqueeUp reads the final rect without touching the ref during render.
+	const marqueeCurrent = useRef<Rect | null>(null);
 
 	// canvas-relative coords (undo the rail inset).
 	const toCanvas = useCallback(
@@ -98,12 +101,18 @@ export function useCanvasPointer(deps: CanvasPointerDeps): CanvasPointer {
 		},
 		[deps]
 	);
-	const onPanUp = useCallback(() => {
-		window.removeEventListener('mousemove', onPanMove);
-		window.removeEventListener('mouseup', onPanUp);
-		panStart.current = null;
-		setPanning(false);
-	}, [onPanMove]);
+	// Named function expression so the removeEventListener can reference the handler via its own
+	// in-scope name (the same fn object addEventListener registered) instead of the outer const —
+	// which the compiler would flag as "accessed before it is declared".
+	const onPanUp = useCallback(
+		function onPanUp() {
+			window.removeEventListener('mousemove', onPanMove);
+			window.removeEventListener('mouseup', onPanUp);
+			panStart.current = null;
+			setPanning(false);
+		},
+		[onPanMove]
+	);
 	const startPan = useCallback(
 		(event: React.MouseEvent) => {
 			const p = deps.pan();
@@ -121,37 +130,40 @@ export function useCanvasPointer(deps: CanvasPointerDeps): CanvasPointer {
 			const start = marqueeStart.current;
 			if (!start) return;
 			const p = toCanvas(event.clientX, event.clientY);
-			setMarquee({
+			const rect: Rect = {
 				x: Math.min(p.x, start.x),
 				y: Math.min(p.y, start.y),
 				w: Math.abs(p.x - start.x),
 				h: Math.abs(p.y - start.y)
-			});
+			};
+			marqueeCurrent.current = rect; // keep the ref in step with state (both set here, off-render)
+			setMarquee(rect);
 		},
 		[toCanvas]
 	);
-	const onMarqueeUp = useCallback(() => {
-		window.removeEventListener('mousemove', onMarqueeMove);
-		window.removeEventListener('mouseup', onMarqueeUp);
-		const m = marqueeCurrent.current;
-		setMarquee(null);
-		marqueeStart.current = null;
-		if (!m || (m.w < 3 && m.h < 3)) return; // a click, not a drag → leave selection as cleared
-		const a = canvasToWorld(m.x, m.y);
-		const b = canvasToWorld(m.x + m.w, m.y + m.h);
-		const box: Rect = { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
-		const { ids, primary } = marqueeSelection(
-			deps.renderables(),
-			box,
-			marqueeAdditive.current,
-			deps.selectedIds()
-		);
-		deps.setSelection(ids, primary);
-	}, [onMarqueeMove, canvasToWorld, deps]);
-
-	// Mirror the live marquee into a ref so onMarqueeUp reads the final rect (it set state async).
-	const marqueeCurrent = useRef<Rect | null>(null);
-	marqueeCurrent.current = marquee;
+	// Named function expression (see onPanUp) so removeEventListener can reference the handler itself.
+	const onMarqueeUp = useCallback(
+		function onMarqueeUp() {
+			window.removeEventListener('mousemove', onMarqueeMove);
+			window.removeEventListener('mouseup', onMarqueeUp);
+			const m = marqueeCurrent.current;
+			setMarquee(null);
+			marqueeStart.current = null;
+			marqueeCurrent.current = null;
+			if (!m || (m.w < 3 && m.h < 3)) return; // a click, not a drag → leave selection as cleared
+			const a = canvasToWorld(m.x, m.y);
+			const b = canvasToWorld(m.x + m.w, m.y + m.h);
+			const box: Rect = { x: a.x, y: a.y, w: b.x - a.x, h: b.y - a.y };
+			const { ids, primary } = marqueeSelection(
+				deps.renderables(),
+				box,
+				marqueeAdditive.current,
+				deps.selectedIds()
+			);
+			deps.setSelection(ids, primary);
+		},
+		[onMarqueeMove, canvasToWorld, deps]
+	);
 
 	const onCanvasMouseDown = useCallback(
 		(event: React.MouseEvent) => {
@@ -195,7 +207,9 @@ export function useCanvasPointer(deps: CanvasPointerDeps): CanvasPointer {
 				const additive = hit.id === 'studio.marqueeAdd';
 				const p = toCanvas(event.clientX, event.clientY);
 				marqueeStart.current = p;
-				setMarquee({ x: p.x, y: p.y, w: 0, h: 0 });
+				const rect: Rect = { x: p.x, y: p.y, w: 0, h: 0 };
+				marqueeCurrent.current = rect; // seed the ref so a click (no move) reads {w:0,h:0}
+				setMarquee(rect);
 				marqueeAdditive.current = additive;
 				if (!additive) deps.clearSelection();
 				window.addEventListener('mousemove', onMarqueeMove);

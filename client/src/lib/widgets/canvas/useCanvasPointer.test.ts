@@ -47,7 +47,7 @@ const ev = (o: Over) =>
 		target: canvasEl,
 		preventDefault: () => undefined,
 		...o
-	} as unknown as React.MouseEvent);
+	}) as unknown as React.MouseEvent;
 
 // Release any window listeners a pan/marquee attached, and reset transient state between cases.
 function release() {
@@ -55,7 +55,7 @@ function release() {
 }
 
 const rend = (selectId: string, rect: { x: number; y: number; w: number; h: number }): Renderable =>
-	({ selectId, rect } as unknown as Renderable);
+	({ selectId, rect }) as unknown as Renderable;
 
 afterEach(() => {
 	release();

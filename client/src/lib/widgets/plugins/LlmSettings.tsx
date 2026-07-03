@@ -222,7 +222,19 @@ export default function LlmSettings() {
 	// dropdown populates without a manual "↻ Models" click. Keyed on `provider`/`hasKey` ONLY — a
 	// not-yet-saved key typed char-by-char must not fire a request per keystroke; use ↻ Models for that.
 	useEffect(() => {
-		if (canListModels) void onLoadModels();
+		if (!canListModels) return;
+		// Defer the auto-load off the synchronous effect body: onLoadModels sets a `loading` status
+		// immediately, and doing that synchronously inside an effect triggers a cascading render the
+		// React Compiler flags. A macrotask hop lands the updates after commit (imperceptible); the
+		// manual ↻ Models button still calls onLoadModels directly from its handler.
+		let cancelled = false;
+		const id = setTimeout(() => {
+			if (!cancelled) void onLoadModels();
+		}, 0);
+		return () => {
+			cancelled = true;
+			clearTimeout(id);
+		};
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [provider, hasKey]);
 

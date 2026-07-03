@@ -30,9 +30,12 @@ const DEFAULT_GAP = 4;
 
 export default function CpuCoresCanvas(props: Props) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
-	// Latest props read by the draw without re-subscribing the ResizeObserver.
+	// Latest props read by the draw without re-subscribing the ResizeObserver. Written in a commit
+	// effect (not during render) — the draw only reads it later from the ResizeObserver / telemetry tick.
 	const propsRef = useRef(props);
-	propsRef.current = props;
+	useEffect(() => {
+		propsRef.current = props;
+	});
 
 	const draw = useCallback((): void => {
 		const canvas = canvasRef.current;

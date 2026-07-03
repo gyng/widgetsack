@@ -3,7 +3,7 @@
 // condition icon, the temperature, the condition label, today's high/low, and optional detail
 // (feels-like / humidity / wind). BARE DOM; styled in Weather.css via --np-* tokens. Server-side poll
 // (~15 min) → very low churn. No location configured → "—".
-import type { CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
 import type { SensorState } from '../../core/telemetry';
 import { weatherInfo, labelForecast, type ForecastCell } from '../../core/weather';
 import './Weather.css';
@@ -28,6 +28,9 @@ export default function Weather({
 	forecastDays = 0,
 	color
 }: Props) {
+	// Snapshot the clock once at mount for the forecast day labels (Today / weekday). Reading it during
+	// render would be impure, and the labels only need day granularity, so a mount snapshot suffices.
+	const [now] = useState(() => Date.now());
 	const temp = scalar(sensors.temp);
 	const code = scalar(sensors.code);
 	const isDay = scalar(sensors.is_day);
@@ -55,7 +58,7 @@ export default function Weather({
 			low: scalar(sensors[`d${i}low`])
 		});
 	}
-	const forecast = labelForecast(cells, Date.now()).filter(
+	const forecast = labelForecast(cells, now).filter(
 		(d) => d.high != null || d.low != null || d.code != null
 	);
 

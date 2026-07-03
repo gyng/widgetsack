@@ -4,7 +4,7 @@
 // injects into the studio document, so editing a token (or switching theme) restyles the preview
 // live, exactly as it will the overlay. Kept dependency-light (no spectrum/now-playing) so it needs
 // no extra context. Co-located test in ThemePreview.test.tsx.
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { createTelemetryHub, type SensorSample, type TelemetryHub } from '../core/telemetry';
 import { createWidget } from '../core/widget';
 import type { WidgetInstance } from '../core/layout';
@@ -46,9 +46,10 @@ function build(
 }
 
 export default function ThemePreview() {
+	// new Date()/Date.now() is fine in a live component (only the screenshot gallery freezes the clock);
+	// seeded once at mount via lazy state so the render body stays pure.
+	const [now] = useState(() => Date.now());
 	const { hub, items } = useMemo(() => {
-		// new Date() is fine in a live component (only the screenshot gallery freezes the clock).
-		const now = Date.now();
 		return {
 			hub: seedHub(now),
 			items: [
@@ -60,7 +61,7 @@ export default function ThemePreview() {
 				build('button', 'tp-btn', 90, 38, undefined, { label: 'tap' })
 			]
 		};
-	}, []);
+	}, [now]);
 
 	return (
 		<div className="theme-preview" aria-label="theme preview">

@@ -178,8 +178,8 @@ function SelectCombobox({
 			? ''
 			: inputValue
 		: inputValue === displayValue(options, value, false)
-		? ''
-		: inputValue;
+			? ''
+			: inputValue;
 	const items = useMemo(() => filterOptions(options, query), [options, query]);
 
 	const {
@@ -217,14 +217,16 @@ function SelectCombobox({
 	});
 	const rect = useAnchoredRect(wrapRef, isOpen);
 
-	// On close, a non-custom combobox with stray filter text snaps back to the selected label.
-	useEffect(() => {
+	// On close, a non-custom combobox with stray filter text snaps back to the selected label. Runs on
+	// the open→close transition only (store-previous idiom), during render rather than in an effect.
+	const [prevOpen, setPrevOpen] = useState(isOpen);
+	if (isOpen !== prevOpen) {
+		setPrevOpen(isOpen);
 		if (!isOpen && !allowCustom) {
 			const d = displayValue(options, value, false);
 			if (inputValue !== d) setInputValue(d);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- run on open/close transitions only
-	}, [isOpen]);
+	}
 
 	return (
 		<div

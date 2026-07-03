@@ -54,8 +54,11 @@ export function useKeyboard(deps: KeyboardDeps): {
 		setSpaceDown(v);
 	};
 	// Hold deps in a ref so the window listeners stay stable (registered once) but read latest.
+	// Mirrored in a commit effect (before the mount effect below only reads d.current from listeners).
 	const d = useRef(deps);
-	d.current = deps;
+	useEffect(() => {
+		d.current = deps;
+	});
 
 	useEffect(() => {
 		const onKeydown = (event: KeyboardEvent) => {
