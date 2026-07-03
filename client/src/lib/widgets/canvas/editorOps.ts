@@ -294,7 +294,7 @@ export function splitNode(
 				gap: node.gap,
 				pad: node.pad,
 				justify: node.justify
-		  })
+			})
 		: null;
 	let patch: Partial<Container>;
 	if (dir === 'grid') {
@@ -381,7 +381,7 @@ export function patchContainerOp(s: EditorState, id: string, patch: Partial<Cont
 				root = updateNode(
 					root,
 					id,
-					(n) => ({ ...n, children: (n as Container).children.slice(0, cap) } as LayoutNode)
+					(n) => ({ ...n, children: (n as Container).children.slice(0, cap) }) as LayoutNode
 				);
 			}
 		}
@@ -406,7 +406,7 @@ export function setNodeBasis(s: EditorState, id: string, basis: Length | undefin
 export function setNodeBases(s: EditorState, entries: { id: string; basis: Length }[]): Patch {
 	let root = s.monitor.root;
 	for (const { id, basis } of entries) {
-		root = updateNode(root, id, (n) => ({ ...n, basis } as LayoutNode));
+		root = updateNode(root, id, (n) => ({ ...n, basis }) as LayoutNode);
 	}
 	return { monitor: { ...s.monitor, root } };
 }

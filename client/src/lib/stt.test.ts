@@ -106,7 +106,10 @@ describe('stt', () => {
 			onstop: (() => void) | null = null;
 			onerror: (() => void) | null = null;
 			started = false;
-			constructor(public stream: unknown, public opts: unknown) {
+			constructor(
+				public stream: unknown,
+				public opts: unknown
+			) {
 				created.push(this);
 			}
 			start(): void {
@@ -134,7 +137,10 @@ describe('stt', () => {
 			'Blob',
 			class {
 				type: string;
-				constructor(public parts: Uint8Array[], opts?: { type?: string }) {
+				constructor(
+					public parts: Uint8Array[],
+					opts?: { type?: string }
+				) {
 					this.type = opts?.type ?? '';
 				}
 				arrayBuffer(): Promise<ArrayBuffer> {

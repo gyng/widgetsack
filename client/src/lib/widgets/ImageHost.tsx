@@ -10,27 +10,23 @@ import { wallpaperAssetUrl } from '../overlay';
 type Props = { src?: string; fit?: string; alt?: string };
 
 export default function ImageHost({ src = '', fit = 'contain', alt = '' }: Props) {
-	const [url, setUrl] = useState('');
+	const s = (src ?? '').trim();
+	// The synchronous cases (empty, or a direct URL) resolve during render; `null` means the source is
+	// a bare filename that needs the async wallpapers/ lookup below.
+	const direct = !s ? '' : isDirectUrl(s) ? s : null;
+	const [resolved, setResolved] = useState('');
 
 	useEffect(() => {
-		const s = (src ?? '').trim();
-		if (!s) {
-			setUrl('');
-			return;
-		}
-		if (isDirectUrl(s)) {
-			setUrl(s);
-			return;
-		}
+		if (direct !== null) return; // handled during render
 		// A bare filename → resolve against the wallpapers/ folder (best-effort; empty on failure).
 		let alive = true;
 		void wallpaperAssetUrl(s).then((u) => {
-			if (alive) setUrl(u);
+			if (alive) setResolved(u);
 		});
 		return () => {
 			alive = false;
 		};
-	}, [src]);
+	}, [direct, s]);
 
-	return <ImageWidget url={url} fit={fit} alt={alt} />;
+	return <ImageWidget url={direct ?? resolved} fit={fit} alt={alt} />;
 }

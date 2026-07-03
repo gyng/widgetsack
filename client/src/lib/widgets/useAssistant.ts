@@ -65,9 +65,12 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 	const [text, setText] = useState('');
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
-	// Latest config without retriggering the generator's identity on every keystroke.
+	// Latest config without retriggering the generator's identity on every keystroke. Committed after
+	// render (not during it); `generate` only reads it later, from timers/handlers.
 	const cfgRef = useRef(cfg);
-	cfgRef.current = cfg;
+	useEffect(() => {
+		cfgRef.current = cfg;
+	});
 
 	const generate = useCallback(async (): Promise<void> => {
 		setBusy(true);

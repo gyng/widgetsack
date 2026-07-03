@@ -17,7 +17,7 @@ export type Pointer = { x: number; y: number; shift: boolean };
 export function armedZone(zones: Zone[], p: Pointer): Zone | null {
 	if (!p.shift) return null;
 	const id = hitTestZone(zones, p.x, p.y);
-	return id ? zones.find((z) => z.id === id) ?? null : null;
+	return id ? (zones.find((z) => z.id === id) ?? null) : null;
 }
 
 /** Build a {@link ZoneMatch} from a zone widget's config (matchExe/matchClass/matchTitle), or

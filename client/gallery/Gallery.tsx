@@ -273,7 +273,7 @@ export default function Gallery() {
 						key: f.key,
 						label: f.label,
 						kind: f.kind,
-						help: 'help' in f ? f.help ?? null : null
+						help: 'help' in f ? (f.help ?? null) : null
 					}))
 				};
 			})

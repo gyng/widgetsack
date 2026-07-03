@@ -35,8 +35,7 @@ export type PackageSandbox = {
 };
 
 export type CreateSandboxResult =
-	| { ok: true; sandbox: PackageSandbox }
-	| { ok: false; error: string };
+	{ ok: true; sandbox: PackageSandbox } | { ok: false; error: string };
 
 /**
  * Compile `script` (a CommonJS-style source.js that assigns `module.exports`) into a fresh,
@@ -64,7 +63,7 @@ export async function createPackageSandbox(script: string): Promise<CreateSandbo
 			if (out.error) {
 				const err = ctx.dump(out.error) as { message?: string } | string | null;
 				out.error.dispose();
-				const msg = typeof err === 'object' && err !== null ? err.message ?? 'error' : err;
+				const msg = typeof err === 'object' && err !== null ? (err.message ?? 'error') : err;
 				return { ok: false, error: String(msg) };
 			}
 			const v = ctx.dump(out.value);
@@ -116,8 +115,8 @@ export async function createPackageSandbox(script: string): Promise<CreateSandbo
 				disposed
 					? { ok: false, error: 'sandbox disposed' }
 					: // Responses are injected as DATA: JSON.stringify output is a valid JS literal, so
-					  // a hostile body can't escape into code.
-					  evalJson(`JSON.stringify(__src.transform(${JSON.stringify(responses)}))`),
+						// a hostile body can't escape into code.
+						evalJson(`JSON.stringify(__src.transform(${JSON.stringify(responses)}))`),
 			dispose: () => {
 				if (disposed) return;
 				disposed = true;

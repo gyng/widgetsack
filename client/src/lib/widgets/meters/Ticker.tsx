@@ -70,7 +70,7 @@ export default function Ticker({
 
 	const seriesValue = sensors.series?.value;
 	const series = seriesValue?.kind === 'series' ? seriesValue.value : [];
-	const spark = series.length >= 2 ? series : sensors.price?.history ?? [];
+	const spark = series.length >= 2 ? series : (sensors.price?.history ?? []);
 
 	return (
 		<div

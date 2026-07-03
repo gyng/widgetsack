@@ -3,7 +3,7 @@
 // blocks switching widgets from the list while one is already open. The def-edit MODE itself
 // (enterDefEdit / endDefEdit / preview) lives in the editor model's reducer — this hook is just
 // the studio-bar/list-side wrappers plus the rename/delete prompts around handleOp.
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { LayoutOp } from '../ops';
 import { defInUse, type EditorModel } from './useEditorModel';
 import type { EditorState } from './types';
@@ -39,11 +39,14 @@ export function useDefEditor({
 	dispatch,
 	handleOp
 }: Deps): DefEditor {
-	// Latest values for the stable callbacks (read synchronously — no stale closure).
+	// Latest values for the stable callbacks (read in event handlers — no stale closure). Mirrored in
+	// a commit effect (not during render); the callbacks only read these later, from user actions.
 	const editingDefIdRef = useRef(editingDefId);
-	editingDefIdRef.current = editingDefId;
 	const previewingRef = useRef(previewing);
-	previewingRef.current = previewing;
+	useEffect(() => {
+		editingDefIdRef.current = editingDefId;
+		previewingRef.current = previewing;
+	});
 
 	const foldOpenDef = useCallback(() => {
 		// A read-only preview is discarded (endPreview); a real def edit is folded back (endDefEdit).

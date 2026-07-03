@@ -72,9 +72,11 @@ export function useSacks({
 	// Names + a peek inside each (count of defs, theme name, override count) so the Import list can
 	// say what a sack contains instead of a bare filename. Sacks are small local JSON; reading each
 	// on section-open is cheap. A file that doesn't parse still lists (widgets: null → "unreadable").
-	const refreshSacks = useCallback(async () => {
+	// Pure I/O (no setState) so it can be awaited from an effect's async closure without the compiler
+	// treating it as a synchronous effect state update.
+	const loadSackInfos = useCallback(async (): Promise<SackInfo[]> => {
 		const names = await listSacks();
-		const infos = await Promise.all(
+		return Promise.all(
 			names.map(async (name): Promise<SackInfo> => {
 				const raw = await readSack(name);
 				const sack = raw ? unpackSack(raw) : null;
@@ -87,8 +89,11 @@ export function useSacks({
 				};
 			})
 		);
-		setSackInfos(infos);
 	}, []);
+	// Reload the list into state — used by event handlers (exportSack), not from an effect body.
+	const refreshSacks = useCallback(async () => {
+		setSackInfos(await loadSackInfos());
+	}, [loadSackInfos]);
 
 	const exportSack = useCallback(async () => {
 		if (editingDefId != null) {
@@ -166,10 +171,19 @@ export function useSacks({
 		[editingDefId, commitOp, setThemeList, adoptTheme]
 	);
 
-	// Load the saved sacks (+ their summaries) when the Sacks section opens.
+	// Load the saved sacks (+ their summaries) when the Sacks section opens. setState lives in the
+	// async .then() (not the effect body), and a cancel guard drops a stale load if the section
+	// closes / the studio unmounts mid-flight.
 	useEffect(() => {
-		if (studio && navSection === 'sacks') void refreshSacks();
-	}, [studio, navSection, refreshSacks]);
+		if (!(studio && navSection === 'sacks')) return;
+		let cancelled = false;
+		void loadSackInfos().then((infos) => {
+			if (!cancelled) setSackInfos(infos);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [studio, navSection, loadSackInfos]);
 
 	return { sackInfos, exportSack, importSack };
 }

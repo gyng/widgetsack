@@ -4,7 +4,7 @@
 // preview matches how it renders on the canvas, theme tokens and all. A tree is drawn at its native
 // size and scaled to fit the box. Self-sourcing / bespoke widgets that need the backend (now-playing,
 // spectrum, HA…) just render their idle state here, which still previews their chrome.
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { createTelemetryHub, type SensorSample, type TelemetryHub } from '../core/telemetry';
 import { createWidget } from '../core/widget';
 import { leaf, type LayoutNode, type WidgetInstance } from '../core/layoutTree';
@@ -73,7 +73,9 @@ type Props = {
 };
 
 export default function WidgetPreview({ type, node, size, w = 200, h = 120 }: Props) {
-	const hub = useMemo(() => seedHub(Date.now()), []);
+	// Seed the demo clock once at mount via lazy state, keeping Date.now() (impure) out of render.
+	const [now] = useState(() => Date.now());
+	const hub = useMemo(() => seedHub(now), [now]);
 	// Normalise to a (tree, native-size) pair: a type becomes a one-leaf tree at the box size (scale 1);
 	// a def/template tree keeps its authored size and is scaled to fit.
 	const { tree, nat } = useMemo<{ tree: LayoutNode | null; nat: { w: number; h: number } }>(() => {

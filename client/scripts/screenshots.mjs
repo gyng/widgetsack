@@ -46,7 +46,7 @@ async function main() {
 					? null
 					: new Promise((res) => {
 							img.onload = img.onerror = res;
-					  })
+						})
 			)
 		);
 	});

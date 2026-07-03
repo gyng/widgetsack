@@ -175,7 +175,7 @@ describe('Inspector sensor typeahead options', () => {
 				onOp={vi.fn()}
 			/>
 		);
-		fireEvent.click(screen.getByLabelText('Toggle options')); // open the sensor combobox
+		fireEvent.click(screen.getByRole('combobox', { name: 'sensor' })); // open the sensor combobox via its own input
 		expect(screen.getByText('Temp (°C)')).toBeInTheDocument();
 		expect(
 			screen.getByText('ha.sensor.temp', { selector: '.np-select-opt-hint' })

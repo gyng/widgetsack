@@ -37,8 +37,8 @@ const SensorRow = memo(function SensorRow({
 						activity.referenced
 							? 'used by a widget — stays active after the studio closes'
 							: activity.active
-							? 'always-on — stays active after the studio closes'
-							: 'studio-only — stops when the studio closes'
+								? 'always-on — stays active after the studio closes'
+								: 'studio-only — stops when the studio closes'
 					}
 				>
 					{activity.referenced ? '★' : activity.active ? '●' : '○'}
@@ -90,7 +90,7 @@ export default function SensorList({
 					key={id}
 					hub={hub}
 					id={id}
-					badge={groupFor ? null : badgeFor?.(id) ?? null}
+					badge={groupFor ? null : (badgeFor?.(id) ?? null)}
 					activity={activityFor?.(id) ?? null}
 				/>
 			))}

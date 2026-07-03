@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-
 import { describe, expect, it } from 'vitest';
 import type { PlaybackModel, SessionModel, SessionRecord } from '../../../stores/stores';
 import {

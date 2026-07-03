@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 
 // Outer-ring Tauri adapter for streamed LLM tokens. We mock @tauri-apps/api/event's `listen` and the
 // store's pure `handleDelta` so the reference-counting + attach race can be exercised without a Tauri
@@ -10,7 +10,7 @@ vi.mock('../../stores/llmStore', () => ({ handleDelta: (...a: unknown[]) => hand
 
 // `listen` is reconfigured per test. By default it resolves immediately to a spy unlisten fn.
 const unlistenSpy = vi.fn();
-let listen: ReturnType<typeof vi.fn>;
+let listen: Mock<(...args: unknown[]) => unknown>;
 vi.mock('@tauri-apps/api/event', () => ({ listen: (...a: unknown[]) => listen(...a) }));
 
 type Source = typeof import('./source');

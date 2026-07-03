@@ -3,7 +3,7 @@ import { setTokens } from './editorOps';
 
 // setTokens only reads `tokenOverrides`, so a minimal partial state suffices.
 const state = (tokenOverrides: Record<string, string> = {}) =>
-	({ tokenOverrides } as unknown as Parameters<typeof setTokens>[0]);
+	({ tokenOverrides }) as unknown as Parameters<typeof setTokens>[0];
 
 describe('setTokens op (wallpaper auto-theme)', () => {
 	it('merges a whole map over the existing overrides', () => {

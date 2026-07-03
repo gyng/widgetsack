@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, type Mock } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 
 // The only module call the panel makes itself is the stateless open-folder helper — mock the Tauri
@@ -7,14 +7,14 @@ vi.mock('../overlay', () => ({ openWallpapersDir: vi.fn() }));
 
 import BackgroundPanel from './BackgroundPanel';
 import { openWallpapersDir } from '../overlay';
-import type { BackgroundSpec } from '../core/layoutTree';
+import type { BackgroundKind, BackgroundSpec } from '../core/layoutTree';
 import type { AutoTheme } from './canvas/useAutoTheme';
 
 type Handlers = {
-	patchBg: ReturnType<typeof vi.fn>;
-	setBgKind: ReturnType<typeof vi.fn>;
-	clearBg: ReturnType<typeof vi.fn>;
-	refreshWallpapers: ReturnType<typeof vi.fn>;
+	patchBg: Mock<(patch: Partial<BackgroundSpec>) => void>;
+	setBgKind: Mock<(kind: BackgroundKind) => void>;
+	clearBg: Mock<() => void>;
+	refreshWallpapers: Mock<() => void>;
 };
 
 function handlers(): Handlers {

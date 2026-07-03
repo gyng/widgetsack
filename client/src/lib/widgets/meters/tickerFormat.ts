@@ -55,7 +55,7 @@ const CURRENCY_SYMBOLS: Record<string, string> = {
 
 /** A leading symbol for a currency code ($, €, …), or '' for an unknown code (show the bare number). */
 export function currencySymbol(code: string | null | undefined): string {
-	return code ? CURRENCY_SYMBOLS[code.toUpperCase()] ?? '' : '';
+	return code ? (CURRENCY_SYMBOLS[code.toUpperCase()] ?? '') : '';
 }
 
 /** Friendly label for a Yahoo market state, or '' for an open/regular session (nothing to flag). */

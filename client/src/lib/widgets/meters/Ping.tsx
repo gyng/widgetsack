@@ -34,10 +34,10 @@ export default function Ping({
 		level === 'unknown'
 			? '—'
 			: level === 'down'
-			? 'down'
-			: ms == null
-			? 'up'
-			: `${Math.round(ms)} ms`;
+				? 'down'
+				: ms == null
+					? 'up'
+					: `${Math.round(ms)} ms`;
 
 	return (
 		<div className="ping np-ping" style={vars} data-level={level}>

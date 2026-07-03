@@ -4,7 +4,14 @@
 // from localStorage, exposes them as inline vars (overriding the CSS defaults), and drives a divider
 // drag. Persisted per-machine (a UI pref, not part of the portable widgets.json). The drag math is
 // pure (clampPane / applyDelta) and unit-tested in usePaneSizes.test.ts.
-import { useCallback, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import {
+	useCallback,
+	useEffect,
+	useRef,
+	useState,
+	type CSSProperties,
+	type PointerEvent
+} from 'react';
 
 import { readJson, writeJson } from '../../../stores/persist';
 
@@ -50,8 +57,11 @@ export type PaneSizing = {
 
 export function usePaneSizes(studio: boolean): PaneSizing {
 	const [sizes, setSizes] = useState<PaneSizes>(() => (studio ? load() : PANE_DEFAULTS));
+	// Mirror the latest sizes for the pointer handlers (startResize / onUp read it later, off-render).
 	const sizesRef = useRef(sizes);
-	sizesRef.current = sizes;
+	useEffect(() => {
+		sizesRef.current = sizes;
+	});
 
 	const startResize = useCallback((edge: Edge, e: PointerEvent) => {
 		e.preventDefault();
@@ -75,7 +85,7 @@ export function usePaneSizes(studio: boolean): PaneSizing {
 				'--rail-l': `${sizes.railL}px`,
 				'--rail-r': `${sizes.railR}px`,
 				'--tree-w': `${sizes.treeW}px`
-		  } as CSSProperties)
+			} as CSSProperties)
 		: {};
 
 	return { vars, startResize };
