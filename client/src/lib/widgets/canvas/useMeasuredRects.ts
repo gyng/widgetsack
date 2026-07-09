@@ -84,7 +84,7 @@ export function useMeasuredRects({ worldRef, zoom, deps, enabled = true }: Args)
 			ro.disconnect();
 			mo.disconnect();
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
 	}, [measure, enabled, ...deps]);
 
 	return { measured, measuredRef };

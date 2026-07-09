@@ -1144,7 +1144,7 @@ export function createWidget(type: string, id: string): WidgetInstance {
 		id,
 		type,
 		rect: { x: 24, y: 24, w: size.w, h: size.h },
-		config: { ...(meta?.defaultConfig ?? {}) }
+		config: { ...meta?.defaultConfig }
 	};
 	if (meta?.defaultSensor) inst.sensor = meta.defaultSensor;
 	if (meta?.interactive) inst.interactive = true;

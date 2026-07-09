@@ -28,7 +28,7 @@ export function monitorKeys(file: LayoutFile | null): string[] {
 }
 
 function monitorsOf(file: LayoutFile | null): Record<string, MonitorLayout> {
-	return { ...(parseLayoutAny(file ?? {})?.monitors ?? {}) };
+	return { ...parseLayoutAny(file ?? {})?.monitors };
 }
 
 /** Resolve which monitor key to act on: the requested one (created if absent), else the first existing,
@@ -150,6 +150,6 @@ export function applyOpsToFile(
 	const target: MonitorLayout = monitors[key] ?? { root: emptyRoot(), floating: [] };
 	const result = applyAssistantOps(target, ops, makeId);
 	monitors[key] = result.monitor;
-	const out: LayoutFile = { ...(file ?? {}), version: 2, monitors };
+	const out: LayoutFile = { ...file, version: 2, monitors };
 	return { file: out, monitorKey: key, result };
 }

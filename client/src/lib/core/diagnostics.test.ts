@@ -35,7 +35,7 @@ describe('heapFromMemory', () => {
 	it('returns null when memory is missing or malformed', () => {
 		expect(heapFromMemory(undefined)).toBeNull();
 		expect(heapFromMemory(null)).toBeNull();
-		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		// oxlint-disable-next-line @typescript-eslint/no-explicit-any
 		expect(heapFromMemory({} as any)).toBeNull();
 	});
 });

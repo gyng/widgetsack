@@ -960,7 +960,7 @@ export default function Canvas({ studio = false }: Props) {
 		if (nextTheme !== null) await adoptTheme(nextTheme);
 		dispatch({ type: 'resetHistory' });
 		dispatch({ type: 'setBaseline' });
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
 	}, [dispatch, adoptTheme]);
 	// myMonitor latest, for reloadLayout/persist reading inside listeners. Mirrored in the commit
 	// effect S3 near the end of the component (not during render).
@@ -1094,7 +1094,7 @@ export default function Canvas({ studio = false }: Props) {
 						const g = l.unit;
 						const gx = typeof g.config?.x === 'number' ? g.config.x : 0;
 						const gy = typeof g.config?.y === 'number' ? g.config.y : 0;
-						return leaf({ ...g, config: { ...(g.config ?? {}), x: gx + dx, y: gy + dy } });
+						return leaf({ ...g, config: { ...g.config, x: gx + dx, y: gy + dy } });
 					}
 					const u = l.unit as WidgetInstance;
 					return leaf({ ...u, rect: { ...u.rect, x: u.rect.x + dx, y: u.rect.y + dy } });
@@ -1292,7 +1292,9 @@ export default function Canvas({ studio = false }: Props) {
 				await revertDraftToDisk();
 			}
 			setMyMonitor(key);
-			// eslint-disable-next-line react-hooks/immutability -- eager latest-ref sync (mirrors the ref-sync effect); read by later async steps in this handler
+			// Eager latest-ref sync (mirrors the ref-sync effect below); read by later async steps in this
+			// handler. (react-hooks/immutability flagged this under eslint-plugin-react-hooks v7; oxlint's
+			// react plugin has no equivalent rule, so this is now just a plain mutation, no directive needed.)
 			myMonitorRef.current = key;
 			if (studio) writeStudioMonitor(key); // sticky across reloads
 			dispatch({ type: 'patch', patch: { selectedId: null, selectedIds: [] } });
@@ -2043,7 +2045,7 @@ export default function Canvas({ studio = false }: Props) {
 					const g = l.unit;
 					const gx = typeof g.config?.x === 'number' ? g.config.x : 0;
 					const gy = typeof g.config?.y === 'number' ? g.config.y : 0;
-					return leaf({ ...g, config: { ...(g.config ?? {}), x: gx + dx, y: gy + dy } });
+					return leaf({ ...g, config: { ...g.config, x: gx + dx, y: gy + dy } });
 				}
 				const u = l.unit as WidgetInstance;
 				return leaf({ ...u, rect: { ...u.rect, x: u.rect.x + dx, y: u.rect.y + dy } });
@@ -2066,7 +2068,9 @@ export default function Canvas({ studio = false }: Props) {
 	// mirror can't satisfy both rules at once, and this project doesn't run the React Compiler; these are
 	// refs, mutable by design, read only after commit.)
 	useEffect(() => {
-		/* eslint-disable react-hooks/immutability */
+		// (react-hooks/immutability flagged these ref writes under eslint-plugin-react-hooks v7; oxlint's
+		// react plugin has no equivalent rule, so no directive is needed here anymore — see the comment
+		// above this effect for why these are refs, mutable by design.)
 		myMonitorRef.current = myMonitor;
 		monitorRef.current = monitor;
 		pendingExtrasRef.current = pendingExtras;
@@ -2088,7 +2092,6 @@ export default function Canvas({ studio = false }: Props) {
 		navSectionRef.current = navSection;
 		designingRef.current = designing;
 		menuRef.current = menu;
-		/* eslint-enable react-hooks/immutability */
 	});
 
 	// --- canvas pointer (marquee + pan) ---
@@ -3443,7 +3446,7 @@ function patchFloatingGroupBox(
 							unit: {
 								...(l.unit as Group),
 								config: {
-									...((l.unit as Group).config ?? {}),
+									...(l.unit as Group).config,
 									x: rect.x,
 									y: rect.y,
 									w: rect.w,

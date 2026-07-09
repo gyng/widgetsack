@@ -371,14 +371,15 @@ presentational (pure) components**. Current code already models the key split:
 ## 7. Conventions
 
 ### Formatting & linting
-- **Frontend:** Prettier config ([.prettierrc](client/.prettierrc)) — **tabs**, single
-  quotes, **no trailing commas**, `printWidth: 100`. ESLint
-  ([.eslintrc.cjs](client/.eslintrc.cjs)) extends `eslint:recommended`,
-  `@typescript-eslint/recommended`, and the React + React-Hooks plugins, with `prettier`.
-  **Lint must pass with zero warnings** (`--max-warnings 0`). Run `npm run format` /
-  `npm run lint:fix` before committing.
+- **Frontend:** oxfmt config ([.oxfmtrc.json](client/.oxfmtrc.json)) — **tabs**, single
+  quotes, **no trailing commas**, `printWidth: 100`; covers TS/TSX/JSON/CSS/MD/HTML. oxlint
+  ([.oxlintrc.json](client/.oxlintrc.json)) enables the `typescript`, `unicorn`, `oxc`, and
+  `react` plugins (rules-of-hooks + exhaustive-deps cover the hooks rules), with the
+  `correctness` category on plus explicit overrides mirroring the old ESLint
+  recommended/react-recommended tiers. **Lint must pass with zero warnings**
+  (`--max-warnings=0`). Run `npm run format` / `npm run lint:fix` before committing.
 - **TypeScript:** `strict` mode, `checkJs` on, React JSX transform. No new `any` — the few
-  existing ones are explicitly eslint-disabled inline; follow that pattern only when truly
+  existing ones are explicitly oxlint-disabled inline; follow that pattern only when truly
   necessary.
 - **Rust:** standard `rustfmt`; keep `cargo clippy` clean (it's a CI gate). Match the
   existing wrapper/`From`-impl and pure-seam style.

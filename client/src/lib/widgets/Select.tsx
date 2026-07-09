@@ -167,7 +167,7 @@ function SelectCombobox({
 			lastValue.current = value;
 			setInputValue(displayValue(options, value, !!allowCustom));
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- only an external value change resets text
+		// oxlint-disable-next-line react-hooks/exhaustive-deps -- only an external value change resets text
 	}, [value, allowCustom]);
 
 	// Filter once the user is typing; show the FULL list when the text still matches the selection (so

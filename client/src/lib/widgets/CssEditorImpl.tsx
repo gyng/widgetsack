@@ -66,7 +66,7 @@ export default function CssEditorImpl({
 			viewRef.current = null;
 		};
 		// Created once; placeholder/ariaLabel are static per usage. External value sync is handled below.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	// Reflect external value changes (theme draft seeding, programmatic resets) — but never while the

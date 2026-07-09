@@ -235,7 +235,7 @@ export default function LlmSettings() {
 			cancelled = true;
 			clearTimeout(id);
 		};
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
 	}, [provider, hasKey]);
 
 	return (

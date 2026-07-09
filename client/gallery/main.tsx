@@ -35,7 +35,7 @@ const GALLERY_INVOKE: Record<string, unknown> = {
 		}
 	]
 };
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// oxlint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).__TAURI_INTERNALS__ = {
 	transformCallback: (cb: unknown) => cb,
 	invoke: (cmd: string) => Promise.resolve(cmd in GALLERY_INVOKE ? GALLERY_INVOKE[cmd] : undefined)
