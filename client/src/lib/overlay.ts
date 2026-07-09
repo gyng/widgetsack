@@ -29,12 +29,35 @@ import { singleFlight } from './core/singleFlight';
  *  still sees it) and the backend's persistent rotating log file (so it survives the webview
  *  dying with the app — the whole point of last night's silent-death postmortem). Best-effort:
  *  the backend `log_client` invoke NEVER throws or recurses into this helper, so a logging
- *  failure can't itself take down the overlay. `component` is always 'overlay' here; `message`
- *  should name the window label / monitor key where relevant. */
-function logClient(level: 'info' | 'warn' | 'error', component: string, message: string): void {
+ *  failure can't itself take down the overlay. `component` names the caller's subsystem
+ *  ('overlay', 'layout', …); `message` should name the window label / monitor key where relevant.
+ *  Exported for the OTHER boot-path choke points (Canvas reloadLayout, useStudioInit's init catch)
+ *  so no startup failure is ever console-only again. */
+export function logClient(
+	level: 'info' | 'warn' | 'error',
+	component: string,
+	message: string
+): void {
 	if (level === 'error') console.error(`[${component}] ${message}`);
 	else console.warn(`[${component}] ${message}`);
 	invoke(COMMANDS.logClient, { level, component, message }).catch(() => undefined);
+}
+
+// One backup per session: every parse-failure path funnels here, and the FIRST one wins — later
+// calls would only re-copy the same bytes (or, worse, a default layout already saved over them).
+let layoutBackupRequested = false;
+
+/** Ask the backend to copy the current widgets.json aside (`widgets.json.bad-<ts>`) because this
+ *  session failed to PARSE it — called BEFORE the in-memory default layout can be saved over the
+ *  original, so whatever was hand-recoverable in it survives. Best-effort and once per session. */
+export function requestLayoutBackup(): void {
+	if (layoutBackupRequested) return;
+	layoutBackupRequested = true;
+	invoke<string | null>(COMMANDS.backupLayout)
+		.then((path) => {
+			if (path) logClient('warn', 'layout', `unparseable widgets.json backed up to ${path}`);
+		})
+		.catch((err) => logClient('error', 'layout', `layout backup failed: ${String(err)}`));
 }
 
 /** Apply the overlay z-order layer to THIS window: 'top' = always-on-top (default), 'bottom' =
@@ -96,8 +119,11 @@ async function populatedMonitorKeys(
 	legacyMapping?: Record<string, string>
 ): Promise<Set<string> | null> {
 	const keys = new Set<string>();
+	// Assigned once load_layout resolves — so the catch can tell "file read but UNPARSEABLE" (worth
+	// backing up before anything saves over it) from "couldn't read it at all" (nothing to copy).
+	let raw: string | null = null;
 	try {
-		const raw = await invoke<string | null>(COMMANDS.loadLayout);
+		raw = await invoke<string | null>(COMMANDS.loadLayout);
 		const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
 		if (obj && legacyMapping && typeof obj.monitors === 'object' && obj.monitors !== null) {
 			const migrated = migrateMonitorKeys(obj.monitors as Record<string, unknown>, legacyMapping);
@@ -120,6 +146,7 @@ async function populatedMonitorKeys(
 		}
 	} catch (err) {
 		logClient('error', 'overlay', `populatedMonitorKeys: load_layout failed: ${String(err)}`);
+		if (raw !== null) requestLayoutBackup();
 		return null;
 	}
 	return keys;
@@ -174,8 +201,22 @@ export async function recreateMain(): Promise<void> {
 	try {
 		const all = await getAllWebviewWindows();
 		if (all.some((w) => w.label === 'main')) return; // already present
-		const populated = await populatedMonitorKeys();
-		if (populated === null) return; // couldn't tell — leave main gone rather than guess
+		let populated = await populatedMonitorKeys();
+		if (populated === null) {
+			// Transient read failure. This may be the ONLY recreate attempt (studio-close calls once;
+			// keepalive won't fire while secondaries keep windows alive), so retry once before giving
+			// up — a genuinely broken layout still bails below, with watch_layout covering later edits.
+			await new Promise((r) => setTimeout(r, 2000));
+			populated = await populatedMonitorKeys();
+		}
+		if (populated === null) {
+			logClient(
+				'warn',
+				'overlay',
+				'recreateMain: layout unreadable after retry; leaving main down'
+			);
+			return;
+		}
 		if (!populated.has('default')) return; // primary still empty — leave it gone
 		const layer = readOverlayPrefs().overlayLayer;
 		const w = new WebviewWindow('main', {

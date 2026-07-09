@@ -12,6 +12,7 @@ import {
 	fillOwnMonitor,
 	fillPrimaryMonitor,
 	listThemes,
+	logClient,
 	monitorParam,
 	openStudio,
 	setMainWindowVisible,
@@ -183,8 +184,13 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// The primary main window is born hidden (config `visible:false`) and only revealed once
 			// init reaches `syncPrimaryOverlays`; a secondary is born hidden and reveals itself via
 			// fillOwnMonitor. If init throws before the reveal, reveal anyway so a failure can never
-			// strand a window permanently invisible (the old always-visible default).
-			console.warn('overlay init failed', err);
+			// strand a window permanently invisible (the old always-visible default). This catch is
+			// the choke point for EVERY init failure — logClient it so it survives the webview.
+			logClient(
+				'error',
+				'overlay',
+				`init failed (${d.current.studio ? 'studio' : (monitorParam() ?? 'main')}): ${String(err)}`
+			);
 			if (!cancelled && !d.current.studio) {
 				const key = monitorParam();
 				if (key) void fillOwnMonitor(key);
