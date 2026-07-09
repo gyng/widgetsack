@@ -27,8 +27,10 @@ pub mod command;
 pub mod control;
 pub mod ddc;
 pub mod display;
+pub mod displaywatch;
 pub mod event;
 pub mod ha;
+pub mod keepalive;
 pub mod listener;
 pub mod llm;
 pub mod log;
@@ -143,9 +145,20 @@ async fn main() -> Result<(), ()> {
     // (before `log::init` wires the app handle) still hits stderr + the file.
     std::panic::set_hook(Box::new(log::log_panic));
 
-    let rx_session_manager = gsmtc::SessionManager::create()
-        .await
-        .expect("{failed to create gsmtc::SessionManager");
+    // GSMTC (the Windows media-session manager) feeds the now-playing widget ONLY. If it can't be
+    // created — media APIs unavailable, a transient WinRT failure — degrade gracefully instead of
+    // crashing: log it and start the rest of the overlay app with the media pipeline disabled. One
+    // widget's data source must never take the whole overlay down (2026-07-10). `None` here skips
+    // spawning the listener task in `setup` below.
+    let rx_session_manager = match gsmtc::SessionManager::create().await {
+        Ok(rx) => Some(rx),
+        Err(err) => {
+            log::error("startup", "gsmtc unavailable; media sessions disabled")
+                .field("error", err)
+                .emit();
+            None
+        }
+    };
     // Capacity 16 (was 1): a burst of media events (e.g. a track change firing several
     // SessionUpdateEvents) can't briefly block the gsmtc listener task on a full channel.
     let (tx_gsmtc, mut rx_gsmtc) = mpsc::channel(16);
@@ -271,6 +284,7 @@ async fn main() -> Result<(), ()> {
             command::rescue_windows,
             command::reload_window,
             command::log_diag,
+            command::log_client,
             command::check_app_update,
             command::system_fonts,
             display::list_display_names,
@@ -355,26 +369,33 @@ async fn main() -> Result<(), ()> {
                 build_studio_window(app.handle());
             }
 
-            tauri::async_runtime::spawn(async move {
-                session_listener_windows_gsmtc(rx_session_manager, tx_gsmtc).await
-            });
+            // Spawn the gsmtc listener ONLY when the session manager was created (see `main`). When it
+            // wasn't, `tx_gsmtc` is never moved into a listener task and drops at the end of `setup`,
+            // closing the channel so the consumer loop below exits cleanly instead of spinning.
+            if let Some(rx_session_manager) = rx_session_manager {
+                tauri::async_runtime::spawn(async move {
+                    session_listener_windows_gsmtc(rx_session_manager, tx_gsmtc).await
+                });
+            }
 
             let app_handle = app.handle().clone();
 
             tauri::async_runtime::spawn(async move {
-                loop {
-                    if let Some(event) = rx_gsmtc.recv().await {
-                        let state: State<AppState> = app_handle.state();
-                        let mut sessions = state.sessions.lock().await;
-                        let delta = updater(&mut sessions, event);
-                        // Register the cover BEFORE emitting so the webview's immediate fetch of the
-                        // serialized `url` finds the bytes (art.rs); a media update is the only delta
-                        // that carries one.
-                        if let Some(record) = &delta.1 {
-                            art::register_cover(&app_handle, record);
-                        }
-                        emit_to_bridge(&app_handle, delta);
+                // `while let` (not `loop { if let Some(..) }`): once the sender is dropped — which
+                // happens immediately when the listener above was never spawned (gsmtc failed) —
+                // `recv()` returns `None` and the loop EXITS, instead of hot-spinning forever on a
+                // permanently-closed channel.
+                while let Some(event) = rx_gsmtc.recv().await {
+                    let state: State<AppState> = app_handle.state();
+                    let mut sessions = state.sessions.lock().await;
+                    let delta = updater(&mut sessions, event);
+                    // Register the cover BEFORE emitting so the webview's immediate fetch of the
+                    // serialized `url` finds the bytes (art.rs); a media update is the only delta
+                    // that carries one.
+                    if let Some(record) = &delta.1 {
+                        art::register_cover(&app_handle, record);
                     }
+                    emit_to_bridge(&app_handle, delta);
                 }
             });
 
@@ -425,6 +446,11 @@ async fn main() -> Result<(), ()> {
             // win_drag_start / win_drag_end; the overlay highlights + snaps. Own thread (the
             // clickthrough watcher has no message pump). No-op off Windows.
             windowmgr::run_drag_watcher(app.handle().clone());
+
+            // Display-change watcher: a message-pump thread that respawns `main` the instant a
+            // monitor comes back (DDC input switch / replug) IF the app is at zero windows — the fast
+            // path complementing keepalive's 30s retry. No-op off Windows.
+            displaywatch::run_display_watcher(app.handle().clone());
 
             // Tray menu (right-click): open the studio, the two overlay utilities, a launch-at-login
             // toggle, then Quit (separated). Edit mode is NOT here — it lives on Ctrl+E and the global
@@ -546,8 +572,23 @@ async fn main() -> Result<(), ()> {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        // Tray app: zero windows is a VALID state and must not end the process. It is reached by
+        // design — an empty-primary `main` self-destructs to reclaim its renderer, so a layout
+        // whose widgets all sit on one secondary monitor lives on a single overlay window; if that
+        // window fails to spawn (monitor not yet enumerated at logon, WebView2 hiccup, monitor
+        // DDC-switched away), Tauri's default would exit silently ("didn't autostart",
+        // 2026-07-10). Prevent it and let keepalive respawn `main` to retry the reconcile cycle.
+        // Tray Quit still works: app.exit(0) arrives as `code: Some(0)` and passes through.
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = &event
+                && keepalive::should_prevent_exit(*code)
+            {
+                api.prevent_exit();
+                keepalive::on_zero_windows(app);
+            }
+        });
 
     Ok(())
 }

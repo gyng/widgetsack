@@ -28,6 +28,6 @@ before any `cargo build` / `cargo test` / `cargo clippy`.
 
 ```bash
 npm run check       # tsc --noEmit type checking
-npm run lint        # Prettier + ESLint (zero warnings)
+npm run lint        # oxfmt + oxlint (zero warnings)
 npm run test:unit   # Vitest unit/component tests
 ```

@@ -15,7 +15,7 @@ export type Bar = { x: number; y: number; w: number; h: number };
 export function groupBands(bands: number[], count: number): number[] {
 	if (count <= 0 || bands.length === 0) return [];
 	if (count >= bands.length) return bands.slice();
-	const out = new Array<number>(count).fill(0);
+	const out = Array.from({ length: count }, () => 0);
 	for (let i = 0; i < bands.length; i++) {
 		const g = Math.min(count - 1, Math.floor((i * count) / bands.length));
 		if (bands[i] > out[g]) out[g] = bands[i];

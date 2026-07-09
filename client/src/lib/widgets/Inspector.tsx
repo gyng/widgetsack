@@ -566,7 +566,7 @@ export default function Inspector({
 		op({
 			op: 'patchGroup',
 			id: groupUnit.id,
-			patch: { config: { ...(groupUnit.config ?? {}), [k]: v } }
+			patch: { config: { ...groupUnit.config, [k]: v } }
 		});
 	const renameDefName = (name: string) => def && op({ op: 'renameDef', defId: def.id, name });
 	const editDef = () => def && op({ op: 'editDef', defId: def.id });
@@ -582,7 +582,7 @@ export default function Inspector({
 		op({
 			op: 'patchGroup',
 			id: groupUnit.id,
-			patch: { params: { ...(groupUnit.params ?? {}), [key]: value } }
+			patch: { params: { ...groupUnit.params, [key]: value } }
 		});
 	function addParam() {
 		if (def && paramKey) {

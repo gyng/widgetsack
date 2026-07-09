@@ -585,7 +585,7 @@ export function useEditorModel(studio: boolean, seedFloating: Leaf[]): EditorMod
 	const seedMonitor = useMemo<MonitorLayout>(
 		() => ({ root: emptyRoot(), floating: seedFloating }),
 		// seedFloating is computed once by the caller (demo seed); freeze it.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
 		[]
 	);
 	const [state, dispatch] = useReducer(editorReducer, undefined, () =>

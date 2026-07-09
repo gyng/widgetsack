@@ -82,7 +82,7 @@ export function withEntityId(
 	data: Record<string, unknown> | undefined,
 	id: string
 ): Record<string, unknown> | undefined {
-	const rest = { ...(data ?? {}) };
+	const rest = { ...data };
 	if (id.trim() === '') {
 		delete rest.entity_id;
 		return Object.keys(rest).length ? rest : undefined;

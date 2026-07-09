@@ -35,7 +35,8 @@ export type PackageSandbox = {
 };
 
 export type CreateSandboxResult =
-	{ ok: true; sandbox: PackageSandbox } | { ok: false; error: string };
+	| { ok: true; sandbox: PackageSandbox }
+	| { ok: false; error: string };
 
 /**
  * Compile `script` (a CommonJS-style source.js that assigns `module.exports`) into a fresh,

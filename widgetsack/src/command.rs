@@ -197,6 +197,37 @@ pub fn log_diag(window: tauri::WebviewWindow, summary: String) {
         .emit();
 }
 
+/// Map a frontend log level string to a backend [`log::LogLevel`]. Only "error" and "warn" are
+/// distinguished; anything else (incl. "info", "log", "", or a typo) falls back to `Info` — a
+/// client log is worth keeping even if its severity label is off. Pure seam (tested below).
+fn client_log_level(level: &str) -> log::LogLevel {
+    match level {
+        "error" => log::LogLevel::Error,
+        "warn" => log::LogLevel::Warn,
+        _ => log::LogLevel::Info,
+    }
+}
+
+/// Persist a FRONTEND failure into the backend log pipeline (console + ring buffer + rotating file +
+/// `log` event). Frontend errors — an overlay reconcile that threw, a failed invoke — otherwise live
+/// only in the webview's console and VANISH when that webview dies, which is exactly the class of
+/// failure that's hardest to diagnose after the fact (the overnight forensics of 2026-07-10). This
+/// lands them on disk. `level` picks the severity (see `client_log_level`); the `component` and the
+/// calling `window`'s label are attached as fields. Target is the fixed "client" subsystem (the log
+/// builders take a `&'static str` target, so the dynamic part goes in a field). Mirrors `log_diag`.
+#[tauri::command]
+pub fn log_client(window: tauri::WebviewWindow, level: String, component: String, message: String) {
+    let entry = match client_log_level(&level) {
+        log::LogLevel::Error => log::error("client", message),
+        log::LogLevel::Warn => log::warn("client", message),
+        _ => log::info("client", message),
+    };
+    entry
+        .field("component", component)
+        .field("window", window.label())
+        .emit();
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemFont {
@@ -1236,7 +1267,8 @@ pub fn watch_themes(app: tauri::AppHandle) -> Result<(), String> {
 /// renderer (overlay.ts `setMainWindowVisible(false)`). Mirrors the static `main` config in
 /// tauri.conf.json; the frontend reveals it — or re-destroys it if the primary is still empty — once
 /// its Canvas init runs. Must be called on the main thread (window creation). Best-effort: logs.
-fn respawn_main_hidden(app: &tauri::AppHandle) {
+/// `reason` tags the log line with which recovery path fired (layout watcher / keepalive).
+pub(crate) fn respawn_main_hidden(app: &tauri::AppHandle, reason: &str) {
     match tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
         .title("WidgetSack")
         .inner_size(300.0, 400.0)
@@ -1250,11 +1282,9 @@ fn respawn_main_hidden(app: &tauri::AppHandle) {
         .disable_drag_drop_handler()
         .build()
     {
-        Ok(_) => log::info(
-            "reclaim",
-            "respawned primary overlay (main) after external layout change",
-        )
-        .emit(),
+        Ok(_) => log::info("reclaim", "respawned primary overlay (main)")
+            .field("reason", reason)
+            .emit(),
         Err(err) => log::warn("reclaim", "failed to respawn main")
             .field("error", err)
             .emit(),
@@ -1295,7 +1325,7 @@ pub fn watch_layout(app: tauri::AppHandle) -> Result<(), String> {
                 if app_for_respawn.get_webview_window("main").is_none()
                     && app_for_respawn.get_webview_window("studio").is_none()
                 {
-                    respawn_main_hidden(&app_for_respawn);
+                    respawn_main_hidden(&app_for_respawn, "external layout change");
                 }
             });
         },
@@ -1330,7 +1360,19 @@ pub fn watch_controls(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{valid_name, version_is_newer};
+    use super::{client_log_level, valid_name, version_is_newer};
+    use crate::log::LogLevel;
+
+    #[test]
+    fn client_log_level_maps_error_warn_else_info() {
+        assert_eq!(client_log_level("error"), LogLevel::Error);
+        assert_eq!(client_log_level("warn"), LogLevel::Warn);
+        // Anything else — "info", an unknown level, or a typo — is kept at info rather than dropped.
+        assert_eq!(client_log_level("info"), LogLevel::Info);
+        assert_eq!(client_log_level("debug"), LogLevel::Info);
+        assert_eq!(client_log_level(""), LogLevel::Info);
+        assert_eq!(client_log_level("ERROR"), LogLevel::Info); // case-sensitive by design
+    }
 
     #[test]
     fn version_is_newer_compares_numerically() {

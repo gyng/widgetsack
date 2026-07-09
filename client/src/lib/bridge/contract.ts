@@ -91,6 +91,7 @@ export const COMMANDS = {
 	rescueWindows: 'rescue_windows',
 	reloadWindow: 'reload_window',
 	logDiag: 'log_diag',
+	logClient: 'log_client',
 	processDiagnostics: 'process_diagnostics',
 	setSubsystemProfiling: 'set_subsystem_profiling',
 	subsystemTimings: 'subsystem_timings',

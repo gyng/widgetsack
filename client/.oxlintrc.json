@@ -1,0 +1,57 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["typescript", "unicorn", "oxc", "react"],
+	"categories": {
+		"correctness": "error"
+	},
+	"env": {
+		"browser": true,
+		"node": true
+	},
+	"ignorePatterns": [
+		"build/**",
+		"coverage/**",
+		"test-results/**",
+		"playwright-report/**",
+		"blob-report/**",
+		".playwright-mcp/**",
+		"playwright/.cache/**"
+	],
+	"settings": {
+		"react": {
+			"version": "19"
+		}
+	},
+	"rules": {
+		"typescript/no-explicit-any": "error",
+		"react/rules-of-hooks": "error",
+		"react/exhaustive-deps": "warn",
+
+		"no-case-declarations": "error",
+		"no-empty": "error",
+		"no-fallthrough": "error",
+		"no-prototype-builtins": "error",
+		"no-redeclare": "error",
+		"no-regex-spaces": "error",
+		"no-array-constructor": "error",
+
+		"typescript/ban-ts-comment": "error",
+		"typescript/no-empty-object-type": "error",
+		"typescript/no-namespace": "error",
+		"typescript/no-require-imports": "error",
+		"typescript/no-unsafe-function-type": "error",
+
+		"react/display-name": "error",
+		"react/jsx-no-target-blank": "error",
+		"react/no-unescaped-entities": "error",
+		"react/no-unknown-property": "error",
+		"react/react-in-jsx-scope": "off",
+
+		// Not part of eslint-plugin-react's old "recommended" preset (which we mirrored) — oxlint's
+		// react plugin categorizes it as "correctness" so it comes in via the blanket category. The one
+		// hit (WidgetErrorBoundary.componentDidUpdate) is a deliberate, guarded reset-on-prop-change
+		// pattern (see its comment), not a bug; refactoring a working error boundary to dodge this rule
+		// isn't worth the risk. See AGENTS.md §8: disable in config rather than refactor to satisfy a rule.
+		"react/no-did-update-set-state": "off"
+	}
+}

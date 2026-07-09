@@ -1,7 +1,7 @@
 [package]
 name = "widgetsack"
 # Keep in lockstep with tauri.conf.json's version (the bundle/updater source of truth).
-version = "0.0.49"
+version = "0.0.50"
 description = "widgetsack desktop widget platform"
 authors = ["you"]
 license = "MIT OR Apache-2.0"
@@ -112,6 +112,9 @@ windows = { version = "0.61", features = [
     # detection, MVP2) + OBJID_WINDOW in Accessibility.
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Accessibility",
+    # Display-change watcher (displaywatch.rs): GetModuleHandleW for the hidden watcher window's
+    # class hInstance (RegisterClassW/CreateWindowExW live in WindowsAndMessaging above).
+    "Win32_System_LibraryLoader",
     # Recycle Bin contents (recyclebin.rs): SHQueryRecycleBinW → item count + total size.
     "Win32_UI_Shell",
     "Win32_System_Threading",

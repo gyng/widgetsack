@@ -503,7 +503,7 @@ export function floatingLeafFrom(node: Leaf, x: number, y: number, r?: Rect): Le
 		return leaf({ ...u, rect: { x, y, w: r?.w ?? u.rect.w, h: r?.h ?? u.rect.h } });
 	}
 	const g = node.unit;
-	return leaf({ ...g, config: { ...(g.config ?? {}), x, y } });
+	return leaf({ ...g, config: { ...g.config, x, y } });
 }
 
 export function dock(s: EditorState, id: string): Patch {
@@ -888,7 +888,7 @@ export function resetWidget(s: EditorState, id: string): Patch {
 	if (!node || !isLeaf(node) || isGroup(node.unit)) return {};
 	const meta = getMeta((node.unit as WidgetInstance).type);
 	return patchUnit(s, id, {
-		config: { ...(meta?.defaultConfig ?? {}) },
+		config: { ...meta?.defaultConfig },
 		css: meta?.defaultCss,
 		sensor: meta?.defaultSensor
 	});

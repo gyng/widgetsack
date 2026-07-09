@@ -153,7 +153,7 @@ const trackWeight = (weights: number[] | undefined, t: number): number => {
 // sizer and the splitter collector (which only offers boundaries between two FLEXIBLE tracks).
 function gridFixedTracks(c: Container, count: number, horizontal: boolean): (number | null)[] {
 	const cols = Math.max(1, c.cols ?? 1);
-	const fixed: (number | null)[] = new Array(count).fill(null);
+	const fixed: (number | null)[] = Array.from({ length: count }, () => null);
 	c.children.forEach((child, i) => {
 		const t = horizontal ? i % cols : Math.floor(i / cols);
 		if (t >= count) return;
@@ -480,7 +480,7 @@ function intrinsicContainer(
 			(ch) => (horizontal ? cellFixedW(ch) : cellFixedH(ch)) != null
 		);
 		if (hasFixed) {
-			const tracks = new Array<number>(count).fill(0);
+			const tracks = Array.from({ length: count }, () => 0);
 			c.children.forEach((child, i) => {
 				const t = horizontal ? i % cols : Math.floor(i / cols);
 				if (t >= count) return;
