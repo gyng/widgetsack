@@ -294,7 +294,7 @@ export function splitNode(
 				gap: node.gap,
 				pad: node.pad,
 				justify: node.justify
-		  })
+			})
 		: null;
 	let patch: Partial<Container>;
 	if (dir === 'grid') {
@@ -381,7 +381,7 @@ export function patchContainerOp(s: EditorState, id: string, patch: Partial<Cont
 				root = updateNode(
 					root,
 					id,
-					(n) => ({ ...n, children: (n as Container).children.slice(0, cap) } as LayoutNode)
+					(n) => ({ ...n, children: (n as Container).children.slice(0, cap) }) as LayoutNode
 				);
 			}
 		}
@@ -406,7 +406,7 @@ export function setNodeBasis(s: EditorState, id: string, basis: Length | undefin
 export function setNodeBases(s: EditorState, entries: { id: string; basis: Length }[]): Patch {
 	let root = s.monitor.root;
 	for (const { id, basis } of entries) {
-		root = updateNode(root, id, (n) => ({ ...n, basis } as LayoutNode));
+		root = updateNode(root, id, (n) => ({ ...n, basis }) as LayoutNode);
 	}
 	return { monitor: { ...s.monitor, root } };
 }
@@ -503,7 +503,7 @@ export function floatingLeafFrom(node: Leaf, x: number, y: number, r?: Rect): Le
 		return leaf({ ...u, rect: { x, y, w: r?.w ?? u.rect.w, h: r?.h ?? u.rect.h } });
 	}
 	const g = node.unit;
-	return leaf({ ...g, config: { ...(g.config ?? {}), x, y } });
+	return leaf({ ...g, config: { ...g.config, x, y } });
 }
 
 export function dock(s: EditorState, id: string): Patch {
@@ -888,7 +888,7 @@ export function resetWidget(s: EditorState, id: string): Patch {
 	if (!node || !isLeaf(node) || isGroup(node.unit)) return {};
 	const meta = getMeta((node.unit as WidgetInstance).type);
 	return patchUnit(s, id, {
-		config: { ...(meta?.defaultConfig ?? {}) },
+		config: { ...meta?.defaultConfig },
 		css: meta?.defaultCss,
 		sensor: meta?.defaultSensor
 	});

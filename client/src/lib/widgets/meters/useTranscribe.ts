@@ -41,7 +41,11 @@ export function useTranscribe(cfg: TranscribeConfig): TranscribeState {
 	const recorderRef = useRef<Recorder | null>(null);
 	const startingRef = useRef(false);
 	const cfgRef = useRef(cfg);
-	cfgRef.current = cfg;
+	// Keep the latest config in a ref, written in a commit effect (not during render), so the async
+	// `run` below reads the current cfg without re-creating the recorder on every config edit.
+	useEffect(() => {
+		cfgRef.current = cfg;
+	});
 
 	// Release the mic if the widget unmounts mid-recording.
 	useEffect(

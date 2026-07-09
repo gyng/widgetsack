@@ -48,8 +48,11 @@ export default function Spectrum({
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	// Live config read by the draw without re-subscribing the stream. `device`/`scale` are NOT here —
 	// they're effect deps, so changing them re-acquires (the backend re-bins / re-inits accordingly).
+	// Written in a commit effect (not during render) so the draw callbacks read the latest values.
 	const cfg = useRef({ mode, bars, gap, color, pips });
-	cfg.current = { mode, bars, gap, color, pips };
+	useEffect(() => {
+		cfg.current = { mode, bars, gap, color, pips };
+	});
 
 	useEffect(() => {
 		const canvas = canvasRef.current;
@@ -161,7 +164,7 @@ export default function Spectrum({
 				? new ResizeObserver(() => {
 						const f = source.latestFrame();
 						if (f) render(f);
-				  })
+					})
 				: null;
 		ro?.observe(canvas);
 
@@ -171,7 +174,6 @@ export default function Spectrum({
 			release();
 		};
 		// Re-subscribe when the source / device / scale changes; other config is read live (cfg).
-		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [source, device, scale]);
 
 	return <canvas ref={canvasRef} className="np-spectrum" role="img" aria-label="audio spectrum" />;

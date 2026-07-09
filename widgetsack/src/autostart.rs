@@ -10,11 +10,79 @@
 //! REG_DWORD) — written by both the in-app Settings toggle (`set_autostart_enabled`) and the
 //! installer's finish-page checkbox — and re-assert the Run key from it on every startup
 //! (`reconcile`). The preference is the single source of truth; the app owns the Run key.
+//!
+//! We write the `…\Run` value OURSELVES (`enable_autostart`) instead of via the plugin's
+//! `enable()`. `auto-launch` 0.5.0 formats the value as `format!("{} {}", path, args.join(" "))`,
+//! which — with our empty args — yields the bare exe path plus a **trailing space** and no quotes
+//! (e.g. `C:\…\widgetsack.exe `). Windows' logon Run-key launcher silently refuses to execute that
+//! malformed command, so the app never autostarts even though the toggle reports "enabled" (the
+//! plugin's `is_enabled()` only checks that the value exists, not its content). We write a clean,
+//! quoted, trailing-space-free command instead; the plugin's read/`disable` paths are unaffected.
 
 #[cfg(windows)]
 const PREF_SUBKEY: &str = r"Software\io.github.gyng\widgetsack";
 #[cfg(windows)]
 const PREF_VALUE: &str = "LaunchAtLogin";
+
+/// HKCU Run key + the value name the autostart plugin registers us under (product name).
+#[cfg(windows)]
+const RUN_SUBKEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
+#[cfg(windows)]
+const RUN_VALUE_NAME: &str = "widgetsack";
+/// Task Manager's per-user startup override list, and the "enabled" marker auto-launch writes there
+/// (first byte 0x02, trailing eight bytes zero). We mirror it so a stale "disabled" record can't
+/// suppress the entry after we re-enable.
+#[cfg(windows)]
+const STARTUP_APPROVED_SUBKEY: &str =
+    r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
+#[cfg(windows)]
+const STARTUP_APPROVED_ENABLED: [u8; 12] = [0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+/// The exact command to register under `…\CurrentVersion\Run`. Quoted (so an install path with
+/// spaces still launches) and with **no trailing space** — the two things that make Windows skip
+/// the entry at logon when auto-launch writes it. We take no autostart args, so this is just the
+/// quoted exe path.
+#[cfg_attr(not(windows), allow(dead_code))]
+fn run_command(exe: &str) -> String {
+    format!("\"{exe}\"")
+}
+
+/// Register the app to launch at login by writing the Run value ourselves (clean/quoted), bypassing
+/// auto-launch's malformed-value bug. Non-Windows keeps the plugin's cross-platform path.
+#[cfg(windows)]
+fn enable_autostart(_app: &tauri::AppHandle) -> Result<(), String> {
+    use winreg::RegKey;
+    use winreg::RegValue;
+    use winreg::enums::RegType::REG_BINARY;
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_SET_VALUE};
+
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let command = run_command(&exe.to_string_lossy());
+
+    let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+    hkcu.open_subkey_with_flags(RUN_SUBKEY, KEY_SET_VALUE)
+        .map_err(|e| e.to_string())?
+        .set_value(RUN_VALUE_NAME, &command)
+        .map_err(|e| e.to_string())?;
+
+    // Best-effort: mark the entry ENABLED in Task Manager's list (the key may not exist yet).
+    if let Ok(approved) = hkcu.open_subkey_with_flags(STARTUP_APPROVED_SUBKEY, KEY_SET_VALUE) {
+        let _ = approved.set_raw_value(
+            RUN_VALUE_NAME,
+            &RegValue {
+                vtype: REG_BINARY,
+                bytes: STARTUP_APPROVED_ENABLED.to_vec(),
+            },
+        );
+    }
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn enable_autostart(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_autostart::ManagerExt;
+    app.autolaunch().enable().map_err(|e| e.to_string())
+}
 
 /// Read the saved launch-at-login preference. `None` = never configured (installer checkbox left
 /// untouched AND the in-app toggle never used) → leave the OS autostart state alone.
@@ -82,9 +150,9 @@ pub fn reconcile(app: &tauri::AppHandle) {
         return;
     };
     let result = if want {
-        manager.enable()
+        enable_autostart(app)
     } else {
-        manager.disable()
+        manager.disable().map_err(|e| e.to_string())
     };
     if let Err(err) = result {
         crate::log::error("startup", "failed to reconcile autostart from preference")
@@ -107,18 +175,37 @@ pub fn get_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
 pub fn set_autostart_enabled(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
     use tauri_plugin_autostart::ManagerExt;
     write_pref(enabled)?;
-    let manager = app.autolaunch();
     if enabled {
-        manager.enable().map_err(|e| e.to_string())?;
+        enable_autostart(&app)?;
     } else {
-        manager.disable().map_err(|e| e.to_string())?;
+        app.autolaunch().disable().map_err(|e| e.to_string())?;
     }
-    manager.is_enabled().map_err(|e| e.to_string())
+    app.autolaunch().is_enabled().map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::reconcile_action;
+    use super::{reconcile_action, run_command};
+
+    #[test]
+    fn run_command_is_quoted_and_has_no_trailing_space() {
+        // Regression: auto-launch 0.5.0 writes `format!("{} {}", path, "")` → a bare, unquoted path
+        // with a trailing space, which Windows' logon Run-key launcher silently skips. Ours must be
+        // quoted (spaces in the install path still launch) and free of any trailing space.
+        let cmd = run_command(r"C:\Users\gng\AppData\Local\widgetsack\widgetsack.exe");
+        assert_eq!(
+            cmd,
+            r#""C:\Users\gng\AppData\Local\widgetsack\widgetsack.exe""#
+        );
+        assert!(cmd.starts_with('"') && cmd.ends_with('"'));
+        assert!(!cmd.ends_with(' '));
+    }
+
+    #[test]
+    fn run_command_quotes_paths_containing_spaces() {
+        let cmd = run_command(r"C:\Program Files\widgetsack\widgetsack.exe");
+        assert_eq!(cmd, r#""C:\Program Files\widgetsack\widgetsack.exe""#);
+    }
 
     #[test]
     fn pref_none_is_always_a_noop() {

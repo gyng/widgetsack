@@ -375,7 +375,7 @@ describe('NowPlaying — seek + timeline', () => {
 		expect(bar.getAttribute('data-seekable')).toBe('true');
 		// happy-dom getBoundingClientRect returns zeros; stub a 200px-wide bar so the fraction is real.
 		bar.getBoundingClientRect = () =>
-			({ left: 0, width: 200, top: 0, height: 4, right: 200, bottom: 4, x: 0, y: 0 } as DOMRect);
+			({ left: 0, width: 200, top: 0, height: 4, right: 200, bottom: 4, x: 0, y: 0 }) as DOMRect;
 		fireEvent.click(bar, { clientX: 100 }); // halfway → 0.5 * 200 = 100
 		expect(onControl).toHaveBeenCalledWith({
 			domain: 'media',
@@ -391,7 +391,7 @@ describe('NowPlaying — seek + timeline', () => {
 		);
 		const bar = container.querySelector('[data-part="progress"]') as HTMLElement;
 		bar.getBoundingClientRect = () =>
-			({ left: 0, width: 200, top: 0, height: 4, right: 200, bottom: 4, x: 0, y: 0 } as DOMRect);
+			({ left: 0, width: 200, top: 0, height: 4, right: 200, bottom: 4, x: 0, y: 0 }) as DOMRect;
 		fireEvent.click(bar, { clientX: 9999 }); // past the end → clamped to frac 1 → full duration
 		expect(onControl).toHaveBeenCalledWith({
 			domain: 'media',

@@ -100,7 +100,7 @@ function gridFixedTracks(
 	horizontal: boolean
 ): (number | null)[] | null {
 	const cols = Math.max(1, c.cols ?? 1);
-	const fixed: (number | null)[] = new Array(count).fill(null);
+	const fixed: (number | null)[] = Array.from({ length: count }, () => null);
 	let any = false;
 	c.children.forEach((child, i) => {
 		const track = horizontal ? i % cols : Math.floor(i / cols);

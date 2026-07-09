@@ -32,8 +32,11 @@ export default function CssEditorImpl({
 	const hostRef = useRef<HTMLDivElement>(null);
 	const viewRef = useRef<EditorView | null>(null);
 	// Latest callbacks, so the once-created view always calls the current handlers (no stale closures).
+	// Committed after render (not during it); the view only ever reads them inside CM callbacks, later.
 	const cbRef = useRef({ onChange, onBlur });
-	cbRef.current = { onChange, onBlur };
+	useEffect(() => {
+		cbRef.current = { onChange, onBlur };
+	});
 
 	useEffect(() => {
 		const host = hostRef.current;
@@ -63,7 +66,7 @@ export default function CssEditorImpl({
 			viewRef.current = null;
 		};
 		// Created once; placeholder/ariaLabel are static per usage. External value sync is handled below.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	// Reflect external value changes (theme draft seeding, programmatic resets) — but never while the

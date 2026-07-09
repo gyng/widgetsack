@@ -36,7 +36,8 @@
 	cursor: pointer;
 	/* The active-section indicator slides in (border) and the hover tint eases, so switching sections
 	   feels tracked rather than snapping. */
-	transition: color var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		color var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		background var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		border-left-color var(--motion, 150ms) var(--ease-out, ease-out);
 }
@@ -226,7 +227,8 @@
 	   uncluttered and the destructive ✕ isn't a live target at rest — but the buttons stay in the DOM
 	   and tab order for keyboard reach (:focus-within brings them in when tabbed to). */
 	opacity: 0;
-	transition: opacity var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		opacity var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		color var(--motion-fast, 100ms) var(--ease-out, ease-out);
 }
 
@@ -387,7 +389,8 @@
 	border-radius: var(--radius-control);
 	padding: var(--space-2) var(--space-3);
 	cursor: pointer;
-	transition: border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		color var(--motion-fast, 100ms) var(--ease-out, ease-out);
 }
 
@@ -516,7 +519,8 @@
 	border-radius: var(--radius-control);
 	padding: var(--space-2) var(--space-3);
 	cursor: pointer;
-	transition: border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		color var(--motion-fast, 100ms) var(--ease-out, ease-out);
 }
 
@@ -737,7 +741,8 @@
 	padding: var(--space-1) var(--space-3);
 	cursor: pointer;
 	opacity: 0;
-	transition: opacity var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		opacity var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		color var(--motion-fast, 100ms) var(--ease-out, ease-out);
 }
 

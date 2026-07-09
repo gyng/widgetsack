@@ -1,8 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { prefersReducedMotion, startViewTransition } from './viewTransition';
 
-type VTDoc = Document & { startViewTransition?: (cb: () => void) => unknown };
-const doc = document as VTDoc;
+// TS 6's lib.dom types `startViewTransition` as a required overload; override it with an optional,
+// loose signature so the test can assign a mock (or undefined) to it.
+type VTDoc = Omit<Document, 'startViewTransition'> & {
+	startViewTransition?: (cb: () => void) => unknown;
+};
+const doc = document as unknown as VTDoc;
 const origMatchMedia = window.matchMedia;
 const origVT = doc.startViewTransition;
 
@@ -12,7 +16,7 @@ afterEach(() => {
 });
 
 const setReducedMotion = (reduced: boolean): void => {
-	window.matchMedia = vi.fn(() => ({ matches: reduced } as unknown as MediaQueryList));
+	window.matchMedia = vi.fn(() => ({ matches: reduced }) as unknown as MediaQueryList);
 };
 
 describe('viewTransition', () => {

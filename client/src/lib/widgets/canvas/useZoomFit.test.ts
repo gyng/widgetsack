@@ -27,7 +27,7 @@ function makeCanvas(left = 0, top = 0): HTMLDivElement {
 			x: left,
 			y: top,
 			toJSON: () => ({})
-		} as DOMRect);
+		}) as DOMRect;
 	document.body.appendChild(el);
 	return el;
 }

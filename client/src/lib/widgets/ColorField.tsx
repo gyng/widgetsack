@@ -3,7 +3,7 @@
 // still round-trip. Editing the swatch writes `#rrggbb`; editing the text writes its raw value
 // (committed on blur, so we don't churn an undo/save per keystroke). The swatch mirrors the current
 // value (or the inherited placeholder when empty) via toHexColor. A ✕ clears the override.
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { toHexColor } from './colorHex';
 import { isValidColor } from './themeTokens';
 import './ColorField.css';
@@ -19,7 +19,13 @@ export default function ColorField({ value, placeholder, ariaLabel, onChange }: 
 	// Local text state so typing doesn't commit (and re-render the world) on every keystroke; resync
 	// when the external value changes (Clear, theme switch, selecting another widget).
 	const [text, setText] = useState(value);
-	useEffect(() => setText(value), [value]);
+	// Resync during render when the external value changes (Clear, theme switch, selecting another
+	// widget) — the store-previous idiom, so typing (which only touches local `text`) isn't clobbered.
+	const [prevValue, setPrevValue] = useState(value);
+	if (value !== prevValue) {
+		setPrevValue(value);
+		setText(value);
+	}
 
 	const swatch = toHexColor(text || placeholder || '') ?? '#000000';
 	const invalid = !isValidColor(text);

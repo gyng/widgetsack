@@ -51,7 +51,11 @@ function splitRegions(
 		pad,
 		children: Array.from(
 			{ length: cols * rows },
-			(_, i): Container => ({ id: `__pc${i}`, kind: 'col', children: [] })
+			(_, i): Container => ({
+				id: `__pc${i}`,
+				kind: 'col',
+				children: []
+			})
 		)
 	};
 	return gridCellRects(synthetic, box);

@@ -9,7 +9,10 @@ vi.mock('./WidgetPreview', () => ({ default: () => null }));
 
 const panel = (): HTMLElement => screen.getByRole('tabpanel');
 const lastOp = (onOp: ReturnType<typeof vi.fn>, op: string): LayoutOp | undefined =>
-	[...onOp.mock.calls.map((c) => c[0] as LayoutOp)].reverse().find((o) => o.op === op);
+	onOp.mock.calls
+		.map((c) => c[0] as LayoutOp)
+		.reverse()
+		.find((o) => o.op === op);
 
 describe('Inspector container property panel', () => {
 	it('shows the kind · id header and emits patchContainer on a kind change', () => {

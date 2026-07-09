@@ -315,6 +315,14 @@ export default function Inspector({
 	// still user-toggleable in between, and re-opens when nothing is selected (the primary add affordance).
 	const hasSelection = !!(widget || container || groupUnit);
 	const [addOpen, setAddOpen] = useState(!hasSelection);
+	// Auto-set on selection change (collapse once something is selected, re-open when nothing is), while
+	// staying user-toggleable in between — the store-previous idiom, so the reset happens during render
+	// only when `hasSelection` actually flips, not on every render.
+	const [prevHasSelection, setPrevHasSelection] = useState(hasSelection);
+	if (hasSelection !== prevHasSelection) {
+		setPrevHasSelection(hasSelection);
+		setAddOpen(!hasSelection);
+	}
 
 	// Add-palette hover preview (Tier 2): a floating popover with a live demo render of the hovered
 	// entry — a widget type, OR a library def / template tree. Debounced so a quick pass doesn't spin up
@@ -361,9 +369,6 @@ export default function Inspector({
 		const top = Math.min(palettePreview.top, Math.max(8, window.innerHeight - el.offsetHeight - 8));
 		el.style.top = `${Math.max(8, top)}px`;
 	}, [palettePreview]);
-	useEffect(() => {
-		setAddOpen(!hasSelection);
-	}, [hasSelection]);
 	// Built-ins + one group per enabled plugin package (re-renders on package toggle).
 	const templateGroups = useTemplateGroups();
 
@@ -408,16 +413,19 @@ export default function Inspector({
 	// is an editable buffer applied back via replaceNode; YAML is a read-only mirror. ---
 	const [detailTab, setDetailTab] = useState<'form' | 'data'>('form');
 	const [dataFormat, setDataFormat] = useState<'json' | 'yaml'>('json');
-	const [dataJson, setDataJson] = useState('');
+	const [dataJson, setDataJson] = useState(() => (node ? JSON.stringify(node, null, 2) : ''));
 	const [dataError, setDataError] = useState<string | null>(null);
 	// Re-sync the JSON buffer whenever the selected node changes by identity (selection switch or an
 	// applied edit), mirroring the config-JSON box — so the buffer never goes stale under the agent.
-	useEffect(() => {
+	// Store-previous idiom: reset during render on an identity change, not via a set-state effect.
+	const [prevNode, setPrevNode] = useState(node);
+	if (node !== prevNode) {
+		setPrevNode(node);
 		if (node) {
 			setDataJson(JSON.stringify(node, null, 2));
 			setDataError(null);
 		}
-	}, [node]);
+	}
 	function applyNodeJson() {
 		if (!node) return;
 		try {
@@ -472,23 +480,27 @@ export default function Inspector({
 	// The raw-JSON box mirrors the whole config, so it's dirty if any config field changed.
 	const configDirty = [...dirtyKeys].some((k) => k.startsWith('config.'));
 
-	const [configText, setConfigText] = useState('');
+	const [configText, setConfigText] = useState(() =>
+		widget ? JSON.stringify(widget.config, null, 2) : ''
+	);
 	const [configError, setConfigError] = useState(false);
 
 	// Re-sync the raw-JSON box whenever the config object changes by reference — i.e. on
 	// widget switch AND on every typed-field edit (setConfig makes a new config object).
 	// This keeps the escape-hatch textarea in step with the schema fields, so committing
 	// the JSON can't silently revert a field edit. Typing in the textarea doesn't change
-	// widget.config until commit, so an in-progress edit is never clobbered.
-	useEffect(() => {
+	// widget.config until commit, so an in-progress edit is never clobbered. Store-previous
+	// idiom keyed on config identity (widget switch + each committed edit), so the reset runs
+	// during render — never on other widget prop changes, which would clobber in-progress typing.
+	const widgetConfig = widget?.config;
+	const [prevConfig, setPrevConfig] = useState(widgetConfig);
+	if (widgetConfig !== prevConfig) {
+		setPrevConfig(widgetConfig);
 		if (widget) {
 			setConfigText(JSON.stringify(widget.config, null, 2));
 			setConfigError(false);
 		}
-		// Re-sync only on config-object identity (widget switch + each committed edit), never on
-		// other widget prop changes — that would clobber in-progress typing.
-		// eslint-disable-next-line react-hooks/exhaustive-deps
-	}, [widget?.config]);
+	}
 
 	function patchWidget(patch: Partial<WidgetInstance>) {
 		if (widget) op({ op: 'patchWidget', id: widget.id, patch });
@@ -524,10 +536,10 @@ export default function Inspector({
 				mode === 'grow'
 					? { fr: 1 }
 					: mode === 'fixed'
-					? typeof container?.basis === 'number'
-						? container.basis
-						: 100
-					: undefined
+						? typeof container?.basis === 'number'
+							? container.basis
+							: 100
+						: undefined
 		});
 
 	// Guarded actions.
@@ -554,7 +566,7 @@ export default function Inspector({
 		op({
 			op: 'patchGroup',
 			id: groupUnit.id,
-			patch: { config: { ...(groupUnit.config ?? {}), [k]: v } }
+			patch: { config: { ...groupUnit.config, [k]: v } }
 		});
 	const renameDefName = (name: string) => def && op({ op: 'renameDef', defId: def.id, name });
 	const editDef = () => def && op({ op: 'editDef', defId: def.id });
@@ -570,7 +582,7 @@ export default function Inspector({
 		op({
 			op: 'patchGroup',
 			id: groupUnit.id,
-			patch: { params: { ...(groupUnit.params ?? {}), [key]: value } }
+			patch: { params: { ...groupUnit.params, [key]: value } }
 		});
 	function addParam() {
 		if (def && paramKey) {
@@ -673,10 +685,10 @@ export default function Inspector({
 								v === 'grow'
 									? { fr: 1 }
 									: v === 'fixed'
-									? typeof widgetBasis === 'number'
-										? widgetBasis
-										: 100
-									: 'content'
+										? typeof widgetBasis === 'number'
+											? widgetBasis
+											: 100
+										: 'content'
 						})
 					}
 					aria-label="size in parent"
@@ -1095,8 +1107,8 @@ export default function Inspector({
 								isFrBasis(container.basis)
 									? 'grow'
 									: typeof container.basis === 'number'
-									? 'fixed'
-									: 'fit'
+										? 'fixed'
+										: 'fit'
 							}
 							options={[
 								{ value: 'fit', label: 'hug — fit children' },
@@ -1247,8 +1259,8 @@ export default function Inspector({
 										isFrBasis(widgetBasis)
 											? 'grow'
 											: widgetBasis === 'content'
-											? 'content'
-											: 'fixed'
+												? 'content'
+												: 'fixed'
 									}
 									options={[
 										{ value: 'fixed', label: 'fixed — use the w/h above' },
@@ -1409,18 +1421,18 @@ export default function Inspector({
 													? [
 															{ value: '', label: 'System default' },
 															...audioOutputs.map((d) => ({ value: d.id, label: d.name }))
-													  ]
+														]
 													: f.catalog === 'microphones'
-													? [
-															{ value: '', label: 'System default' },
-															...microphones.map((d) => ({ value: d.id, label: d.name }))
-													  ]
-													: f.catalog === 'displayNames'
-													? [
-															{ value: '', label: 'Primary monitor' },
-															...displayNames.map((d) => ({ value: d.id, label: d.name }))
-													  ]
-													: f.options.map((o) => ({ value: o, label: o }))
+														? [
+																{ value: '', label: 'System default' },
+																...microphones.map((d) => ({ value: d.id, label: d.name }))
+															]
+														: f.catalog === 'displayNames'
+															? [
+																	{ value: '', label: 'Primary monitor' },
+																	...displayNames.map((d) => ({ value: d.id, label: d.name }))
+																]
+															: f.options.map((o) => ({ value: o, label: o }))
 											}
 											onChange={(v) => setConfig(f.key, v)}
 											aria-label={f.label}
@@ -1684,7 +1696,7 @@ export default function Inspector({
 								/>
 							</details>
 						);
-				  })()
+					})()
 				: null}
 		</div>
 	);

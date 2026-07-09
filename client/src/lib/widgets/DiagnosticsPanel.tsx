@@ -46,9 +46,13 @@ export default function DiagnosticsPanel() {
 	// this just reflects the control state).
 	const [interactive, setInteractive] = useState<Record<string, boolean>>({});
 	// This (studio) window's per-widget render cost, from the <Profiler>s Canvas wraps each widget in.
-	const [costs, setCosts] = useState<WidgetCost[]>([]);
+	// Seeded lazily on mount (the interval below keeps it fresh) so render stays free of setState.
+	const [costs, setCosts] = useState<WidgetCost[]>(() => widgetCosts());
 	// Per-subsystem backend CPU timing (Rust). Demand-gated: enabled only while this panel is open.
 	const [timings, setTimings] = useState<SubsystemTiming[]>([]);
+	// Wall clock used only for staleness, refreshed on each poll — keeps `performance.now()` (impure)
+	// out of the render body while giving mergeWindowList a monotonically-advancing "now".
+	const [now, setNow] = useState(() => performance.now());
 
 	useEffect(() => {
 		let alive = true;
@@ -78,7 +82,6 @@ export default function DiagnosticsPanel() {
 		requestDiagnostics();
 		pollProc();
 		pollLabels();
-		setCosts(widgetCosts());
 		pollTimings();
 		const poll = window.setInterval(() => {
 			requestDiagnostics();
@@ -86,6 +89,7 @@ export default function DiagnosticsPanel() {
 			pollLabels();
 			setCosts(widgetCosts());
 			pollTimings();
+			setNow(performance.now());
 		}, POLL_MS);
 		return () => {
 			alive = false;
@@ -95,7 +99,7 @@ export default function DiagnosticsPanel() {
 		};
 	}, []);
 
-	const rows = mergeWindowList(reports, labels, performance.now(), STALE_MS);
+	const rows = mergeWindowList(reports, labels, now, STALE_MS);
 
 	const toggleInteractive = (label: string, value: boolean): void => {
 		setInteractive((m) => ({ ...m, [label]: value }));

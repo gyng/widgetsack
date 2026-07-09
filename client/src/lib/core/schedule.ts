@@ -15,12 +15,12 @@ export function intervalMs(s: string): number | null {
 		unit === 'ms'
 			? 1
 			: unit === 's'
-			? 1000
-			: unit === 'm'
-			? 60_000
-			: unit === 'h'
-			? 3_600_000
-			: 86_400_000;
+				? 1000
+				: unit === 'm'
+					? 60_000
+					: unit === 'h'
+						? 3_600_000
+						: 86_400_000;
 	const ms = n * mult;
 	return ms > 0 ? ms : null;
 }

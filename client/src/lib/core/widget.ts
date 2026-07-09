@@ -181,17 +181,17 @@ const num = (
 	key: string,
 	label: string,
 	extra: { min?: number; max?: number; step?: number } & FieldMeta = {}
-): ConfigField => ({ key, label, kind: 'number', ...extra } as ConfigField);
+): ConfigField => ({ key, label, kind: 'number', ...extra }) as ConfigField;
 const text = (key: string, label: string, extra: FieldMeta = {}): ConfigField =>
-	({ key, label, kind: 'text', ...extra } as ConfigField);
+	({ key, label, kind: 'text', ...extra }) as ConfigField;
 const color = (key: string, label: string, extra: FieldMeta = {}): ConfigField =>
-	({ key, label, kind: 'color', ...extra } as ConfigField);
+	({ key, label, kind: 'color', ...extra }) as ConfigField;
 const expr = (
 	key: string,
 	label: string,
 	result: 'number' | 'text',
 	extra: { target?: string } & FieldMeta = {}
-): ConfigField => ({ key, label, kind: 'expr', result, ...extra } as ConfigField);
+): ConfigField => ({ key, label, kind: 'expr', result, ...extra }) as ConfigField;
 
 // The built-in meters as data (reproduces the old createWidget switch exactly, so the
 // default look/behaviour is unchanged). Components are attached in registry.ts.
@@ -1144,7 +1144,7 @@ export function createWidget(type: string, id: string): WidgetInstance {
 		id,
 		type,
 		rect: { x: 24, y: 24, w: size.w, h: size.h },
-		config: { ...(meta?.defaultConfig ?? {}) }
+		config: { ...meta?.defaultConfig }
 	};
 	if (meta?.defaultSensor) inst.sensor = meta.defaultSensor;
 	if (meta?.interactive) inst.interactive = true;

@@ -50,7 +50,6 @@ import {
 	collectRenderables,
 	collectSplitters,
 	gridCellRects,
-	type Renderable,
 	resolveGroup
 } from '../core/solve';
 import { assembleStyles } from '../core/style';
@@ -213,7 +212,9 @@ export default function Canvas({ studio = false }: Props) {
 	const pluginList = useMemo(() => listPlugins(), []);
 
 	// Stable telemetry hub (item 5): one per Canvas, provided via Context (replaces setContext).
-	const hub = useRef(createTelemetryHub()).current;
+	// Lazy useState (not useRef(...).current) so it isn't a ref read during render — the hub is
+	// created once and never replaced, so the value is a stable reference exactly as before.
+	const [hub] = useState(() => createTelemetryHub());
 
 	// Diagnostics bridge: every window (overlay + main + studio) answers the studio's Diagnostics-panel
 	// poll with its heap/counts and obeys targeted debug commands (open devtools / toggle click-through).
@@ -417,7 +418,7 @@ export default function Canvas({ studio = false }: Props) {
 	const editingDef = useMemo(
 		() =>
 			previewDef ??
-			(editingDefId && library ? library.defs.find((d) => d.id === editingDefId) ?? null : null),
+			(editingDefId && library ? (library.defs.find((d) => d.id === editingDefId) ?? null) : null),
 		[previewDef, editingDefId, library]
 	);
 	const designing = studio && editingDef != null;
@@ -466,15 +467,18 @@ export default function Canvas({ studio = false }: Props) {
 				width: `${stageSize.w}px`,
 				height: `${stageSize.h}px`,
 				transform: `translate(${panX}px,${panY}px) scale(${zoom})`
-		  }
+			}
 		: {};
 
 	// Studio lays out into the stage box — the monitor work area normally, the def's size while
-	// designing a widget (so its flow tree solves at the widget's own dimensions). useLayoutEffect so
-	// workArea tracks a monitor<->def swap in the SAME frame (no one-frame mis-solve flash).
-	useLayoutEffect(() => {
-		if (studio) setWorkArea({ x: 0, y: 0, w: stageSize.w, h: stageSize.h });
-	}, [studio, stageSize.w, stageSize.h]);
+	// designing a widget (so its flow tree solves at the widget's own dimensions). Done during render
+	// (store-previous pattern) rather than in a layout effect, so workArea tracks a monitor<->def swap
+	// in the SAME render pass (no one-frame mis-solve flash, and no post-commit setState cascade).
+	const [prevStageSize, setPrevStageSize] = useState<{ w: number; h: number } | null>(null);
+	if (studio && (prevStageSize?.w !== stageSize.w || prevStageSize?.h !== stageSize.h)) {
+		setPrevStageSize({ w: stageSize.w, h: stageSize.h });
+		setWorkArea({ x: 0, y: 0, w: stageSize.w, h: stageSize.h });
+	}
 
 	const updateWorkArea = useCallback(async () => {
 		if (studio) return; // the effect above owns the studio work area
@@ -549,8 +553,8 @@ export default function Canvas({ studio = false }: Props) {
 	// the overlay (synced cross-window via the 'storage' event).
 	const [overlayPrefs, setOverlayPrefs] = useOverlayPrefs();
 	// Freshest prefs for the stable syncRects callback (which reads them without re-subscribing).
+	// Mirrored in the commit effect S1 below (not during render).
 	const overlayPrefsRef = useRef(overlayPrefs);
-	overlayPrefsRef.current = overlayPrefs;
 	// This window's role: the primary `main` overlay carries no ?monitor= param; secondary overlays do.
 	// The main overlay is ALWAYS interactive (see overlayPresentation) so its webview can never get stuck
 	// behind a click-through surface (e.g. an un-clickable crash page).
@@ -649,7 +653,7 @@ export default function Canvas({ studio = false }: Props) {
 	// The selected container's solved box (plain id — flow-tree containers aren't group-namespaced),
 	// so the Inspector can cap pad/gap to it (guardrail against collapsing the content out of view).
 	const selectedContainerBox = selectedContainer
-		? combinedSolved.get(selectedContainer.id) ?? null
+		? (combinedSolved.get(selectedContainer.id) ?? null)
 		: null;
 	const isGridCell = !!(
 		selectedContainer && findParent(monitor.root, selectedContainer.id)?.kind === 'grid'
@@ -693,8 +697,8 @@ export default function Canvas({ studio = false }: Props) {
 	const editingDefName = previewDef
 		? previewDef.name
 		: editingDefId && library
-		? library.defs.find((d) => d.id === editingDefId)?.name ?? editingDefId
-		: '';
+			? (library.defs.find((d) => d.id === editingDefId)?.name ?? editingDefId)
+			: '';
 
 	const placement = useMemo<'flow' | 'floating' | null>(() => {
 		if (selectedId === null) return null;
@@ -721,7 +725,7 @@ export default function Canvas({ studio = false }: Props) {
 		return m;
 	}, [sensorEntries]);
 	const configFields = useMemo(
-		() => (selectedWidget ? getMeta(selectedWidget.type)?.configFields ?? [] : []),
+		() => (selectedWidget ? (getMeta(selectedWidget.type)?.configFields ?? []) : []),
 		[selectedWidget]
 	);
 	// Audio output devices for the spectrum widget's device picker (studio only — the inspector lives
@@ -784,8 +788,8 @@ export default function Canvas({ studio = false }: Props) {
 				label: isContainer(n)
 					? `▦ ${n.kind} · ${n.id}`
 					: isGroup(n.unit)
-					? `group ${n.unit.name ?? n.id}`
-					: `${(n.unit as WidgetInstance).type} · ${n.id}`
+						? `group ${n.unit.name ?? n.id}`
+						: `${(n.unit as WidgetInstance).type} · ${n.id}`
 			})),
 		[multiNodes]
 	);
@@ -860,9 +864,15 @@ export default function Canvas({ studio = false }: Props) {
 	}, [renderables, studio, zoom, measuredRef]);
 	// Latest values for callbacks that run outside the render (listeners / async).
 	const interactiveItemsRef = useRef(interactiveItems);
-	interactiveItemsRef.current = interactiveItems;
 	const editModeRef = useRef(editMode);
-	editModeRef.current = editMode;
+	// Sync effect S1: keep the refs the passive-overlay syncRects path reads current. Declared ABOVE
+	// the effects that call syncRects (measured-rects + presentation) so those see the latest values
+	// on every commit — these are the only refs read synchronously inside an effect body.
+	useEffect(() => {
+		overlayPrefsRef.current = overlayPrefs;
+		interactiveItemsRef.current = interactiveItems;
+		editModeRef.current = editMode;
+	});
 
 	const syncRects = useCallback(() => {
 		const p = overlayPrefsRef.current;
@@ -928,7 +938,7 @@ export default function Canvas({ studio = false }: Props) {
 			// An explicit '' (default tokens) on the monitor is honored — it's a string, so the ?? keeps it.
 			const lock = obj?.themeLock !== false;
 			patch.themeLock = lock;
-			const t = lock ? obj?.theme : mon?.theme ?? obj?.theme;
+			const t = lock ? obj?.theme : (mon?.theme ?? obj?.theme);
 			if (typeof t === 'string' && t !== stateThemeRef.current) {
 				patch.selectedTheme = t;
 				nextTheme = t;
@@ -950,11 +960,11 @@ export default function Canvas({ studio = false }: Props) {
 		if (nextTheme !== null) await adoptTheme(nextTheme);
 		dispatch({ type: 'resetHistory' });
 		dispatch({ type: 'setBaseline' });
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
 	}, [dispatch, adoptTheme]);
-	// myMonitor latest, for reloadLayout/persist reading inside listeners.
+	// myMonitor latest, for reloadLayout/persist reading inside listeners. Mirrored in the commit
+	// effect S3 near the end of the component (not during render).
 	const myMonitorRef = useRef(myMonitor);
-	myMonitorRef.current = myMonitor;
 
 	// --- third-party plugin packages ---
 	// Discover + apply the enabled ones once per window (both roles — an overlay needs an enabled
@@ -968,8 +978,9 @@ export default function Canvas({ studio = false }: Props) {
 	}, [studio, navSection]);
 
 	// --- syncPrimaryOverlays (primary main window only) ---
+	// monitorRef is mirrored in the commit effect S3; reloadLayout also writes it imperatively during
+	// init so the first syncPrimaryOverlays sees the freshly-loaded monitor.
 	const monitorRef = useRef(monitor);
-	monitorRef.current = monitor;
 	const syncPrimaryOverlays = useCallback(async () => {
 		await reconcileOverlays();
 		await setMainWindowVisible(monitorHasWidgets(monitorRef.current));
@@ -1083,7 +1094,7 @@ export default function Canvas({ studio = false }: Props) {
 						const g = l.unit;
 						const gx = typeof g.config?.x === 'number' ? g.config.x : 0;
 						const gy = typeof g.config?.y === 'number' ? g.config.y : 0;
-						return leaf({ ...g, config: { ...(g.config ?? {}), x: gx + dx, y: gy + dy } });
+						return leaf({ ...g, config: { ...g.config, x: gx + dx, y: gy + dy } });
 					}
 					const u = l.unit as WidgetInstance;
 					return leaf({ ...u, rect: { ...u.rect, x: u.rect.x + dx, y: u.rect.y + dy } });
@@ -1149,10 +1160,9 @@ export default function Canvas({ studio = false }: Props) {
 		if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
 		savedFlashTimer.current = window.setTimeout(() => setSavedFlash(false), 2200);
 	}, [studio, clearPreviewWrite, persistToDisk, dispatch]);
+	// Mirrored in the commit effect S3 (read only from the studio-close listener).
 	const pendingExtrasRef = useRef(pendingExtras);
-	pendingExtrasRef.current = pendingExtras;
 	const commitSaveRef = useRef(commitSave);
-	commitSaveRef.current = commitSave;
 
 	// Window-close guard (studio only): if there are unsaved changes, PROMPT to save / discard / keep
 	// editing instead of silently closing (the studio live-previews edits to disk, so a blind close
@@ -1188,8 +1198,7 @@ export default function Canvas({ studio = false }: Props) {
 		return () => unlisten();
 	}, [studio]);
 
-	const savedBaselineRef = useRef(savedBaseline);
-	savedBaselineRef.current = savedBaseline;
+	const savedBaselineRef = useRef(savedBaseline); // mirrored in the commit effect S3
 	// Restore the editor AND the on-disk layout to the saved baseline, reverting the live preview.
 	// We write the baseline values DIRECTLY (writeBaseline) rather than via persistToDisk because
 	// the reducer's revert set lags a render — the disk write must use the baseline immediately.
@@ -1213,8 +1222,7 @@ export default function Canvas({ studio = false }: Props) {
 		applyTheme();
 		dispatch({ type: 'resetHistory' });
 	}, [studio, dispatch, revertDraftToDisk, applyTheme]);
-	const dirtyRef = useRef(dirty);
-	dirtyRef.current = dirty;
+	const dirtyRef = useRef(dirty); // mirrored in the commit effect S3
 
 	// --- sacks (item 10): export the studio's shareable state, import + merge one back ---
 	const { sackInfos, exportSack, importSack } = useSacks({
@@ -1238,10 +1246,13 @@ export default function Canvas({ studio = false }: Props) {
 	});
 
 	// Entering a def edit (from anywhere) switches to the Widget designer section, where its
-	// widget-sized design canvas is revealed.
-	useEffect(() => {
+	// widget-sized design canvas is revealed. Done during render (store-previous pattern) so it isn't
+	// a post-commit setState cascade; fires on the transition of editingDefId to a non-null value.
+	const [prevEditingDefId, setPrevEditingDefId] = useState(editingDefId);
+	if (editingDefId !== prevEditingDefId) {
+		setPrevEditingDefId(editingDefId);
 		if (studio && editingDefId != null) setNavSection('widget-designer');
-	}, [studio, editingDefId]);
+	}
 
 	// Settings: remove all widgets on this monitor (undoable; Save to apply).
 	const clearMonitor = useCallback(() => {
@@ -1258,6 +1269,20 @@ export default function Canvas({ studio = false }: Props) {
 		}));
 	}, [commitOp]);
 
+	// Context-menu state (5d). Declared here — ahead of switchMonitor and the widget/outline/canvas
+	// handlers that call setMenu — so setMenu is never referenced before its declaration. `cellIndex`
+	// is set only when opened from an empty grid cell → "Add inside" targets that cell. `wx/wy` capture
+	// the opening click in WORLD coords (computed in the opening handlers, where DOM reads are legal)
+	// so menuStack can hit-test during render without touching a ref/the DOM.
+	const [menu, setMenu] = useState<{
+		x: number;
+		y: number;
+		id: string;
+		cellIndex?: number;
+		wx?: number;
+		wy?: number;
+	} | null>(null);
+
 	// --- studio: switch monitor ---
 	const switchMonitor = useCallback(
 		async (key: string) => {
@@ -1267,6 +1292,9 @@ export default function Canvas({ studio = false }: Props) {
 				await revertDraftToDisk();
 			}
 			setMyMonitor(key);
+			// Eager latest-ref sync (mirrors the ref-sync effect below); read by later async steps in this
+			// handler. (react-hooks/immutability flagged this under eslint-plugin-react-hooks v7; oxlint's
+			// react plugin has no equivalent rule, so this is now just a plain mutation, no directive needed.)
 			myMonitorRef.current = key;
 			if (studio) writeStudioMonitor(key); // sticky across reloads
 			dispatch({ type: 'patch', patch: { selectedId: null, selectedIds: [] } });
@@ -1291,11 +1319,10 @@ export default function Canvas({ studio = false }: Props) {
 	// --- def editor entry points (studio bar) ---
 	// The wrappers (fold-open-def + new/open/clone/preview/rename/delete) live in canvas/useDefEditor;
 	// previewing stays mirrored here too for the canvas-level handlers (context menu / drag / keys).
-	const previewingRef = useRef(previewing);
-	previewingRef.current = previewing;
-	// The live-state mirror (read synchronously by moveNodeToMonitor + the def editor's in-use check).
+	const previewingRef = useRef(previewing); // mirrored in the commit effect S3
+	// The live-state mirror (read by moveNodeToMonitor + the def editor's in-use check, both at event
+	// time). Mirrored in the commit effect S3.
 	const stateRef = useRef(state);
-	stateRef.current = state;
 	const {
 		foldOpenDef,
 		startNewWidget,
@@ -1355,8 +1382,7 @@ export default function Canvas({ studio = false }: Props) {
 		},
 		[canvasRef]
 	);
-	const panRef = useRef({ panX, panY, zoom });
-	panRef.current = { panX, panY, zoom };
+	const panRef = useRef({ panX, panY, zoom }); // mirrored in the commit effect S3
 	const toWorld = useCallback(
 		(x: number, y: number): { x: number; y: number } => {
 			const el = canvasRef.current;
@@ -1371,14 +1397,11 @@ export default function Canvas({ studio = false }: Props) {
 	// Latest live values for the drag math (read synchronously — no stale closure).
 	// The combined (measured-flow + solver-floating) map drives drag/drop/hit-test, so targeting
 	// aligns with what the browser actually laid out.
+	// All mirrored in the commit effect S3 (read only from drag/keyboard/menu event handlers).
 	const solvedRef = useRef(combinedSolved);
-	solvedRef.current = combinedSolved;
 	const renderablesRef = useRef(renderables);
-	renderablesRef.current = renderables;
 	const monitorForDragRef = useRef(monitor);
-	monitorForDragRef.current = monitor;
 	const selectedIdsRef = useRef(selectedIds);
-	selectedIdsRef.current = selectedIds;
 
 	const computeDropBar = useCallback(
 		(p: { x: number; y: number }, dragging: string): Rect | null => {
@@ -1524,10 +1547,8 @@ export default function Canvas({ studio = false }: Props) {
 		},
 		[toWorld, toCanvas, computeDropBar, computeDropZone]
 	);
-	const dropIntoFlowRef = useRef(dropIntoFlow);
-	dropIntoFlowRef.current = dropIntoFlow;
-	const dropIntoCellsRef = useRef(dropIntoCells);
-	dropIntoCellsRef.current = dropIntoCells;
+	const dropIntoFlowRef = useRef(dropIntoFlow); // mirrored in the commit effect S3
+	const dropIntoCellsRef = useRef(dropIntoCells); // mirrored in the commit effect S3
 
 	const onDrop = useCallback(
 		(e: { id: string; x: number; y: number }) => {
@@ -1622,24 +1643,12 @@ export default function Canvas({ studio = false }: Props) {
 	);
 
 	// =========================================================================================
-	// Context menu (5d).
+	// Context menu (5d). (The `menu` state itself is declared earlier, before switchMonitor.)
 	// =========================================================================================
-	// `cellIndex` is set only when opened from an empty grid cell → "Add inside" targets that cell.
-	const [menu, setMenu] = useState<{
-		x: number;
-		y: number;
-		id: string;
-		cellIndex?: number;
-	} | null>(null);
 	// Context-menu HOVER PREVIEW: the structural op (split / add inside / add beside) under the pointer
 	// or keyboard focus in the menu. A read-only ghost — never mutates the model, undo, or disk (the
 	// preview rects are derived analytically from the measured boxes). Cleared when the menu closes.
 	const [previewOp, setPreviewOp] = useState<LayoutOp | null>(null);
-	// Revert the preview whenever the menu closes — one place covers the backdrop click, Esc/Tab,
-	// applying an item (menuAct closes the menu), and any programmatic close.
-	useEffect(() => {
-		if (!menu) setPreviewOp(null);
-	}, [menu]);
 	// Ghost rects for the hovered/focused menu item, derived analytically from the measured boxes
 	// (gridPlaceholders supply the empty-cell targets). Purely additive — no model/undo/disk effect.
 	const previewShapes = useMemo(
@@ -1651,14 +1660,23 @@ export default function Canvas({ studio = false }: Props) {
 	);
 	// The menu opens at the cursor but is clamped inside the window so it isn't clipped at the
 	// right/bottom edges. We render at the cursor first, then measure the box and shift it back in a
-	// layout effect (runs before paint → no visible jump). Reset when the menu closes.
+	// layout effect (runs before paint → no visible jump).
 	const ctxRef = useRef<HTMLDivElement | null>(null);
 	const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
-	useLayoutEffect(() => {
+	// When the menu CLOSES, revert the hover preview and clear the clamped position. Done during render
+	// (store-previous pattern) — these were two menu-keyed effects whose synchronous setState on close
+	// is exactly what set-state-in-effect flags. Opening/repointing is handled by the layout effect
+	// below (a DOM measurement, which the rule allows).
+	const [prevMenu, setPrevMenu] = useState(menu);
+	if (menu !== prevMenu) {
+		setPrevMenu(menu);
 		if (!menu) {
+			setPreviewOp(null);
 			setMenuPos(null);
-			return;
 		}
+	}
+	useLayoutEffect(() => {
+		if (!menu) return; // closing is handled during render (above)
 		const el = ctxRef.current;
 		if (!el) return;
 		const r = el.getBoundingClientRect();
@@ -1690,28 +1708,12 @@ export default function Canvas({ studio = false }: Props) {
 		}
 	}, [menu]);
 
-	const widgetsAt = useCallback((world: { x: number; y: number }): Renderable[] => {
-		const rs = renderablesRef.current;
-		const seen = new Set<string>();
-		const out: Renderable[] = [];
-		for (let i = rs.length - 1; i >= 0; i--) {
-			const r = rs[i];
-			const b = r.rect;
-			if (world.x < b.x || world.x >= b.x + b.w || world.y < b.y || world.y >= b.y + b.h) continue;
-			if (seen.has(r.selectId)) continue;
-			seen.add(r.selectId);
-			out.push(r);
-		}
-		return out;
-	}, []);
-
 	const containerAt = useCallback(
 		(world: { x: number; y: number }): string =>
 			innermostContainerAt(containerRectsRef.current, world, monitorForDragRef.current.root.id),
 		[]
 	);
-	const containerRectsRef = useRef(containerRects);
-	containerRectsRef.current = containerRects;
+	const containerRectsRef = useRef(containerRects); // mirrored in the commit effect S3
 
 	// menu-derived state.
 	const menuNode = menu
@@ -1729,7 +1731,7 @@ export default function Canvas({ studio = false }: Props) {
 	const menuCanDistribute =
 		menuNode !== null && isContainer(menuNode) && menuNode.children.length >= 2;
 	const menuParentId =
-		menuId && menuId !== '__canvas__' ? findParent(monitor.root, menuId)?.id ?? null : null;
+		menuId && menuId !== '__canvas__' ? (findParent(monitor.root, menuId)?.id ?? null) : null;
 	// A row/col container can be FLIPPED to the other orientation (context-menu "Convert to …").
 	const menuConvertKind: Container['kind'] | null =
 		menuNode && isContainer(menuNode) && (menuNode.kind === 'row' || menuNode.kind === 'col')
@@ -1741,26 +1743,36 @@ export default function Canvas({ studio = false }: Props) {
 	// widgets first (front-to-back), then the containers/grid cells nesting them (smallest first).
 	// Picking an entry re-points the menu at it, so you can act on a widget OR any container around it.
 	const menuStack = useMemo<{ id: string; label: string }[]>(() => {
-		if (!menu || !studio) return [];
-		const world = toWorld(menu.x, menu.y);
-		const widgets = widgetsAt(world).map((r) => ({
-			id: r.selectId,
-			label: `${r.instance.type} · ${r.selectId}`
-		}));
-		const rootId = monitorForDragRef.current.root.id;
-		const containers = containerRectsRef.current
+		if (!menu || !studio || menu.wx == null || menu.wy == null) return [];
+		const wx = menu.wx;
+		const wy = menu.wy;
+		// Overlapping widgets first (front-to-back, deduped by selectId), then the containers/grid cells
+		// nesting them (smallest first). Reads the live renderables/containerRects directly (no refs);
+		// the opening click's WORLD coords were captured in the handler, so no DOM read is needed here.
+		const seen = new Set<string>();
+		const widgets: { id: string; label: string }[] = [];
+		for (let i = renderables.length - 1; i >= 0; i--) {
+			const r = renderables[i];
+			const b = r.rect;
+			if (wx < b.x || wx >= b.x + b.w || wy < b.y || wy >= b.y + b.h) continue;
+			if (seen.has(r.selectId)) continue;
+			seen.add(r.selectId);
+			widgets.push({ id: r.selectId, label: `${r.instance.type} · ${r.selectId}` });
+		}
+		const rootId = monitor.root.id;
+		const containers = containerRects
 			.filter(
 				(c) =>
 					c.id !== rootId &&
-					world.x >= c.rect.x &&
-					world.x < c.rect.x + c.rect.w &&
-					world.y >= c.rect.y &&
-					world.y < c.rect.y + c.rect.h
+					wx >= c.rect.x &&
+					wx < c.rect.x + c.rect.w &&
+					wy >= c.rect.y &&
+					wy < c.rect.y + c.rect.h
 			)
 			.sort((a, b) => a.rect.w * a.rect.h - b.rect.w * b.rect.h)
 			.map((c) => ({ id: c.id, label: `▦ ${c.kind} · ${c.id}` }));
 		return [...widgets, ...containers];
-	}, [menu, studio, widgetsAt, toWorld]);
+	}, [menu, studio, renderables, containerRects, monitor]);
 
 	// A right-button free-move (WidgetHost) arms this so the contextmenu that trails the drag is
 	// swallowed exactly once — by whichever entry point it lands on (the widget's handleContextMenu
@@ -1781,15 +1793,23 @@ export default function Canvas({ studio = false }: Props) {
 		return false;
 	}, []);
 
-	const onWidgetContextMenu = useCallback((e: { id: string; x: number; y: number }) => {
-		setMenu({ x: e.x, y: e.y, id: e.id });
-	}, []);
+	const onWidgetContextMenu = useCallback(
+		(e: { id: string; x: number; y: number }) => {
+			const w = toWorld(e.x, e.y);
+			setMenu({ x: e.x, y: e.y, id: e.id, wx: w.x, wy: w.y });
+		},
+		[toWorld]
+	);
 	// Outline rows open the same node menu (the rows name nodes, so no hit-testing needed). The
 	// root row maps to the stage's '__canvas__' sentinel like a bare-canvas right-click would.
-	const onOutlineContextMenu = useCallback((e: { id: string; x: number; y: number }) => {
-		const rootId = monitorForDragRef.current.root.id;
-		setMenu({ x: e.x, y: e.y, id: e.id === rootId ? '__canvas__' : e.id });
-	}, []);
+	const onOutlineContextMenu = useCallback(
+		(e: { id: string; x: number; y: number }) => {
+			const rootId = monitorForDragRef.current.root.id;
+			const w = toWorld(e.x, e.y);
+			setMenu({ x: e.x, y: e.y, id: e.id === rootId ? '__canvas__' : e.id, wx: w.x, wy: w.y });
+		},
+		[toWorld]
+	);
 	const onCanvasContextMenu = useCallback(
 		(event: React.MouseEvent) => {
 			if (!editModeRef.current || previewingRef.current) return; // read-only while previewing
@@ -1804,8 +1824,15 @@ export default function Canvas({ studio = false }: Props) {
 			event.preventDefault();
 			if (consumeSuppressCtx()) return; // swallow the contextmenu trailing a right-drag free-move
 			const mon = monitorForDragRef.current;
-			const id = studio ? containerAt(toWorld(event.clientX, event.clientY)) : mon.root.id;
-			setMenu({ x: event.clientX, y: event.clientY, id: id === mon.root.id ? '__canvas__' : id });
+			const world = toWorld(event.clientX, event.clientY);
+			const id = studio ? containerAt(world) : mon.root.id;
+			setMenu({
+				x: event.clientX,
+				y: event.clientY,
+				id: id === mon.root.id ? '__canvas__' : id,
+				wx: world.x,
+				wy: world.y
+			});
 		},
 		[studio, navSection, designing, containerAt, toWorld, consumeSuppressCtx]
 	);
@@ -1943,10 +1970,9 @@ export default function Canvas({ studio = false }: Props) {
 	// widget def these stay inert — a nav-rail CLICK instead prompts to finish + leave (navToSection),
 	// but a blocking confirm fired from a keystroke would be jarring. Defined before useKeyboard so its
 	// handler map can reference them.
+	// Both mirrored in the commit effect S3 (read only from gotoSection/cycleSection at event time).
 	const navSectionRef = useRef(navSection);
-	navSectionRef.current = navSection;
 	const designingRef = useRef(designing);
-	designingRef.current = designing;
 	const gotoSection = useCallback((index: number) => {
 		if (designingRef.current) return;
 		// Index the SAME grouped sequence the NavRail renders (main group, then foot), so Ctrl+1..8
@@ -1970,8 +1996,7 @@ export default function Canvas({ studio = false }: Props) {
 	}, [setSelection]);
 
 	// --- keyboard ---
-	const dirtyKbRef = useRef(dirty);
-	dirtyKbRef.current = dirty;
+	const dirtyKbRef = useRef(dirty); // mirrored in the commit effect S3
 	const { spaceDownRef, spaceDown } = useKeyboard({
 		studio,
 		// The plain ControlContext slice; `previewing` folds into the controls' canEdit gate (so
@@ -2008,8 +2033,8 @@ export default function Canvas({ studio = false }: Props) {
 			const ids = selectedIdsRef.current.length
 				? selectedIdsRef.current
 				: selectedIdRef.current
-				? [selectedIdRef.current]
-				: [];
+					? [selectedIdRef.current]
+					: [];
 			const idSet = new Set(ids);
 			if (!idSet.size || (dx === 0 && dy === 0)) return;
 			let changed = false;
@@ -2020,7 +2045,7 @@ export default function Canvas({ studio = false }: Props) {
 					const g = l.unit;
 					const gx = typeof g.config?.x === 'number' ? g.config.x : 0;
 					const gy = typeof g.config?.y === 'number' ? g.config.y : 0;
-					return leaf({ ...g, config: { ...(g.config ?? {}), x: gx + dx, y: gy + dy } });
+					return leaf({ ...g, config: { ...g.config, x: gx + dx, y: gy + dy } });
 				}
 				const u = l.unit as WidgetInstance;
 				return leaf({ ...u, rect: { ...u.rect, x: u.rect.x + dx, y: u.rect.y + dy } });
@@ -2031,9 +2056,43 @@ export default function Canvas({ studio = false }: Props) {
 		}
 	});
 	const menuRef = useRef(menu);
-	menuRef.current = menu;
 	const selectedIdRef = useRef(selectedId);
-	selectedIdRef.current = selectedId;
+
+	// Sync effect S3: mirror the latest render values into the refs that async / event-time consumers
+	// read (Tauri listeners, the studio-close guard, drag / keyboard / context-menu handlers, persist).
+	// Runs on every commit — after render, before any of those consumers can fire — so they always see
+	// current values. The syncRects trio (the only refs read synchronously inside an effect body) is
+	// handled by the earlier effect S1; none of the refs below are read during render.
+	// (Some refs below are also read by hooks declared above, so react-hooks/immutability wants the
+	// write "before the hook" — but a render-time ref write trips react-hooks/refs instead. A latest-ref
+	// mirror can't satisfy both rules at once, and this project doesn't run the React Compiler; these are
+	// refs, mutable by design, read only after commit.)
+	useEffect(() => {
+		// (react-hooks/immutability flagged these ref writes under eslint-plugin-react-hooks v7; oxlint's
+		// react plugin has no equivalent rule, so no directive is needed here anymore — see the comment
+		// above this effect for why these are refs, mutable by design.)
+		myMonitorRef.current = myMonitor;
+		monitorRef.current = monitor;
+		pendingExtrasRef.current = pendingExtras;
+		commitSaveRef.current = commitSave;
+		savedBaselineRef.current = savedBaseline;
+		dirtyRef.current = dirty;
+		dirtyKbRef.current = dirty;
+		previewingRef.current = previewing;
+		stateRef.current = state;
+		panRef.current = { panX, panY, zoom };
+		solvedRef.current = combinedSolved;
+		renderablesRef.current = renderables;
+		monitorForDragRef.current = monitor;
+		selectedIdsRef.current = selectedIds;
+		selectedIdRef.current = selectedId;
+		dropIntoFlowRef.current = dropIntoFlow;
+		dropIntoCellsRef.current = dropIntoCells;
+		containerRectsRef.current = containerRects;
+		navSectionRef.current = navSection;
+		designingRef.current = designing;
+		menuRef.current = menu;
+	});
 
 	// --- canvas pointer (marquee + pan) ---
 	const { marquee, panning, onCanvasMouseDown } = useCanvasPointer({
@@ -2257,11 +2316,14 @@ export default function Canvas({ studio = false }: Props) {
 									onContextMenu={(e) => {
 										e.preventDefault();
 										e.stopPropagation();
+										const w = toWorld(e.clientX, e.clientY);
 										setMenu({
 											x: e.clientX,
 											y: e.clientY,
 											id: cell.gridId === monitor.root.id ? '__canvas__' : cell.gridId,
-											cellIndex: cell.index
+											cellIndex: cell.index,
+											wx: w.x,
+											wy: w.y
 										});
 									}}
 								/>
@@ -2331,7 +2393,7 @@ export default function Canvas({ studio = false }: Props) {
 										top: `${workArea.y}px`,
 										width: `${workArea.w}px`,
 										height: `${workArea.h}px`
-								  }
+									}
 								: { position: 'absolute', inset: 0 }
 						}
 					>
@@ -3256,8 +3318,8 @@ export default function Canvas({ studio = false }: Props) {
 													{kind === 'row'
 														? '＋ Row inside'
 														: kind === 'col'
-														? '＋ Column inside'
-														: '＋ Grid inside'}
+															? '＋ Column inside'
+															: '＋ Grid inside'}
 												</button>
 											))}
 											{menuCanCollapse && (
@@ -3301,8 +3363,8 @@ export default function Canvas({ studio = false }: Props) {
 															{kind === 'row'
 																? '＋ Row beside'
 																: kind === 'col'
-																? '＋ Column beside'
-																: '＋ Grid beside'}
+																	? '＋ Column beside'
+																	: '＋ Grid beside'}
 														</button>
 													))}
 												</>
@@ -3384,14 +3446,14 @@ function patchFloatingGroupBox(
 							unit: {
 								...(l.unit as Group),
 								config: {
-									...((l.unit as Group).config ?? {}),
+									...(l.unit as Group).config,
 									x: rect.x,
 									y: rect.y,
 									w: rect.w,
 									h: rect.h
 								}
 							}
-					  }
+						}
 					: l
 			)
 		}

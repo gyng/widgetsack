@@ -23,8 +23,8 @@ const toSides = (v: Pad | undefined): Sides =>
 	v === undefined
 		? { t: 0, r: 0, b: 0, l: 0 }
 		: typeof v === 'number'
-		? { t: v, r: v, b: v, l: v }
-		: v;
+			? { t: v, r: v, b: v, l: v }
+			: v;
 
 const uniform = (s: Sides): boolean => s.t === s.r && s.r === s.b && s.b === s.l;
 

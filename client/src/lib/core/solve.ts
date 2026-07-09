@@ -153,7 +153,7 @@ const trackWeight = (weights: number[] | undefined, t: number): number => {
 // sizer and the splitter collector (which only offers boundaries between two FLEXIBLE tracks).
 function gridFixedTracks(c: Container, count: number, horizontal: boolean): (number | null)[] {
 	const cols = Math.max(1, c.cols ?? 1);
-	const fixed: (number | null)[] = new Array(count).fill(null);
+	const fixed: (number | null)[] = Array.from({ length: count }, () => null);
 	c.children.forEach((child, i) => {
 		const t = horizontal ? i % cols : Math.floor(i / cols);
 		if (t >= count) return;
@@ -414,7 +414,7 @@ export function resolveGroup(grp: Group, library?: Library): ResolvedGroup {
 		grp.def && library ? library.defs.find((d) => d.id === grp.def) : undefined;
 
 	const baseChild: LayoutNode | undefined = def ? def.child : grp.child;
-	const size: Size = def ? def.size : grp.size ?? { w: 0, h: 0 };
+	const size: Size = def ? def.size : (grp.size ?? { w: 0, h: 0 });
 
 	if (!baseChild) return { child: emptyContainer(grp.id + ':empty'), size };
 
@@ -480,7 +480,7 @@ function intrinsicContainer(
 			(ch) => (horizontal ? cellFixedW(ch) : cellFixedH(ch)) != null
 		);
 		if (hasFixed) {
-			const tracks = new Array<number>(count).fill(0);
+			const tracks = Array.from({ length: count }, () => 0);
 			c.children.forEach((child, i) => {
 				const t = horizontal ? i % cols : Math.floor(i / cols);
 				if (t >= count) return;

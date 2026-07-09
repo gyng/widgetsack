@@ -9,6 +9,12 @@
 	background: rgba(var(--ui-accent-rgb), 0.18);
 	border: 2px solid rgba(var(--ui-accent-rgb), 0.85);
 	border-radius: 6px;
-	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25), 0 8px 30px rgba(0, 0, 0, 0.35);
-	transition: left 90ms ease, top 90ms ease, width 90ms ease, height 90ms ease;
+	box-shadow:
+		0 0 0 1px rgba(0, 0, 0, 0.25),
+		0 8px 30px rgba(0, 0, 0, 0.35);
+	transition:
+		left 90ms ease,
+		top 90ms ease,
+		width 90ms ease,
+		height 90ms ease;
 }

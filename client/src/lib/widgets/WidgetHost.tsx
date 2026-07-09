@@ -341,8 +341,8 @@ function WidgetHost({
 			style={
 				flow
 					? // Slot mode (CSS layout): fill the FlowNode slot that owns position/size; only the
-					  // live drag ghost is applied here.
-					  { width: '100%', height: '100%', transform: `translate(${ghost.dx}px, ${ghost.dy}px)` }
+						// live drag ghost is applied here.
+						{ width: '100%', height: '100%', transform: `translate(${ghost.dx}px, ${ghost.dy}px)` }
 					: {
 							left: `${rect.x}px`,
 							top: `${rect.y}px`,
@@ -351,7 +351,7 @@ function WidgetHost({
 							width: contentSize ? 'max-content' : `${rect.w}px`,
 							height: contentSize ? 'max-content' : `${rect.h}px`,
 							transform: `translate(${ghost.dx}px, ${ghost.dy}px)`
-					  }
+						}
 			}
 			data-w={domId}
 			data-type={instance.type}

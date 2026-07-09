@@ -63,8 +63,11 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 	const [userThemeSwatches, setUserThemeSwatches] = useState<Record<string, Swatch>>({});
 
 	// applyTheme reads the latest selectedTheme via a ref (it's called from listeners + after sets).
+	// Mirrored in a commit effect (not during render); every read happens later, off-render.
 	const themeRef = useRef(selectedTheme);
-	themeRef.current = selectedTheme;
+	useEffect(() => {
+		themeRef.current = selectedTheme;
+	});
 
 	const applyTheme = useCallback(async () => {
 		setThemeCss(await resolveThemeCss(themeRef.current));

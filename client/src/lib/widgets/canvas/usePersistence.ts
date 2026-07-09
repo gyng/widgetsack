@@ -52,17 +52,21 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 		savedMonitor: state.savedMonitor,
 		studio: state.studio
 	});
-	view.current = {
-		myMonitor,
-		monitor: state.monitor,
-		library: state.library,
-		selectedTheme: state.selectedTheme,
-		themeLock: state.themeLock,
-		tokenOverrides: state.tokenOverrides,
-		editingDefId: state.editingDefId,
-		savedMonitor: state.savedMonitor,
-		studio: state.studio
-	};
+	// Refresh the mirror in a commit effect (not during render); the debounced writer + Save read
+	// view.current later (via setTimeout / a button press), never synchronously in this render.
+	useEffect(() => {
+		view.current = {
+			myMonitor,
+			monitor: state.monitor,
+			library: state.library,
+			selectedTheme: state.selectedTheme,
+			themeLock: state.themeLock,
+			tokenOverrides: state.tokenOverrides,
+			editingDefId: state.editingDefId,
+			savedMonitor: state.savedMonitor,
+			studio: state.studio
+		};
+	});
 
 	// While editing a def we must fold the scoped editing tree back into the library before a
 	// write — but the library set is reducer-owned. The Canvas runs `endDefEdit`/save through the

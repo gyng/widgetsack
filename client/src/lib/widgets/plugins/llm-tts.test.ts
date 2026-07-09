@@ -43,7 +43,10 @@ beforeEach(() => {
 	vi.stubGlobal(
 		'Blob',
 		class {
-			constructor(public parts: unknown[], public opts: { type?: string }) {}
+			constructor(
+				public parts: unknown[],
+				public opts: { type?: string }
+			) {}
 		}
 	);
 	let n = 0;

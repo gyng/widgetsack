@@ -113,7 +113,7 @@ describe('refreshSacks (section-open peek)', () => {
 							theme: { name: 'Nord', css: 'x' },
 							tokens: { '--a': '1', '--b': '2' }
 						})
-				  )
+					)
 				: 'not a sack'
 		);
 		const { result } = setup({ navSection: 'sacks' });

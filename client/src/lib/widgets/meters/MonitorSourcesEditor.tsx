@@ -19,19 +19,49 @@ export default function MonitorSourcesEditor({ value, monitor, onChange }: Props
 	const [detected, setDetected] = useState<number[]>([]);
 	const [loading, setLoading] = useState(true);
 
-	const scan = useCallback(async (): Promise<void> => {
-		setLoading(true);
+	// The DDC/CI probe (a Tauri call). Resolves to the chosen monitor's supported inputs — it does NOT
+	// touch state itself, so callers own when to apply the result (in a `.then` callback, never a
+	// synchronous setState in the effect body → no cascading setState-in-effect).
+	const scan = useCallback(async (): Promise<number[]> => {
 		const list = await listMonitorInputs(monitor || undefined);
 		const target = monitor
 			? list.find((m) => m.gdi === monitor)
-			: list.find((m) => m.primary) ?? list[0];
-		setDetected(target?.supported ?? []);
-		setLoading(false);
+			: (list.find((m) => m.primary) ?? list[0]);
+		return target?.supported ?? [];
 	}, [monitor]);
 
+	// Show the detecting state again when the chosen monitor changes — flagged during render
+	// (adjust-during-render, so it isn't a setState-in-effect); the effect below runs the probe.
+	const [prevMonitor, setPrevMonitor] = useState(monitor);
+	if (monitor !== prevMonitor) {
+		setPrevMonitor(monitor);
+		setLoading(true);
+	}
+
+	// Probe on mount and whenever the monitor (hence `scan`) changes; a stale in-flight probe is
+	// ignored so a fast monitor switch can't apply the wrong result. setState lives in the `.then`
+	// callback, keeping the effect body free of a synchronous setState.
 	useEffect(() => {
-		void scan();
+		let cancelled = false;
+		void scan().then((supported) => {
+			if (cancelled) return;
+			setDetected(supported);
+			setLoading(false);
+		});
+		return () => {
+			cancelled = true;
+		};
 	}, [scan]);
+
+	// Manual rescan (button, so setState is a plain event-handler update): re-probe the same monitor,
+	// showing the detecting state meanwhile.
+	const rescan = (): void => {
+		setLoading(true);
+		void scan().then((supported) => {
+			setDetected(supported);
+			setLoading(false);
+		});
+	};
 
 	const rows = sourceEditorRows(detected, value);
 	const emit = (next: SourceEditorRow[]): void => onChange(buildSourceSpec(next));
@@ -47,12 +77,7 @@ export default function MonitorSourcesEditor({ value, monitor, onChange }: Props
 				<span className="ms-src-status">
 					{loading ? 'detecting inputs…' : `${rows.length} input${rows.length === 1 ? '' : 's'}`}
 				</span>
-				<button
-					type="button"
-					className="ms-src-scan"
-					onClick={() => void scan()}
-					disabled={loading}
-				>
+				<button type="button" className="ms-src-scan" onClick={rescan} disabled={loading}>
 					rescan
 				</button>
 			</div>

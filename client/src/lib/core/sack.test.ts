@@ -65,7 +65,7 @@ describe('mergeLibrary', () => {
 		const { library, idMap } = mergeLibrary(into, [incomingA, incomingB]);
 		expect(idMap).toEqual({ a: 'a-2', b: 'b-2' });
 		const mergedA = library.defs.find((d) => d.id === 'a-2');
-		const grp = (mergedA?.child as Leaf).unit as { def: string };
+		const grp = (mergedA!.child as Leaf).unit as { def: string };
 		expect(grp.def).toBe('b-2'); // points to B's NEW id
 	});
 

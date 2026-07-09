@@ -68,6 +68,6 @@ export function useConditionHidden(
 		};
 		return hiddenContainerIds(conds, ctx);
 		// `sig` is the reactive trigger (its value is folded into the snapshot reads above).
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		// oxlint-disable-next-line react-hooks/exhaustive-deps
 	}, [active, conds, hub, sig]);
 }

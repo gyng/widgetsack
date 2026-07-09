@@ -18,7 +18,7 @@ vi.mock('../../components/NowPlaying/source', () => ({
 						shuffle: false,
 						repeat: false,
 						seek: true
-				  }
+					}
 				: null
 		)
 	)

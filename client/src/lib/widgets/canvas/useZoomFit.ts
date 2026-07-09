@@ -33,14 +33,20 @@ export function useZoomFit(opts: {
 	const { studio, myMonitor, monSize, stageW, stageH, canvasRef } = opts;
 	const [pan, setPan] = useState<Pan>({ panX: 0, panY: 0, zoom: 1 });
 	// Read the latest overrides without re-subscribing the native wheel listener (its effect deps stay
-	// [studio, canvasRef]); a new overrides fn each render just updates the ref.
+	// [studio, canvasRef]); a new overrides fn each render just updates the ref (in a commit effect —
+	// the wheel listener reads it later).
 	const overridesRef = useRef(opts.overrides ?? NO_OVERRIDES);
-	overridesRef.current = opts.overrides ?? NO_OVERRIDES;
+	useEffect(() => {
+		overridesRef.current = opts.overrides ?? NO_OVERRIDES;
+	});
 
 	// fit() reads the latest sizes via a ref so it's a stable callback (used by the Fit button + the
-	// auto-fit effect) without re-subscribing.
+	// auto-fit effect) without re-subscribing. Mirrored in a commit effect declared BEFORE the auto-fit
+	// effect below, so sizes.current is fresh by the time that effect calls fit().
 	const sizes = useRef({ monSize, stageW, stageH });
-	sizes.current = { monSize, stageW, stageH };
+	useEffect(() => {
+		sizes.current = { monSize, stageW, stageH };
+	});
 
 	const fit = useCallback(() => {
 		const { monSize: m, stageW: sw, stageH: sh } = sizes.current;

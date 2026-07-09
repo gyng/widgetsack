@@ -195,7 +195,7 @@ describe('onSplitReset (double-click → even pair)', () => {
 
 describe('onSplitKey (WCAG keyboard nudge)', () => {
 	const key = (k: string, shift = false) =>
-		({ key: k, shiftKey: shift, preventDefault: vi.fn() } as unknown as React.KeyboardEvent);
+		({ key: k, shiftKey: shift, preventDefault: vi.fn() }) as unknown as React.KeyboardEvent;
 	// fr of child A after the n-th commit, run against a real row monitor.
 	const frA = (commitOp: ReturnType<typeof setup>['commitOp'], call: number) => {
 		const patch = commitOp.mock.calls[call][0](stateWith(rowMonitor()));

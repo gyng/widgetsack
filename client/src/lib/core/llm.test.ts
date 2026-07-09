@@ -119,7 +119,7 @@ describe('parseAssistantReply', () => {
 			'Sure!\n```json\n{ "ops": [ { "op": "addWidget", "widgetType": "gauge" } ], "summary": "added a gauge" }\n```\nDone.';
 		const r = parseAssistantReply(reply);
 		expect(r?.ops).toHaveLength(1);
-		expect((r?.ops[0] as { widgetType: string }).widgetType).toBe('gauge');
+		expect((r!.ops[0] as { widgetType: string }).widgetType).toBe('gauge');
 	});
 
 	it('drops ops with an unknown verb and returns the valid ones', () => {

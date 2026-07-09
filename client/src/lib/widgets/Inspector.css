@@ -218,7 +218,8 @@
 	padding: var(--space-1) var(--space-2);
 	width: 100%;
 	box-sizing: border-box;
-	transition: border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		box-shadow var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		background var(--motion-fast, 100ms) var(--ease-out, ease-out);
 }
@@ -246,7 +247,8 @@
 	background: var(--ui-raised);
 	cursor: pointer;
 	position: relative;
-	transition: background var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		background var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		border-color var(--motion-fast, 100ms) var(--ease-out, ease-out);
 }
 .inspector input[type='checkbox']:hover {
@@ -289,7 +291,9 @@
 .inspector select:focus {
 	outline: none;
 	border-color: rgb(var(--ui-accent-rgb));
-	box-shadow: 0 0 0 1px rgba(var(--ui-accent-rgb), 0.35), 0 0 6px rgba(var(--ui-accent-rgb), 0.15);
+	box-shadow:
+		0 0 0 1px rgba(var(--ui-accent-rgb), 0.35),
+		0 0 6px rgba(var(--ui-accent-rgb), 0.15);
 }
 
 .inspector textarea.error {
@@ -304,7 +308,8 @@
 	font-size: var(--text-md);
 	padding: var(--space-1) var(--space-3);
 	cursor: pointer;
-	transition: border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		box-shadow var(--motion-fast, 100ms) var(--ease-out, ease-out);
 }
 
@@ -322,7 +327,8 @@
    so the affordance feels as tactile as the toolbar. (The keyboard-focus ring comes from the global
    .canvas :focus-visible baseline.) */
 .inspector .palette button {
-	transition: border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		box-shadow var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		transform var(--motion-fast, 100ms) var(--ease-out, ease-out);
 }
@@ -511,7 +517,8 @@
 	padding: var(--space-1) var(--space-4);
 	cursor: pointer;
 	/* The active underline slides in + the label brightens when the tab changes. */
-	transition: color var(--motion-fast, 100ms) var(--ease-out, ease-out),
+	transition:
+		color var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		border-bottom-color var(--motion, 150ms) var(--ease-out, ease-out);
 }
 

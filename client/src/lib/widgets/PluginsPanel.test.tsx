@@ -165,7 +165,7 @@ describe('PluginsPanel detail pane', () => {
 				widgets: [
 					{
 						meta: { type: 'gauge', label: 'Gauge', binds: 'scalar' },
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
+						// oxlint-disable-next-line @typescript-eslint/no-explicit-any
 						component: (() => null) as any
 					}
 				]
@@ -194,7 +194,7 @@ describe('PluginsPanel detail pane', () => {
 				widgets: [
 					{
 						meta: { type: 'gauge', label: 'Gauge', binds: 'scalar' },
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
+						// oxlint-disable-next-line @typescript-eslint/no-explicit-any
 						component: (() => null) as any
 					}
 				]
@@ -235,7 +235,7 @@ describe('PluginsPanel detail pane', () => {
 					{
 						// No `label` in the meta → the row falls back to the bare type string.
 						meta: { type: 'spectrum', binds: 'none' },
-						// eslint-disable-next-line @typescript-eslint/no-explicit-any
+						// oxlint-disable-next-line @typescript-eslint/no-explicit-any
 						component: (() => null) as any
 					}
 				]

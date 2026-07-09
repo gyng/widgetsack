@@ -53,7 +53,7 @@ function renderCpu(node: ReactElement, coreCount: number, withFreq = false) {
 describe('Cpu (per-core grid)', () => {
 	it('feeds the canvas one history per core', () => {
 		renderCpu(<Cpu />, 32);
-		expect((cap.props?.cores as number[][]).length).toBe(32);
+		expect((cap.props!.cores as number[][]).length).toBe(32);
 	});
 
 	it('defaults to an 8-column grid', () => {
@@ -65,7 +65,7 @@ describe('Cpu (per-core grid)', () => {
 		// 32 usage + 32 freq present (as when the studio "*" subscription is live); the grid must stay at
 		// exactly the 32 usage cores, not pad out with 32 off-scale freq lines.
 		renderCpu(<Cpu />, 32, true);
-		expect((cap.props?.cores as number[][]).length).toBe(32);
+		expect((cap.props!.cores as number[][]).length).toBe(32);
 		expect(cap.props?.cols).toBe(8);
 	});
 

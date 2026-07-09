@@ -183,7 +183,7 @@ describe('Inspector config-field rendering (per ConfigField kind)', () => {
 		fireEvent.click(within(panel()).getByRole('button', { name: '+ action' }));
 		const patch = lastConfigPatch(onOp);
 		expect(Array.isArray(patch?.actions)).toBe(true);
-		expect((patch?.actions as unknown[]).length).toBe(1);
+		expect((patch!.actions as unknown[]).length).toBe(1);
 	});
 
 	it('renders a monitorSources field, degrading to a manual code entry when none detected', async () => {

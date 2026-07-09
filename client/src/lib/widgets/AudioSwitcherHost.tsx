@@ -26,8 +26,8 @@ export default function AudioSwitcherHost({ color }: Props) {
 
 	useEffect(() => {
 		let alive = true;
-		void refresh();
 		const onFocus = (): void => void refresh();
+		onFocus(); // initial load (kept off the effect's sync path — refresh setStates after an await)
 		window.addEventListener('focus', onFocus);
 		const timer = window.setInterval(() => {
 			if (alive) void refresh();
