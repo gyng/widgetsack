@@ -75,6 +75,59 @@ pub async fn save_layout(app: tauri::AppHandle, contents: String) -> Result<(), 
     fs::write(&path, contents).map_err(|e| e.to_string())
 }
 
+/// Filename prefix for layout backups taken on parse failure (`widgets.json.bad-<epoch-ms>`).
+const LAYOUT_BACKUP_PREFIX: &str = "widgets.json.bad-";
+/// How many parse-failure backups to keep (oldest pruned).
+const LAYOUT_BACKUPS_KEPT: usize = 3;
+
+/// Pure seam: which backup FILENAMES to delete so only the newest `keep` remain. The epoch-ms
+/// suffix is fixed-width for any realistic date, so a plain descending lexicographic sort is
+/// newest-first. Tested below.
+fn stale_backups(mut names: Vec<String>, keep: usize) -> Vec<String> {
+    names.sort_by(|a, b| b.cmp(a));
+    names.split_off(keep.min(names.len()))
+}
+
+/// Copy the CURRENT widgets.json aside as `widgets.json.bad-<epoch-ms>` — called by the frontend
+/// when it fails to PARSE the layout, BEFORE the running app (now on an in-memory default) can
+/// save over the original and destroy whatever was hand-recoverable in it. Keeps the newest
+/// `LAYOUT_BACKUPS_KEPT` backups, pruning older ones. Returns the backup path, or `None` when
+/// there is no layout file to back up. Best-effort by design: the caller logs, never blocks on it.
+#[tauri::command]
+pub async fn backup_layout(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let path = layout_path(&app)?;
+    if !path.exists() {
+        return Ok(None);
+    }
+    let dir = path
+        .parent()
+        .ok_or_else(|| "layout path has no parent".to_string())?;
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_millis();
+    let backup = dir.join(format!("{LAYOUT_BACKUP_PREFIX}{ts}"));
+    fs::copy(&path, &backup).map_err(|e| e.to_string())?;
+    // Prune older backups (best-effort — a leftover extra backup is harmless).
+    if let Ok(entries) = fs::read_dir(dir) {
+        let names: Vec<String> = entries
+            .filter_map(|e| e.ok())
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| n.starts_with(LAYOUT_BACKUP_PREFIX))
+            .collect();
+        for stale in stale_backups(names, LAYOUT_BACKUPS_KEPT) {
+            let _ = fs::remove_file(dir.join(stale));
+        }
+    }
+    log::warn(
+        "layout",
+        "layout failed to parse; backed up before any overwrite",
+    )
+    .field("backup", backup.display())
+    .emit();
+    Ok(Some(backup.display().to_string()))
+}
+
 /// Path to the persisted control remaps (`controls.json` in the app config dir).
 fn controls_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = config_root(app)?;
@@ -208,6 +261,21 @@ fn client_log_level(level: &str) -> log::LogLevel {
     }
 }
 
+/// Cap a client-supplied string at `max` CHARS (not bytes — never splits a UTF-8 scalar), marking
+/// the cut with a trailing `…`. The webview side of `log_client` is app code, but a buggy render
+/// loop stringifying a huge object into `message` would otherwise churn straight through the log's
+/// 1 MiB rotation. Pure seam (tested below).
+fn truncate_chars(s: &str, max: usize) -> String {
+    match s.char_indices().nth(max) {
+        Some((i, _)) => format!("{}…", &s[..i]),
+        None => s.to_string(),
+    }
+}
+
+/// Caps for `log_client` fields: generous for a diagnostic line, tiny next to the 1 MiB rotation.
+const CLIENT_LOG_MESSAGE_MAX: usize = 4096;
+const CLIENT_LOG_COMPONENT_MAX: usize = 64;
+
 /// Persist a FRONTEND failure into the backend log pipeline (console + ring buffer + rotating file +
 /// `log` event). Frontend errors — an overlay reconcile that threw, a failed invoke — otherwise live
 /// only in the webview's console and VANISH when that webview dies, which is exactly the class of
@@ -217,13 +285,17 @@ fn client_log_level(level: &str) -> log::LogLevel {
 /// builders take a `&'static str` target, so the dynamic part goes in a field). Mirrors `log_diag`.
 #[tauri::command]
 pub fn log_client(window: tauri::WebviewWindow, level: String, component: String, message: String) {
+    let message = truncate_chars(&message, CLIENT_LOG_MESSAGE_MAX);
     let entry = match client_log_level(&level) {
         log::LogLevel::Error => log::error("client", message),
         log::LogLevel::Warn => log::warn("client", message),
         _ => log::info("client", message),
     };
     entry
-        .field("component", component)
+        .field(
+            "component",
+            truncate_chars(&component, CLIENT_LOG_COMPONENT_MAX),
+        )
         .field("window", window.label())
         .emit();
 }
@@ -1360,8 +1432,34 @@ pub fn watch_controls(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{client_log_level, valid_name, version_is_newer};
+    use super::{client_log_level, stale_backups, truncate_chars, valid_name, version_is_newer};
     use crate::log::LogLevel;
+
+    #[test]
+    fn truncate_chars_caps_at_chars_not_bytes() {
+        assert_eq!(truncate_chars("short", 10), "short");
+        assert_eq!(truncate_chars("abcdef", 3), "abc…");
+        // Multi-byte scalars: 3 CHARS, never a split UTF-8 sequence.
+        assert_eq!(truncate_chars("日本語です", 3), "日本語…");
+        assert_eq!(truncate_chars("", 5), "");
+    }
+
+    #[test]
+    fn stale_backups_keeps_the_newest_n() {
+        let names = vec![
+            "widgets.json.bad-1783600000000".to_string(),
+            "widgets.json.bad-1783700000000".to_string(),
+            "widgets.json.bad-1783500000000".to_string(),
+            "widgets.json.bad-1783650000000".to_string(),
+        ];
+        // Keep the 3 newest → only the oldest is stale.
+        assert_eq!(
+            stale_backups(names.clone(), 3),
+            vec!["widgets.json.bad-1783500000000".to_string()]
+        );
+        // Fewer than `keep` → nothing to prune.
+        assert_eq!(stale_backups(names[..2].to_vec(), 3), Vec::<String>::new());
+    }
 
     #[test]
     fn client_log_level_maps_error_warn_else_info() {

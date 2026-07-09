@@ -252,6 +252,7 @@ async fn main() -> Result<(), ()> {
             is_dev_instance,
             command::load_layout,
             command::save_layout,
+            command::backup_layout,
             command::load_controls,
             command::save_controls,
             windowmgr::list_windows,

@@ -45,6 +45,7 @@ export const COMMANDS = {
 	// layout persistence + saved layout profiles (command.rs)
 	loadLayout: 'load_layout',
 	saveLayout: 'save_layout',
+	backupLayout: 'backup_layout',
 	listLayouts: 'list_layouts',
 	readLayout: 'read_layout',
 	saveLayoutAs: 'save_layout_as',

@@ -100,9 +100,11 @@ import {
 	minimizeWindow,
 	toggleMaximizeWindow,
 	closeWindow,
+	logClient,
 	onStudioCloseRequested,
 	reconcileOverlays,
 	recreateMain,
+	requestLayoutBackup,
 	setMainWindowVisible,
 	syncInteractiveRects,
 	applyOverlayPresentation
@@ -923,8 +925,12 @@ export default function Canvas({ studio = false }: Props) {
 		dispatch({ type: 'patch', patch: { historyReady: false } });
 		const patch: Partial<EditorState> = {};
 		let nextTheme: string | null = null;
+		// Assigned once load_layout resolves — the catch uses it to tell "read but unparseable"
+		// (back the file up before this session's default layout can be saved over it) from
+		// "couldn't read at all" (nothing to copy). Mirrors overlay.ts populatedMonitorKeys.
+		let raw: string | null = null;
 		try {
-			const raw = await invoke<string | null>(COMMANDS.loadLayout);
+			raw = await invoke<string | null>(COMMANDS.loadLayout);
 			const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
 			const saved = obj ? parseLayoutAny(obj) : null;
 			const mon = saved?.monitors[myMon];
@@ -947,7 +953,8 @@ export default function Canvas({ studio = false }: Props) {
 			patch.tokenOverrides =
 				tk && typeof tk === 'object' && !Array.isArray(tk) ? (tk as Record<string, string>) : {};
 		} catch (err) {
-			console.warn('load_layout failed; using default layout', err);
+			logClient('error', 'layout', `load_layout failed; using default layout: ${String(err)}`);
+			if (raw !== null) requestLayoutBackup();
 		}
 		// historyReady=false during the load + interim awaits; clear pendingExtras; reset history;
 		// set baseline — all folded into one dispatch so the loaded layout is the committed baseline.

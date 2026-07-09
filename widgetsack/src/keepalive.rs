@@ -55,7 +55,7 @@ pub fn on_zero_windows(app: &tauri::AppHandle) {
         tokio::time::sleep(RESPAWN_DELAY).await;
         let handle = app.clone();
         // Window creation must run on the main thread (same constraint as watch_layout's hook).
-        let _ = app.run_on_main_thread(move || {
+        let dispatched = app.run_on_main_thread(move || {
             RESPAWN_PENDING.store(false, Ordering::SeqCst);
             // A window may have appeared meanwhile (tray-opened studio, watch_layout respawn,
             // single-instance second launch) — then the reconcile driver is alive; stand down.
@@ -69,6 +69,12 @@ pub fn on_zero_windows(app: &tauri::AppHandle) {
                 on_zero_windows(&handle);
             }
         });
+        // The pending flag is normally reset INSIDE the closure; if the dispatch itself failed
+        // (event loop unavailable — normally only mid-shutdown) the closure never ran, and a
+        // stuck `true` would disable keep-alive for the rest of the process. Reset it here.
+        if dispatched.is_err() {
+            RESPAWN_PENDING.store(false, Ordering::SeqCst);
+        }
     });
 }
 

@@ -81,8 +81,15 @@ fn spawn_display_pump() {
                 ..Default::default()
             };
             // A zero return means the class couldn't be registered — without it we can't create the
-            // window, so there's nothing to pump. Bail (keepalive's 30s path still covers recovery).
+            // window, so there's nothing to pump. Bail (keepalive's 30s path still covers recovery),
+            // but SAY SO: a silently-dead watcher is indistinguishable from a healthy one.
             if RegisterClassW(&wc) == 0 {
+                crate::log::warn(
+                    "displaywatch",
+                    "RegisterClassW failed; display-change fast path disabled (30s keepalive still covers recovery)",
+                )
+                .field("error", std::io::Error::last_os_error())
+                .emit();
                 return;
             }
             // Hidden top-level window (no WS_VISIBLE, zero-size): it never shows but sits in the
@@ -102,7 +109,13 @@ fn spawn_display_pump() {
                 Some(hinstance.into()),
                 None,
             );
-            if hwnd.is_err() {
+            if let Err(err) = hwnd {
+                crate::log::warn(
+                    "displaywatch",
+                    "CreateWindowExW failed; display-change fast path disabled (30s keepalive still covers recovery)",
+                )
+                .field("error", err)
+                .emit();
                 return;
             }
             // Pump: sent messages (WM_DISPLAYCHANGE is delivered as one) are dispatched to the wndproc
@@ -150,12 +163,17 @@ fn on_display_change() {
         tokio::time::sleep(DEBOUNCE).await;
         let handle = app.clone();
         // Window creation must run on the main thread (same constraint as keepalive/watch_layout).
-        let _ = app.run_on_main_thread(move || {
+        let dispatched = app.run_on_main_thread(move || {
             RESPAWN_PENDING.store(false, Ordering::SeqCst);
             if should_respawn_on_display_change(handle.webview_windows().len()) {
                 crate::command::respawn_main_hidden(&handle, "display change");
             }
         });
+        // Normally reset inside the closure; if the dispatch failed (event loop unavailable —
+        // normally only mid-shutdown) a stuck `true` would eat every future display change.
+        if dispatched.is_err() {
+            RESPAWN_PENDING.store(false, Ordering::SeqCst);
+        }
     });
 }
 
