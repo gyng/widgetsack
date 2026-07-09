@@ -9,6 +9,12 @@ describe('toYaml', () => {
 		expect(toYaml('hello')).toBe('hello');
 	});
 
+	it('emits false, and non-finite numbers as null', () => {
+		expect(toYaml(false)).toBe('false');
+		expect(toYaml(NaN)).toBe('null');
+		expect(toYaml(Infinity)).toBe('null');
+	});
+
 	it('quotes ambiguous strings (numbers, bools, empties, indicators)', () => {
 		expect(toYaml('123')).toBe('"123"');
 		expect(toYaml('true')).toBe('"true"');
@@ -19,6 +25,12 @@ describe('toYaml', () => {
 
 	it('emits a flat object', () => {
 		expect(toYaml({ type: 'gauge', min: 0, max: 100 })).toBe('type: gauge\nmin: 0\nmax: 100');
+	});
+
+	it('quotes an ambiguous object key (numeric-like, `: `-bearing, dash-led)', () => {
+		expect(toYaml({ '123': 1 })).toBe('"123": 1');
+		expect(toYaml({ 'a: b': 1 })).toBe('"a: b": 1');
+		expect(toYaml({ '-x': 1 })).toBe('"-x": 1');
 	});
 
 	it('nests objects on indented lines', () => {
@@ -32,6 +44,27 @@ describe('toYaml', () => {
 
 	it('renders empty array / object inline', () => {
 		expect(toYaml({ actions: [], config: {} })).toBe('actions: []\nconfig: {}');
+	});
+
+	it('renders a top-level array / empty array / empty object', () => {
+		expect(toYaml([1, 2, 3])).toBe('- 1\n- 2\n- 3');
+		expect(toYaml([])).toBe('[]');
+		expect(toYaml({})).toBe('{}');
+	});
+
+	it('renders an array item object with a single key with no continuation lines', () => {
+		expect(toYaml({ actions: [{ domain: 'media' }] })).toBe('actions:\n  - domain: media');
+	});
+
+	it('keeps a blank line inside a multi-line block scalar', () => {
+		expect(toYaml({ css: 'a\n\nb' })).toBe('css: |-\n  a\n\n  b');
+	});
+
+	it('quotes a top-level scalar string containing a tab or leading/trailing whitespace', () => {
+		expect(toYaml('a\tb')).toBe('"a\\tb"');
+		expect(toYaml(' leading')).toBe('" leading"');
+		expect(toYaml('trailing ')).toBe('"trailing "');
+		expect(toYaml('a #comment-ish')).toBe('"a #comment-ish"');
 	});
 
 	it('renders a multi-line string as a block scalar (e.g. css)', () => {

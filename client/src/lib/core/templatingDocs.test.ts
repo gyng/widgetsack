@@ -44,4 +44,31 @@ describe('templatingReferenceMarkdown', () => {
 		expect(md).toContain('{{');
 		expect(md).toContain('–');
 	});
+
+	it('falls back to [] when a meta has no configFields, and skips non-expr fields', () => {
+		const noFields: WidgetMeta[] = [{ type: 'gauge', label: 'Gauge' }];
+		const nonExpr: WidgetMeta[] = [
+			{
+				type: 'bar',
+				label: 'Bar',
+				configFields: [{ key: 'min', label: 'min', kind: 'number' }]
+			}
+		];
+		const out = templatingReferenceMarkdown([...noFields, ...nonExpr]);
+		expect(out).toContain('_No formula fields in the current registry._');
+	});
+
+	it('omits the override note when target equals the field key, and blanks it when there is no help', () => {
+		const noHelpMetas: WidgetMeta[] = [
+			{
+				type: 'text',
+				label: 'Text',
+				configFields: [
+					{ key: 'x', label: 'x', kind: 'expr', result: 'number', target: 'x' } // target === key
+				]
+			}
+		];
+		const out = templatingReferenceMarkdown(noHelpMetas);
+		expect(out).toContain('| `text` | `x` | formula → number |  |');
+	});
 });

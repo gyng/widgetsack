@@ -36,4 +36,10 @@ describe('TopProcess meter', () => {
 		expect(container.querySelector('.tp-name')?.textContent).toBe('—');
 		expect(container.querySelector('.tp-value')?.textContent).toBe('—');
 	});
+
+	it('applies a per-instance color as the --tp-accent CSS variable', () => {
+		const { container } = render(<TopProcess sensors={{}} color="rgb(3,3,3)" />);
+		const root = container.querySelector('.np-topproc') as HTMLElement;
+		expect(root.style.getPropertyValue('--tp-accent')).toBe('rgb(3,3,3)');
+	});
 });

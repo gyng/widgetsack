@@ -40,4 +40,10 @@ describe('balanceDiagnostics', () => {
 		expect(d).toHaveLength(1);
 		expect(d[0].message).toMatch(/Unexpected "\)"/);
 	});
+
+	it('treats an unterminated /* comment as running to the end of the source', () => {
+		// No closing `*/`: indexOf returns -1, so the scan skips straight to the end — brackets
+		// inside the dangling comment (the `{` here) are never seen, and nothing is flagged.
+		expect(balanceDiagnostics('/* unterminated { comment')).toEqual([]);
+	});
 });

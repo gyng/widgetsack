@@ -39,6 +39,10 @@ describe('commonConfigFields', () => {
 	it('is empty for an empty selection', () => {
 		expect(commonConfigFields([])).toEqual([]);
 	});
+
+	it('shares nothing with a widget of an unregistered type (no meta → no fields)', () => {
+		expect(commonConfigFields([w('mystery'), w('clock')])).toEqual([]);
+	});
 });
 
 describe('commonBasisMode', () => {
@@ -51,5 +55,9 @@ describe('commonBasisMode', () => {
 	it('reports "mixed" when the bases disagree', () => {
 		expect(commonBasisMode([{ fr: 1 }, undefined])).toBe('mixed');
 		expect(commonBasisMode(['content', { fr: 1 }])).toBe('mixed');
+	});
+
+	it('defaults to "fixed" for an empty selection', () => {
+		expect(commonBasisMode([])).toBe('fixed');
 	});
 });

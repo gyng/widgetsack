@@ -36,6 +36,41 @@ describe('template preview lifecycle', () => {
 		expect(s.library?.defs ?? []).toHaveLength(0);
 	});
 
+	it('previewTemplate is refused while a def is already open (the UI folds it first)', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		act(() => result.current.dispatch({ type: 'newWidget' }));
+		const before = result.current.state;
+		act(() => result.current.dispatch({ type: 'previewTemplate', templateId: CLOCK }));
+		expect(result.current.state).toBe(before);
+	});
+
+	it('previewTemplate is a no-op for an unknown template id', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		const before = result.current.state;
+		act(() => result.current.dispatch({ type: 'previewTemplate', templateId: 'nope' }));
+		expect(result.current.state).toBe(before);
+	});
+
+	it('endPreview and clonePreview are no-ops when nothing is previewing', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		const before = result.current.state;
+		act(() => result.current.dispatch({ type: 'endPreview' }));
+		expect(result.current.state).toBe(before);
+		act(() => result.current.dispatch({ type: 'clonePreview' }));
+		expect(result.current.state).toBe(before);
+	});
+
+	it('endDefEdit during a preview (no library yet) restores the real monitor without materialising one', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		const realMonitor = result.current.state.monitor;
+		act(() => result.current.dispatch({ type: 'previewTemplate', templateId: CLOCK }));
+		act(() => result.current.dispatch({ type: 'endDefEdit' }));
+		const s = result.current.state;
+		expect(s.editingDefId).toBeNull();
+		expect(s.monitor).toBe(realMonitor);
+		expect(s.library).toBeUndefined(); // no def write-back — there is no library to write to
+	});
+
 	it('clonePreview promotes the previewed template into the library and keeps editing it', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'previewTemplate', templateId: CLOCK }));

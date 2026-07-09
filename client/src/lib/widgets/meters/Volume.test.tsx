@@ -38,4 +38,10 @@ describe('Volume meter', () => {
 		const { container } = render(<Volume level={null} />);
 		expect(container.querySelector('.vol-pct')?.textContent).toBe('—');
 	});
+
+	it('applies a per-instance color as the --vol-accent CSS variable', () => {
+		const { container } = render(<Volume level={0.5} color="rgb(2,9,1)" />);
+		const root = container.querySelector('.np-volume') as HTMLElement;
+		expect(root.style.getPropertyValue('--vol-accent')).toBe('rgb(2,9,1)');
+	});
 });

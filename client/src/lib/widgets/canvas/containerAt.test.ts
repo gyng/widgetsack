@@ -28,6 +28,13 @@ describe('innermostContainerAt', () => {
 		expect(innermostContainerAt(boxes, { x: 90, y: 50 }, 'root')).toBe('right');
 	});
 
+	it('rejects a LATER but strictly-larger box containing the point (keeps the smaller)', () => {
+		// Not pre-order here on purpose: the small box comes first, so the later, larger container
+		// must lose to the current best instead of stealing the hit.
+		const boxes = [box('inner', 0, 0, 50, 50), box('outer', 0, 0, 100, 100)];
+		expect(innermostContainerAt(boxes, { x: 10, y: 10 }, 'root')).toBe('inner');
+	});
+
 	it('falls back to the root id when the point is outside every box', () => {
 		const boxes = [box('a', 0, 0, 10, 10)];
 		expect(innermostContainerAt(boxes, { x: 50, y: 50 }, 'root')).toBe('root');

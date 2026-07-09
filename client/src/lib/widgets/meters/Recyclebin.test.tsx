@@ -33,4 +33,23 @@ describe('Recyclebin meter', () => {
 		);
 		expect(container.querySelector('.recyclebin')?.getAttribute('data-level')).toBe('full');
 	});
+
+	it('treats a missing byte sample as 0 bytes while still counting items', () => {
+		const { container } = render(<Recyclebin sensors={{ items: sc(4) }} />);
+		expect(container.querySelector('.rb-count')?.textContent).toBe('4 items');
+		expect(container.querySelector('.rb-size')?.textContent).toBe('0 B');
+	});
+
+	it('ignores a non-scalar items sample (treated as no reading yet → empty)', () => {
+		const { container } = render(
+			<Recyclebin sensors={{ items: { value: { kind: 'text', value: 'n/a' }, history: [] } }} />
+		);
+		expect(container.querySelector('.rb-empty')?.textContent).toBe('Empty');
+	});
+
+	it('applies a per-instance color as the --rb-accent CSS variable', () => {
+		const { container } = render(<Recyclebin sensors={{}} color="rgb(1,1,1)" />);
+		const root = container.querySelector('.np-recyclebin') as HTMLElement;
+		expect(root.style.getPropertyValue('--rb-accent')).toBe('rgb(1,1,1)');
+	});
 });

@@ -21,4 +21,8 @@ describe('binLevel', () => {
 	it('never flags full when the threshold is disabled (0)', () => {
 		expect(binLevel(5, 99 * GB, 0)).toBe('has');
 	});
+
+	it('treats a null byte count as 0 when checking the threshold', () => {
+		expect(binLevel(5, null, GB)).toBe('has');
+	});
 });

@@ -229,6 +229,17 @@ describe('patchGroup', () => {
 		expect((patch.monitor!.floating[0].unit as Group).css).toBe('.x{}');
 	});
 
+	it('leaves other floating leaves untouched when patching a floating group', () => {
+		const s = minimalState();
+		const g = group('grpF', { w: 50, h: 50 }, leaf(gauge('inner')));
+		const bystander = leaf(gauge('bystander'));
+		s.monitor.floating = [leaf(g), bystander];
+
+		const patch = patchGroup(s, 'grpF', { name: 'renamed' });
+		expect((patch.monitor!.floating[0].unit as Group).name).toBe('renamed');
+		expect(patch.monitor!.floating[1]).toBe(bystander); // pass-through by reference
+	});
+
 	it('leaves the tree unchanged when the id is a non-group leaf', () => {
 		const s = minimalState();
 		s.monitor.root = container('root', 'col', [leaf(gauge('w1'))]);
@@ -276,6 +287,13 @@ describe('setDefCss', () => {
 		const s = stateWithLib([def]);
 		const defs = (setDefCss(s, 'def-1', '').library as Library).defs;
 		expect(defs[0].css).toBeUndefined();
+	});
+
+	it('only patches the matching def, leaving siblings untouched', () => {
+		const s = stateWithLib([gaugeDef('def-1'), { ...gaugeDef('def-2'), css: '.keep{}' }]);
+		const defs = (setDefCss(s, 'def-1', '.new{}').library as Library).defs;
+		expect(defs[0].css).toBe('.new{}');
+		expect(defs[1].css).toBe('.keep{}'); // the non-matching def passes through
 	});
 
 	it('is a no-op when there is no library', () => {

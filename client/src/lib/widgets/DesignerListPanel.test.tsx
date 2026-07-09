@@ -7,6 +7,7 @@ vi.mock('../overlay', () => ({ copyToClipboard: vi.fn(() => Promise.resolve(true
 
 import DesignerListPanel from './DesignerListPanel';
 import { copyToClipboard } from '../overlay';
+import { registerTemplates, unregisterTemplates, TEMPLATES } from '../core/templates';
 import type { Library } from '../core/layoutTree';
 import type { DefEditor } from './canvas/useDefEditor';
 
@@ -133,6 +134,19 @@ describe('DesignerListPanel template groups', () => {
 	it('highlights the previewed template row by name', () => {
 		const { getByText } = render(<DesignerListPanel {...baseProps()} previewName="Network" />);
 		expect(getByText('Network').closest('.dl-item')!.className).toContain('cur');
+	});
+
+	it('labels a plugin template group "Templates · <group>" (built-ins stay plain "Templates")', () => {
+		// A plugin package contributes its own group; the built-in group keeps the unqualified header.
+		registerTemplates('My Pack', [{ ...TEMPLATES[1], id: 'pack-system', name: 'Pack System' }]);
+		try {
+			const { getByText } = render(<DesignerListPanel {...baseProps()} />);
+			expect(getByText('Templates')).toBeTruthy();
+			expect(getByText('Templates · My Pack')).toBeTruthy();
+			expect(getByText('Pack System')).toBeTruthy();
+		} finally {
+			unregisterTemplates('My Pack');
+		}
 	});
 });
 

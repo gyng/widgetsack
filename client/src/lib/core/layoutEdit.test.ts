@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { WidgetInstance } from './layout';
-import { container, group, isContainer, leaf, type Container, type Library } from './layoutTree';
+import {
+	container,
+	group,
+	isContainer,
+	leaf,
+	type Container,
+	type Group,
+	type Library
+} from './layoutTree';
 import {
 	allContainers,
 	collapseContainer,
@@ -119,6 +127,22 @@ describe('collapseContainer', () => {
 		const out = findNode(collapseContainer(root, 'cell'), 'cell') as Container;
 		expect(out.children.map((c) => c.id)).toEqual(['W1', 'W2']);
 	});
+
+	it('keeps a pulled-up sub-container that still holds a widget deeper down, drops empty ones', () => {
+		// cell = col[ sub=col[inner=row[W1]], sub2=col[innerEmpty=row[]] ] → col[inner]
+		const cell = container('cell', 'col', [
+			container('sub', 'col', [container('inner', 'row', [leaf(prim('W1'))])]),
+			container('sub2', 'col', [container('innerEmpty', 'row', [])])
+		]);
+		const root = container('root', 'col', [cell]);
+		const out = findNode(collapseContainer(root, 'cell'), 'cell') as Container;
+		expect(out.children.map((c) => c.id)).toEqual(['inner']);
+	});
+
+	it('is a no-op when the id names a leaf, not a container', () => {
+		const r = collapseContainer(tree(), 'A');
+		expect((findNode(r, 'rowA') as Container).children.map((c) => c.id)).toEqual(['A', 'B']);
+	});
 });
 
 describe('insertChild', () => {
@@ -148,6 +172,11 @@ describe('insertChild', () => {
 		const t = tree();
 		const r = insertChild(t, 'rowA', leaf(prim('D')), 99);
 		expect((findNode(r, 'rowA') as Container).children.map((c) => c.id)).toEqual(['A', 'B', 'D']);
+	});
+
+	it('is a no-op when the target parent is a leaf, not a container', () => {
+		const r = insertChild(tree(), 'A', leaf(prim('D')));
+		expect(flowLeaves(r).map((l) => l.id)).toEqual(['A', 'B', 'C']);
 	});
 });
 
@@ -190,6 +219,13 @@ describe('moveNode', () => {
 		expect(r.children.map((c) => c.id)).toEqual(['rowA', 'C']);
 	});
 
+	it('refuses to move a container into one of its own descendants', () => {
+		// rowA → its own child A would orphan the subtree; the deep cycle guard refuses.
+		const r = moveNode(tree(), 'rowA', 'A', 0);
+		expect(r.children.map((c) => c.id)).toEqual(['rowA', 'C']);
+		expect((findNode(r, 'rowA') as Container).children.map((c) => c.id)).toEqual(['A', 'B']);
+	});
+
 	it('is a no-op for an absent node', () => {
 		const r = moveNode(tree(), 'nope', 'rowA', 0);
 		expect(r.children.map((c) => c.id)).toEqual(['rowA', 'C']);
@@ -207,6 +243,12 @@ describe('updateNode / updateContainer', () => {
 	it('updateNode replaces a matched node via fn', () => {
 		const r = updateNode(tree(), 'A', (n) => (isContainer(n) ? n : { ...n, basis: { fr: 1 } }));
 		expect(findNode(r, 'A')).toMatchObject({ basis: { fr: 1 } });
+	});
+
+	it('updateContainer is a no-op when the id names a leaf, not a container', () => {
+		const t = tree();
+		const r = updateContainer(t, 'A', { gap: 12 });
+		expect(findNode(r, 'A')).toEqual(findNode(t, 'A'));
 	});
 });
 
@@ -266,6 +308,14 @@ describe('ungroupNode', () => {
 	it('is a no-op for a non-group id', () => {
 		const t = tree();
 		expect(ungroupNode(t, 'A').children.map((c) => c.id)).toEqual(['rowA', 'C']);
+	});
+
+	it('removes a group with no resolvable child (no def match, no inline child)', () => {
+		// A group loaded from persisted JSON can arrive with no inline child; with nothing to
+		// unwrap to, ungrouping drops the group leaf entirely.
+		const childless = { id: 'g', kind: 'group', size: { w: 1, h: 1 } } as Group;
+		const root = container('root', 'col', [leaf(childless), leaf(prim('Z'))]);
+		expect(ungroupNode(root, 'g').children.map((c) => c.id)).toEqual(['Z']);
 	});
 });
 
@@ -354,5 +404,58 @@ describe('dropTarget', () => {
 		const edge = dropTarget(root, solved, { x: 95, y: 50 }, 'W');
 		expect(edge?.into).toBeUndefined();
 		expect(edge?.merge).toBeUndefined();
+	});
+
+	it('skips grid-cell interiors when intoCells is false (plain before/after)', () => {
+		const c0 = container('c0', 'col', [leaf(prim('A'))], { align: 'stretch' });
+		const grid = container('g', 'grid', [c0, leaf(prim('L1'))], { cols: 2 });
+		const root = container('root', 'col', [grid], { align: 'stretch' });
+		const solved = new Map<string, Rect>([
+			['root', { x: 0, y: 0, w: 200, h: 100 }],
+			['g', { x: 0, y: 0, w: 200, h: 100 }],
+			['A', { x: 0, y: 0, w: 100, h: 100 }],
+			['L1', { x: 100, y: 0, w: 100, h: 100 }]
+		]);
+		// Interior of L1's cell, but cell drops are off → before/after the leaf instead.
+		expect(dropTarget(root, solved, { x: 150, y: 50 }, 'W', false)).toEqual({
+			parentId: 'g',
+			index: 2
+		});
+	});
+
+	it('never merges a dragged node with its own grid cell', () => {
+		const grid = container('g', 'grid', [leaf(prim('L0'))], { cols: 1 });
+		const root = container('root', 'col', [grid], { align: 'stretch' });
+		const solved = new Map<string, Rect>([
+			['root', { x: 0, y: 0, w: 100, h: 100 }],
+			['g', { x: 0, y: 0, w: 100, h: 100 }]
+		]);
+		// Interior of L0's own cell while dragging L0 → falls through to "into the grid".
+		expect(dropTarget(root, solved, { x: 50, y: 50 }, 'L0')).toEqual({ parentId: 'g', index: 0 });
+	});
+
+	it('prefers the first-found grid cell when two same-depth grids overlap the point', () => {
+		const g1 = container('g1', 'grid', [leaf(prim('L1'))], { cols: 1 });
+		const g2 = container('g2', 'grid', [leaf(prim('L2'))], { cols: 1 });
+		const root = container('root', 'row', [g1, g2]);
+		// Overlapping boxes (stale mid-drag measurements) — the later same-depth hit must not win.
+		const solved = new Map<string, Rect>([
+			['root', { x: 0, y: 0, w: 100, h: 100 }],
+			['g1', { x: 0, y: 0, w: 100, h: 100 }],
+			['g2', { x: 0, y: 0, w: 100, h: 100 }]
+		]);
+		expect(dropTarget(root, solved, { x: 50, y: 50 }, 'W')).toEqual({
+			parentId: 'g1',
+			index: 0,
+			merge: 'L1'
+		});
+	});
+
+	it('ignores a grid not yet measured when looking for cell drops', () => {
+		const grid = container('g', 'grid', [leaf(prim('L0'))], { cols: 1 });
+		const root = container('root', 'col', [grid]);
+		// No 'g' box → no cell/merge drop; the leaf pass takes over (before L0's left half).
+		const solved = new Map<string, Rect>([['L0', { x: 0, y: 0, w: 100, h: 100 }]]);
+		expect(dropTarget(root, solved, { x: 10, y: 50 }, 'W')).toEqual({ parentId: 'g', index: 0 });
 	});
 });

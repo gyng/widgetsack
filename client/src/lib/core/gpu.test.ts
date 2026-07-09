@@ -22,4 +22,9 @@ describe('gpuStats', () => {
 		expect(gpuStats({ vramUsed: 1e9 }).some((s) => s.key === 'vram')).toBe(false);
 		expect(gpuStats({})).toEqual([]);
 	});
+
+	it('includes fan when reported', () => {
+		const stats = gpuStats({ fan: 42.4 });
+		expect(stats).toEqual([{ key: 'fan', label: 'fan', value: '42%' }]);
+	});
 });

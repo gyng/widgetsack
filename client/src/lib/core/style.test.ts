@@ -117,6 +117,30 @@ describe('assembleStyles', () => {
 		expect(assembleStyles({ monitor })).toBe('');
 	});
 
+	it('skips a library def with no css (nothing pushed for its [data-def] block)', () => {
+		const lib: Library = {
+			version: 1,
+			defs: [{ id: 'blank', name: 'blank', size: { w: 1, h: 1 }, child: leaf(prim('x')) }]
+		};
+		const monitor: MonitorLayout = { root: emptyRoot(), floating: [] };
+		expect(assembleStyles({ library: lib, monitor })).toBe('');
+	});
+
+	it('skips a node that is neither a container nor a leaf (malformed/stale layout data)', () => {
+		// LayoutNode is nominally Container | Leaf, but a hand-edited or stale widgets.json could carry
+		// a node satisfying neither shape (no `kind` in row/col/grid, no `unit`); walk() must degrade to
+		// a no-op for it rather than throwing.
+		const ghost = { id: 'ghost' } as unknown as ReturnType<typeof leaf>;
+		const monitor: MonitorLayout = {
+			root: container('root', 'col', [leaf(prim('a', 'color: red')), ghost]),
+			floating: []
+		};
+		expect(() => assembleStyles({ monitor })).not.toThrow();
+		const css = assembleStyles({ monitor });
+		expect(css).toContain('[data-w="a"]');
+		expect(css).not.toContain('ghost');
+	});
+
 	it('prepends the DEFAULT_TOKENS :root base when includeDefaults, before the theme', () => {
 		const monitor: MonitorLayout = { root: emptyRoot(), floating: [] };
 		const css = assembleStyles({

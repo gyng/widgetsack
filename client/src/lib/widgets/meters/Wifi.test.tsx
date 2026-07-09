@@ -45,4 +45,10 @@ describe('Wifi meter', () => {
 		expect(container.querySelector('.wifi')?.getAttribute('data-level')).toBe('weak');
 		expect(container.querySelectorAll('.wf-bar[data-on]')).toHaveLength(1);
 	});
+
+	it('applies a per-instance color as the --wf-accent CSS variable', () => {
+		const { container } = render(<Wifi sensors={{}} color="rgb(5,5,5)" />);
+		const root = container.querySelector('.np-wifi') as HTMLElement;
+		expect(root.style.getPropertyValue('--wf-accent')).toBe('rgb(5,5,5)');
+	});
 });

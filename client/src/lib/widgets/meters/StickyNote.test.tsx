@@ -114,6 +114,27 @@ describe('StickyNote', () => {
 		expect(stopWheel).not.toHaveBeenCalled();
 	});
 
+	it('keeps showing whatever text is up when the widget id changes to empty on a live instance', () => {
+		localStorage.setItem('scratch:w11', 'kept note');
+		const { container, rerender } = render(<StickyNote widgetId="w11" />);
+		const ta = () => container.querySelector('textarea') as HTMLTextAreaElement;
+		expect(ta().value).toBe('kept note');
+		// widgetId flips to '' — the adjust-during-render guard fires but the `if (widgetId)` reload is
+		// skipped (comment: "an empty id keeps whatever is shown").
+		rerender(<StickyNote widgetId="" />);
+		expect(ta().value).toBe('kept note');
+	});
+
+	it('reloads text from storage when the widget id changes on a live instance', () => {
+		localStorage.setItem('scratch:w10a', 'first note');
+		localStorage.setItem('scratch:w10b', 'second note');
+		const { container, rerender } = render(<StickyNote widgetId="w10a" />);
+		const ta = () => container.querySelector('textarea') as HTMLTextAreaElement;
+		expect(ta().value).toBe('first note');
+		rerender(<StickyNote widgetId="w10b" />);
+		expect(ta().value).toBe('second note');
+	});
+
 	it('passes a per-instance color as the --note-accent CSS variable', () => {
 		const { container } = render(<StickyNote widgetId="w9" color="rgb(4, 5, 6)" />);
 		const root = container.querySelector('.np-stickynote') as HTMLElement;

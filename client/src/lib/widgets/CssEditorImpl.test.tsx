@@ -49,6 +49,17 @@ describe('CssEditorImpl', () => {
 		expect(onChange.mock.calls.at(-1)?.[0]).toBe('abc');
 	});
 
+	it('does not fire onChange for a doc-unchanged update (selection move only)', async () => {
+		const onChange = vi.fn();
+		const { container } = render(<CssEditorImpl value="abc" onChange={onChange} />);
+		await waitFor(() => expect(cmEditor(container)).toBeTruthy());
+		// A transaction with no document change still runs the updateListener — but must not commit.
+		act(() => {
+			view(container).dispatch({ selection: { anchor: 1 } });
+		});
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
 	it('fires onBlur with the current doc when the content blurs', async () => {
 		const onBlur = vi.fn();
 		const { container } = render(<CssEditorImpl value="x: 1" onBlur={onBlur} />);

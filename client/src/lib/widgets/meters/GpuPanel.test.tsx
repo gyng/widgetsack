@@ -34,4 +34,17 @@ describe('GpuPanel meter', () => {
 		expect(container.querySelector('.gpu-util-val')?.textContent).toBe('—');
 		expect(container.querySelector('.gpu-stats')).toBeNull();
 	});
+
+	it('applies a per-instance color as the --gpu-accent CSS variable', () => {
+		const { container } = render(<GpuPanel sensors={{}} color="rgb(7,7,7)" />);
+		const root = container.querySelector('.np-gpu') as HTMLElement;
+		expect(root.style.getPropertyValue('--gpu-accent')).toBe('rgb(7,7,7)');
+	});
+
+	it('hides the name row when showName is off', () => {
+		const { container } = render(
+			<GpuPanel sensors={{ name: txt('NVIDIA RTX 4080') }} showName={false} />
+		);
+		expect(container.querySelector('.gpu-name')).toBeNull();
+	});
 });

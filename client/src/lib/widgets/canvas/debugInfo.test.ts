@@ -127,6 +127,18 @@ describe('buildDebugInfo', () => {
 		expect(out).toContain('selected: (none)');
 	});
 
+	it('skips the selected-node summary for a malformed node (neither container nor leaf)', () => {
+		// The report is a diagnostic for BROKEN layouts, so a corrupt node (no kind, no unit) must not
+		// crash it — the found node matches neither summary branch and simply gets no `selected:` line.
+		const mon: MonitorLayout = {
+			root: container('root', 'col', [], { pad: 8 }),
+			floating: [{ id: 'weird' } as never]
+		};
+		const out = buildDebugInfo(leafArgs(mon, 'weird'));
+		expect(out).toContain('=== WidgetSack debug ===');
+		expect(out).not.toContain('selected:');
+	});
+
 	it('reports "(none)" when the selected id matches no node anywhere', () => {
 		// findNode → null AND floating.find → null exercises the final `?? null` fallback.
 		const out = buildDebugInfo(leafArgs(withLeaf(leaf(createWidget('gauge', 'w1'))), 'ghost'));

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { render, cleanup, act } from '@testing-library/react';
 import SunMoon from './SunMoon';
 import type { SensorState } from '../../core/telemetry';
 
@@ -32,5 +32,30 @@ describe('SunMoon meter', () => {
 		const { container } = render(<SunMoon sensors={{}} />);
 		const times = [...container.querySelectorAll('.sm-time')].map((e) => e.textContent);
 		expect(times).toEqual(['—', '—']);
+	});
+
+	it('applies the accent color as a CSS variable when set', () => {
+		const { container } = render(<SunMoon sensors={{}} color="#abc123" />);
+		const root = container.querySelector('.np-sunmoon') as HTMLElement;
+		expect(root.style.getPropertyValue('--sm-accent')).toBe('#abc123');
+	});
+
+	it('omits the sun and moon sections when disabled', () => {
+		const { container } = render(<SunMoon sensors={{}} showSun={false} showMoon={false} />);
+		expect(container.querySelector('[data-part="sun"]')).toBeNull();
+		expect(container.querySelector('[data-part="moon"]')).toBeNull();
+	});
+
+	it('re-renders the moon phase on the slow minute tick', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(Date.UTC(2000, 0, 6, 18, 14)));
+		const { container } = render(<SunMoon sensors={{}} />);
+		const before = container.querySelector('.sm-moon-illum')?.textContent;
+		vi.setSystemTime(new Date(Date.UTC(2000, 0, 6, 18, 14) + 14.77 * 86_400_000));
+		act(() => {
+			vi.advanceTimersByTime(60_000);
+		});
+		const after = container.querySelector('.sm-moon-illum')?.textContent;
+		expect(after).not.toBe(before);
 	});
 });

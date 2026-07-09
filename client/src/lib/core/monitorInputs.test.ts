@@ -136,6 +136,21 @@ describe('sourceEditorRows', () => {
 			{ value: 0x1b, defaultName: 'Input 0x1B', label: 'Console', include: true, detected: false }
 		]);
 	});
+
+	it('de-duplicates a repeated value in `detected`, keeping only the first row', () => {
+		const rows = sourceEditorRows([0x11, 0x11, 0x12], '');
+		expect(rows.map((r) => r.value)).toEqual([0x11, 0x12]);
+	});
+
+	it('leaves a manual (undetected) row unlabeled when its spec label matches the default name', () => {
+		// No explicit `=label` on the 0x1b entry → parseSourceSpec defaults its label to inputName(0x1b),
+		// so p.label === defaultName and the manual row's `label` stays '' (not the redundant default).
+		const rows = sourceEditorRows([0x11], '0x11, 0x1b');
+		expect(rows).toEqual([
+			{ value: 0x11, defaultName: 'HDMI 1', label: '', include: true, detected: true },
+			{ value: 0x1b, defaultName: 'Input 0x1B', label: '', include: true, detected: false }
+		]);
+	});
 });
 
 describe('buildSourceSpec', () => {

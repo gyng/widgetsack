@@ -38,6 +38,17 @@ describe('sparklinePoints', () => {
 			[87.5, 0] // slot 3 centre, 20/20 → top
 		]);
 	});
+
+	it('centres a flat series within a fixed window (pinned min === max → span 0)', () => {
+		expect(sparklinePoints([5, 5], 100, 10, 5, 5, 4)).toEqual([
+			[62.5, 5],
+			[87.5, 5]
+		]);
+	});
+
+	it('places a single point at x=0 with no window (stepX 0, one sample)', () => {
+		expect(sparklinePoints([5], 100, 10, 0, 10)).toEqual([[0, 5]]);
+	});
 });
 
 describe('sparklineBars', () => {
@@ -67,5 +78,18 @@ describe('sparklineBars', () => {
 		expect(bars).toHaveLength(1);
 		expect(bars[0].x).toBeCloseTo(77.5); // slot 3 of 4: 3*25 + (25-20)/2
 		expect(bars[0].h).toBe(10);
+	});
+
+	it('floors a zero span (pinned min === max) to a divide-by-zero-safe 1', () => {
+		const bars = sparklineBars([5, 5], 100, 10, 5, 5);
+		expect(bars[0].h).toBe(0);
+		expect(bars[1].h).toBe(0);
+	});
+
+	it('defaults an unpinned min to 0 (baseline) with no min/max args at all', () => {
+		// min/max both default to null → lo falls back to 0, hi falls back to the data max.
+		const bars = sparklineBars([5, 10], 100, 20);
+		expect(bars[0].h).toBe(10); // 5 / (data max 10) of 20
+		expect(bars[1].h).toBe(20);
 	});
 });

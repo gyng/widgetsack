@@ -38,6 +38,11 @@ describe('parseCondition', () => {
 		expect(parseCondition({ kind: 'appOpen' })).toBeUndefined();
 		expect(parseCondition({ kind: 'appOpen', matchExe: '  ' })).toBeUndefined();
 	});
+	it('keeps matchClass and matchTitle on an appOpen', () => {
+		expect(
+			parseCondition({ kind: 'appOpen', matchClass: 'Chrome_WidgetWin_1', matchTitle: 'YouTube' })
+		).toEqual({ kind: 'appOpen', matchClass: 'Chrome_WidgetWin_1', matchTitle: 'YouTube' });
+	});
 	it('parses a sensor condition; requires id + valid op', () => {
 		expect(parseCondition({ kind: 'sensor', sensorId: 'cpu.total', op: '>', value: '80' })).toEqual(
 			{
@@ -56,6 +61,23 @@ describe('parseCondition', () => {
 		expect(
 			parseCondition({ kind: 'sensor', sensorId: 's', op: '==', value: 5, negate: true })
 		).toEqual({ kind: 'sensor', sensorId: 's', op: '==', value: '5', negate: true });
+	});
+	it('coerces a missing/null value to an empty string', () => {
+		expect(parseCondition({ kind: 'sensor', sensorId: 's', op: '==' })).toEqual({
+			kind: 'sensor',
+			sensorId: 's',
+			op: '==',
+			value: ''
+		});
+		expect(parseCondition({ kind: 'sensor', sensorId: 's', op: '==', value: null })).toEqual({
+			kind: 'sensor',
+			sensorId: 's',
+			op: '==',
+			value: ''
+		});
+	});
+	it('rejects a non-string op', () => {
+		expect(parseCondition({ kind: 'sensor', sensorId: 's', op: 5, value: '1' })).toBeUndefined();
 	});
 	it('returns undefined for non-objects / unknown kinds', () => {
 		expect(parseCondition(null)).toBeUndefined();
@@ -82,6 +104,12 @@ describe('comparableOf', () => {
 		expect(comparableOf({ kind: 'json', value: { nope: 1 } })).toBeNull();
 		expect(comparableOf(null)).toBeNull();
 	});
+	it('json with a non-primitive .state (e.g. a nested object) is not comparable', () => {
+		expect(comparableOf({ kind: 'json', value: { state: { nested: true } } })).toBeNull();
+	});
+	it('an empty series (no samples yet) is not comparable', () => {
+		expect(comparableOf({ kind: 'series', value: [] })).toBeNull();
+	});
 });
 
 describe('conditionMet — appOpen', () => {
@@ -95,6 +123,11 @@ describe('conditionMet — appOpen', () => {
 		const hide: Condition = { kind: 'appOpen', matchExe: 'spotify.exe', negate: true };
 		expect(conditionMet(hide, ctx([win('x/Spotify.exe')]))).toBe(false);
 		expect(conditionMet(hide, ctx([]))).toBe(true);
+	});
+	it('a fieldless appOpen (constructed directly, bypassing parseCondition) is inert — always shown', () => {
+		const inert: Condition = { kind: 'appOpen' };
+		expect(conditionMet(inert, ctx([]))).toBe(true);
+		expect(conditionMet(inert, ctx([win('x/Spotify.exe')]))).toBe(true);
 	});
 });
 
@@ -128,6 +161,16 @@ describe('conditionMet — sensor', () => {
 			true
 		);
 		expect(conditionMet(c, ctx([], { light: { kind: 'text', value: 'off' } }))).toBe(false);
+	});
+	it('numeric equality/inequality (bothNum branch of == and !=)', () => {
+		const eq: Condition = { kind: 'sensor', sensorId: 'cpu.total', op: '==', value: '80' };
+		expect(conditionMet(eq, ctx([], s(80)))).toBe(true);
+		expect(conditionMet(eq, ctx([], s(81)))).toBe(false);
+	});
+	it('string inequality (bothNum false branch of !=)', () => {
+		const ne: Condition = { kind: 'sensor', sensorId: 'light', op: '!=', value: 'on' };
+		expect(conditionMet(ne, ctx([], { light: { kind: 'text', value: 'off' } }))).toBe(true);
+		expect(conditionMet(ne, ctx([], { light: { kind: 'text', value: 'on' } }))).toBe(false);
 	});
 	it('negate flips, and != is the inverse of ==', () => {
 		const ne: Condition = { kind: 'sensor', sensorId: 'cpu.total', op: '!=', value: '0' };

@@ -76,4 +76,56 @@ describe('NetConnections meter', () => {
 		const c = await renderWith(hub);
 		expect(c.querySelector('.nc-empty')?.textContent).toBe('—');
 	});
+
+	it('renders nothing sensor-driven without a telemetry hub in context', async () => {
+		let container!: HTMLElement;
+		await act(async () => {
+			container = render(<NetConnections />).container;
+		});
+		// The early `if (!hub) return` bails the effect — the dash-empty state still renders.
+		expect(container.querySelector('.nc-empty')?.textContent).toBe('—');
+	});
+
+	it('skips the re-render when a re-ingest produces an identical snapshot', async () => {
+		const hub = createTelemetryHub();
+		const rows = [
+			{ proc: 'chrome.exe', pid: 100, established: 4, public: 3, remotes: ['8.8.8.8:443'] }
+		];
+		hub.ingestBatch([
+			scalar('net.conn.established', 5),
+			scalar('net.conn.public', 3),
+			scalar('net.conn.listening', 0),
+			list(rows)
+		]);
+		const c = await renderWith(hub);
+		expect(c.querySelectorAll('.nc-row')).toHaveLength(1);
+		// Re-ingest the exact same batch: the subscriber fires, read() re-runs, but the computed
+		// snapshot's JSON matches the previous signature so `setSnap` (and a re-render) is skipped.
+		await act(async () => {
+			hub.ingestBatch([
+				scalar('net.conn.established', 5),
+				scalar('net.conn.public', 3),
+				scalar('net.conn.listening', 0),
+				list(rows)
+			]);
+		});
+		expect(c.querySelectorAll('.nc-row')).toHaveLength(1);
+	});
+
+	it('applies a per-instance color as the --nc-accent CSS variable', async () => {
+		const hub = createTelemetryHub();
+		const c = await renderWith(hub, { color: 'rgb(3,1,4)' });
+		const root = c.querySelector('.np-netconn') as HTMLElement;
+		expect(root.style.getPropertyValue('--nc-accent')).toBe('rgb(3,1,4)');
+	});
+
+	it('hides the established badge when it does not exceed the public count, and labels a public row without remotes', async () => {
+		const hub = createTelemetryHub();
+		hub.ingestBatch([list([{ proc: 'app.exe', pid: 42, established: 2, public: 2, remotes: [] }])]);
+		const c = await renderWith(hub);
+		const row = c.querySelector('.nc-row')!;
+		expect(row.querySelector('.nc-est')).toBeNull();
+		const pub = row.querySelector('.nc-pub')!;
+		expect(pub.getAttribute('title')).toBe('public Internet');
+	});
 });

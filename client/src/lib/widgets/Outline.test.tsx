@@ -150,6 +150,21 @@ describe('Outline row labels + hints', () => {
 		expect(getByText('My Widget')).toBeTruthy();
 	});
 
+	it('falls back to the def id, then the node id, when a group has no name', () => {
+		// No name → surface the backing def id as the recognisable hint.
+		const withDef = group('g-def', { w: 50, h: 50 }, leaf(prim('inner', 'text')), {
+			def: 'clockDef'
+		});
+		const r1 = container('root', 'col', [leaf(withDef)]);
+		const { getByText, unmount } = render(<Outline root={r1} />);
+		expect(getByText('clockDef')).toBeTruthy();
+		unmount();
+		// No name AND no def → the node id is the last-resort hint.
+		const bare = group('g-bare', { w: 50, h: 50 }, leaf(prim('inner', 'text')));
+		const r2 = container('root', 'col', [leaf(bare)]);
+		expect(render(<Outline root={r2} />).getByText('g-bare')).toBeTruthy();
+	});
+
 	it('appends the scopeLabel to the header when given', () => {
 		const { getByText } = render(<Outline root={labelledRoot()} scopeLabel="MyDef" />);
 		expect(getByText('Outline · MyDef')).toBeTruthy();
@@ -291,6 +306,19 @@ describe('Outline drag-and-drop into containers', () => {
 		fireEvent.dragLeave(containerRow, { dataTransfer: dt });
 		expect(containerRow.className).not.toContain('dropok');
 	});
+
+	it('tolerates drag events that carry no dataTransfer (synthetic drags)', () => {
+		const { getByText } = render(<Outline root={labelledRoot()} />);
+		const leafRow = getByText('• clock').closest('.row')!;
+		const containerRow = getByText('▦ row').closest('.row')!;
+		// No dataTransfer on any of these — the handlers must skip the payload/effect writes without
+		// crashing, and the visual target feedback still applies (it doesn't depend on the payload).
+		fireEvent.dragStart(leafRow);
+		fireEvent.dragOver(leafRow);
+		expect(leafRow.className).toContain('dropno');
+		fireEvent.dragOver(containerRow);
+		expect(containerRow.className).toContain('dropok');
+	});
 });
 
 describe('Outline floating layer', () => {
@@ -310,5 +338,73 @@ describe('Outline floating layer', () => {
 	it('omits the Floating section when there are no floating leaves', () => {
 		const { queryByText } = render(<Outline root={labelledRoot()} />);
 		expect(queryByText('Floating')).toBeNull();
+	});
+
+	it('marks a floating row selected / hovered, drags it, and selects it on click', () => {
+		const onOp = vi.fn();
+		const onHover = vi.fn();
+		const { getByText } = render(
+			<Outline
+				root={labelledRoot()}
+				floating={floating}
+				selectedId="fl-1"
+				hoverId="fl-1"
+				onHover={onHover}
+				onOp={onOp}
+			/>
+		);
+		const flRow = getByText('Floater').closest('.row') as HTMLElement;
+		expect(flRow.className).toContain('sel');
+		expect(flRow.className).toContain('hover');
+		// Dragging a floating row writes its node id as the drag payload.
+		const store: Record<string, string> = {};
+		const dt = {
+			effectAllowed: '',
+			setData: (k: string, v: string) => {
+				store[k] = v;
+			},
+			getData: (k: string) => store[k] ?? ''
+		};
+		fireEvent.dragStart(flRow, { dataTransfer: dt });
+		expect(store['text/x-node-id']).toBe('fl-1');
+		// Clicking the floating row's label selects it.
+		fireEvent.click(getByText('Floater'));
+		expect(onOp).toHaveBeenCalledWith({ op: 'select', id: 'fl-1' });
+	});
+});
+
+describe('Outline root row', () => {
+	it('adds a "docked" class to the panel when docked', () => {
+		const { container: root } = render(<Outline root={labelledRoot()} docked />);
+		expect(root.querySelector('.outline')!.className).toContain('docked');
+	});
+
+	it('marks the root row selected / hovered from the props', () => {
+		const { getByText } = render(
+			<Outline root={labelledRoot()} selectedId="root" hoverId="root" />
+		);
+		const rootRow = getByText('▦ root (col)').closest('.row') as HTMLElement;
+		expect(rootRow.className).toContain('sel');
+		expect(rootRow.className).toContain('root');
+		expect(rootRow.className).toContain('hover');
+	});
+
+	it('accepts a drop onto the root row (highlight + reparent into root)', () => {
+		const onOp = vi.fn();
+		const { getByText } = render(<Outline root={labelledRoot()} onOp={onOp} />);
+		const rootRow = getByText('▦ root (col)').closest('.row') as HTMLElement;
+		const store: Record<string, string> = { 'text/x-node-id': 'b-clock' };
+		const dt = {
+			dropEffect: '',
+			effectAllowed: '',
+			setData: (k: string, v: string) => {
+				store[k] = v;
+			},
+			getData: (k: string) => store[k] ?? ''
+		};
+		fireEvent.dragOver(rootRow, { dataTransfer: dt });
+		expect(rootRow.className).toContain('dropok'); // root is a container → a valid drop target
+		fireEvent.drop(rootRow, { dataTransfer: dt });
+		expect(onOp).toHaveBeenCalledWith({ op: 'reparent', id: 'b-clock', containerId: 'root' });
 	});
 });

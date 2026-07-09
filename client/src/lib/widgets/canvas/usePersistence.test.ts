@@ -276,7 +276,9 @@ describe('persistToDisk — widgets.json assembly', () => {
 	});
 
 	it('appends an extra onto an on-disk monitor that has no `floating` field', async () => {
-		// The on-disk mon-B record omits `floating` → the `?? []` guard must synthesize the array.
+		// The on-disk mon-B record omits `floating`, but parseLayoutAny's parseMonitor normalises it
+		// to [] before the extras loop ever sees the record — the `t.floating ?? []` arm in the loop
+		// itself stays defensive-only (no real input reaches it).
 		loadLayoutRaw = JSON.stringify({
 			version: 2,
 			monitors: { 'mon-B': { root: container('root', 'col', []) } }

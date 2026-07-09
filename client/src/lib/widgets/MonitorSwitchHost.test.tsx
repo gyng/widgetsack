@@ -168,6 +168,35 @@ describe('MonitorSwitchHost (container wiring)', () => {
 		}
 	});
 
+	it('a stray interval tick after teardown is swallowed by the alive guard', async () => {
+		const setIntervalSpy = vi.spyOn(window, 'setInterval');
+		const { unmount } = render(<MonitorSwitchHost />);
+		await act(async () => undefined); // settle the mount refresh
+		const tick = setIntervalSpy.mock.calls.at(-1)?.[0] as () => void;
+		unmount();
+		listMonitorInputs.mockClear();
+		// clearInterval normally prevents this; if a queued tick slips through it must not refresh.
+		tick();
+		expect(listMonitorInputs).not.toHaveBeenCalled();
+		setIntervalSpy.mockRestore();
+	});
+
+	it('keeps the optimistic updater null-safe when picking before the target resolves', async () => {
+		// The lookup never resolves: with a configured target the default input rows still render
+		// (missing only flips after a resolved lookup), so a click reaches pick() while selected is
+		// null — gdi falls back to the target and the optimistic setSelected updater keeps the null.
+		listMonitorInputs.mockReturnValue(new Promise(() => {}));
+		const { container } = render(<MonitorSwitchHost monitor={'\\\\.\\DISPLAY7'} />);
+		const rows = container.querySelectorAll('.ms-row');
+		expect(rows.length).toBe(4); // DEFAULT_INPUTS while the lookup is pending
+		await act(async () => {
+			fireEvent.click(rows[0]);
+		});
+		expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY7', expect.any(Number));
+		// no monitor resolved → nothing to highlight optimistically
+		expect(container.querySelector('.ms-row[data-active="true"]')).toBeNull();
+	});
+
 	it('refreshes the active input on window focus', async () => {
 		listMonitorInputs
 			.mockResolvedValueOnce([mon()]) // initial: HDMI 1

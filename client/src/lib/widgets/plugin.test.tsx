@@ -166,6 +166,14 @@ describe('pluginSensorNamesFrom', () => {
 		expect(names.has('mem.used')).toBe(false);
 	});
 
+	it('keeps the FIRST plugin’s name when two plugins claim the same sensor id', () => {
+		const names = pluginSensorNamesFrom([
+			{ id: 'one', name: 'First', sources: [src('one', ['dup.sensor'])] },
+			{ id: 'two', name: 'Second', sources: [src('two', ['dup.sensor'])] }
+		]);
+		expect(names.get('dup.sensor')).toBe('First');
+	});
+
 	it('tolerates a source with no catalog() (no ids contributed)', () => {
 		const names = pluginSensorNamesFrom([
 			{

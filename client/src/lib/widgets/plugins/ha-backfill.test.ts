@@ -30,6 +30,11 @@ describe('haEntityForHistory', () => {
 		// 'ha.sensor.power_state' is a JSON id (no '.state' suffix) → ignored, not '.state' scalar
 		expect(haEntityForHistory('ha.sensor.power_state')).toBeNull();
 	});
+
+	it('ignores a .state id whose stripped entity has no domain dot', () => {
+		// Passes the ha./.state guard, but 'status' (between them) has no '<domain>.<object_id>' dot.
+		expect(haEntityForHistory('ha.status.state')).toBeNull();
+	});
 });
 
 describe('startHaBackfill', () => {

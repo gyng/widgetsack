@@ -10,6 +10,7 @@ import {
 	deriveTokens,
 	rgbCss,
 	rgbaCss,
+	type Bucket,
 	type RGB
 } from './palette';
 
@@ -119,6 +120,18 @@ describe('quantize + pickSeed', () => {
 
 	it('averageLuminance is 0 for an empty sample set', () => {
 		expect(averageLuminance([])).toBe(0);
+	});
+
+	it('does not let a later, less-saturated bucket overwrite the current most-saturated one', () => {
+		// Both buckets fail the strict accent gate (s < 0.2), so the result depends purely on the
+		// `mostSaturated` tracker: the first (more saturated) bucket must win, proving the second
+		// bucket's `s > mostSaturated.s` check is false and the assignment is skipped.
+		const buckets: Bucket[] = [
+			{ color: [150, 130, 110], count: 50 }, // s ≈ 0.16 — becomes mostSaturated first
+			{ color: [130, 125, 120], count: 10 } // s ≈ 0.04 — must NOT replace it
+		];
+		expect(rgbToHsl(buckets[0].color)[1]).toBeGreaterThan(rgbToHsl(buckets[1].color)[1]);
+		expect(pickSeed(buckets)).toEqual([150, 130, 110]);
 	});
 });
 

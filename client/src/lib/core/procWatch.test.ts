@@ -15,4 +15,11 @@ describe('procWatchSensors', () => {
 		expect(procWatchSensors('').running).toBe('proc.watch.chrome.exe.running');
 		expect(procWatchSensors('  ').cpu).toBe('proc.watch.chrome.exe.cpu');
 	});
+
+	it('defaults a nullish name to chrome.exe', () => {
+		expect(procWatchSensors(null as unknown as string).running).toBe(
+			'proc.watch.chrome.exe.running'
+		);
+		expect(procWatchSensors(undefined as unknown as string).cpu).toBe('proc.watch.chrome.exe.cpu');
+	});
 });

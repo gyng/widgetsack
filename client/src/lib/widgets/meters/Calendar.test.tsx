@@ -1,8 +1,11 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { render, cleanup } from '@testing-library/react';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { render, cleanup, act } from '@testing-library/react';
 import Calendar from './Calendar';
 
-afterEach(cleanup);
+afterEach(() => {
+	cleanup();
+	vi.useRealTimers();
+});
 
 // The meter self-sources the real date, so these assert STRUCTURE (the grid math is exhaustively
 // covered in core/calendar.test.ts) — which holds whatever today happens to be.
@@ -38,5 +41,24 @@ describe('Calendar meter', () => {
 			'.cal-row:not(.cal-head)'
 		).length;
 		expect(contRows).toBeGreaterThan(monthRows);
+	});
+
+	it('applies a per-instance color as the --cal-accent CSS variable', () => {
+		const { container } = render(<Calendar color="rgb(4,2,0)" />);
+		const root = container.querySelector('.np-calendar') as HTMLElement;
+		expect(root.style.getPropertyValue('--cal-accent')).toBe('rgb(4,2,0)');
+	});
+
+	it('re-reads the date on the slow minute tick (so "today" flips past midnight)', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2027, 0, 31, 23, 59, 30));
+		const { container } = render(<Calendar />);
+		expect(container.querySelectorAll('.cal-today')).toHaveLength(1);
+		const beforeTitle = container.querySelector('.cal-title')?.textContent;
+		vi.setSystemTime(new Date(2027, 1, 1, 0, 0, 30));
+		act(() => {
+			vi.advanceTimersByTime(60_000);
+		});
+		expect(container.querySelector('.cal-title')?.textContent).not.toBe(beforeTitle);
 	});
 });

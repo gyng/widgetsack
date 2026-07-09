@@ -17,6 +17,13 @@ describe('pingSensors', () => {
 		expect(pingSensors('')).toEqual({ ms: 'net.ping.1.1.1.1.ms', up: 'net.ping.1.1.1.1.up' });
 		expect(pingSensors('  ')).toEqual({ ms: 'net.ping.1.1.1.1.ms', up: 'net.ping.1.1.1.1.up' });
 	});
+
+	it('defaults a nullish host to 1.1.1.1', () => {
+		expect(pingSensors(null as unknown as string)).toEqual({
+			ms: 'net.ping.1.1.1.1.ms',
+			up: 'net.ping.1.1.1.1.up'
+		});
+	});
 });
 
 describe('pingLevel', () => {

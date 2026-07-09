@@ -39,4 +39,31 @@ describe('ColorField', () => {
 		fireEvent.click(screen.getByLabelText('clear'));
 		expect(onChange).toHaveBeenCalledWith('');
 	});
+
+	it('does not re-commit an unchanged value on blur', () => {
+		const onChange = vi.fn();
+		render(<ColorField value="gold" ariaLabel="accent" onChange={onChange} />);
+		fireEvent.blur(screen.getByLabelText('accent'));
+		expect(onChange).not.toHaveBeenCalled(); // no redundant undo/save entry
+	});
+
+	it('falls back to a generic swatch label when no ariaLabel is given', () => {
+		render(<ColorField value="#112233" onChange={vi.fn()} />);
+		// Without an ariaLabel prop the swatch names itself "colour swatch" (default a11y label).
+		expect(screen.getByLabelText('colour swatch')).toBeInTheDocument();
+	});
+
+	it('resyncs the text field when the external value prop changes (store-previous idiom)', () => {
+		const onChange = vi.fn();
+		const { rerender } = render(<ColorField value="red" ariaLabel="accent" onChange={onChange} />);
+		const text = screen.getByLabelText('accent') as HTMLInputElement;
+		// A local (uncommitted) edit lives only in `text` until blur.
+		fireEvent.change(text, { target: { value: 'gr' } });
+		expect(text.value).toBe('gr');
+		// An external change (Clear / theme switch / selecting another widget) overwrites the local text.
+		rerender(<ColorField value="blue" ariaLabel="accent" onChange={onChange} />);
+		expect((screen.getByLabelText('accent') as HTMLInputElement).value).toBe('blue');
+		// The resync must not have committed the in-progress local edit.
+		expect(onChange).not.toHaveBeenCalled();
+	});
 });

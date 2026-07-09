@@ -119,6 +119,15 @@ describe('initial pan + auto-fit effect', () => {
 		expect(result.current).toMatchObject({ zoom: 2, panX: 11, panY: 22 });
 	});
 
+	it('does not re-fit when the effect re-runs on a stage resize with the SAME key', () => {
+		const opts = baseOpts();
+		const { result, rerender } = renderHook((p: Opts) => useZoomFit(p), { initialProps: opts });
+		act(() => result.current.setPan({ zoom: 2, panX: 11, panY: 22 }));
+		// stageW is an effect dep but NOT part of the fit key — the effect re-runs and must bail.
+		rerender({ ...opts, stageW: 900 });
+		expect(result.current).toMatchObject({ zoom: 2, panX: 11, panY: 22 });
+	});
+
 	it('auto-fits AGAIN when the monitor key changes (different monitor)', () => {
 		const opts = baseOpts();
 		const { result, rerender } = renderHook((p: Opts) => useZoomFit(p), { initialProps: opts });

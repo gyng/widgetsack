@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { describe, expect, it, afterEach, vi } from 'vitest';
+import { render, act } from '@testing-library/react';
 import AnalogClock from './AnalogClock';
+
+afterEach(() => vi.useRealTimers());
 
 describe('AnalogClock (DOM)', () => {
 	it('renders a DOM dial with three hands (no SVG)', () => {
@@ -35,5 +37,26 @@ describe('AnalogClock (DOM)', () => {
 		const { container } = render(<AnalogClock accent="rgb(1,2,3)" />);
 		const root = container.querySelector('.np-analog-clock') as HTMLElement;
 		expect(root.style.getPropertyValue('--clock-accent')).toBe('rgb(1,2,3)');
+	});
+
+	it('maps color and face config to their own CSS variables', () => {
+		const { container } = render(<AnalogClock color="#fff" face="#000" />);
+		const root = container.querySelector('.np-analog-clock') as HTMLElement;
+		expect(root.style.getPropertyValue('--clock-fg')).toBe('#fff');
+		expect(root.style.getPropertyValue('--clock-face')).toBe('#000');
+	});
+
+	it('sweeps the second hand forward on the redraw tick', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2027, 0, 1, 12, 0, 0));
+		const { container } = render(<AnalogClock />);
+		const hand = () =>
+			(container.querySelector('.np-clock-second')!.parentElement as HTMLElement).style.transform;
+		const before = hand();
+		vi.setSystemTime(new Date(2027, 0, 1, 12, 0, 5));
+		act(() => {
+			vi.advanceTimersByTime(1000);
+		});
+		expect(hand()).not.toBe(before);
 	});
 });

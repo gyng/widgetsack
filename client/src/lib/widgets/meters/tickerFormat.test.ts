@@ -52,6 +52,7 @@ describe('formatChangePct / formatChangeAbs', () => {
 	it('signs the absolute change', () => {
 		expect(formatChangeAbs(1.2, 2)).toBe('+1.20');
 		expect(formatChangeAbs(-1234.5, 2)).toBe('-1,234.50');
+		expect(formatChangeAbs(0)).toBe('0.00'); // neither gain nor loss → no sign
 		expect(formatChangeAbs(null)).toBe('');
 	});
 });
@@ -70,8 +71,14 @@ describe('marketLabel', () => {
 		expect(marketLabel('REGULAR')).toBe('');
 		expect(marketLabel('')).toBe('');
 		expect(marketLabel('PRE')).toBe('pre-market');
+		expect(marketLabel('PREPRE')).toBe('pre-market');
+		expect(marketLabel('POST')).toBe('after hours');
 		expect(marketLabel('POSTPOST')).toBe('after hours');
 		expect(marketLabel('CLOSED')).toBe('closed');
 		expect(marketLabel('weird')).toBe('weird');
+	});
+	it('blanks a missing state (null/undefined) same as an open session', () => {
+		expect(marketLabel(null)).toBe('');
+		expect(marketLabel(undefined)).toBe('');
 	});
 });

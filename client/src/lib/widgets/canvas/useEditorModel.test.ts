@@ -121,6 +121,18 @@ describe('op-apply path (commit chokepoint)', () => {
 		expect(result.current.state.undoStack).toEqual([]);
 	});
 
+	it('a commit with history enabled but no anchor snapshot self-anchors (lastSnap ?? snap)', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		// A load patch can enable history without carrying a baseline snapshot; the first commit then
+		// anchors undo to its own result instead of reading a null lastSnap.
+		act(() => result.current.dispatch({ type: 'load', patch: { historyReady: true } }));
+		act(() => result.current.commitOp((s) => ({ monitor: { ...s.monitor } })));
+		const s = result.current.state;
+		expect(s.undoStack).toHaveLength(1);
+		expect(s.undoStack[0].monitor).toBe(s.monitor); // self-anchored: the pushed snap IS the new state
+		expect(s.lastSnap?.monitor).toBe(s.monitor);
+	});
+
 	it('mutateNoSave applies the patch WITHOUT recording undo or bumping saveSeq', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		const seq0 = result.current.state.saveSeq;
@@ -285,10 +297,47 @@ describe('def-edit sub-reducer', () => {
 		expect(s.editingDefId).toBe(copy.id);
 	});
 
+	it('cloneDef copies the source css + params by value onto the copy', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		// Seed a def carrying css + params (the optional fields cloneDef must carry over).
+		act(() => result.current.dispatch({ type: 'newWidget' }));
+		const srcId = result.current.state.editingDefId!;
+		act(() => result.current.dispatch({ type: 'endDefEdit' }));
+		act(() => result.current.handleOp({ op: 'setDefCss', defId: srcId, css: '.a{}' }));
+		act(() =>
+			result.current.handleOp({ op: 'addDefParam', defId: srcId, key: 'core', target: 'unit.s' })
+		);
+
+		act(() => result.current.dispatch({ type: 'cloneDef', defId: srcId }));
+		const s = result.current.state;
+		const copy = s.library!.defs.find((d) => d.id !== srcId)!;
+		expect(copy.css).toBe('.a{}');
+		expect(copy.params).toEqual([{ key: 'core', target: 'unit.s' }]);
+		// params are cloned per-entry, not shared with the source def.
+		const src = s.library!.defs.find((d) => d.id === srcId)!;
+		expect(copy.params![0]).not.toBe(src.params![0]);
+	});
+
 	it('cloneDef is a no-op for an unknown def id', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		const before = result.current.state;
 		act(() => result.current.dispatch({ type: 'cloneDef', defId: 'nope' }));
+		expect(result.current.state).toBe(before);
+	});
+
+	it('cloneDef is refused while already editing a def', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		act(() => result.current.dispatch({ type: 'newWidget' }));
+		const before = result.current.state;
+		act(() => result.current.dispatch({ type: 'cloneDef', defId: before.editingDefId! }));
+		expect(result.current.state).toBe(before);
+	});
+
+	it('newFromTemplate is refused while already editing a def', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		act(() => result.current.dispatch({ type: 'newWidget' }));
+		const before = result.current.state;
+		act(() => result.current.dispatch({ type: 'newFromTemplate', templateId: 'clock-jp' }));
 		expect(result.current.state).toBe(before);
 	});
 
@@ -314,6 +363,26 @@ describe('def-edit sub-reducer', () => {
 		act(() => result.current.dispatch({ type: 'enterDefEdit', defId: 'whatever' }));
 		expect(result.current.state).toBe(before);
 		expect(result.current.state.editingDefId).toBe(open);
+	});
+
+	it('enterDefEdit is a no-op for an unknown def id', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		const before = result.current.state;
+		act(() => result.current.dispatch({ type: 'enterDefEdit', defId: 'nope' }));
+		expect(result.current.state).toBe(before);
+	});
+
+	it('endDefEdit writes back only the edited def; other library defs pass through untouched', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		act(() => result.current.dispatch({ type: 'newWidget' }));
+		const firstId = result.current.state.editingDefId!;
+		act(() => result.current.dispatch({ type: 'endDefEdit' }));
+		const firstDef = result.current.state.library!.defs.find((d) => d.id === firstId)!;
+		act(() => result.current.dispatch({ type: 'newWidget' })); // a second def, now being edited
+		act(() => result.current.dispatch({ type: 'endDefEdit' }));
+		const s = result.current.state;
+		expect(s.library?.defs).toHaveLength(2);
+		expect(s.library?.defs.find((d) => d.id === firstId)).toBe(firstDef); // same object: untouched
 	});
 
 	it('endDefEdit writes the scoped tree back onto the def, restores the monitor, and commits', () => {
@@ -679,6 +748,15 @@ describe('handleOp switch (Inspector / Outline / menu funnel)', () => {
 		expect(result.current.state.editingDefId).not.toBeNull();
 		act(() => result.current.handleOp({ op: 'endDefEdit' }));
 		expect(result.current.state.editingDefId).toBeNull();
+	});
+});
+
+describe('reducer fallback', () => {
+	it('an unknown action type returns the state unchanged (same reference)', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		const before = result.current.state;
+		act(() => result.current.dispatch({ type: 'nope' } as never));
+		expect(result.current.state).toBe(before);
 	});
 });
 

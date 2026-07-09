@@ -86,4 +86,63 @@ describe('Weather meter', () => {
 		const { container } = render(<Weather sensors={{ temp: scalar(12), code: scalar(3) }} />);
 		expect(container.querySelector('.wx-forecast')).toBeNull();
 	});
+
+	it('dashes a missing high or low while still showing the other', () => {
+		const { container } = render(
+			<Weather sensors={{ temp: scalar(12), code: scalar(3), high: scalar(15) }} />
+		);
+		expect(container.querySelector('.wx-hi')?.textContent).toBe('↑ 15°');
+		expect(container.querySelector('.wx-lo')?.textContent).toBe('↓ —');
+	});
+
+	it('defaults to daytime icons when is_day is not reported', () => {
+		const { container } = render(<Weather sensors={{ temp: scalar(12), code: scalar(0) }} />);
+		expect(container.querySelector('.wx-icon')?.textContent).toBe('☀️');
+	});
+
+	it('applies a per-instance color as the --wx-accent CSS variable', () => {
+		const { container } = render(<Weather sensors={{}} color="rgb(2,4,6)" />);
+		const root = container.querySelector('.np-weather') as HTMLElement;
+		expect(root.style.getPropertyValue('--wx-accent')).toBe('rgb(2,4,6)');
+	});
+
+	it('clamps forecastDays outside 0..7 (negative and > 7)', () => {
+		const negative = render(
+			<Weather
+				forecastDays={-2}
+				sensors={{ temp: scalar(12), code: scalar(3), d0high: scalar(5) }}
+			/>
+		);
+		expect(negative.container.querySelector('.wx-forecast')).toBeNull();
+		negative.unmount();
+
+		const clamped = render(
+			<Weather
+				forecastDays={10}
+				sensors={{
+					temp: scalar(12),
+					code: scalar(3),
+					d0high: scalar(5),
+					d1high: scalar(6),
+					d2high: scalar(7),
+					d3high: scalar(8),
+					d4high: scalar(9),
+					d5high: scalar(10),
+					d6high: scalar(11)
+				}}
+			/>
+		);
+		expect(clamped.container.querySelectorAll('.wx-day')).toHaveLength(7); // clamped to 7, not 10
+	});
+
+	it('drops forecast days with no data at all, keeping only days that have some', () => {
+		const { container } = render(
+			<Weather
+				forecastDays={3}
+				sensors={{ temp: scalar(12), code: scalar(3), d0high: scalar(5) }}
+				// d1* / d2* deliberately absent → those cells are all-null and filtered out
+			/>
+		);
+		expect(container.querySelectorAll('.wx-day')).toHaveLength(1);
+	});
 });

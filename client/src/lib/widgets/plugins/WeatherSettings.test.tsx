@@ -164,4 +164,74 @@ describe('WeatherSettings', () => {
 		});
 		expect(getByText(/Connected/)).toBeTruthy();
 	});
+
+	it('auto-dismisses the "Saved ✓" tick after 2.5s', async () => {
+		vi.useFakeTimers();
+		try {
+			const { getByRole, getByText, queryByText } = renderPanel();
+			await act(async () => {}); // flush the prefill promises
+			fireEvent.click(getByRole('button', { name: /Save & fetch/ }));
+			await act(async () => {}); // flush the save → disconnect → connect chain
+			expect(getByText('Saved ✓')).toBeTruthy();
+			act(() => {
+				vi.advanceTimersByTime(2500);
+			});
+			expect(queryByText('Saved ✓')).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('renders with defaults when the connect kick and the status fetch both reject', async () => {
+		vi.mocked(weatherConnect).mockRejectedValue(new Error('no backend'));
+		vi.mocked(weatherConfigStatus).mockRejectedValue(new Error('no backend'));
+		const { container, findByText } = renderPanel();
+		// Both rejections are swallowed; the panel stays usable with its default (empty) form.
+		expect(await findByText('not configured')).toBeTruthy();
+		const lat = container.querySelector('input[placeholder="51.5072"]') as HTMLInputElement;
+		expect(lat.value).toBe('');
+	});
+
+	it('ignores a status result that resolves after unmount (no setState on a dead panel)', async () => {
+		let resolveStatus: (s: {
+			configured: boolean;
+			latitude: number;
+			longitude: number;
+			unit: string;
+			pollSeconds: number;
+		}) => void = () => undefined;
+		vi.mocked(weatherConfigStatus).mockImplementation(
+			() => new Promise((res) => (resolveStatus = res))
+		);
+		const { container, unmount } = renderPanel();
+		const lat = container.querySelector('input[placeholder="51.5072"]') as HTMLInputElement;
+		expect(lat.value).toBe('');
+		unmount();
+		// Resolving late must hit the `alive` guard, not a state setter on the unmounted panel.
+		await act(async () => {
+			resolveStatus({
+				configured: true,
+				latitude: 1,
+				longitude: 2,
+				unit: 'celsius',
+				pollSeconds: 900
+			});
+		});
+	});
+
+	it('falls back to celsius + a 15-minute poll when the saved status has neither', async () => {
+		vi.mocked(weatherConfigStatus).mockResolvedValue({
+			configured: false,
+			latitude: 0,
+			longitude: 0,
+			unit: '', // unset → the || 'celsius' fallback
+			pollSeconds: 0 // unset → the || 900 fallback → 15 minutes
+		});
+		const { container } = renderPanel();
+		await waitFor(() => expect(weatherConfigStatus).toHaveBeenCalled());
+		const poll = container.querySelector('input[type="number"]') as HTMLInputElement;
+		await waitFor(() => expect(poll.value).toBe('15'));
+		const unit = container.querySelector('select') as HTMLSelectElement;
+		expect(unit.value).toBe('celsius');
+	});
 });

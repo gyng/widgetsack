@@ -655,4 +655,107 @@ describe('LlmSettings', () => {
 		act(() => handleDelta({ requestId, token: '', done: true, error: 'rate limited' }));
 		expect(await findByText(/⚠ rate limited/)).toBeTruthy();
 	});
+
+	it('renders a finished assistant turn with no content as an empty line (no ellipsis, no 🔊)', async () => {
+		const { container, findByPlaceholderText, queryByText } = renderPanel();
+		const input = (await findByPlaceholderText('Ask anything…')) as HTMLInputElement;
+		fireEvent.change(input, { target: { value: 'hi' } });
+		fireEvent.keyDown(input, { key: 'Enter' });
+		await waitFor(() => expect(llmStream).toHaveBeenCalled());
+		const requestId = vi.mocked(llmStream).mock.calls[0][0] as string;
+		// The stream finishes without ever producing a token (e.g. an immediately-cancelled request).
+		act(() => handleDelta({ requestId, token: '', done: true }));
+		const rows = container.querySelectorAll('.has-entity');
+		expect(rows.length).toBe(2); // the user turn + the (empty) assistant turn
+		const ai = rows[1] as HTMLElement;
+		expect(ai.textContent).toContain('ai');
+		expect(ai.textContent).not.toContain('…'); // finished — not the streaming ellipsis
+		expect(queryByText('🔊')).toBeNull(); // no content → no read-aloud button
+	});
+
+	it('does not generate on a plain keypress in the assistant prompt (Ctrl/⌘+Enter only)', async () => {
+		setLlmStudioApi({
+			monitor: () => emptyMonitorLayout(),
+			apply: () => ({ applied: 0, addedIds: [], errors: [] })
+		});
+		const { container } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+		fireEvent.change(textarea, { target: { value: 'add a clock' } });
+		fireEvent.keyDown(textarea, { key: 'Enter' }); // no modifier → newline, not generate
+		fireEvent.keyDown(textarea, { key: 'a', ctrlKey: true }); // modifier without Enter
+		expect(llmComplete).not.toHaveBeenCalled();
+	});
+
+	it('does not send the chat on a non-Enter key', async () => {
+		const { findByPlaceholderText } = renderPanel();
+		const input = (await findByPlaceholderText('Ask anything…')) as HTMLInputElement;
+		fireEvent.change(input, { target: { value: 'hi' } });
+		fireEvent.keyDown(input, { key: 'a' });
+		expect(llmStream).not.toHaveBeenCalled();
+	});
+
+	// --- init edge cases ---------------------------------------------------------------------
+
+	it('auto-dismisses the "Saved ✓" tick after 2.5s', async () => {
+		vi.useFakeTimers();
+		try {
+			const { container, getByText, queryByText } = renderPanel();
+			await act(async () => {}); // flush the status prefill (saved key → canSubmit)
+			expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1');
+			fireEvent.click(button(container, 'Save'));
+			await act(async () => {}); // flush the save → status-refresh chain
+			expect(getByText('Saved ✓')).toBeTruthy();
+			act(() => {
+				vi.advanceTimersByTime(2500);
+			});
+			expect(queryByText('Saved ✓')).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('renders with catalog defaults when the status fetch rejects', async () => {
+		vi.mocked(llmConfigStatus).mockRejectedValue(new Error('no backend'));
+		const { container, findByText } = renderPanel();
+		// The rejection is swallowed; the panel stays on the openai defaults, unconfigured.
+		expect(await findByText(/not configured/)).toBeTruthy();
+		expect(providerSelect(container).value).toBe('openai');
+		expect(baseUrlInput(container).value).toBe('');
+	});
+
+	it('ignores a status result that resolves after unmount (no setState on a dead panel)', async () => {
+		let resolveStatus: (s: LlmStatus) => void = () => undefined;
+		vi.mocked(llmConfigStatus).mockImplementation(
+			() => new Promise((res) => (resolveStatus = res))
+		);
+		const { container, unmount } = renderPanel();
+		expect(baseUrlInput(container).value).toBe('');
+		unmount();
+		// Resolving late must hit the `alive` guard, not a state setter on the unmounted panel.
+		await act(async () => {
+			resolveStatus(configuredStatus());
+		});
+	});
+
+	it('ignores a second mic click while getUserMedia is still pending (no double recorder)', async () => {
+		// Defer startRecording so the second click lands while the first is still starting.
+		let resolveRec: (r: Recorder) => void = () => undefined;
+		vi.mocked(startRecording).mockImplementation(
+			() => new Promise<Recorder>((res) => (resolveRec = res))
+		);
+		const { container, getByText, findByText } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const mic = getByText('🎤 Speak');
+		fireEvent.click(mic); // starts (pending) — startingRef guards…
+		fireEvent.click(mic); // …this rapid second click from starting another recorder
+		expect(startRecording).toHaveBeenCalledTimes(1);
+		await act(async () => {
+			resolveRec({
+				stop: () => Promise.resolve({ bytes: new Uint8Array([1]), mime: 'audio/webm' }),
+				cancel: vi.fn()
+			});
+		});
+		expect(await findByText(/Listening/)).toBeTruthy();
+	});
 });

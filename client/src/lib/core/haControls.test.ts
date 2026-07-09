@@ -49,6 +49,17 @@ describe('haControls — light', () => {
 		expect(lightColorTempKelvin(1000, attrs).data.color_temp_kelvin).toBe(2200);
 	});
 
+	it('defaults the kelvin range to 2000..6500 when the device reports none', () => {
+		expect(lightColorTempKelvin(10000, {}).data.color_temp_kelvin).toBe(6500);
+		expect(lightColorTempKelvin(500, {}).data.color_temp_kelvin).toBe(2000);
+	});
+
+	it('treats a light with no supported_color_modes as capability-less', () => {
+		expect(lightSupports({}, 'brightness')).toBe(false);
+		expect(lightSupports({}, 'color_temp')).toBe(false);
+		expect(lightSupports({}, 'rgb')).toBe(false);
+	});
+
 	it('clamps rgb components to 0..255', () => {
 		expect(lightRgb(300, -10, 128).data.rgb_color).toEqual([255, 0, 128]);
 	});
@@ -58,6 +69,8 @@ describe('haControls — climate', () => {
 	it('detects single-setpoint vs range', () => {
 		expect(climateUsesRange({ temperature: 21 })).toBe(false);
 		expect(climateUsesRange({ target_temp_high: 24, target_temp_low: 18 })).toBe(true);
+		// Only one side of the range set still counts as a range setpoint.
+		expect(climateUsesRange({ target_temp_low: 18 })).toBe(true);
 	});
 
 	it('builds set_temperature clamped to min/max', () => {
@@ -67,12 +80,23 @@ describe('haControls — climate', () => {
 		expect(climateSetTemperature(0, attrs).data.temperature).toBe(10);
 	});
 
+	it('defaults min/max to 7..35 when the entity reports no range', () => {
+		expect(climateSetTemperature(21, {}).data.temperature).toBe(21);
+		expect(climateSetTemperature(99, {}).data.temperature).toBe(35);
+		expect(climateSetTemperature(0, {}).data.temperature).toBe(7);
+	});
+
 	it('nudges the setpoint by ± one step from the current target', () => {
 		const attrs = { temperature: 21, target_temp_step: 0.5, min_temp: 7, max_temp: 35 };
 		expect(climateNudge(attrs, 1).data.temperature).toBe(21.5);
 		expect(climateNudge(attrs, -1).data.temperature).toBe(20.5);
 		// Clamped at the max.
 		expect(climateNudge({ temperature: 35, max_temp: 35 }, 1).data.temperature).toBe(35);
+	});
+
+	it('nudges from current_temperature when temperature is unset, or 20 when neither is set', () => {
+		expect(climateNudge({ current_temperature: 18 }, 1).data.temperature).toBe(18.5);
+		expect(climateNudge({}, 1).data.temperature).toBe(20.5);
 	});
 
 	it('builds set_hvac_mode', () => {
@@ -119,6 +143,12 @@ describe('haControls — fan / cover / input helpers', () => {
 		expect(inputNumberSetValue(20, attrs).data.value).toBe(20);
 		expect(inputNumberSetValue(99, attrs).data.value).toBe(30);
 		expect(inputNumberSetValue(0, attrs).data.value).toBe(5);
+	});
+
+	it('defaults input_number min/max to 0..100 when the helper reports none', () => {
+		expect(inputNumberSetValue(50, {}).data.value).toBe(50);
+		expect(inputNumberSetValue(150, {}).data.value).toBe(100);
+		expect(inputNumberSetValue(-10, {}).data.value).toBe(0);
 	});
 
 	it('builds input_select.select_option + input_text.set_value', () => {

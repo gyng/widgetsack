@@ -45,6 +45,33 @@ describe('useBackground', () => {
 		expect(wallpaperAssetUrl).toHaveBeenCalledTimes(1); // resolved once, then cached
 	});
 
+	it('does not cache a falsy resolved URL (asset lookup failed)', async () => {
+		wallpaperAssetUrl.mockResolvedValue('');
+		const m = monitor({ background: { kind: 'image', src: 'gone.png' } });
+		const { result } = renderHook(() =>
+			useBackground({ studio: true, navSection: 'layouts', monitor: m, handleOp: vi.fn() })
+		);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(wallpaperAssetUrl).toHaveBeenCalledWith('gone.png');
+		expect(result.current.resolveWallpaper('gone.png')).toBe(''); // no entry was written
+	});
+
+	it('drops an asset URL that resolves after unmount (cancelled)', async () => {
+		let resolveUrl!: (url: string) => void;
+		wallpaperAssetUrl.mockReturnValue(new Promise<string>((r) => (resolveUrl = r)));
+		const m = monitor({ background: { kind: 'image', src: 'late.png' } });
+		const { unmount } = renderHook(() =>
+			useBackground({ studio: true, navSection: 'layouts', monitor: m, handleOp: vi.fn() })
+		);
+		unmount(); // cleanup flips the cancel guard before the URL arrives
+		await act(async () => {
+			resolveUrl('asset://localhost/late.png');
+		});
+		expect(wallpaperAssetUrl).toHaveBeenCalledTimes(1); // resolved, but the state write was skipped
+	});
+
 	it('does not resolve a color/web background (src used verbatim)', () => {
 		const m = monitor({ background: { kind: 'web', src: 'https://x.test' } });
 		renderHook(() =>

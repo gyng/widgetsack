@@ -33,4 +33,20 @@ describe('widgetCosts', () => {
 		render('text-cc', 0.2, 5000);
 		expect(widgetCosts()[0]).toMatchObject({ id: 'text-cc', commits: 1, perSec: 0 });
 	});
+
+	it('falls back to the full id as the type when the prefix is empty (id starts with "-")', () => {
+		render('-orphan', 1, 1000);
+		expect(widgetCosts()[0]).toMatchObject({ id: '-orphan', type: '-orphan' });
+	});
+
+	it('reports 0/s for repeat commits with no elapsed span and tie-breaks by avg ms', () => {
+		// Both widgets read 0/s (same-timestamp commits → zero span; single commit → no interval), so
+		// the sort falls through to the slowest-average tie-break.
+		render('slow-x', 5, 1000);
+		render('slow-x', 5, 1000); // 2 commits, zero span → still 0/s
+		render('fast-y', 1, 1000);
+		const costs = widgetCosts();
+		expect(costs.map((c) => c.id)).toEqual(['slow-x', 'fast-y']); // avg 5ms before avg 1ms
+		expect(costs[0].perSec).toBe(0);
+	});
 });

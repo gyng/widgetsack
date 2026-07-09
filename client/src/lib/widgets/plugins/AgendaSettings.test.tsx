@@ -144,6 +144,70 @@ describe('AgendaSettings', () => {
 		expect(await findByText('Saved ✓')).toBeTruthy();
 	});
 
+	it('auto-dismisses the "Saved ✓" tick after 2.5s', async () => {
+		vi.useFakeTimers();
+		try {
+			const { getByRole, getByText, queryByText } = renderPanel();
+			await act(async () => {}); // flush the prefill promises
+			fireEvent.click(getByRole('button', { name: /Save & fetch/ }));
+			await act(async () => {}); // flush the save → disconnect → connect chain
+			expect(getByText('Saved ✓')).toBeTruthy();
+			act(() => {
+				vi.advanceTimersByTime(2500);
+			});
+			expect(queryByText('Saved ✓')).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('renders with defaults when the connect kick and the status fetch both reject', async () => {
+		vi.mocked(agendaConnect).mockRejectedValue(new Error('no backend'));
+		vi.mocked(agendaConfigStatus).mockRejectedValue(new Error('no backend'));
+		const { container, findByText } = renderPanel();
+		// Both rejections are swallowed; the panel stays usable with its default (empty) form.
+		expect(await findByText('not configured')).toBeTruthy();
+		const url = container.querySelector('input[inputmode="url"]') as HTMLInputElement;
+		expect(url.value).toBe('');
+	});
+
+	it('ignores a status result that resolves after unmount (no setState on a dead panel)', async () => {
+		let resolveStatus: (s: {
+			configured: boolean;
+			url: string;
+			title: string;
+			pollSeconds: number;
+		}) => void = () => undefined;
+		vi.mocked(agendaConfigStatus).mockImplementation(
+			() => new Promise((res) => (resolveStatus = res))
+		);
+		const { container, unmount } = renderPanel();
+		const url = container.querySelector('input[inputmode="url"]') as HTMLInputElement;
+		expect(url.value).toBe('');
+		unmount();
+		// Resolving late must hit the `alive` guard, not a state setter on the unmounted panel.
+		await act(async () => {
+			resolveStatus({
+				configured: true,
+				url: 'https://x.example/a.ics',
+				title: 't',
+				pollSeconds: 60
+			});
+		});
+	});
+
+	it('falls back to a 30-minute poll when the saved status has no pollSeconds', async () => {
+		vi.mocked(agendaConfigStatus).mockResolvedValue({
+			configured: true,
+			url: 'https://calendar.example.com/basic.ics',
+			title: '',
+			pollSeconds: 0 // unset/zero → the || 1800 fallback → 30 minutes
+		});
+		const { container } = renderPanel();
+		const poll = container.querySelector('input[type="number"]') as HTMLInputElement;
+		await waitFor(() => expect(poll.value).toBe('30'));
+	});
+
 	it('reflects the live agenda.status sample in the badge', async () => {
 		const { getByText } = renderPanel();
 		await waitFor(() => expect(agendaConfigStatus).toHaveBeenCalled());

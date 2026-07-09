@@ -148,6 +148,29 @@ describe('patchContainerOp', () => {
 		const col1 = find(find(rootOf(patch), 'container1'), col1Id);
 		expect(col1.children).toHaveLength(2);
 	});
+
+	it('safely ignores cols on a missing id or a leaf id (nothing to trim)', () => {
+		const { state } = stateWithLayout();
+		const missing = patchContainerOp(state, 'ghost', { cols: 1 });
+		expect(rootOf(missing).children).toHaveLength(1); // tree unchanged
+		const onLeaf = patchContainerOp(state, 'w1', { cols: 1 });
+		const col1 = find(find(rootOf(onLeaf), 'container1'), 'col1');
+		expect(col1.children).toHaveLength(2); // a leaf is not a grid; nothing trimmed
+	});
+
+	it('defaults an undeclared cols/rows to 1 when computing the trim capacity', () => {
+		const cells = ['x0', 'x1', 'x2'].map((id) => container(id, 'col', []));
+		const state = minimalState();
+		state.monitor.root = container('root', 'col', [container('g3', 'grid', cells)], {
+			align: 'stretch'
+		});
+		// rows patched, cols still undefined → cap = (cols ?? 1) × 1 = 1 → trim to one cell.
+		const byRows = patchContainerOp(state, 'g3', { rows: 1 });
+		expect(find(rootOf(byRows), 'g3').children.map((c) => c.id)).toEqual(['x0']);
+		// cols patched, rows still undefined → cap = 1 × (rows ?? 1) = 1.
+		const byCols = patchContainerOp(state, 'g3', { cols: 1 });
+		expect(find(rootOf(byCols), 'g3').children.map((c) => c.id)).toEqual(['x0']);
+	});
 });
 
 // =============================================================================================
@@ -314,6 +337,26 @@ describe('setGridTracks', () => {
 		const patch = setGridTracks(s2, 'g', 'col', [{ index: 1, fr: 2 }]);
 		const grid = find(rootOf(patch), 'g');
 		expect(grid.colFr).toEqual([3, 2]); // index 0's prior weight kept
+	});
+
+	it('defaults the track-count hint to 1 when the grid has no cols/rows', () => {
+		const state = minimalState();
+		state.monitor.root = container('root', 'col', [container('g2', 'grid', [])], {
+			align: 'stretch'
+		});
+		const colPatch = setGridTracks(state, 'g2', 'col', [{ index: 0, fr: 2 }]);
+		expect(find(rootOf(colPatch), 'g2').colFr).toEqual([2]);
+		const rowPatch = setGridTracks(state, 'g2', 'row', [{ index: 0, fr: 3 }]);
+		expect(find(rootOf(rowPatch), 'g2').rowFr).toEqual([3]);
+	});
+
+	it('ignores entries with a negative (out-of-range) index', () => {
+		const { state } = stateWithGrid();
+		const patch = setGridTracks(state, 'g', 'col', [
+			{ index: -1, fr: 9 },
+			{ index: 0, fr: 2 }
+		]);
+		expect(find(rootOf(patch), 'g').colFr).toEqual([2, 1]); // -1 skipped, 0 applied
 	});
 
 	it('is a no-op when the id is not a grid', () => {

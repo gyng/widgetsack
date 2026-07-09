@@ -40,6 +40,10 @@ describe('windowMatches / anyWindowMatches', () => {
 		expect(windowMatches(spotify, { exe: 'spotify.exe', title: 'Nope' })).toBe(false);
 		expect(windowMatches(spotify, { className: 'Chrome_WidgetWin_?' })).toBe(true);
 	});
+
+	it('a mismatched class rejects the window even when nothing else is specified', () => {
+		expect(windowMatches(spotify, { className: 'Nope' })).toBe(false);
+	});
 	it('a fieldless rule never matches (no accidental catch-all)', () => {
 		expect(windowMatches(spotify, {})).toBe(false);
 	});

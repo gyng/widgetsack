@@ -39,7 +39,8 @@ import {
 	reloadWindow,
 	requestDiagnostics,
 	setSubsystemProfiling,
-	setWindowInteractive
+	setWindowInteractive,
+	type SubsystemTiming
 } from '../diag';
 import { resetWidgetProfile, widgetCosts } from './canvas/widgetProfile';
 
@@ -169,6 +170,29 @@ describe('DiagnosticsPanel backend subsystem timings', () => {
 		expect(container.querySelector('.diag-cost-row[data-hot]')).toBeTruthy();
 		expect(container.querySelectorAll('.diag-cost-row[data-hot]').length).toBe(1);
 		await flush();
+	});
+
+	it('ignores a timings poll that resolves after unmount (alive guard)', async () => {
+		// The mount poll's promise is held open past unmount; resolving it then must hit the
+		// `if (alive)` bail — no setState on the dead tree (which would warn on console.error).
+		let resolveTimings: ((t: SubsystemTiming[]) => void) | undefined;
+		vi.mocked(getSubsystemTimings).mockImplementationOnce(
+			() =>
+				new Promise((r) => {
+					resolveTimings = r;
+				})
+		);
+		const { unmount } = render(<DiagnosticsPanel />);
+		await flush();
+		unmount();
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		await act(async () => {
+			resolveTimings?.([
+				{ key: 'sensors', avgMs: 1, lastMs: 1, samples: 1, perSec: 1, msPerSec: 1 }
+			]);
+		});
+		expect(errorSpy).not.toHaveBeenCalled();
+		errorSpy.mockRestore();
 	});
 });
 

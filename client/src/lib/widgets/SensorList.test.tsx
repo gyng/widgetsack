@@ -108,6 +108,20 @@ describe('SensorList — grouped', () => {
 		expect(getByTitle('cpu.total.pct')).toBeTruthy();
 	});
 
+	it('re-expands a collapsed group on a second header click (toggle both ways)', () => {
+		const hub = createTelemetryHub();
+		const { container, getByText, getByTitle } = render(
+			<SensorList hub={hub} ids={['mqtt.alpha']} filter groupFor={groupFor} />
+		);
+		const header = getByText('MQTT').closest('button') as HTMLButtonElement;
+		fireEvent.click(header); // collapse
+		expect(header.getAttribute('aria-expanded')).toBe('false');
+		expect(container.querySelector('[title="mqtt.alpha"]')).toBeNull();
+		fireEvent.click(header); // expand again — the toggle's delete arm
+		expect(header.getAttribute('aria-expanded')).toBe('true');
+		expect(getByTitle('mqtt.alpha')).toBeTruthy();
+	});
+
 	it('suppresses per-row badges in grouped mode (the header carries the source)', () => {
 		const hub = createTelemetryHub();
 		const { queryByText } = render(

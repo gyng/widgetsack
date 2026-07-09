@@ -350,6 +350,56 @@ describe('togglePackage — theme CSS consent', () => {
 		await togglePackage('pack-a', false);
 		expect(styleTagFor('pack-a')).toBeNull();
 	});
+
+	it('enables without a prompt (and injects nothing) when the theme asset is missing on disk', async () => {
+		// The manifest declares theme.css but the file was deleted: the pre-enable scan reads null
+		// (→ no threats → no prompt) and the injection's own null-check skips the style tag.
+		assets.clear();
+		const confirm = vi.fn(() => true);
+		await togglePackage('pack-a', true, confirm);
+
+		expect(confirm).not.toHaveBeenCalled();
+		expect(enabledPackages.getSnapshot()).toContain('pack-a');
+		expect(styleTagFor('pack-a')).toBeNull();
+	});
+
+	it('never injects a threat-flagged theme applied WITHOUT stored consent (boot-time fail-closed)', async () => {
+		// The allowlist says enabled but no CSS consent was ever stored (e.g. the list was seeded on
+		// another machine, or the theme turned threat-flagged after trust was cleared). The refresh
+		// path applies the package directly — injectPackageTheme must fail closed.
+		enabledPackages.set(['pack-a']);
+		await refreshPackages();
+
+		expect(enabledPackages.getSnapshot()).toContain('pack-a'); // still enabled…
+		expect(styleTagFor('pack-a')).toBeNull(); // …but the flagged CSS never lands
+	});
+
+	it('clears the stored CSS trust when a consented package is removed', async () => {
+		await togglePackage('pack-a', true, () => true); // stores CSS consent for the threat theme
+		expect(styleTagFor('pack-a')).not.toBeNull();
+
+		removeImpl = () => {
+			setFiles([]);
+			return Promise.resolve();
+		};
+		const r = await removePackage('pack-a');
+		expect(r).toEqual({ ok: true });
+		expect(styleTagFor('pack-a')).toBeNull();
+
+		// Re-discovering the same package must RE-PROMPT — trust was cleared with the remove.
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({ theme: { name: 'T', file: 'theme.css' } }),
+				install: null
+			}
+		]);
+		assets.set('pack-a/theme.css', REMOTE_CSS);
+		await refreshPackages();
+		const confirm = vi.fn(() => true);
+		await togglePackage('pack-a', true, confirm);
+		expect(confirm).toHaveBeenCalledTimes(1);
+	});
 });
 
 // ---- togglePackage: network source consent + lifecycle -------------------------------------------
@@ -421,6 +471,50 @@ describe('togglePackage — network source consent', () => {
 		const stop = await src.start(hub);
 		expect(typeof stop).toBe('function');
 		expect(stop()).toBeUndefined();
+	});
+
+	it('catalogs a label-less sensor bare and carries a declared unit through', async () => {
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({
+					// No templates key at all — a source-only package registers no palette group.
+					templates: undefined,
+					source: { file: 'src.js', pollSeconds: 30, hosts: ['api.example.com'] },
+					sensors: [{ id: 'raw' }, { id: 'load', label: 'Load', unit: '%' }]
+				}),
+				install: null
+			}
+		]);
+		await refreshPackages();
+		await togglePackage('pack-a', true, () => true);
+
+		const entries = sourceCatalogEntries().filter((e) => e.id.startsWith('pkg.pack-a.'));
+		const raw = entries.find((e) => e.id === 'pkg.pack-a.raw')!;
+		expect(raw.label).toBeUndefined(); // no label declared → none invented
+		expect(raw.unit).toBeUndefined();
+		const load = entries.find((e) => e.id === 'pkg.pack-a.load')!;
+		expect(load.label).toBe('Load');
+		expect(load.unit).toBe('%');
+		// And with no templates, no palette group was registered under the package name.
+		expect(listTemplateGroups().find((g) => g.group === 'Pack A')).toBeUndefined();
+	});
+
+	it('stops an orphaned running loop on reset even after its manifest broke on disk', async () => {
+		await togglePackage('pack-a', true, () => true);
+		expect(sourceStarts).toEqual(['pack-a']);
+
+		// The manifest breaks on disk; the re-scan rows it as an error. The vanish-loop doesn't fire
+		// (the id is still live) and the enable-loop skips the unparsed entry — so the old poll loop
+		// keeps running, tracked only in runningSources.
+		setFiles([{ id: 'pack-a', manifest: '{broken', install: null }]);
+		sourceStops.length = 0;
+		await refreshPackages();
+		expect(sourceStops).toEqual([]); // nothing stopped it yet
+
+		// The reset sweep must catch it via runningSources, not via the (unparsed) discovered entry.
+		resetPackagesForTest();
+		expect(sourceStops).toEqual(['pack-a']);
 	});
 });
 
@@ -648,6 +742,16 @@ describe('removePackage', () => {
 		if (!r.ok) expect(r.error).toContain('locked');
 		// The closing refresh re-discovered the still-present folder.
 		expect(rowFor('pack-a')).toBeDefined();
+	});
+
+	it('deletes a folder that was never discovered (nothing to unregister first)', async () => {
+		// The Plugins panel can race a manual folder delete: the id is gone from `discovered` but the
+		// dir still exists. removePackage must skip the un-apply and still delete + re-scan.
+		await initPackages(hub); // empty disk — nothing discovered
+		const r = await removePackage('ghost');
+
+		expect(r).toEqual({ ok: true });
+		expect(removeCalls).toEqual(['ghost']);
 	});
 });
 

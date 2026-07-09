@@ -63,4 +63,35 @@ describe('widgetReferenceMarkdown', () => {
 		]);
 		expect(piped).toContain('a \\| b');
 	});
+
+	it('documents an empty/catalog select, expr fields (with/without a target), and a numeric range', () => {
+		const kitchen: WidgetMeta = {
+			type: 'kitchen',
+			label: 'Kitchen',
+			binds: 'scalar',
+			configFields: [
+				{ key: 'src', label: 'src', kind: 'select', options: [], catalog: 'sensors' },
+				{ key: 'e1', label: 'e1', kind: 'expr', result: 'number', target: 'foo' },
+				{ key: 'e2', label: 'e2', kind: 'expr', result: 'text' },
+				{ key: 'range', label: 'range', kind: 'number', min: 0, max: 10, step: 1 },
+				{ key: 'preset', label: 'preset', kind: 'text', default: 'hi' }
+			]
+		};
+		const md = widgetReferenceMarkdown([kitchen]);
+		expect(md).toContain('(runtime list) — from `sensors`');
+		expect(md).toContain('→ number (sets `foo`)');
+		expect(md).toContain('| `e2` | expr | ');
+		expect(md).toContain('→ text |');
+		expect(md).toContain('min 0, max 10, step 1');
+		expect(md).toContain('| `preset` | text | "hi" |');
+	});
+
+	it('falls back to the type when label is missing, "scalar" when binds is missing, and notes interactive widgets', () => {
+		const blob: WidgetMeta = { type: 'blob', interactive: true };
+		const md = widgetReferenceMarkdown([blob]);
+		expect(md).toContain('### blob — `blob`');
+		expect(md).toContain('![blob widget]');
+		expect(md).toContain('binds a `scalar` sensor');
+		expect(md).toContain('- **Interactive:** catches clicks in passive mode');
+	});
 });

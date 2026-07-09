@@ -163,6 +163,19 @@ describe('GroupFrame', () => {
 		expect(onSelect).toHaveBeenCalledWith({ id: 'grp-1' });
 	});
 
+	it('subsequent moves after crossing the slop keep firing onChange (moved is latched)', () => {
+		const onChange = vi.fn();
+		const { container } = render(
+			<GroupFrame id="grp-1" rect={rect} editMode selected onChange={onChange} />
+		);
+		const ov = overlay(container);
+		fireEvent.pointerDown(ov, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerMove(ov, { pointerId: 1, clientX: 40, clientY: 10 }); // crosses the slop
+		// back within the slop radius of the press: still a move — the gate only applies pre-drag
+		fireEvent.pointerMove(ov, { pointerId: 1, clientX: 12, clientY: 10 });
+		expect(onChange).toHaveBeenCalledTimes(2);
+	});
+
 	it('right-button press is a free-move (skipFlow): commit skips flow + suppresses the next menu', () => {
 		const onChange = vi.fn();
 		const onCommit = vi.fn();

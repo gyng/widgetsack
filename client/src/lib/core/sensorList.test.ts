@@ -26,6 +26,10 @@ describe('formatSensorValue', () => {
 		expect(formatSensorValue({ kind: 'series', value: [] })).toBe('[ ]');
 	});
 
+	it('renders a non-integer last point to 1dp', () => {
+		expect(formatSensorValue({ kind: 'series', value: [1, 2, 3.14159] })).toBe('3.1 ⋯');
+	});
+
 	it('renders json compactly (truncated)', () => {
 		expect(formatSensorValue({ kind: 'json', value: { a: 1 } })).toBe('{"a":1}');
 	});
