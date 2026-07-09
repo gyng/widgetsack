@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 
 // Stub the Tauri-backed media source; resolve a known MediaCaps for an active source so the
 // capabilities grid renders, and null for no source (mirrors the off-Windows / no-session case).
@@ -228,5 +228,41 @@ describe('NowPlayingSettings', () => {
 		const { getByText } = render(<NowPlayingSettings />);
 		// No session → getMediaCapabilities is still pending/empty in the no-session branch.
 		expect(getByText('No active session.')).toBeTruthy();
+	});
+
+	it('auto-disarms the two-step reset after 3s (an abandoned first click does not linger)', () => {
+		vi.useFakeTimers();
+		try {
+			mediaStore.set({ ...mediaStore.getSnapshot(), sourcePriority: 'zzz' });
+			const { container } = render(<NowPlayingSettings />);
+			const reset = container.querySelector('.rp-danger') as HTMLButtonElement;
+			fireEvent.click(reset);
+			expect(reset.textContent).toContain('Click again to confirm');
+			act(() => {
+				vi.advanceTimersByTime(3000); // the arm window lapses
+			});
+			expect(reset.textContent).toContain('Reset settings');
+			// A click after the lapse only re-arms — it must NOT reset.
+			fireEvent.click(reset);
+			expect(mediaStore.getSnapshot().sourcePriority).toBe('zzz');
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('tolerates a session record with no source field (treated as sourceless)', () => {
+		// A malformed/legacy record whose `source` is missing entirely — the detected-source
+		// derivations must fall back to '' and skip it rather than crash.
+		const { source: _drop, ...noSource } = session('x.exe', 'T');
+		void _drop;
+		mediaStore.set({
+			...defaultState,
+			sourcePriority: 'x',
+			ignoreList: '',
+			sessions: { 1: noSource as SessionRecord }
+		});
+		const { getByText } = render(<NowPlayingSettings />);
+		// Nothing detected (the record has no source) → the empty-state hint renders.
+		expect(getByText(/No media sources detected yet/)).toBeTruthy();
 	});
 });

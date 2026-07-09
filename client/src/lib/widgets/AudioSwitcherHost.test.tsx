@@ -136,4 +136,16 @@ describe('AudioSwitcherHost (container wiring)', () => {
 		});
 		expect(listAudioOutputs).not.toHaveBeenCalled();
 	});
+
+	it('a stray interval tick after teardown is swallowed by the alive guard', async () => {
+		const setIntervalSpy = vi.spyOn(window, 'setInterval');
+		const { unmount } = render(<AudioSwitcherHost />);
+		await act(async () => undefined); // settle the mount refresh
+		const tick = setIntervalSpy.mock.calls.at(-1)?.[0] as () => void;
+		unmount();
+		listAudioOutputs.mockClear();
+		// clearInterval normally prevents this; if a queued tick slips through it must not refresh.
+		tick();
+		expect(listAudioOutputs).not.toHaveBeenCalled();
+	});
 });

@@ -16,6 +16,12 @@ describe('compareMonitorOptions', () => {
 			'DISPLAY10'
 		]);
 	});
+
+	it('treats two "default" entries as equal', () => {
+		expect(
+			compareMonitorOptions({ key: 'default', name: 'A' }, { key: 'default', name: 'B' })
+		).toBe(0);
+	});
 });
 
 describe('monitorOptionLabel', () => {

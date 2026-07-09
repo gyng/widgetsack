@@ -38,6 +38,14 @@ describe('scanCssThreats', () => {
 		expect(scanCssThreats(undefined)).toEqual([]);
 		expect(scanCssThreats('')).toEqual([]);
 	});
+
+	it('truncates a long match to ~80 chars with an ellipsis', () => {
+		const longUrl = `url(https://evil.example/${'a'.repeat(100)})`;
+		const t = scanCssThreats(`.a { background: ${longUrl} }`);
+		expect(t).toHaveLength(1);
+		expect(t[0].detail.length).toBe(78);
+		expect(t[0].detail.endsWith('…')).toBe(true);
+	});
 });
 
 describe('threatSummary', () => {
@@ -50,5 +58,18 @@ describe('threatSummary', () => {
 		]);
 		expect(s).toContain('2 remote resources');
 		expect(s).toContain('1 full-screen overlay rule');
+	});
+
+	it('uses singular wording for exactly one remote resource, omitting the overlay clause', () => {
+		const s = threatSummary([{ kind: 'remote-url', detail: 'url(https://h/a)' }]);
+		expect(s).toBe('1 remote resource (could phone home)');
+	});
+
+	it('uses plural wording for multiple overlay rules, omitting the remote clause', () => {
+		const s = threatSummary([
+			{ kind: 'overlay', detail: 'position: fixed' },
+			{ kind: 'overlay', detail: 'position: sticky' }
+		]);
+		expect(s).toBe('2 full-screen overlay rules');
 	});
 });

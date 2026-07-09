@@ -118,6 +118,19 @@ describe('speakSmart', () => {
 		expect(a.paused).toBe(true);
 		expect(revoked).toContain('blob:url-1');
 	});
+
+	it('a stale onended for a superseded clip does not touch the newer clip', async () => {
+		llmSynthesize.mockResolvedValue({ audio: [1], mime: 'audio/mpeg' });
+		await speakSmart('first');
+		const stale = audios[0]!;
+		await speakSmart('second'); // starting the second clip already stopped + revoked the first
+		revoked.length = 0;
+		const current = audios[1]!;
+		current.paused = false;
+		stale.onended!(); // fires late, after `current` no longer points at this clip → no-op
+		expect(current.paused).toBe(false);
+		expect(revoked).toEqual([]);
+	});
 });
 
 describe('stopSpeaking', () => {

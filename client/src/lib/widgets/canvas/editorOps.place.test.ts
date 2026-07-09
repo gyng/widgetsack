@@ -321,6 +321,17 @@ describe('replaceNodeOp', () => {
 		expect(next.monitor.floating[0]).toBe(replacement);
 		expect(patch.selectedId).toBe('fl');
 	});
+
+	it('leaves other floating leaves untouched when swapping one', () => {
+		const state = minimalState();
+		const bystander = leaf(gauge('other'));
+		state.monitor.floating = [leaf(gauge('fl')), bystander];
+		const replacement = leaf(gauge('fl'));
+		const next = { ...state, ...replaceNodeOp(state, 'fl', replacement) };
+
+		expect(next.monitor.floating[0]).toBe(replacement);
+		expect(next.monitor.floating[1]).toBe(bystander); // passed through by reference
+	});
 });
 
 // =============================================================================================

@@ -57,4 +57,15 @@ describe('BackgroundLayer', () => {
 		);
 		expect(container.querySelector('.bg-layer')).toBeNull();
 	});
+
+	it('uses the src verbatim when no resolveSrc is injected (identity default)', () => {
+		const { container } = render(<BackgroundLayer spec={{ kind: 'image', src: 'x.png' }} />);
+		const fill = container.querySelector('.bg-fill') as HTMLElement;
+		expect(fill.style.backgroundImage).toContain('x.png');
+	});
+
+	it('renders nothing when the spec has no src at all', () => {
+		const { container } = render(<BackgroundLayer spec={{ kind: 'image' }} />);
+		expect(container.querySelector('.bg-layer')).toBeNull();
+	});
 });

@@ -15,6 +15,9 @@ import { createWidget, getMeta } from '../../core/widget';
 import {
 	container,
 	emptyMonitorLayout,
+	group,
+	isContainer,
+	isGroup,
 	leaf,
 	type Leaf,
 	type WidgetInstance
@@ -76,6 +79,32 @@ describe('bulkPatchConfig', () => {
 	it('is a no-op with no selection', () => {
 		expect(bulkPatchConfig(stateWith(null, []), 'x', 1)).toEqual({});
 	});
+
+	it('falls back to the single primary when the marquee set is empty', () => {
+		const patch = bulkPatchConfig(stateWith('w1', []), 'probe', 'X');
+		expect(unitAt(patch as never, 0).config.probe).toBe('X'); // the primary was patched
+		expect(unitAt(patch as never, 1).config.probe).toBeUndefined(); // w2 untouched
+	});
+
+	it('skips floating leaves outside the selection and floating groups', () => {
+		const s = stateWith('w1', ['w1', 'grpF']);
+		const bystander = leaf(gauge('bystander'));
+		const grpLeaf = leaf(group('grpF', { w: 10, h: 10 }, leaf(gauge('gi'))));
+		s.monitor.floating = [bystander, grpLeaf];
+		const patch = bulkPatchConfig(s, 'probe', 'X');
+		expect(patch.monitor!.floating[0]).toBe(bystander); // not selected → pass-through
+		expect(patch.monitor!.floating[1]).toBe(grpLeaf); // a selected GROUP is skipped too
+	});
+
+	it('leaves selected containers and flow groups untouched (primitives only)', () => {
+		const s = stateWith('root', ['root', 'w1', 'grpT']);
+		const grpLeaf = leaf(group('grpT', { w: 10, h: 10 }, leaf(gauge('gi'))));
+		s.monitor.root.children.push(grpLeaf);
+		const patch = bulkPatchConfig(s, 'probe', 'X');
+		expect(unitAt(patch as never, 0).config.probe).toBe('X'); // the primitive was patched
+		expect(isContainer(patch.monitor!.root)).toBe(true); // the container passed through
+		expect(patch.monitor!.root.children[2]).toBe(grpLeaf); // the flow group passed through
+	});
 });
 
 describe('bulkSetBasis', () => {
@@ -129,6 +158,20 @@ describe('setWidgetToken / clearWidgetTokens', () => {
 		expect(clearWidgetTokens(stateWith(null, []), 'w1')).toEqual({}); // no tokens
 		expect(clearWidgetTokens(stateWith(null, []), 'missing')).toEqual({});
 	});
+
+	it('setWidgetToken is a no-op on a missing id or a container id', () => {
+		expect(setWidgetToken(stateWith(null, []), 'missing', '--a', '1')).toEqual({});
+		expect(setWidgetToken(stateWith(null, []), 'root', '--a', '1')).toEqual({});
+	});
+
+	it('setWidgetToken routes a GROUP leaf through the patchGroup path', () => {
+		const s = stateWith(null, []);
+		s.monitor.root.children.push(leaf(group('grpT', { w: 10, h: 10 }, leaf(gauge('gi')))));
+		const patch = setWidgetToken(s, 'grpT', '--accent', '#0f0');
+		const grp = patch.monitor!.root.children[2] as Leaf;
+		expect(isGroup(grp.unit)).toBe(true);
+		expect(grp.unit.tokens).toEqual({ '--accent': '#0f0' });
+	});
 });
 
 describe('patchFloating / patchUnit', () => {
@@ -145,5 +188,12 @@ describe('patchFloating / patchUnit', () => {
 		expect(unitAt(flow as never, 0).sensor).toBe('mem.used');
 		const noop = patchUnit(s, 'root', { sensor: 'x' }); // container id → tree unchanged
 		expect(noop.monitor!.root.children).toHaveLength(2);
+	});
+
+	it('patchUnit routes a floating id to the floating layer', () => {
+		const s = stateWith(null, []);
+		s.monitor.floating = [leaf(gauge('f1'))];
+		const patch = patchUnit(s, 'f1', { sensor: 'cpu.total' });
+		expect((patch.monitor!.floating[0].unit as WidgetInstance).sensor).toBe('cpu.total');
 	});
 });

@@ -29,4 +29,30 @@ describe('AirQuality meter', () => {
 		const { container } = render(<AirQuality sensors={{}} />);
 		expect(container.querySelector('.aq-value')?.textContent).toBe('—');
 	});
+
+	it('applies a per-instance color as the --aq-accent CSS variable', () => {
+		const { container } = render(<AirQuality sensors={{}} color="rgb(8,8,8)" />);
+		const root = container.querySelector('.np-airquality') as HTMLElement;
+		expect(root.style.getPropertyValue('--aq-accent')).toBe('rgb(8,8,8)');
+	});
+
+	it('hides the detail row entirely when both PM2.5 and UV are disabled', () => {
+		const { container } = render(
+			<AirQuality
+				sensors={{ aqi: sc(34), pm25: sc(8.2), uv: sc(6) }}
+				showPm={false}
+				showUv={false}
+			/>
+		);
+		expect(container.querySelector('.aq-detail')).toBeNull();
+	});
+
+	it('omits just the PM2.5 or UV line when that toggle is off, keeping the other', () => {
+		const { container } = render(
+			<AirQuality sensors={{ aqi: sc(34), pm25: sc(8.2), uv: sc(6) }} showPm={false} />
+		);
+		const detail = container.querySelector('.aq-detail')?.textContent ?? '';
+		expect(detail).not.toContain('PM2.5');
+		expect(detail).toContain('UV');
+	});
 });

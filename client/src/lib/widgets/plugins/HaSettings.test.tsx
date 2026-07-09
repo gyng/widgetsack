@@ -368,4 +368,73 @@ describe('HaSettings', () => {
 		const url = container.querySelector('input[type="text"]') as HTMLInputElement;
 		expect(url.value).toBe('');
 	});
+
+	it('auto-dismisses the "Saved ✓" tick after 2.5s', async () => {
+		vi.useFakeTimers();
+		try {
+			const { container, getByText, queryByText } = renderPanel();
+			await act(async () => {}); // flush the prefill promises (url must be set for canSubmit)
+			const url = container.querySelector('input[type="text"]') as HTMLInputElement;
+			expect(url.value).toBe('http://ha:8123');
+			fireEvent.click(getByText('Save & connect'));
+			await act(async () => {}); // flush the save → disconnect → connect chain
+			expect(getByText('Saved ✓')).toBeTruthy();
+			act(() => {
+				vi.advanceTimersByTime(2500);
+			});
+			expect(queryByText('Saved ✓')).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('renders with defaults when the connect kick and the status fetch both reject', async () => {
+		vi.mocked(haConnect).mockRejectedValue(new Error('no backend'));
+		vi.mocked(haConfigStatus).mockRejectedValue(new Error('no backend'));
+		const { container, findByText } = renderPanel();
+		// Both rejections are swallowed; the panel stays usable with its default (empty) form.
+		expect(await findByText('not configured')).toBeTruthy();
+		const url = container.querySelector('input[type="text"]') as HTMLInputElement;
+		expect(url.value).toBe('');
+	});
+
+	it('ignores a status result that resolves after unmount (no setState on a dead panel)', async () => {
+		type Status = Awaited<ReturnType<typeof haConfigStatus>>;
+		let resolveStatus: (s: Status) => void = () => undefined;
+		vi.mocked(haConfigStatus).mockImplementation(() => new Promise((res) => (resolveStatus = res)));
+		const { container, unmount } = renderPanel();
+		const url = container.querySelector('input[type="text"]') as HTMLInputElement;
+		expect(url.value).toBe('');
+		unmount();
+		// Resolving late must hit the `alive` guard, not a state setter on the unmounted panel.
+		await act(async () => {
+			resolveStatus({ configured: true, url: 'http://late:8123', insecure: false, base_path: '' });
+		});
+	});
+
+	it('stays on the flat list when the registry snapshot fetch rejects', async () => {
+		vi.mocked(haRegistrySnapshot).mockRejectedValueOnce(new Error('ws down'));
+		const { findByText, getByLabelText, queryByText } = renderPanel();
+		await findByText('Kitchen Light');
+		fireEvent.click(getByLabelText('Group by area'));
+		// The rejection is swallowed: no grouped headers appear, and the panel doesn't crash.
+		await waitFor(() => expect(haRegistrySnapshot).toHaveBeenCalled());
+		expect(queryByText('Living Room')).toBeNull();
+	});
+
+	it('ignores a registry snapshot that resolves after unmount', async () => {
+		type Registry = Awaited<ReturnType<typeof haRegistrySnapshot>>;
+		let resolveRegistry: (r: Registry) => void = () => undefined;
+		vi.mocked(haRegistrySnapshot).mockImplementation(
+			() => new Promise((res) => (resolveRegistry = res))
+		);
+		const { findByText, getByLabelText, unmount } = renderPanel();
+		await findByText('Kitchen Light');
+		fireEvent.click(getByLabelText('Group by area')); // kicks the (deferred) registry fetch
+		unmount();
+		// Resolving late must hit the `alive` guard, not a state setter on the unmounted panel.
+		await act(async () => {
+			resolveRegistry({ areas: [], devices: [], entities: [] });
+		});
+	});
 });

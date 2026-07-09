@@ -45,4 +45,12 @@ describe('AudioSwitcher meter', () => {
 		);
 		expect(container.querySelector('.as-empty')?.textContent).toBe('—');
 	});
+
+	it('applies a per-instance color as the --as-accent CSS variable', () => {
+		const { container } = render(
+			<AudioSwitcher devices={devices} currentId="a" onPick={() => undefined} color="rgb(9,1,2)" />
+		);
+		const root = container.querySelector('.np-audioswitch') as HTMLElement;
+		expect(root.style.getPropertyValue('--as-accent')).toBe('rgb(9,1,2)');
+	});
 });

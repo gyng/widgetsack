@@ -27,7 +27,13 @@ vi.mock('./mqtt-commands', () => ({
 vi.mock('../../overlay', () => ({ copyToClipboard: vi.fn(() => Promise.resolve(true)) }));
 
 import MqttSettings from './MqttSettings';
-import { mqttCatalog, mqttConfigStatus, mqttDisconnect, saveMqttConfig } from './mqtt-commands';
+import {
+	mqttCatalog,
+	mqttConfigStatus,
+	mqttConnect,
+	mqttDisconnect,
+	saveMqttConfig
+} from './mqtt-commands';
 import { copyToClipboard } from '../../overlay';
 import { createTelemetryHub, type TelemetryHub } from '../../core/telemetry';
 import { TelemetryHubContext } from '../telemetryContext';
@@ -180,5 +186,59 @@ describe('MqttSettings', () => {
 		// The label-less entry renders its topic as the name (e.label ?? e.topic).
 		const name = await findByText('tasmota/x', { selector: '.has-entity-name' });
 		expect(name).toBeTruthy();
+	});
+
+	it('auto-dismisses the "Saved ✓" tick after 2.5s', async () => {
+		vi.useFakeTimers();
+		try {
+			const { container, getByText, queryByText } = renderPanel();
+			await act(async () => {}); // flush the prefill promises (host must be set for canSubmit)
+			const host = container.querySelector('input[type="text"]') as HTMLInputElement;
+			expect(host.value).toBe('broker.local');
+			fireEvent.click(getByText('Save & connect'));
+			await act(async () => {}); // flush the save → disconnect → connect → catalog chain
+			expect(getByText('Saved ✓')).toBeTruthy();
+			act(() => {
+				vi.advanceTimersByTime(2500);
+			});
+			expect(queryByText('Saved ✓')).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('renders with defaults when the connect kick and the status fetch both reject', async () => {
+		vi.mocked(mqttConnect).mockRejectedValue(new Error('no backend'));
+		vi.mocked(mqttConfigStatus).mockRejectedValue(new Error('no backend'));
+		const { container, findByText } = renderPanel();
+		// Both rejections are swallowed; the panel stays usable with its default (empty) form.
+		expect(await findByText('not configured')).toBeTruthy();
+		const host = container.querySelector('input[type="text"]') as HTMLInputElement;
+		expect(host.value).toBe('');
+	});
+
+	it('ignores a status result that resolves after unmount (no setState on a dead panel)', async () => {
+		type Status = Awaited<ReturnType<typeof mqttConfigStatus>>;
+		let resolveStatus: (s: Status) => void = () => undefined;
+		vi.mocked(mqttConfigStatus).mockImplementation(
+			() => new Promise((res) => (resolveStatus = res))
+		);
+		const { container, unmount } = renderPanel();
+		const host = container.querySelector('input[type="text"]') as HTMLInputElement;
+		expect(host.value).toBe('');
+		unmount();
+		// Resolving late must hit the `alive` guard, not a state setter on the unmounted panel.
+		await act(async () => {
+			resolveStatus({
+				configured: true,
+				host: 'late.local',
+				port: 1883,
+				username: '',
+				topics: [],
+				tls: false,
+				insecure: false,
+				discovery: false
+			});
+		});
 	});
 });

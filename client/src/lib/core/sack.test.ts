@@ -12,6 +12,12 @@ const groupLeaf = (id: string, def: string): Leaf => ({
 	unit: { id, kind: 'group', def, size: { w: 1, h: 1 }, child: widgetLeaf(`${id}-c`) }
 });
 
+// A group leaf with no `def` (an inline group whose child is used directly).
+const inlineGroupLeaf = (id: string): Leaf => ({
+	id,
+	unit: { id, kind: 'group', size: { w: 1, h: 1 }, child: widgetLeaf(`${id}-c`) }
+});
+
 const mkDef = (id: string, child: Leaf = widgetLeaf(`${id}-c`)): WidgetDef => ({
 	id,
 	name: id.toUpperCase(),
@@ -33,6 +39,15 @@ describe('sack pack/unpack', () => {
 		expect(packSack({ library: { version: 1, defs: [] } })).toEqual({
 			kind: 'widgetsack/sack',
 			version: 1
+		});
+	});
+
+	it('omits an empty tokens object but includes a non-empty one', () => {
+		expect(packSack({ tokens: {} })).toEqual({ kind: 'widgetsack/sack', version: 1 });
+		expect(packSack({ tokens: { '--np-accent': 'red' } })).toEqual({
+			kind: 'widgetsack/sack',
+			version: 1,
+			tokens: { '--np-accent': 'red' }
 		});
 	});
 
@@ -92,5 +107,38 @@ describe('mergeLibrary', () => {
 		mergeLibrary(into, [incoming]);
 		expect(incoming.id).toBe('a');
 		expect(((incoming.child as Leaf).unit as { def: string }).def).toBe('a');
+	});
+
+	it('leaves an inline group (no def) untouched — remapRefs just recurses into its child', () => {
+		const into: Library = { version: 1, defs: [mkDef('a')] };
+		const incomingA = mkDef('a', inlineGroupLeaf('g'));
+		const { library, idMap } = mergeLibrary(into, [incomingA]);
+		const mergedA = library.defs.find((d) => d.id === idMap.a);
+		const grp = (mergedA!.child as Leaf).unit as { def?: string };
+		expect(grp.def).toBeUndefined();
+	});
+
+	it('leaves a group.def unchanged when it references a def outside the incoming batch', () => {
+		// 'x' is already in the library and isn't part of this merge, so it never lands in idMap —
+		// the reference must be left exactly as-is (not blanked or rewritten).
+		const into: Library = { version: 1, defs: [mkDef('a'), mkDef('x')] };
+		const incomingB = mkDef('b', groupLeaf('g', 'x'));
+		const { library, idMap } = mergeLibrary(into, [incomingB]);
+		const mergedB = library.defs.find((d) => d.id === idMap.b);
+		const grp = (mergedB!.child as Leaf).unit as { def: string };
+		expect(grp.def).toBe('x');
+	});
+
+	it('merges into an undefined library (fresh library, version defaults to 1)', () => {
+		const { library, idMap } = mergeLibrary(undefined, [mkDef('a')]);
+		expect(library).toEqual({ version: 1, defs: [mkDef('a')] });
+		expect(idMap).toEqual({ a: 'a' });
+	});
+
+	it('resolves a chain of collisions (base and base-2 both taken) by skipping past both', () => {
+		const into: Library = { version: 1, defs: [mkDef('a'), mkDef('a-2')] };
+		const { library, idMap } = mergeLibrary(into, [mkDef('a')]);
+		expect(idMap.a).toBe('a-3');
+		expect(library.defs.map((d) => d.id)).toEqual(['a', 'a-2', 'a-3']);
 	});
 });

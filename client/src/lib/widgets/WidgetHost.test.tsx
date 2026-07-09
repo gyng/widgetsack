@@ -456,6 +456,74 @@ describe('WidgetHost drag interactions', () => {
 		expect(onSelect).toHaveBeenCalledWith({ id: 'w' });
 	});
 
+	it('keeps reporting rect changes on later moves once past the slop (no re-gating)', () => {
+		const onChange = vi.fn();
+		const { container } = render(
+			<WidgetHost hub={hub} instance={inst} editMode onChange={onChange} />
+		);
+		const overlay = overlayOf(container);
+		fireEvent.pointerDown(overlay, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerMove(overlay, { pointerId: 1, clientX: 40, clientY: 10 }); // crosses the slop
+		fireEvent.pointerMove(overlay, { pointerId: 1, clientX: 60, clientY: 10 }); // already moved
+		expect(onChange).toHaveBeenCalledTimes(2);
+	});
+
+	it('a click (no movement) on an UNSELECTED in-flow widget selects on press only, never drops', () => {
+		const onSelect = vi.fn();
+		const onDrop = vi.fn();
+		const { container } = render(
+			<WidgetHost
+				hub={hub}
+				instance={inst}
+				editMode
+				movable={false}
+				flow
+				onSelect={onSelect}
+				onDrop={onDrop}
+			/>
+		);
+		const overlay = overlayOf(container);
+		fireEvent.pointerDown(overlay, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		expect(onSelect).toHaveBeenCalledTimes(1); // it was unselected → selected on press
+		fireEvent.pointerUp(overlay, { pointerId: 1, clientX: 10, clientY: 10 }); // no movement
+		expect(onDrop).not.toHaveBeenCalled();
+		expect(onSelect).toHaveBeenCalledTimes(1); // and NOT re-selected on release
+	});
+
+	it('a press-release without movement on a selected widget’s resize handle does not re-select', () => {
+		const onSelect = vi.fn();
+		const onCommit = vi.fn();
+		const { container } = render(
+			<WidgetHost
+				hub={hub}
+				instance={inst}
+				editMode
+				selected
+				onSelect={onSelect}
+				onCommit={onCommit}
+			/>
+		);
+		const handle = container.querySelector('.handle.se') as HTMLElement;
+		fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		expect(onSelect).toHaveBeenCalledTimes(1); // a resize collapses the selection on press
+		fireEvent.pointerUp(handle, { pointerId: 1, clientX: 10, clientY: 10 }); // no movement
+		expect(onCommit).not.toHaveBeenCalled();
+		expect(onSelect).toHaveBeenCalledTimes(1); // not a move → end() adds no collapse-select
+	});
+
+	it('a click (no movement) on an UNSELECTED floating widget selects on press only', () => {
+		const onSelect = vi.fn();
+		const onCommit = vi.fn();
+		const { container } = render(
+			<WidgetHost hub={hub} instance={inst} editMode onSelect={onSelect} onCommit={onCommit} />
+		);
+		const overlay = overlayOf(container);
+		fireEvent.pointerDown(overlay, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerUp(overlay, { pointerId: 1, clientX: 10, clientY: 10 }); // no movement
+		expect(onCommit).not.toHaveBeenCalled();
+		expect(onSelect).toHaveBeenCalledTimes(1); // press-select only; nothing more on release
+	});
+
 	it('does not move below the drag slop (click-to-select only)', () => {
 		const onChange = vi.fn();
 		const { container } = render(

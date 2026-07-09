@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, waitFor, fireEvent, cleanup } from '@testing-library/react';
+import { render, waitFor, fireEvent, cleanup, act } from '@testing-library/react';
 
 // Stub the Tauri-backed DDC adapter: the editor must still scan the chosen monitor's inputs and round-
 // trip include/rename edits through the same `code=label` spec the widget consumes.
@@ -134,11 +134,59 @@ describe('MonitorSourcesEditor (config form)', () => {
 		expect(container.querySelector('.ms-src-row')).toBeNull();
 	});
 
+	it('re-shows the detecting state and re-scans when the monitor prop changes on a live instance', async () => {
+		listMonitorInputs.mockResolvedValueOnce([mon({ supported: [0x0f, 0x11] })]);
+		const { container, rerender } = render(
+			<MonitorSourcesEditor value="" monitor="" onChange={() => undefined} />
+		);
+		await waitFor(() => expect(container.querySelectorAll('.ms-src-row')).toHaveLength(2));
+		listMonitorInputs.mockResolvedValueOnce([
+			mon({ gdi: '\\\\.\\DISPLAY2', primary: false, supported: [0x12] })
+		]);
+		rerender(
+			<MonitorSourcesEditor value="" monitor={'\\\\.\\DISPLAY2'} onChange={() => undefined} />
+		);
+		await waitFor(() => expect(listMonitorInputs).toHaveBeenCalledWith('\\\\.\\DISPLAY2'));
+		await waitFor(() => expect(container.querySelectorAll('.ms-src-row')).toHaveLength(1));
+		expect(container.querySelector('.ms-src-name')?.textContent).toBe('HDMI 2');
+	});
+
+	it('discards a stale in-flight probe result when the monitor changes before it resolves', async () => {
+		let resolveFirst!: (v: MonitorInputs[]) => void;
+		const first = new Promise<MonitorInputs[]>((res) => {
+			resolveFirst = res;
+		});
+		listMonitorInputs.mockReturnValueOnce(first); // the '' (primary) probe never resolves during this test
+		listMonitorInputs.mockResolvedValueOnce([
+			mon({ gdi: '\\\\.\\DISPLAY2', primary: false, supported: [0x12] })
+		]);
+		const { container, rerender } = render(
+			<MonitorSourcesEditor value="" monitor="" onChange={() => undefined} />
+		);
+		// Switch monitors before the first probe settles — the effect's cleanup marks it cancelled.
+		rerender(
+			<MonitorSourcesEditor value="" monitor={'\\\\.\\DISPLAY2'} onChange={() => undefined} />
+		);
+		await waitFor(() => expect(container.querySelectorAll('.ms-src-row')).toHaveLength(1));
+		expect(container.querySelector('.ms-src-name')?.textContent).toBe('HDMI 2');
+		// Now let the stale first probe resolve — its `cancelled` guard must discard the result instead
+		// of clobbering the DISPLAY2 data that's already showing.
+		await act(async () => {
+			resolveFirst([mon({ supported: [0x0f, 0x11] })]);
+		});
+		expect(container.querySelectorAll('.ms-src-row')).toHaveLength(1);
+		expect(container.querySelector('.ms-src-name')?.textContent).toBe('HDMI 2');
+	});
+
 	it('rescans on demand', async () => {
 		const { container } = render(
 			<MonitorSourcesEditor value="" monitor="" onChange={() => undefined} />
 		);
-		await waitFor(() => expect(container.querySelector('.ms-src-scan')).not.toBeNull());
+		// Wait for the initial probe to finish (the button is DISABLED while detecting): clicking a
+		// still-disabled button would silently no-op and flake the call-count assertion below.
+		await waitFor(() =>
+			expect((container.querySelector('.ms-src-scan') as HTMLButtonElement).disabled).toBe(false)
+		);
 		expect(listMonitorInputs).toHaveBeenCalledTimes(1);
 		fireEvent.click(container.querySelector('.ms-src-scan')!);
 		await waitFor(() => expect(listMonitorInputs).toHaveBeenCalledTimes(2));

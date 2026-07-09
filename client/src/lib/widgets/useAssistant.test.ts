@@ -133,6 +133,17 @@ describe('useAssistant', () => {
 		expect(llmComplete).toHaveBeenCalledTimes(2);
 	});
 
+	it('unmounting before the first delay cancels the pending auto-generation', async () => {
+		// Cleanup clears the first-delay timeout and every interval (which is also why the tick's
+		// `!cancelled` guard can never observe cancelled=true — no timer survives to call it).
+		const { unmount } = renderHook(() => useAssistant(cfg({ schedule: '30s' })), { wrapper });
+		unmount();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(60_000);
+		});
+		expect(llmComplete).not.toHaveBeenCalled();
+	});
+
 	it('does NOT auto-generate in the studio (manual refresh only)', async () => {
 		isStudioWindow.mockReturnValue(true);
 		const { result } = renderHook(() => useAssistant(cfg({ schedule: '30s' })), { wrapper });

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 
 // Stub the Tauri-backed media adapter (no backend in tests): the host must still boot the feed and
 // fetch capabilities through it. Caps hide everything but play/pause so the wiring is observable.
@@ -79,5 +79,45 @@ describe('NowPlayingHost (container wiring)', () => {
 			expect(container.querySelector('[data-part="playpause"]')).not.toBeNull();
 			expect(container.querySelector('[data-part="next"]')).toBeNull(); // caps.next === false
 		});
+	});
+
+	it('renders the empty meter and queries default caps when no session is active', async () => {
+		mediaStore.set({ ...defaultState, sourcePriority: '', sessions: {} });
+		const { container } = render(<NowPlayingHost />);
+		expect(getMediaCapabilities).toHaveBeenCalledWith(undefined); // no session → no source
+		// the meter renders its bare, not-playing root — no track parts at all
+		await waitFor(() => {
+			expect(container.querySelector('[data-part="root"]')?.getAttribute('data-playing')).toBe(
+				'false'
+			);
+			expect(container.querySelector('[data-part="title"]')).toBeNull();
+		});
+	});
+
+	it('ignores a capabilities result that resolves only after unmount (alive guard)', async () => {
+		const caps = {
+			play: true,
+			pause: true,
+			playpause: true,
+			stop: false,
+			next: false,
+			previous: false,
+			shuffle: false,
+			repeat: false,
+			seek: false
+		};
+		let resolveCaps!: (c: typeof caps) => void;
+		getMediaCapabilities.mockReturnValueOnce(
+			new Promise<typeof caps>((r) => {
+				resolveCaps = r;
+			})
+		);
+		const { unmount } = render(<NowPlayingHost />);
+		unmount();
+		// The late resolution must be dropped (alive === false) — no setState on the unmounted host.
+		await act(async () => {
+			resolveCaps(caps);
+		});
+		expect(getMediaCapabilities).toHaveBeenCalledTimes(1);
 	});
 });

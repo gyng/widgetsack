@@ -35,4 +35,10 @@ describe('Battery meter', () => {
 		const { container: empty } = render(<Battery sensors={{}} />);
 		expect(empty.querySelector('.bat-pct')?.textContent).toBe('—');
 	});
+
+	it('applies a per-instance color as the --bat-accent CSS variable', () => {
+		const { container } = render(<Battery sensors={{}} color="rgb(6,6,6)" />);
+		const root = container.querySelector('.np-battery') as HTMLElement;
+		expect(root.style.getPropertyValue('--bat-accent')).toBe('rgb(6,6,6)');
+	});
 });

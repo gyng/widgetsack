@@ -84,4 +84,52 @@ describe('TokenListField', () => {
 		);
 		expect(screen.getByText('No tickers yet.')).toBeTruthy();
 	});
+
+	it('ignores Enter on an empty/blank input (nothing to commit)', () => {
+		const { onChange, input } = setup(['AAPL']);
+		fireEvent.keyDown(input, { key: 'Enter' }); // empty pending → parse → [] → early return
+		fireEvent.change(input, { target: { value: '  ,  ' } }); // parses to nothing either
+		fireEvent.keyDown(input, { key: 'Enter' });
+		expect(onChange).not.toHaveBeenCalled();
+		expect(input.value).toBe('  ,  '); // not cleared — nothing was committed
+	});
+
+	it('ignores non-Enter keys (no commit while typing)', () => {
+		const { onChange, input } = setup([]);
+		fireEvent.change(input, { target: { value: 'msft' } });
+		fireEvent.keyDown(input, { key: 'a' });
+		fireEvent.keyDown(input, { key: 'Escape' });
+		expect(onChange).not.toHaveBeenCalled();
+		expect(input.value).toBe('msft');
+	});
+
+	it('lets a single-token paste fall through to the input (no separator → user reviews + Adds)', () => {
+		const { onChange, input } = setup([]);
+		fireEvent.paste(input, { clipboardData: { getData: () => 'MSFT' } });
+		expect(onChange).not.toHaveBeenCalled(); // not intercepted — no chips yet
+	});
+
+	it('clears the input after a paste whose tokens are all duplicates (no onChange)', () => {
+		const { onChange, input } = setup(['AAPL', 'MSFT']);
+		fireEvent.change(input, { target: { value: 'pending' } });
+		fireEvent.paste(input, { clipboardData: { getData: () => 'AAPL, MSFT' } });
+		expect(onChange).not.toHaveBeenCalled(); // list unchanged
+		expect(input.value).toBe(''); // but the pending text is still cleared post-commit
+	});
+
+	it('renders the chip list without an aria-label for a non-string label and no listLabel', () => {
+		const onChange = vi.fn();
+		const { container } = render(
+			<TokenListField
+				label={<em>Topics</em>}
+				values={['a/b']}
+				onChange={onChange}
+				parse={(raw) => [raw]}
+			/>
+		);
+		const ul = container.querySelector('ul.has-tokens') as HTMLUListElement;
+		expect(ul.hasAttribute('aria-label')).toBe(false);
+		// The add input falls back to the generic label too.
+		expect(screen.getByLabelText('Add item')).toBeTruthy();
+	});
 });

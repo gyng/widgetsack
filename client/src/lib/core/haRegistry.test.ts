@@ -8,6 +8,16 @@ const reg = (over: Partial<HaRegistry> = {}): HaRegistry => ({
 	...over
 });
 
+// A device-less entity assigned straight to an area (for the area-ordering tests).
+const ent = (id: string, area: string) => ({
+	entity_id: id,
+	device_id: null,
+	area_id: area,
+	name: null,
+	original_name: id,
+	platform: 'p'
+});
+
 describe('buildRegistryTree', () => {
 	it('groups an entity under its device within the device area (inherited area)', () => {
 		const tree = buildRegistryTree(
@@ -135,6 +145,72 @@ describe('buildRegistryTree', () => {
 		expect(byId['sensor.a'].unit).toBe('°C');
 		expect(byId['sensor.b'].name).toBe('Override B');
 		expect(byId['sensor.c'].name).toBe('sensor.c');
+	});
+
+	it('falls back to the raw area_id for sorting/display when it has no matching area registry entry', () => {
+		const tree = buildRegistryTree(
+			reg({
+				areas: [{ area_id: 'k', name: 'Kitchen' }],
+				devices: [],
+				entities: [
+					{
+						entity_id: 'sensor.ghost',
+						device_id: null,
+						area_id: 'ghost', // dangling: no matching entry in `areas`
+						name: null,
+						original_name: 'Ghost',
+						platform: 'p'
+					}
+				]
+			}),
+			{}
+		);
+		const ghost = tree.find((a) => a.areaId === 'ghost');
+		expect(ghost?.name).toBe('ghost'); // falls back to the raw id, not a friendly name
+	});
+
+	it('falls back to the raw device id as its display name when the device has no name', () => {
+		const tree = buildRegistryTree(
+			reg({
+				devices: [{ id: 'd9', name: null, area_id: null, manufacturer: null, model: null }],
+				entities: [
+					{
+						entity_id: 'switch.s',
+						device_id: 'd9',
+						area_id: null,
+						name: null,
+						original_name: 'S',
+						platform: 'p'
+					}
+				]
+			}),
+			{}
+		);
+		expect(tree[0].devices[0].name).toBe('d9');
+	});
+
+	it('sorts several named areas alphabetically by friendly name, dangling ids by raw id', () => {
+		const tree = buildRegistryTree(
+			reg({
+				areas: [
+					{ area_id: 'k', name: 'Kitchen' },
+					{ area_id: 'b', name: 'Bedroom' }
+				],
+				devices: [],
+				entities: [ent('sensor.k', 'k'), ent('sensor.b', 'b'), ent('sensor.g', 'attic')]
+			}),
+			{}
+		);
+		// 'attic' has no registry entry so it sorts by its raw id, ahead of the friendly names.
+		expect(tree.map((a) => a.name)).toEqual(['attic', 'Bedroom', 'Kitchen']);
+	});
+
+	it('orders two dangling area ids against each other by raw id', () => {
+		const tree = buildRegistryTree(
+			reg({ entities: [ent('sensor.z', 'zeta'), ent('sensor.a', 'alpha')] }),
+			{}
+		);
+		expect(tree.map((a) => a.name)).toEqual(['alpha', 'zeta']);
 	});
 
 	it('groups a device with no area under Unassigned', () => {

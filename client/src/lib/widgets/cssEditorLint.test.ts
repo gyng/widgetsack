@@ -47,6 +47,14 @@ describe('cssDiagnostics', () => {
 		expect(cssDiagnostics('color:', { supports: () => false })).toEqual([]);
 	});
 
+	it('de-dupes identical diagnostics (two zero-width parse errors at the same clamped spot)', () => {
+		// '~ ~' parses (balanced, so no short-circuit) into TWO zero-width error nodes at the same
+		// position; both clamp to the same (from, to, message), so exactly one survives the de-dupe.
+		const d = cssDiagnostics('~ ~', { supports: ok });
+		expect(d).toHaveLength(1);
+		expect(d[0]).toMatchObject({ from: 3, to: 4, severity: 'error', message: 'Syntax error' });
+	});
+
 	it('caps the diagnostic count on a very broken doc', () => {
 		// A flood of distinct unknown props — the gutter is capped at 50 entries.
 		const lines = Array.from({ length: 80 }, (_, i) => `bad-prop-${i}: x`).join(';\n');

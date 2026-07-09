@@ -113,6 +113,24 @@ describe('MultiInspector text / number fields', () => {
 		expect(input.value).toBe('');
 		expect(input.placeholder).toBe('mixed');
 	});
+
+	it('renders an UNSET (non-mixed) shared value as empty — never the string "undefined"', () => {
+		// A field every selected widget leaves unset is shared (mixed=false) with value undefined.
+		const { getByLabelText } = render(
+			<MultiInspector {...baseProps} fields={[field(textField, undefined)]} />
+		);
+		const input = getByLabelText('Label') as HTMLInputElement;
+		expect(input.value).toBe('');
+		expect(input.placeholder).toBe(''); // not the mixed placeholder — the value is just unset
+	});
+
+	it('renders a shared null value as empty — never the string "null"', () => {
+		const { getByLabelText } = render(
+			<MultiInspector {...baseProps} fields={[field(textField, null)]} />
+		);
+		const input = getByLabelText('Label') as HTMLInputElement;
+		expect(input.value).toBe('');
+	});
 });
 
 describe('MultiInspector toggle field', () => {

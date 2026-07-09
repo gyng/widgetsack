@@ -94,6 +94,28 @@ const MIXED_FLOATING_LAYOUT = JSON.stringify({
 	}
 });
 
+// LAYOUT with its only floating zone under a DIFFERENT id — for the stale-probe test, where a drag
+// snapshot taken against z1 resolves after the zone set has been re-snapshotted to this one.
+const OTHER_ZONE_LAYOUT = JSON.stringify({
+	version: 2,
+	monitors: {
+		default: {
+			root: { id: 'root', kind: 'col', children: [] },
+			floating: [
+				{
+					id: 'z2',
+					unit: {
+						id: 'z2',
+						type: 'zone',
+						rect: { x: 960, y: 0, w: 960, h: 1080 },
+						config: { matchExe: 'notepad.exe' }
+					}
+				}
+			]
+		}
+	}
+});
+
 // The layout loadLayoutRaw() serves; swapped per test, reset in beforeEach.
 let layoutJson = LAYOUT;
 
@@ -134,6 +156,7 @@ vi.mock('../overlay', () => ({
 }));
 
 import DragSnapLayer from './DragSnapLayer';
+import { currentMonitor } from '@tauri-apps/api/window';
 
 const settle = () => act(async () => void (await new Promise((r) => setTimeout(r, 0))));
 const pollOnce = () => act(async () => void (await new Promise((r) => setTimeout(r, 80))));
@@ -361,6 +384,67 @@ describe('DragSnapLayer (zone widgets)', () => {
 		// Only the single zone is a snap target; the group + clock contribute nothing.
 		expect(snapWindow).toHaveBeenCalledTimes(1);
 		expect(snapWindow).toHaveBeenCalledWith(7, { x: 0, y: 0, w: 960, h: 1080 });
+	});
+
+	it('tolerates currentMonitor() resolving null — keeps the default origin, still loads zones', async () => {
+		vi.mocked(currentMonitor).mockResolvedValueOnce(null);
+		pointerProbe.mockResolvedValue({ x: 480, y: 540, shift: true });
+		render(<DragSnapLayer />);
+		await settle();
+
+		act(() => handlers['win_drag_start']?.({ payload: { hwnd: 7 } }));
+		await pollOnce();
+		await act(async () => {
+			handlers['win_drag_end']?.({ payload: { hwnd: 7 } });
+			await Promise.resolve();
+		});
+
+		// The default monitor (origin 0,0 · scale 1) stands in, so the zone still arms and snaps.
+		expect(snapWindow).toHaveBeenCalledWith(7, { x: 0, y: 0, w: 960, h: 1080 });
+	});
+
+	it('drops the highlight when a stale probe resolves against a re-snapshotted zone set', async () => {
+		// tick() captures the phys zone list BEFORE awaiting the probe but reads the local-rect map
+		// AFTER it — so a probe that resolves after a layout change + a new drag re-snapshot can arm a
+		// zone that is no longer in the map. The highlight must fall back to null, not crash.
+		let resolveProbe: ((p: { x: number; y: number; shift: boolean }) => void) | null = null;
+		pointerProbe
+			.mockResolvedValueOnce({ x: 480, y: 540, shift: true }) // tick 1: arms z1 → highlight shows
+			.mockImplementationOnce(
+				() =>
+					new Promise((r) => {
+						resolveProbe = r;
+					})
+			) // tick 2: held open across the re-snapshot
+			.mockResolvedValue({ x: 0, y: 0, shift: false });
+		const view = render(<DragSnapLayer />);
+		await settle();
+
+		// Drag 1 snapshots zone z1; its first tick arms z1, the second blocks on the deferred probe.
+		act(() => handlers['win_drag_start']?.({ payload: { hwnd: 7 } }));
+		await act(async () => void (await new Promise((r) => setTimeout(r, 120))));
+		expect(view.container.querySelector('.zone-drag-highlight')).toBeTruthy();
+		expect(resolveProbe).toBeTruthy();
+
+		// The layout is replaced (only zone now z2) and a new drag re-snapshots the refs.
+		layoutJson = OTHER_ZONE_LAYOUT;
+		await act(async () => {
+			handlers['layout_changed']?.({ payload: {} });
+			await new Promise((r) => setTimeout(r, 0));
+		});
+		act(() => handlers['win_drag_start']?.({ payload: { hwnd: 7 } }));
+
+		// The stale probe (armed inside z1, absent from the new local map) resolves → highlight null.
+		await act(async () => {
+			resolveProbe?.({ x: 480, y: 540, shift: true });
+			await new Promise((r) => setTimeout(r, 0));
+		});
+		expect(view.container.querySelector('.zone-drag-highlight')).toBeNull();
+
+		await act(async () => {
+			handlers['win_drag_end']?.({ payload: { hwnd: 7 } });
+			await Promise.resolve();
+		});
 	});
 
 	it('unmounting before currentMonitor() resolves cancels the setup (alive guard)', async () => {

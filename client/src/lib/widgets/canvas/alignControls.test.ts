@@ -37,4 +37,10 @@ describe('containerAlignControls', () => {
 		expect(h.value).toBe('start'); // justify default
 		expect(v.value).toBe('stretch'); // align default
 	});
+
+	it('col defaults mirror the row ones on swapped axes', () => {
+		const [h, v] = containerAlignControls(container('c', 'col', []));
+		expect(h.value).toBe('stretch'); // align default (cross axis)
+		expect(v.value).toBe('start'); // justify default (main axis)
+	});
 });

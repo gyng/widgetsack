@@ -148,6 +148,26 @@ describe('Disks meter', () => {
 		expect(container.querySelector('.disk-meta')?.textContent).toBe(before);
 	});
 
+	it('does not crash if the demand-probe sensor unexpectedly receives a sample', async () => {
+		// disk._probe is a pure demand sentinel (subscribing gates backend sampling on); the widget
+		// itself never reads a value off it. Its subscribe callback is a no-op — this just proves that
+		// holds even if something upstream ever did emit on it.
+		const hub = createTelemetryHub();
+		hub.ingestBatch([s('disk.C.used.pct', 40)]);
+		let container!: HTMLElement;
+		await act(async () => {
+			container = render(
+				<TelemetryHubContext.Provider value={hub}>
+					<Disks />
+				</TelemetryHubContext.Provider>
+			).container;
+		});
+		expect(() =>
+			hub.ingest({ sensor: 'disk._probe', ts_ms: 0, value: { kind: 'scalar', value: 1 } })
+		).not.toThrow();
+		expect(container.querySelector('.disk-meta')?.textContent).toBe('40%');
+	});
+
 	it('updates rows on the 5s re-read when a volume capacity changes', async () => {
 		vi.useFakeTimers();
 		const hub = createTelemetryHub();

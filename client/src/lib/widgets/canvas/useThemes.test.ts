@@ -24,7 +24,11 @@ vi.mock('../../overlay', () => ({
 
 function setup(opts: { studio?: boolean; selectedTheme?: string } = {}) {
 	const dispatch = vi.fn() as unknown as EditorModel['dispatch'];
-	const commitOp = vi.fn() as unknown as EditorModel['commitOp'];
+	// Invoke the run callback like the real reducer does, so the `() => ({})` history-no-op patch
+	// arrows execute (they ignore the state arg, so passing none is safe).
+	const commitOp = vi.fn((run: (s: never) => unknown) =>
+		run(undefined as never)
+	) as unknown as EditorModel['commitOp'];
 	const hook = renderHook(
 		(p: { studio: boolean; selectedTheme: string }) =>
 			useThemes({ studio: p.studio, selectedTheme: p.selectedTheme, dispatch, commitOp }),

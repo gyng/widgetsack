@@ -150,4 +150,13 @@ describe('dialTicks', () => {
 		expect(ticks[0].x2).toBeCloseTo(outer.x);
 		expect(ticks[0].y2).toBeCloseTo(outer.y);
 	});
+	it('a single tick sits mid-arc (avoids a divide-by-zero at count - 1)', () => {
+		const [tick] = dialTicks(270, 1, 50, 50, R - 7, R);
+		const inner = polar(50, 50, R - 7, 270);
+		const outer = polar(50, 50, R, 270);
+		expect(tick.x1).toBeCloseTo(inner.x);
+		expect(tick.y1).toBeCloseTo(inner.y);
+		expect(tick.x2).toBeCloseTo(outer.x);
+		expect(tick.y2).toBeCloseTo(outer.y);
+	});
 });

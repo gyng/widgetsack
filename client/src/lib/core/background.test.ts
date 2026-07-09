@@ -49,8 +49,19 @@ describe('parseBackgroundSpec', () => {
 		expect(parseBackgroundSpec({ kind: 'color', src: '' })).toBeUndefined();
 	});
 
+	it('treats a missing or non-string src as cleared too (the typeof src !== "string" arm)', () => {
+		expect(parseBackgroundSpec({ kind: 'web' })).toBeUndefined();
+		expect(parseBackgroundSpec({ kind: 'color', src: 42 })).toBeUndefined();
+	});
+
 	it('trims the source', () => {
 		expect(parseBackgroundSpec({ kind: 'web', src: '  https://x  ' })?.src).toBe('https://x');
+	});
+
+	it('leaves an in-range opacity/dim untouched (the clamp01 pass-through branch)', () => {
+		const s = parseBackgroundSpec({ kind: 'color', src: '#fff', opacity: 0.5, dim: 0.25 });
+		expect(s?.opacity).toBe(0.5);
+		expect(s?.dim).toBe(0.25);
 	});
 });
 

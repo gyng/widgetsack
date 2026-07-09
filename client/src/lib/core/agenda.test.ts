@@ -21,6 +21,12 @@ describe('parseAgendaList', () => {
 		]);
 		expect(parseAgendaList(null)).toEqual([]);
 	});
+
+	it('defaults location to an empty string when absent or non-string', () => {
+		expect(parseAgendaList([{ summary: 'No location', start: '2027-01-02T09:00:00' }])).toEqual([
+			{ summary: 'No location', start: '2027-01-02T09:00:00', allDay: false, location: '' }
+		]);
+	});
 });
 
 describe('upcomingEvents', () => {
@@ -67,5 +73,9 @@ describe('formatEventWhen', () => {
 	it('omits the time for all-day events', () => {
 		expect(formatEventWhen('2027-01-01', true, now)).toBe('Today');
 		expect(formatEventWhen('2027-01-02', true, now)).toBe('Tomorrow');
+	});
+
+	it("returns '' for an unparseable start", () => {
+		expect(formatEventWhen('not a date', false, now)).toBe('');
 	});
 });

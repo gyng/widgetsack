@@ -36,6 +36,10 @@ describe('moveEntry', () => {
 		expect(moveEntry('a\nb\nc', 0, 99)).toBe('b\nc\na');
 		expect(moveEntry('a\nb\nc', 1, 1)).toBe('a\nb\nc');
 	});
+	it('is a no-op when `from` is out of range', () => {
+		expect(moveEntry('a\nb\nc', 5, 0)).toBe('a\nb\nc');
+		expect(moveEntry('a\nb\nc', -1, 0)).toBe('a\nb\nc');
+	});
 });
 
 describe('normalizeList', () => {

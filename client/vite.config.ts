@@ -93,12 +93,16 @@ export default defineConfig({
 				'src/lib/widgets/plugins/*-commands.ts',
 				'src/mcp/server.ts'
 			],
-			// Principled floors, not literal 100%: the included scope is ~99.4% lines / 96.9% funcs /
-			// 95.6% branches. The residue is genuinely uncoverable with *useful* tests — unreachable
-			// defensive arms (`?? []`, impossible `default:`/guards) and happy-dom-undrivable visual glue
-			// (e.g. the Inspector add-palette hover-preview: 280ms debounce + getBoundingClientRect). Pure
-			// IO/DOM/canvas adapters are excluded above. These thresholds ratchet-guard against regression.
-			thresholds: { statements: 99, lines: 99, functions: 96, branches: 95 }
+			// Principled floors, not literal 100%: the included scope is ~99.6% stmts / 99.0% branches /
+			// 99.9% funcs / 99.9% lines (restored + re-ratcheted 2026-07-10 after the Vitest-4 upgrade
+			// and untested-code drift slid it to 97.7/93.5 unnoticed). The residue is genuinely
+			// uncoverable with *useful* tests — unreachable defensive arms (`?? []`, impossible
+			// `default:`/guards, type-union-impossible branches) and library-internal arms (downshift,
+			// lezer) that no input can drive; each is justified in its cluster's PR notes, none carry
+			// ignore pragmas. Pure IO/DOM/canvas adapters are excluded above. CI runs test:coverage,
+			// so these thresholds now gate every PR; the ~0.4pp slack absorbs v8 remap jitter across
+			// platforms (local Windows vs CI ubuntu).
+			thresholds: { statements: 99.25, lines: 99.5, functions: 99.5, branches: 98.5 }
 		}
 	}
 });

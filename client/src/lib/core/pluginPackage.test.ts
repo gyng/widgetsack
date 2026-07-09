@@ -176,6 +176,22 @@ describe('parsePluginPackage', () => {
 		if (!r.ok) expect(r.reason).toContain('"templates" must be an array');
 	});
 
+	it('accepts a manifest with no "templates" key at all (defaults to an empty list)', () => {
+		const r = parsePluginPackage(
+			'weather-pack',
+			JSON.stringify({
+				manifestVersion: 1,
+				id: 'weather-pack',
+				name: 'Weather pack',
+				version: '1.0.0'
+			})
+		);
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.pkg.manifest.templates).toEqual([]);
+		expect(r.pkg.warnings).toEqual([]);
+	});
+
 	it('drops a duplicate template id (second occurrence) with a warning', () => {
 		const r = parsePluginPackage(
 			'weather-pack',
@@ -302,6 +318,13 @@ describe('parsePluginPackage — template + param validation', () => {
 		expect(r.ok).toBe(true);
 		if (!r.ok) return;
 		expect(r.pkg.manifest.templates[0].params).toBeUndefined();
+	});
+
+	it('accepts a minimal param spec with only a key (no label/target/targets/choices/default)', () => {
+		const r = tpl({ params: [{ key: 'onlykey' }] });
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		expect(r.pkg.manifest.templates[0].params).toEqual([{ key: 'onlykey' }]);
 	});
 });
 

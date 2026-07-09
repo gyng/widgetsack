@@ -388,6 +388,15 @@ describe('collectRenderables', () => {
 		expect(inl?.defId).toBeUndefined();
 	});
 
+	it('skips flow and floating primitives whose rect is not yet measured (first frame)', () => {
+		const mon: MonitorLayout = {
+			root: container('root', 'col', [leaf(prim('F', 100, 20))], { align: 'stretch' }),
+			floating: [leaf(prim('W', 160, 40))]
+		};
+		// An empty measured map (before the ResizeObserver has fired) surfaces nothing.
+		expect(collectRenderables(mon, new Map())).toEqual([]);
+	});
+
 	it('a FLOATING group WITHOUT a def resolves its inline child (defId omitted)', () => {
 		// No def → resolveGroup falls back to the inline child; `lf.unit.def ?? null` takes the null arm.
 		const g = group('gi', { w: 40, h: 26 }, leaf(prim('inl', 40, 26, { type: 'bar' })));
@@ -433,6 +442,19 @@ describe('collectContainerRects', () => {
 		expect(byId['root']).toMatchObject({ kind: 'col', rect: { x: 0, y: 0, w: 200, h: 100 } });
 		expect(byId['row1']?.kind).toBe('row');
 		expect(boxes).toHaveLength(2);
+	});
+
+	it('skips a container whose box is not yet measured, still descending to its children', () => {
+		const root = container(
+			'root',
+			'col',
+			[container('row1', 'row', [leaf(prim('A', 40, 20))], { align: 'stretch' })],
+			{ align: 'stretch' }
+		);
+		const mon: MonitorLayout = { root, floating: [] };
+		// Only the nested row is measured — the unmeasured root is skipped, not fatal.
+		const solved: Solved = new Map([['row1', { x: 0, y: 0, w: 200, h: 100 }]]);
+		expect(collectContainerRects(mon, solved).map((b) => b.id)).toEqual(['row1']);
 	});
 
 	it('does not descend into group internals (only flow-tree containers)', () => {
@@ -496,6 +518,13 @@ describe('collectGridPlaceholders', () => {
 		const cells = collectGridPlaceholders(mon, solved);
 		expect(cells).toHaveLength(1); // cell 0 filled by A, cell 1 is the placeholder
 		expect(cells[0]).toEqual({ gridId: 'g', index: 1, rect: { x: 100, y: 0, w: 100, h: 100 } });
+	});
+
+	it('emits nothing for a grid whose own box is not yet measured', () => {
+		const grid = container('g', 'grid', [], { cols: 2, basis: { fr: 1 } });
+		const root = container('root', 'col', [grid], { align: 'stretch' });
+		const mon: MonitorLayout = { root, floating: [] };
+		expect(collectGridPlaceholders(mon, new Map())).toEqual([]);
 	});
 });
 
@@ -630,6 +659,14 @@ describe('collectSplitters', () => {
 		// `b` is absent from the solved map (not yet measured) → the boundary can't be placed.
 		const solved: Solved = new Map([['a', { x: 0, y: 0, w: 100, h: 50 }]]);
 		expect(collectSplitters(mon, solved)).toHaveLength(0);
+	});
+
+	it('emits no grid splitters when the grid box is unmeasured', () => {
+		const grid = container('g', 'grid', [leaf(prim('A', 10, 10)), leaf(prim('B', 10, 10))], {
+			cols: 2
+		});
+		const mon: MonitorLayout = { root: container('root', 'col', [grid]), floating: [] };
+		expect(collectSplitters(mon, new Map())).toEqual([]);
 	});
 
 	it('a col with three fr children yields two horizontal bars', () => {

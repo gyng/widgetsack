@@ -511,6 +511,15 @@ describe('NowPlaying — crossfade layer lifecycle (transitionend)', () => {
 // Art-clearing paths: the player vanishing drops every layer immediately; an art-less track keeps the
 // stale cover for a grace window then fades it out, unless new art arrives first.
 describe('NowPlaying — art clearing', () => {
+	it('mounting straight into a track with no art at all schedules nothing (no layers to fade)', () => {
+		// A fresh mount (never had a cover) whose track also has no art: the no-art guard's
+		// `layersRef.current.length > 0` check is false from the very first effect run — there is
+		// nothing to hold onto or fade, so it just returns without scheduling a teardown timer.
+		const { container } = render(<NowPlaying session={session('Song A', null)} />);
+		expect(container.querySelectorAll('.np-thumb').length).toBe(0);
+		expect(container.querySelector('[data-part="title"]')?.textContent).toBe('Song A');
+	});
+
 	it('drops every cover layer immediately when the player goes away', async () => {
 		const { container, rerender } = await renderWithLoadedCover();
 		expect(container.querySelectorAll('.np-thumb').length).toBe(1);
@@ -561,6 +570,30 @@ describe('NowPlaying — art clearing', () => {
 		});
 		// The old cover was not torn down by the cancelled timer; the new art layer is present.
 		expect(container.querySelector('.np-thumb[src="http://art.localhost/789"]')).not.toBeNull();
+	});
+
+	it('does not clear any layers when a track/cover first appears (showsArt flips false → true)', async () => {
+		// Mount with nothing playing at all, then a session with a track + art appears. The
+		// adjust-during-render guard fires (showsArt !== prevShowsArt) but must NOT clear layers on the
+		// way IN — only the away/track-loss direction (`!showsArt`) does that.
+		const { container, rerender } = render(<NowPlaying session={null} />);
+		expect(container.querySelectorAll('.np-thumb').length).toBe(0);
+		rerender(<NowPlaying session={session('Song A', ART)} />);
+		await waitFor(() => expect(container.querySelectorAll('.np-thumb').length).toBe(1));
+	});
+
+	it('drops the whole stack with no crossfade anchor when a third cover arrives before anything loaded', async () => {
+		// Start from a loaded cover, then push two MORE distinct-art changes back to back without ever
+		// firing `load` on the intermediate layer. By the time the second push's effect runs, every
+		// layer in `prev` is loaded:false — the outgoing-anchor loop finds nothing to carry forward.
+		const { container, rerender } = await renderWithLoadedCover();
+		rerender(<NowPlaying session={session('Song B', 'http://art.localhost/456')} />);
+		await waitFor(() => expect(container.querySelectorAll('.np-thumb').length).toBe(2));
+		rerender(<NowPlaying session={session('Song C', 'http://art.localhost/789')} />);
+		await waitFor(() => {
+			const srcs = [...container.querySelectorAll('.np-thumb')].map((el) => el.getAttribute('src'));
+			expect(srcs).toEqual(['http://art.localhost/789']);
+		});
 	});
 
 	it('clears a pending no-art teardown timer on unmount (no late state update)', async () => {

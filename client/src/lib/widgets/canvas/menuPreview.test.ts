@@ -76,6 +76,23 @@ describe('buildMenuPreview — split', () => {
 		expect(shapes[0].rect).toEqual({ x: 10, y: 10, w: 20, h: 20 });
 	});
 
+	it('a cell-scoped split whose placeholder is missing falls back to the node box', () => {
+		// The op carries a cellIndex but the placeholder list has no matching cell (stale menu after a
+		// re-measure) — boxFor falls through to the grid's own measured box, still keeping nothing.
+		const op: LayoutOp = { op: 'split', id: 'b', dir: 'cols', cellIndex: 2 };
+		const shapes = buildMenuPreview(
+			op,
+			monitor(),
+			boxes({ b: { x: 0, y: 0, w: 80, h: 80 } }),
+			[],
+			WORK
+		);
+		expect(shapes).toEqual([
+			{ kind: 'zone', rect: { x: 0, y: 0, w: 40, h: 80 } },
+			{ kind: 'zone', rect: { x: 40, y: 0, w: 40, h: 80 } }
+		]);
+	});
+
 	it('falls back to the work area for the (unmeasured) root container', () => {
 		const op: LayoutOp = { op: 'split', id: 'root', dir: 'cols' };
 		const shapes = buildMenuPreview(op, monitor(), boxes({}), [], WORK);
@@ -135,6 +152,18 @@ describe('buildMenuPreview — add inside', () => {
 		expect(shapes).toEqual([{ kind: 'zone', rect: { x: 5, y: 5, w: 30, h: 30 } }]);
 	});
 
+	it('returns nothing when the op carries no containerId (Outline’s +Row/+Col)', () => {
+		const op: LayoutOp = { op: 'addContainer', kind: 'row' };
+		expect(
+			buildMenuPreview(op, monitor(), boxes({ a: { x: 0, y: 0, w: 10, h: 10 } }), [], WORK)
+		).toEqual([]);
+	});
+
+	it('returns nothing when the target container box is unmeasured', () => {
+		const op: LayoutOp = { op: 'addContainer', kind: 'row', containerId: 'a' };
+		expect(buildMenuPreview(op, monitor(), boxes({}), [], WORK)).toEqual([]);
+	});
+
 	it('an OVERLAP (stacking) container shows only the zone — no trailing bar (the child stacks)', () => {
 		const m: MonitorLayout = {
 			root: cont('root', 'col', [
@@ -158,6 +187,16 @@ describe('buildMenuPreview — add beside', () => {
 		expect(shapes[0]).toMatchObject({ kind: 'bar', axis: 'col' });
 		expect(shapes[0].rect.y).toBeCloseTo(78);
 		expect(shapes[0].rect.w).toBe(100);
+	});
+
+	it('in a row parent: a vertical bar after the node', () => {
+		const op: LayoutOp = { op: 'addBeside', kind: 'col', id: 'a1' }; // a1's parent `a` is a row
+		const a1Box: Rect = { x: 0, y: 0, w: 60, h: 80 };
+		const shapes = buildMenuPreview(op, monitor(), boxes({ a1: a1Box }), [], WORK);
+		expect(shapes).toHaveLength(1);
+		expect(shapes[0]).toMatchObject({ kind: 'bar', axis: 'row' });
+		expect(shapes[0].rect.x).toBeCloseTo(58); // right edge minus half the bar width
+		expect(shapes[0].rect.h).toBe(80);
 	});
 
 	it('returns nothing when the node box is unmeasured', () => {

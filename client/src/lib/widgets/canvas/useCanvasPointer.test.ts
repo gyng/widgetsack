@@ -184,4 +184,67 @@ describe('useCanvasPointer registry-driven gestures', () => {
 		// toCanvas with no element returns the raw coords → marquee origin at (7, 9).
 		expect(result.current.marquee).toEqual({ x: 7, y: 9, w: 0, h: 0 });
 	});
+
+	it('a widget-target press that remaps onto the marquee control is refused off-canvas', () => {
+		// Disable move-widget via an override so a left-drag whose target is 'any' (a widget press)
+		// resolves to studio.marquee — the guard must still refuse to rubber-band off the canvas.
+		const { result } = renderHook(() =>
+			useCanvasPointer({ ...deps, overrides: () => ({ 'studio.moveWidget': { disabled: true } }) })
+		);
+		act(() => result.current.onCanvasMouseDown(ev({ button: 0, target: widgetEl })));
+		expect(result.current.marquee).toBeNull();
+		expect(clearSelection).not.toHaveBeenCalled();
+	});
+
+	it('a stray marquee move from a superseded listener generation is ignored (ref-null guard)', () => {
+		// Two marquee listener generations can briefly coexist (mousedown, re-render with fresh deps,
+		// mousedown again). Generation A's mouseup handler nulls marqueeStart and only THEN reads
+		// renderables() — while generation B's mousemove listener is still attached — so a mousemove
+		// dispatched from renderables() drives onMarqueeMove with no start point, which must no-op.
+		const trap = (): Renderable[] => {
+			window.dispatchEvent(new MouseEvent('mousemove', { clientX: 60, clientY: 60 }));
+			return [];
+		};
+		const mk = (): CanvasPointerDeps => ({
+			...deps,
+			canvasRef: { current: null },
+			renderables: trap
+		});
+		const { result, rerender } = renderHook((p: CanvasPointerDeps) => useCanvasPointer(p), {
+			initialProps: mk()
+		});
+		act(() => result.current.onCanvasMouseDown(ev({ button: 0, clientX: 0, clientY: 0 })));
+		rerender(mk()); // a fresh deps object → new handler identities (generation B)
+		act(() => result.current.onCanvasMouseDown(ev({ button: 0, clientX: 0, clientY: 0 })));
+		act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 40, clientY: 40 })));
+		act(() => window.dispatchEvent(new MouseEvent('mouseup')));
+		expect(result.current.marquee).toBeNull(); // the stale move did not restart a marquee
+		expect(setSelection).toHaveBeenCalledTimes(1); // generation A's selection still committed
+	});
+
+	it('a stray pan move from a superseded listener generation is ignored (ref-null guard)', () => {
+		// Same shape as the marquee case: pan generation A + a live marquee + pan generation B. On
+		// mouseup A's pan handler nulls panStart first; the marquee handler then reads pan() while
+		// generation B's pan-move listener is still attached — a mousemove dispatched there drives
+		// onPanMove with no pan origin, which must no-op instead of deriving a delta from null.
+		let armed = false;
+		const trapPan = (): Pan => {
+			if (armed) window.dispatchEvent(new MouseEvent('mousemove', { clientX: 70, clientY: 70 }));
+			return { panX: 0, panY: 0, zoom: 1 };
+		};
+		const mk = (): CanvasPointerDeps => ({ ...deps, canvasRef: { current: null }, pan: trapPan });
+		const { result, rerender } = renderHook((p: CanvasPointerDeps) => useCanvasPointer(p), {
+			initialProps: mk()
+		});
+		act(() => result.current.onCanvasMouseDown(ev({ button: 1, clientX: 0, clientY: 0 }))); // pan A
+		act(() => result.current.onCanvasMouseDown(ev({ button: 0, clientX: 0, clientY: 0 }))); // marquee
+		act(() => window.dispatchEvent(new MouseEvent('mousemove', { clientX: 40, clientY: 40 })));
+		rerender(mk()); // a fresh deps object → new pan handler identities (generation B)
+		act(() => result.current.onCanvasMouseDown(ev({ button: 1, clientX: 10, clientY: 10 }))); // pan B
+		setPan.mockClear();
+		armed = true;
+		act(() => window.dispatchEvent(new MouseEvent('mouseup')));
+		expect(setPan).not.toHaveBeenCalled(); // the stale move produced no pan update
+		expect(result.current.panning).toBe(false);
+	});
 });

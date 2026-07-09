@@ -22,6 +22,22 @@ describe('weather plugin', () => {
 		expect(listSources().some((s) => s.id === 'weather')).toBe(true);
 	});
 
+	it('the sunmoon sensors resolver binds sunrise + sunset', () => {
+		const sensors = getMeta('sunmoon')?.sensors as () => Record<string, string>;
+		expect(typeof sensors).toBe('function');
+		expect(sensors()).toEqual({ rise: 'weather.sun.rise', set: 'weather.sun.set' });
+	});
+
+	it('the airquality sensors resolver binds aqi/pm25/uv', () => {
+		const sensors = getMeta('airquality')?.sensors as () => Record<string, string>;
+		expect(typeof sensors).toBe('function');
+		expect(sensors()).toEqual({
+			aqi: 'weather.air.aqi',
+			pm25: 'weather.air.pm25',
+			uv: 'weather.uv'
+		});
+	});
+
 	it('the weather sensors resolver expands forecast-day series, clamped to 0..7', () => {
 		const sensors = getMeta('weather')?.sensors as (
 			c: Record<string, unknown>

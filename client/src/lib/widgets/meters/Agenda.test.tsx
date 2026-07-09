@@ -88,4 +88,37 @@ describe('Agenda meter', () => {
 		const c = await renderWith(null);
 		expect(c.querySelector('.ag-empty')?.textContent).toBe('No upcoming events');
 	});
+
+	it('skips the re-render when a re-ingest produces an identical event list', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2027, 0, 1, 13, 0, 0));
+		const hub = createTelemetryHub();
+		const rows = [{ summary: 'Design review', start: new Date(2027, 0, 1, 15, 0).toISOString() }];
+		hub.ingestBatch([list(rows)]);
+		const c = await renderWith(hub);
+		expect(c.querySelectorAll('.ag-row')).toHaveLength(1);
+		// Re-ingest the exact same batch: the subscriber fires, read() re-runs, but the parsed list's
+		// JSON matches the previous signature so `setEvents` (and a re-render) is skipped.
+		await act(async () => {
+			hub.ingestBatch([list(rows)]);
+		});
+		expect(c.querySelectorAll('.ag-row')).toHaveLength(1);
+	});
+
+	it('re-evaluates the relative "when" labels on the minute tick', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2027, 0, 1, 13, 0, 0));
+		const hub = createTelemetryHub();
+		hub.ingestBatch([
+			list([{ summary: 'Design review', start: new Date(2027, 0, 1, 15, 0).toISOString() }])
+		]);
+		const c = await renderWith(hub);
+		expect(c.querySelector('.ag-when')?.textContent).toBe('Today 15:00');
+		// Jump a day forward and let the minute tick fire — "when" should re-derive relative to `now`.
+		vi.setSystemTime(new Date(2027, 0, 2, 13, 0, 0));
+		await act(async () => {
+			vi.advanceTimersByTime(60_000);
+		});
+		expect(c.querySelector('.ag-empty')?.textContent).toBe('No upcoming events'); // now in the past
+	});
 });

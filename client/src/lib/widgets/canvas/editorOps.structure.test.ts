@@ -104,6 +104,17 @@ describe('splitNode', () => {
 		expect(root.children).toHaveLength(4);
 	});
 
+	it('"grid" on a populated node wraps the content into cell 0 and selects the last cell', () => {
+		const s = minimalState(container('root', 'col', [leaf(gauge('w1'))]));
+		const patch = splitNode(s, 'root', 'grid');
+		const root = patch.monitor!.root;
+		expect(root.kind).toBe('grid');
+		expect(root.children).toHaveLength(4);
+		const keep = root.children[0] as Container;
+		expect(keep.children.map((c) => c.id)).toEqual(['w1']); // existing content kept in cell 0
+		expect(patch.selectedId).toBe(root.children[3].id); // with content kept, the LAST cell is selected
+	});
+
 	it('is a no-op ({}) when the id is missing or is a leaf', () => {
 		const s = minimalState(container('root', 'col', [leaf(gauge('w1'))]));
 		expect(splitNode(s, 'nope', 'rows')).toEqual({});
@@ -207,6 +218,12 @@ describe('indent', () => {
 		);
 		expect(indent(s, 'a')).toEqual({});
 	});
+
+	it('is a no-op for the root or an unknown id (no parent to indent within)', () => {
+		const s = minimalState(container('root', 'col', [leaf(gauge('a'))]));
+		expect(indent(s, 'root')).toEqual({});
+		expect(indent(s, 'missing')).toEqual({});
+	});
 });
 
 describe('outdent', () => {
@@ -271,6 +288,40 @@ describe('ungroupSelected', () => {
 		expect(patch.selectedId).toBe(u.id);
 	});
 
+	it('ungroups a floating def-backed group from the DEF child, leaving other floaters alone', () => {
+		const s = minimalState(container('root', 'col', []));
+		s.library = {
+			version: 1,
+			defs: [{ id: 'def-1', name: 'g', size: { w: 10, h: 10 }, child: leaf(gauge('def-inner')) }]
+		};
+		const g = group('grpF', { w: 10, h: 10 }, leaf(gauge('inline-inner')), {
+			def: 'def-1',
+			config: { x: 5, y: 6 }
+		});
+		const bystander = leaf(gauge('bystander'));
+		s.monitor.floating = [leaf(g), bystander];
+		const patch = ungroupSelected(s, 'grpF');
+		const u = patch.monitor!.floating[0].unit as ReturnType<typeof gauge>;
+		expect(u.id).toBe('def-inner'); // the def child wins over the inline child
+		expect(u.rect.x).toBe(5);
+		expect(u.rect.y).toBe(6);
+		expect(patch.monitor!.floating[1]).toBe(bystander); // pass-through by reference
+		expect(patch.selectedId).toBe('def-inner');
+	});
+
+	it('falls back to the inline child when the group names a def but no library is loaded', () => {
+		const s = minimalState(container('root', 'col', []));
+		const g = group('grpF', { w: 10, h: 10 }, leaf(gauge('inline-inner')), {
+			def: 'def-gone',
+			config: { x: 1, y: 2 }
+		});
+		s.monitor.floating = [leaf(g)];
+		const patch = ungroupSelected(s, 'grpF');
+		const u = patch.monitor!.floating[0].unit as ReturnType<typeof gauge>;
+		expect(u.id).toBe('inline-inner');
+		expect(u.rect.x).toBe(1);
+	});
+
 	it('is a no-op on a non-group floating leaf', () => {
 		const s = minimalState(container('root', 'col', []));
 		s.monitor.floating = [leaf(gauge('plain'))];
@@ -333,6 +384,24 @@ describe('makeWidget', () => {
 		// the group keeps the floating anchor in its config
 		expect(unit.config).toEqual({ x: 55, y: 66 });
 		expect(patch.selectedId).toBe(unit.id);
+	});
+
+	it('promotes an empty CONTAINER with the fallback def size and a widget-<kind> name', () => {
+		const s = minimalState(container('root', 'col', [container('band', 'row', [])]));
+		const patch = makeWidget(s, 'band');
+		const def = patch.library!.defs[0];
+		expect(def.name).toBe('widget-row'); // containers are named after their kind
+		expect(def.size).toEqual({ w: 120, h: 80 }); // intrinsic 0 → the || size fallbacks
+		const unit = (patch.monitor!.root.children[0] as ReturnType<typeof leaf>).unit;
+		expect(isGroup(unit)).toBe(true);
+	});
+
+	it('leaves other floaters untouched when promoting a floating primitive', () => {
+		const s = minimalState(container('root', 'col', []));
+		const bystander = leaf(gauge('bystander'));
+		s.monitor.floating = [leaf(gauge('f1')), bystander];
+		const patch = makeWidget(s, 'f1');
+		expect(patch.monitor!.floating[1]).toBe(bystander); // pass-through by reference
 	});
 
 	it('is a no-op ({}) on a missing id', () => {

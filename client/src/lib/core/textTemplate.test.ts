@@ -46,6 +46,12 @@ describe('parseTemplate', () => {
 	it('returns plain text unchanged', () => {
 		expect(parseTemplate('just text')).toEqual([{ kind: 'text', text: 'just text' }]);
 	});
+
+	it('tolerates an unterminated string literal inside an expr (runs to end of source)', () => {
+		// The opening quote never finds its match, so the inner scan exhausts the source and the
+		// "append the closing quote" step is skipped — the expr just ends with whatever was read.
+		expect(parseTemplate(`{ 'abc`)).toEqual([{ kind: 'expr', src: `'abc` }]);
+	});
 });
 
 describe('exprRefs / templateRefs', () => {

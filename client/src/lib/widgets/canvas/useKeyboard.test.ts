@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import { registerControl } from '../../core/controls';
 import { useKeyboard, type KeyboardDeps } from './useKeyboard';
 
 // Mutable context the deps read, so a test can flip dirty/hasSelection/menuOpen between keystrokes.
@@ -118,6 +119,20 @@ describe('useKeyboard registry dispatch', () => {
 		expect(result.current.spaceDown).toBe(true);
 	});
 
+	it('a nudge chord remapped to a non-arrow key matches but nudges nothing', () => {
+		// A user remap can bind studio.nudge to any key; only the arrows have a NUDGE delta, so a
+		// non-arrow hit resolves no delta and the nudge callback is never invoked.
+		state.hasSelection = true;
+		renderHook(() =>
+			useKeyboard({
+				...deps,
+				overrides: () => ({ 'studio.nudge': { triggers: [{ type: 'key', key: 'j' }] } })
+			})
+		);
+		press({ key: 'j', code: 'KeyJ' });
+		expect(nudge).not.toHaveBeenCalled();
+	});
+
 	it('Ctrl+1..8 jumps to the matching section (0-based index)', () => {
 		renderHook(() => useKeyboard(deps));
 		press({ key: '1', code: 'Digit1', ctrlKey: true });
@@ -125,6 +140,29 @@ describe('useKeyboard registry dispatch', () => {
 		press({ key: '8', code: 'Digit8', ctrlKey: true });
 		expect(gotoSection).toHaveBeenLastCalledWith(7);
 		expect(gotoSection).toHaveBeenCalledTimes(2);
+	});
+
+	it('a section chord with a digit outside 1..8 (remapped trigger) does not jump', () => {
+		// The built-in triggers only bind Ctrl+1..8; a remap can still hit studio.section with an
+		// out-of-range digit (or no digit at all) — the guard must skip gotoSection for those.
+		renderHook(() =>
+			useKeyboard({
+				...deps,
+				overrides: () => ({
+					'studio.section': {
+						triggers: [
+							{ type: 'key', key: '9', ctrl: true },
+							{ type: 'key', key: '0', ctrl: true },
+							{ type: 'key', key: 'x', ctrl: true }
+						]
+					}
+				})
+			})
+		);
+		press({ key: '9', code: 'Digit9', ctrlKey: true }); // an integer, but > 8
+		press({ key: '0', code: 'Digit0', ctrlKey: true }); // an integer, but < 1
+		press({ key: 'x', code: 'KeyX', ctrlKey: true }); // not a number at all
+		expect(gotoSection).not.toHaveBeenCalled();
 	});
 
 	it('a section chord with no gotoSection handler is a harmless no-op', () => {
@@ -168,6 +206,31 @@ describe('useKeyboard registry dispatch', () => {
 		press({ key: 'e', code: 'KeyE', ctrlKey: true });
 		expect(handlers['global.toggleEdit']).toHaveBeenCalledTimes(1);
 		unmount();
+	});
+
+	it('honors preventDefault: false on a matched control (the browser default is kept)', () => {
+		// No built-in sets preventDefault: false — register a synthetic control to drive the skip arm.
+		registerControl({
+			id: 'test.noPrevent',
+			scope: 'studio',
+			group: 'edit',
+			label: 'test control',
+			triggers: [{ type: 'key', key: 'f9' }],
+			preventDefault: false
+		});
+		const fired = vi.fn();
+		renderHook(() => useKeyboard({ ...deps, handlers: { ...handlers, 'test.noPrevent': fired } }));
+		const event = new KeyboardEvent('keydown', {
+			key: 'F9',
+			code: 'F9',
+			bubbles: true,
+			cancelable: true
+		});
+		act(() => {
+			window.dispatchEvent(event);
+		});
+		expect(fired).toHaveBeenCalledTimes(1); // the control matched and ran…
+		expect(event.defaultPrevented).toBe(false); // …without suppressing the default
 	});
 
 	it('does not steal Space pan-mode from a focused button', () => {

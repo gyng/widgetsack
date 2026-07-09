@@ -8,6 +8,7 @@ import {
 	formatRate,
 	formatScalar,
 	guessSensorFormat,
+	localeDayNames,
 	SCALAR_FORMATS
 } from './format';
 
@@ -34,6 +35,9 @@ describe('formatBytesPair', () => {
 	});
 	it('falls back to two units when the total is missing/zero', () => {
 		expect(formatBytesPair(1024, 0)).toContain('/');
+	});
+	it('drops decimals entirely in the plain-byte range (unit index 0)', () => {
+		expect(formatBytesPair(100, 512)).toBe('100 / 512 B');
 	});
 });
 
@@ -160,6 +164,43 @@ describe('guessSensorFormat', () => {
 		expect(guessSensorFormat('battery.rate')).toBe('integer');
 		expect(guessSensorFormat('battery.capacity.remaining')).toBe('integer');
 	});
+
+	it('falls back to integer for an id matching no known shape', () => {
+		expect(guessSensorFormat('weird.sensor')).toBe('integer');
+	});
+});
+
+describe('localeDayNames', () => {
+	it('defaults to short English weekday names, Sunday-first', () => {
+		expect(localeDayNames()).toEqual(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+	});
+
+	it('returns long English weekday names when asked', () => {
+		expect(localeDayNames('en', 'long')).toEqual([
+			'Sunday',
+			'Monday',
+			'Tuesday',
+			'Wednesday',
+			'Thursday',
+			'Friday',
+			'Saturday'
+		]);
+	});
+
+	it('returns short/long Japanese weekday names', () => {
+		expect(localeDayNames('ja', 'short')).toEqual(['日', '月', '火', '水', '木', '金', '土']);
+		expect(localeDayNames('ja', 'long')[1]).toBe('月曜日');
+	});
+
+	it('falls back to English for an unknown locale', () => {
+		expect(localeDayNames('xx')).toEqual(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+	});
+
+	it('returns a fresh copy each call (not a shared reference)', () => {
+		const a = localeDayNames();
+		a[0] = 'mutated';
+		expect(localeDayNames()[0]).toBe('Sun');
+	});
 });
 
 describe('formatClock', () => {
@@ -198,5 +239,13 @@ describe('formatClock', () => {
 
 	it('falls back to English for an unknown locale', () => {
 		expect(formatClock(d, 'ddd', 'xx')).toBe('Mon');
+	});
+
+	it('renders 12 for the noon/midnight hour and PM/pm after midday', () => {
+		const noon = new Date(2026, 5, 1, 12, 0, 0);
+		expect(formatClock(noon, 'h A')).toBe('12 PM');
+		expect(formatClock(noon, 'hh a')).toBe('12 pm');
+		const midnight = new Date(2026, 5, 1, 0, 30, 0);
+		expect(formatClock(midnight, 'h:mm A')).toBe('12:30 AM');
 	});
 });

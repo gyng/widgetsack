@@ -115,6 +115,37 @@ describe('priority', () => {
 		expect(sorted.at(2)!.source).toBe('barbaz');
 	});
 
+	it('treats a session with no `source` field as unranked (falls through the ?? fallback)', () => {
+		// A malformed/legacy record missing `source` entirely (not just empty) — the `a?.source` /
+		// `b?.source` optional chains yield undefined, exercising the `?? '_____FIXME_____'` fallback.
+		// Mirrors the 'sorts media by priority in list' case, with the unranked session source-less
+		// instead of a non-matching string — both must land in the same (last / MAX_VALUE) slot.
+		const { source: _drop, ...noSource } = { ...sessionRecord, session_id: 4 };
+		void _drop;
+		const sessions: Record<number, SessionRecord> = {
+			0: { ...sessionRecord, session_id: 0, source: 'foobar' },
+			2: { ...sessionRecord, session_id: 2, source: 'barbaz' },
+			4: noSource as SessionRecord
+		};
+		const priority = 'barbaz\nfoobar';
+		const sorted = sortSessionsByPriority(sessions, priority);
+		expect(sorted.at(2)!.source).toBe('barbaz');
+		expect(sorted.at(1)!.source).toBe('foobar');
+		expect(sorted.at(0)!.source).toBeUndefined();
+
+		// Same outcome with the source-less record FIRST, so it also lands in the comparator's
+		// b-slot (both the `a?.source` and `b?.source` fallbacks run).
+		const reversed: Record<number, SessionRecord> = {
+			0: { ...(noSource as SessionRecord), session_id: 0 },
+			2: { ...sessionRecord, session_id: 2, source: 'barbaz' },
+			4: { ...sessionRecord, session_id: 4, source: 'foobar' }
+		};
+		const sorted2 = sortSessionsByPriority(reversed, priority);
+		expect(sorted2.at(2)!.source).toBe('barbaz');
+		expect(sorted2.at(1)!.source).toBe('foobar');
+		expect(sorted2.at(0)!.source).toBeUndefined();
+	});
+
 	it('sorts media by last updated timestamp otherwise', () => {
 		const sessions: Record<number, SessionRecord> = {
 			0: {
@@ -177,6 +208,15 @@ describe('filterIgnored', () => {
 		const sessions = make({ 0: 'foobar2000.exe', 1: 'spotify.exe', 2: 'chrome.exe' });
 		const kept = filterIgnored(sessions, 'foobar2000\n\nchrome');
 		expect(Object.values(kept).map((s) => s.source)).toEqual(['spotify.exe']);
+	});
+
+	it('treats a record with no `source` field as an empty string, not a match', () => {
+		const { source: _drop, ...noSource } = { ...sessionRecord, session_id: 3 };
+		void _drop;
+		const sessions: Record<number, SessionRecord> = { 3: noSource as SessionRecord };
+		const kept = filterIgnored(sessions, 'foobar2000');
+		// '' doesn't contain 'foobar2000' → the record survives the filter.
+		expect(Object.keys(kept)).toEqual(['3']);
 	});
 });
 

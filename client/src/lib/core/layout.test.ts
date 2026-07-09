@@ -35,6 +35,11 @@ describe('parseLayout', () => {
 		expect(parseLayout({ version: 1, monitors: { default: {} } })).toBeNull();
 	});
 
+	it('returns null when a monitor entry is not an object', () => {
+		expect(parseLayout({ version: 1, monitors: { default: 'nope' } })).toBeNull();
+		expect(parseLayout({ version: 1, monitors: { default: null } })).toBeNull();
+	});
+
 	it('drops malformed widgets but keeps valid ones', () => {
 		const parsed = parseLayout({
 			version: 1,

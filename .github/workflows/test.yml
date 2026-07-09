@@ -77,7 +77,10 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run build
-      - run: npm run test:unit
+      # Coverage-gated (replaces plain test:unit): vite.config's ratchet thresholds fail this
+      # job on regression, so coverage can never silently drift again (it slid 99.4→97.7
+      # unnoticed because CI only ran the tests, never the thresholds).
+      - run: npm run test:coverage
       - run: npm run lint
       # Fail if docs/widgets.md drifted from the widget registry (run `npm run gen:docs` to refresh).
       - run: npm run check:docs

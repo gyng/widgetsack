@@ -175,4 +175,31 @@ describe('RssSettings', () => {
 		});
 		expect(getByText(/Connected/)).toBeTruthy();
 	});
+
+	it('auto-dismisses the "Saved ✓" tick after 2.5s', async () => {
+		vi.useFakeTimers();
+		try {
+			const { getByRole, getByText, queryByText } = renderPanel();
+			await act(async () => {}); // flush the prefill promises
+			fireEvent.click(getByRole('button', { name: /Save & fetch/ }));
+			await act(async () => {}); // flush the save → disconnect → connect chain
+			expect(getByText('Saved ✓')).toBeTruthy();
+			act(() => {
+				vi.advanceTimersByTime(2500);
+			});
+			expect(queryByText('Saved ✓')).toBeNull();
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('renders with defaults when the connect kick and the status fetch both reject', async () => {
+		vi.mocked(rssConnect).mockRejectedValue(new Error('no backend'));
+		vi.mocked(rssConfigStatus).mockRejectedValue(new Error('no backend'));
+		const { container, findByText } = renderPanel();
+		// Both rejections are swallowed; the panel stays usable with its default (empty) form.
+		expect(await findByText('not configured')).toBeTruthy();
+		const url = container.querySelector('input[type="text"]') as HTMLInputElement;
+		expect(url.value).toBe('');
+	});
 });

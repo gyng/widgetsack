@@ -96,6 +96,12 @@ describe('BackgroundPanel — colour kind', () => {
 		const color = container.querySelector('input[type="color"]') as HTMLInputElement;
 		expect(color.value).toBe('#0b0b0e');
 	});
+
+	it('falls back to the default colour when src is missing entirely', () => {
+		const { container } = renderPanel({ kind: 'color' });
+		const color = container.querySelector('input[type="color"]') as HTMLInputElement;
+		expect(color.value).toBe('#0b0b0e');
+	});
 });
 
 describe('BackgroundPanel — web kind', () => {
@@ -106,6 +112,12 @@ describe('BackgroundPanel — web kind', () => {
 		fireEvent.change(url, { target: { value: '  https://b  ' } });
 		fireEvent.blur(url);
 		expect(h.patchBg).toHaveBeenCalledWith({ src: 'https://b' });
+	});
+
+	it('renders an empty URL field for a web background with no src yet', () => {
+		const { container } = renderPanel({ kind: 'web' });
+		const url = container.querySelector('input[type="text"]') as HTMLInputElement;
+		expect(url.value).toBe('');
 	});
 });
 

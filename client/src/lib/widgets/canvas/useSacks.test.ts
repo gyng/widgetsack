@@ -154,6 +154,37 @@ describe('refreshSacks (section-open peek)', () => {
 		setup({ navSection: 'settings' });
 		expect(listSacks).not.toHaveBeenCalled();
 	});
+
+	it('drops a stale section-open load once the section closes mid-flight', async () => {
+		// listSacks resolves only AFTER the section flips away — the effect's cancel guard must drop
+		// the late result instead of clobbering state for a section that is no longer open.
+		let resolveNames!: (names: string[]) => void;
+		listSacks.mockReturnValue(new Promise<string[]>((r) => (resolveNames = r)));
+		const commitOp = vi.fn<(run: (s: EditorState) => Partial<EditorState>) => void>();
+		const { result, rerender } = renderHook(
+			(p: { navSection: 'sacks' | 'settings' }) =>
+				useSacks({
+					studio: true,
+					navSection: p.navSection,
+					editingDefId: null,
+					selectedTheme: '',
+					library: undefined,
+					tokenOverrides: {},
+					commitOp,
+					themes: { themeLabel, setThemeList, adoptTheme }
+				}),
+			{ initialProps: { navSection: 'sacks' as 'sacks' | 'settings' } }
+		);
+		rerender({ navSection: 'settings' }); // cleanup flips the cancel guard
+		await act(async () => {
+			resolveNames(['late']);
+			await Promise.resolve();
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+		expect(readSack).toHaveBeenCalledWith('late'); // the load DID finish…
+		expect(result.current.sackInfos).toEqual([]); // …but the stale result never landed
+	});
 });
 
 describe('exportSack', () => {
@@ -322,6 +353,40 @@ describe('importSack', () => {
 		});
 		expect(saveThemeCss).toHaveBeenCalledWith('Risky', expect.any(String));
 		expect(commitOp).toHaveBeenCalledTimes(1);
+	});
+
+	it('imports a theme-ONLY sack: the commit patch carries just the selection', async () => {
+		// No library defs and no tokens → the commit patch must leave both untouched (the false arms
+		// of the library/tokens guards), carrying only the newly-adopted theme name.
+		const sack = packSack({ name: 's', theme: { name: 'Solo', css: ':root{}' } });
+		readSack.mockResolvedValue(JSON.stringify(sack));
+		listThemes.mockResolvedValue([]);
+		const { result, commitOp } = setup({ navSection: 'settings' });
+		await act(async () => {
+			await result.current.importSack('s');
+		});
+		const patch = commitOp.mock.calls[0][0]({
+			library: undefined,
+			tokenOverrides: {}
+		} as EditorState);
+		expect(patch).toEqual({ selectedTheme: 'Solo' });
+		expect(adoptTheme).toHaveBeenCalledWith('Solo');
+	});
+
+	it('an empty tokens object imports as a no-op patch (tokens present but zero keys)', async () => {
+		// unpackSack passes the JSON through verbatim, so a hand-edited sack can carry `tokens: {}` —
+		// the Object.keys length guard must not spread an empty override set into the state.
+		readSack.mockResolvedValue(JSON.stringify({ kind: 'widgetsack/sack', version: 1, tokens: {} }));
+		const { result, commitOp } = setup({ navSection: 'settings' });
+		await act(async () => {
+			await result.current.importSack('s');
+		});
+		const patch = commitOp.mock.calls[0][0]({
+			library: undefined,
+			tokenOverrides: {}
+		} as EditorState);
+		expect(patch).toEqual({});
+		expect(adoptTheme).not.toHaveBeenCalled();
 	});
 
 	it('imports a themeless sack: commit applies only library/tokens, no theme adopt', async () => {

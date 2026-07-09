@@ -252,4 +252,40 @@ describe('stt', () => {
 		expect(() => rec2.cancel()).not.toThrow();
 		expect(tracks[0]!.stop).toHaveBeenCalled();
 	});
+
+	it('cancel() skips rec.stop() when the recorder is already inactive, still releasing the mic', async () => {
+		const tracks = [{ stop: vi.fn() }];
+		const created: FakeRecorder[] = [];
+		class FakeRecorder {
+			state = 'recording';
+			mimeType = '';
+			ondataavailable: ((e: { data: Blob }) => void) | null = null;
+			onstop: (() => void) | null = null;
+			onerror: (() => void) | null = null;
+			stopped = 0;
+			constructor() {
+				created.push(this);
+			}
+			start(): void {
+				/* no-op */
+			}
+			stop(): void {
+				this.stopped++;
+			}
+			static isTypeSupported(): boolean {
+				return false;
+			}
+		}
+		vi.stubGlobal('MediaRecorder', FakeRecorder);
+		vi.stubGlobal('navigator', {
+			mediaDevices: { getUserMedia: async () => ({ getTracks: () => tracks }) }
+		});
+
+		const rec = await startRecording();
+		const inst = created[0]!;
+		inst.state = 'inactive'; // the recorder already stopped on its own
+		rec.cancel();
+		expect(inst.stopped).toBe(0); // no redundant stop() on an inactive recorder
+		expect(tracks[0]!.stop).toHaveBeenCalled(); // mic still released
+	});
 });
