@@ -29,6 +29,7 @@ pub mod ddc;
 pub mod display;
 pub mod event;
 pub mod ha;
+pub mod keepalive;
 pub mod listener;
 pub mod llm;
 pub mod log;
@@ -546,8 +547,23 @@ async fn main() -> Result<(), ()> {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        // Tray app: zero windows is a VALID state and must not end the process. It is reached by
+        // design — an empty-primary `main` self-destructs to reclaim its renderer, so a layout
+        // whose widgets all sit on one secondary monitor lives on a single overlay window; if that
+        // window fails to spawn (monitor not yet enumerated at logon, WebView2 hiccup, monitor
+        // DDC-switched away), Tauri's default would exit silently ("didn't autostart",
+        // 2026-07-10). Prevent it and let keepalive respawn `main` to retry the reconcile cycle.
+        // Tray Quit still works: app.exit(0) arrives as `code: Some(0)` and passes through.
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = &event
+                && keepalive::should_prevent_exit(*code)
+            {
+                api.prevent_exit();
+                keepalive::on_zero_windows(app);
+            }
+        });
 
     Ok(())
 }

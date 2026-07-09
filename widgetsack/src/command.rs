@@ -1236,7 +1236,8 @@ pub fn watch_themes(app: tauri::AppHandle) -> Result<(), String> {
 /// renderer (overlay.ts `setMainWindowVisible(false)`). Mirrors the static `main` config in
 /// tauri.conf.json; the frontend reveals it — or re-destroys it if the primary is still empty — once
 /// its Canvas init runs. Must be called on the main thread (window creation). Best-effort: logs.
-fn respawn_main_hidden(app: &tauri::AppHandle) {
+/// `reason` tags the log line with which recovery path fired (layout watcher / keepalive).
+pub(crate) fn respawn_main_hidden(app: &tauri::AppHandle, reason: &str) {
     match tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
         .title("WidgetSack")
         .inner_size(300.0, 400.0)
@@ -1250,11 +1251,9 @@ fn respawn_main_hidden(app: &tauri::AppHandle) {
         .disable_drag_drop_handler()
         .build()
     {
-        Ok(_) => log::info(
-            "reclaim",
-            "respawned primary overlay (main) after external layout change",
-        )
-        .emit(),
+        Ok(_) => log::info("reclaim", "respawned primary overlay (main)")
+            .field("reason", reason)
+            .emit(),
         Err(err) => log::warn("reclaim", "failed to respawn main")
             .field("error", err)
             .emit(),
@@ -1295,7 +1294,7 @@ pub fn watch_layout(app: tauri::AppHandle) -> Result<(), String> {
                 if app_for_respawn.get_webview_window("main").is_none()
                     && app_for_respawn.get_webview_window("studio").is_none()
                 {
-                    respawn_main_hidden(&app_for_respawn);
+                    respawn_main_hidden(&app_for_respawn, "external layout change");
                 }
             });
         },
