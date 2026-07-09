@@ -23,6 +23,19 @@ import { migrateMonitorKeys, parseLayoutAny } from './core/migration';
 import { readOverlayPrefs, type OverlayLayer } from './widgets/canvas/overlayPrefs';
 import type { OverlayPresentation } from './widgets/canvas/overlayPresentation';
 import { COMMANDS, EVENTS } from './bridge/contract';
+import { singleFlight } from './core/singleFlight';
+
+/** Route an overlay-lifecycle failure to BOTH this window's console (so a live devtools session
+ *  still sees it) and the backend's persistent rotating log file (so it survives the webview
+ *  dying with the app — the whole point of last night's silent-death postmortem). Best-effort:
+ *  the backend `log_client` invoke NEVER throws or recurses into this helper, so a logging
+ *  failure can't itself take down the overlay. `component` is always 'overlay' here; `message`
+ *  should name the window label / monitor key where relevant. */
+function logClient(level: 'info' | 'warn' | 'error', component: string, message: string): void {
+	if (level === 'error') console.error(`[${component}] ${message}`);
+	else console.warn(`[${component}] ${message}`);
+	invoke(COMMANDS.logClient, { level, component, message }).catch(() => undefined);
+}
 
 /** Apply the overlay z-order layer to THIS window: 'top' = always-on-top (default), 'bottom' =
  *  always-on-bottom (below app windows), 'wallpaper' = parented to the desktop WorkerW (on the
@@ -74,9 +87,14 @@ export { monitorDeviceKey };
  * render something). Keys: 'default' (primary) or the device key, matching studioMonitorOptions.
  * When `legacyMapping` is given (reconcile path), legacy numeric index keys from pre-device-key
  * saves are migrated to device keys and the file is rewritten ONCE (raw keys renamed in place —
- * the value JSON is not round-tripped through the parser). Empty/missing layouts and a parse
- * error yield an empty set — nothing gets an overlay. */
-async function populatedMonitorKeys(legacyMapping?: Record<string, string>): Promise<Set<string>> {
+ * the value JSON is not round-tripped through the parser). A genuinely empty/missing layout
+ * (no `widgets.json` yet) yields an empty set. A `load_layout` invoke failure or a JSON/parse
+ * error yields `null` — that's "we couldn't tell", NOT "the layout is empty", and callers must
+ * NOT treat it as license to close every overlay (a transient IPC hiccup would otherwise tear
+ * down a perfectly working desktop). */
+async function populatedMonitorKeys(
+	legacyMapping?: Record<string, string>
+): Promise<Set<string> | null> {
 	const keys = new Set<string>();
 	try {
 		const raw = await invoke<string | null>(COMMANDS.loadLayout);
@@ -101,7 +119,8 @@ async function populatedMonitorKeys(legacyMapping?: Record<string, string>): Pro
 			}
 		}
 	} catch (err) {
-		console.warn('populatedMonitorKeys: load_layout failed', err);
+		logClient('error', 'overlay', `populatedMonitorKeys: load_layout failed: ${String(err)}`);
+		return null;
 	}
 	return keys;
 }
@@ -142,7 +161,7 @@ export async function setMainWindowVisible(visible: boolean): Promise<void> {
 			await win.destroy();
 		}
 	} catch (err) {
-		console.warn('setMainWindowVisible failed', err);
+		logClient('error', 'overlay', `setMainWindowVisible(${visible}) failed: ${String(err)}`);
 	}
 }
 
@@ -155,7 +174,9 @@ export async function recreateMain(): Promise<void> {
 	try {
 		const all = await getAllWebviewWindows();
 		if (all.some((w) => w.label === 'main')) return; // already present
-		if (!(await populatedMonitorKeys()).has('default')) return; // primary still empty — leave it gone
+		const populated = await populatedMonitorKeys();
+		if (populated === null) return; // couldn't tell — leave main gone rather than guess
+		if (!populated.has('default')) return; // primary still empty — leave it gone
 		const layer = readOverlayPrefs().overlayLayer;
 		const w = new WebviewWindow('main', {
 			url: '/',
@@ -171,9 +192,11 @@ export async function recreateMain(): Promise<void> {
 			visible: false,
 			dragDropEnabled: false
 		});
-		w.once('tauri://error', (err) => console.warn('recreateMain window error', err));
+		w.once('tauri://error', (err) =>
+			logClient('error', 'overlay', `recreateMain window 'main' error: ${String(err)}`)
+		);
 	} catch (err) {
-		console.warn('recreateMain failed', err);
+		logClient('error', 'overlay', `recreateMain failed: ${String(err)}`);
 	}
 }
 
@@ -295,7 +318,7 @@ export async function fillOwnMonitor(key: string): Promise<void> {
 			await win.onScaleChanged(() => void fillOwnMonitor(key));
 		}
 	} catch (err) {
-		console.warn('fillOwnMonitor failed', err);
+		logClient('error', 'overlay', `fillOwnMonitor(${key}) failed: ${String(err)}`);
 	}
 }
 
@@ -913,8 +936,14 @@ export async function closeWindow(): Promise<void> {
  * if its layout has widgets; an overlay whose monitor became empty is closed. Legacy layouts keyed
  * by enumeration index are migrated to device keys on the way through (one-time file rewrite).
  * Idempotent — safe to re-run on every layout change. The primary monitor is the main window
- * itself (handled separately). */
-export async function reconcileOverlays(): Promise<void> {
+ * itself (handled separately).
+ *
+ * Can be invoked concurrently (Canvas init, `layout_changed` events, and the topology watcher can
+ * all fire close together); each pass snapshots the existing windows via `getAllWebviewWindows()`
+ * up front, so two overlapping passes could otherwise both try to create the same overlay label
+ * (the loser errors). Wrapped in {@link singleFlight} below so overlapping calls collapse into the
+ * in-flight pass plus at most one trailing rerun that picks up whatever changed meanwhile. */
+async function reconcileOverlaysOnce(): Promise<void> {
 	const [monitors, primary, existing] = await Promise.all([
 		availableMonitors(),
 		primaryMonitor(),
@@ -929,6 +958,12 @@ export async function reconcileOverlays(): Promise<void> {
 		if (!isPrimaryMon(m)) legacyMapping[String(i)] = monitorDeviceKey(m.name, i);
 	});
 	const populated = await populatedMonitorKeys(legacyMapping);
+	if (populated === null) {
+		// Couldn't read the layout this pass — skip it entirely rather than treat "no data" as
+		// "empty layout" (which would close every working overlay on a transient IPC failure).
+		logClient('warn', 'overlay', 'reconcileOverlays: populatedMonitorKeys failed; skipping pass');
+		return;
+	}
 	const byLabel = new Map(existing.map((w) => [w.label, w]));
 	// The chosen z-order layer seeds each new overlay's initial flag; the secondary then self-applies
 	// the full layer (incl. wallpaper, which must be invoked from its OWN webview) via its Canvas.
@@ -1004,15 +1039,30 @@ export async function reconcileOverlays(): Promise<void> {
 					(async () => {
 						await w.setPosition(new PhysicalPosition(m.position.x, m.position.y));
 						await w.setSize(new PhysicalSize(m.size.width, m.size.height));
-					})().catch((err) => console.warn('overlay re-fit on scale change failed', label, err));
+					})().catch((err) =>
+						logClient(
+							'warn',
+							'overlay',
+							`overlay re-fit on scale change failed (${label}): ${String(err)}`
+						)
+					);
 				});
 			} catch (err) {
-				console.warn('overlay window setup failed', label, err);
+				logClient('error', 'overlay', `overlay window setup failed (${label}): ${String(err)}`);
 			}
 		});
-		w.once('tauri://error', (err) => console.warn('overlay window error', label, err));
+		w.once('tauri://error', (err) =>
+			logClient('error', 'overlay', `overlay window error (${label}): ${String(err)}`)
+		);
 	}
 }
+
+/** Primary window only: reconcile per-monitor overlays against the saved layout — see
+ * {@link reconcileOverlaysOnce} for what a pass does. Single-flight with a trailing rerun
+ * (core/singleFlight.ts): concurrent callers (Canvas init, `layout_changed`, the topology
+ * watcher) collapse into the in-flight pass plus at most one rerun afterwards, so two passes
+ * never race to create the same overlay window. */
+export const reconcileOverlays = singleFlight(reconcileOverlaysOnce);
 
 /**
  * Tell the backend which of this window's widgets should catch clicks in passive mode,
