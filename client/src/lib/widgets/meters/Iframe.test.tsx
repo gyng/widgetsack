@@ -1,4 +1,4 @@
-import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import Iframe from './Iframe';
 
@@ -6,6 +6,8 @@ import Iframe from './Iframe';
 // empty-URL tests still read null at runtime, which `.toBeNull()` checks fine.
 const frame = (c: HTMLElement) => c.querySelector('iframe') as HTMLIFrameElement;
 const root = (c: HTMLElement) => c.querySelector('.np-iframe') as HTMLElement;
+const originalConsoleError = console.error;
+let errorSpy: ReturnType<typeof vi.spyOn>;
 
 beforeAll(() => {
 	// happy-dom would otherwise issue a REAL network fetch for each iframe `src`. Disabling child-frame
@@ -19,7 +21,22 @@ beforeAll(() => {
 	if (hd?.settings?.navigation) hd.settings.navigation.disableChildFrameNavigation = true;
 });
 
-afterEach(() => vi.useRealTimers());
+beforeEach(() => {
+	vi.useFakeTimers();
+	// happy-dom dispatches a synthetic iframe load after React's render act has returned, unlike a
+	// browser where navigation is genuinely external. Suppress only that environment artifact; every
+	// state transition this suite triggers itself remains wrapped in act and other errors still print.
+	errorSpy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+		const text = args.map(String).join(' ');
+		if (text.includes('not wrapped in act') && text.includes('Iframe')) return;
+		originalConsoleError(...args);
+	});
+});
+afterEach(() => {
+	vi.clearAllTimers();
+	vi.useRealTimers();
+	errorSpy.mockRestore();
+});
 
 describe('Iframe — empty / invalid URL', () => {
 	it('renders the placeholder (not a frame) when url is blank', () => {

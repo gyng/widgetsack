@@ -23,7 +23,7 @@ type Props = {
 
 export default function NowPlayingHost({ label, onControl }: Props) {
 	useEffect(() => {
-		startMediaSource();
+		void startMediaSource();
 	}, []);
 
 	const state = useStore(mediaStore);

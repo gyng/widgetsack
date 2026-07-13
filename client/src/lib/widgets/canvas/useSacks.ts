@@ -150,7 +150,12 @@ export function useSacks({
 				themeName = existing.includes(sack.theme.name)
 					? `${sack.theme.name}-imported`
 					: sack.theme.name;
-				await saveThemeCss(themeName, sack.theme.css);
+				try {
+					await saveThemeCss(themeName, sack.theme.css);
+				} catch (err) {
+					window.alert(`Could not import theme "${themeName}": ${String(err)}`);
+					return;
+				}
 				setThemeList(await listThemes());
 			}
 			// One commit applies the persisted parts: merged library + token overrides + selected theme.

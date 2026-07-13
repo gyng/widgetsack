@@ -34,10 +34,13 @@ export async function readPluginPackageAsset(id: string, name: string): Promise<
 /** What `install_plugin_package` reports back on success. */
 export type InstalledPackage = { id: string; version: string };
 
-/** Install (or update — same command) a package from `owner/repo`, a github.com repo URL, or an
- * https plugin.json URL. Throws the backend's reason string on failure (the caller shows it). */
-export async function installPluginPackage(source: string): Promise<InstalledPackage> {
-	return await invoke<InstalledPackage>(COMMANDS.installPluginPackage, { source });
+/** Install a package from a remote source. Updates must pass the exact installed id they intend to
+ * replace; a fresh install never silently overwrites an existing package directory. */
+export async function installPluginPackage(
+	source: string,
+	replaceId?: string
+): Promise<InstalledPackage> {
+	return await invoke<InstalledPackage>(COMMANDS.installPluginPackage, { source, replaceId });
 }
 
 /** What `check_plugin_package_update` reports: the sidecar's version vs the remote manifest's. */

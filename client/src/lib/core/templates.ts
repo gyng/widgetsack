@@ -356,7 +356,11 @@ export type TemplateGroup = { group: string; templates: Template[] };
 /** The built-in templates' group name (always present, always first, never unregisterable). */
 export const BUILTIN_TEMPLATE_GROUP = 'Built-in';
 
-const templateGroups = new Map<string, Template[]>([[BUILTIN_TEMPLATE_GROUP, TEMPLATES]]);
+type RegisteredTemplateGroup = { label: string; templates: Template[] };
+
+const templateGroups = new Map<string, RegisteredTemplateGroup>([
+	[BUILTIN_TEMPLATE_GROUP, { label: BUILTIN_TEMPLATE_GROUP, templates: TEMPLATES }]
+]);
 const templateListeners = new Set<() => void>();
 // Cached list identity so useSyncExternalStore sees a stable snapshot between changes.
 let templateSnapshot: TemplateGroup[] | null = null;
@@ -366,23 +370,27 @@ function notifyTemplates(): void {
 	for (const listener of templateListeners) listener();
 }
 
-/** Register (or replace) a named template group. The built-in group cannot be overwritten. */
-export function registerTemplates(group: string, list: Template[]): void {
-	if (group === BUILTIN_TEMPLATE_GROUP) return;
-	templateGroups.set(group, list.slice());
+/** Register (or replace) a template group by stable identity. `label` is only its palette heading,
+ * so two plugin packages may share a display name without replacing each other's templates. */
+export function registerTemplates(id: string, list: Template[], label = id): void {
+	if (id === BUILTIN_TEMPLATE_GROUP) return;
+	templateGroups.set(id, { label, templates: list.slice() });
 	notifyTemplates();
 }
 
 /** Remove a registered template group (no-op for the built-ins / an unknown group). */
-export function unregisterTemplates(group: string): void {
-	if (group === BUILTIN_TEMPLATE_GROUP) return;
-	if (templateGroups.delete(group)) notifyTemplates();
+export function unregisterTemplates(id: string): void {
+	if (id === BUILTIN_TEMPLATE_GROUP) return;
+	if (templateGroups.delete(id)) notifyTemplates();
 }
 
 /** Every template group, built-ins first then registration order. Stable identity between changes. */
 export function listTemplateGroups(): TemplateGroup[] {
 	if (!templateSnapshot) {
-		templateSnapshot = Array.from(templateGroups, ([group, templates]) => ({ group, templates }));
+		templateSnapshot = Array.from(templateGroups.values(), ({ label, templates }) => ({
+			group: label,
+			templates
+		}));
 	}
 	return templateSnapshot;
 }
@@ -397,8 +405,8 @@ export function subscribeTemplates(listener: () => void): () => void {
 
 /** Find a template by id across every registered group (built-ins first). */
 export function getTemplate(id: string): Template | undefined {
-	for (const list of templateGroups.values()) {
-		const t = list.find((tpl) => tpl.id === id);
+	for (const { templates } of templateGroups.values()) {
+		const t = templates.find((tpl) => tpl.id === id);
 		if (t) return t;
 	}
 	return undefined;

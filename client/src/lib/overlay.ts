@@ -555,20 +555,12 @@ export async function resolveThemeCss(name: string): Promise<string> {
 
 /** Write theme `name` (a bare stem) → `themes/<name>.css`. Used by the studio theme editor. */
 export async function saveThemeCss(name: string, contents: string): Promise<void> {
-	try {
-		await invoke(COMMANDS.saveTheme, { name, contents });
-	} catch (err) {
-		console.warn('save_theme failed', err);
-	}
+	await invoke(COMMANDS.saveTheme, { name, contents });
 }
 
 /** Delete theme `name` → removes `themes/<name>.css` (idempotent). Used by the studio theme list. */
 export async function deleteThemeCss(name: string): Promise<void> {
-	try {
-		await invoke(COMMANDS.deleteTheme, { name });
-	} catch (err) {
-		console.warn('delete_theme failed', err);
-	}
+	await invoke(COMMANDS.deleteTheme, { name });
 }
 
 // ---- wallpapers: media files for the per-monitor background layer (in a fixed `wallpapers/` folder)

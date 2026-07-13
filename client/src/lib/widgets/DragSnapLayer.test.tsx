@@ -526,7 +526,9 @@ describe('DragSnapLayer (zone widgets)', () => {
 		act(() => handlers['win_drag_start']?.({ payload: { hwnd: 7 } }));
 		// Let many poll intervals fire while probes are slow.
 		await act(async () => void (await new Promise((r) => setTimeout(r, 250))));
-		act(() => handlers['win_drag_end']?.({ payload: { hwnd: 7 } })); // stops the interval
+		await act(async () => {
+			await handlers['win_drag_end']?.({ payload: { hwnd: 7 } }); // stops the interval
+		});
 
 		expect(pointerProbe).toHaveBeenCalled(); // probing happened
 		expect(maxInFlight).toBe(1); // the busy guard prevented any overlap

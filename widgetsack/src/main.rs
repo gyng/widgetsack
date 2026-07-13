@@ -41,6 +41,7 @@ pub mod ping;
 pub mod process_diag;
 pub mod recyclebin;
 pub mod rss;
+pub mod secure_config;
 pub mod sensors;
 pub mod state;
 pub mod stocks;
@@ -218,6 +219,10 @@ async fn main() -> Result<(), ()> {
         // moves/resizes are already in the plugin's cache. Studio only: overlays + main re-assert exact
         // geometry on launch, so eagerly persisting theirs isn't worth the disk churn.
         .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::Destroyed) {
+                let active = window.app_handle().state::<sensors::ActiveSensors>();
+                sensors::remove_active_window(&active, window.label());
+            }
             if matches!(event, tauri::WindowEvent::Destroyed) && window.label() == "studio" {
                 use tauri_plugin_window_state::AppHandleExt;
                 let _ = window.app_handle().save_window_state(window_state_flags());
@@ -227,6 +232,7 @@ async fn main() -> Result<(), ()> {
         .manage(AppState {
             sessions: Default::default(),
         })
+        .manage(command::LayoutIoState::default())
         // Album-art store: covers are served to the webview over the `art` URI scheme (below)
         // instead of being shipped as JSON byte arrays. See art.rs.
         .manage(art::ArtState::default())

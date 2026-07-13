@@ -78,19 +78,38 @@ export const enabledPackages = createPersistedStore<string[]>(
 	parseIds
 );
 
-// Packages whose threat-flagged theme CSS the user explicitly accepted (the first-enable
-// confirm). Without this consent a threat-flagged theme is never injected, even when enabled.
-const trustedCssPackages = createPersistedStore<string[]>(
-	'widgetsack.packages.cssTrusted',
-	parseIds
-);
-
 const parseConsentMap = (raw: unknown): Record<string, string> => {
 	if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
 	const out: Record<string, string> = {};
 	for (const [k, v] of Object.entries(raw)) if (typeof v === 'string') out[k] = v;
 	return out;
 };
+
+const CSS_FINGERPRINT = /^sha256:[0-9a-f]{64}$/;
+
+const parseCssConsentMap = (raw: unknown): Record<string, string> => {
+	const parsed = parseConsentMap(raw);
+	return Object.fromEntries(
+		Object.entries(parsed).filter(([, value]) => CSS_FINGERPRINT.test(value))
+	);
+};
+
+async function cssConsentFingerprint(css: string): Promise<string> {
+	const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(css));
+	const hex = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
+		''
+	);
+	return `sha256:${hex}`;
+}
+
+// SHA-256 of the exact threat-flagged stylesheet accepted per package. Keying consent by reviewed
+// content (not just id) means an update cannot inherit permission for new remote URLs / overlays,
+// while a maximum-size stylesheet never consumes another 256 KiB of localStorage. Legacy id arrays
+// and raw-CSS map values are deliberately discarded and must earn consent again.
+const trustedCssPackages = createPersistedStore<Record<string, string>>(
+	'widgetsack.packages.cssTrusted',
+	parseCssConsentMap
+);
 
 // Network consent per package id, keyed by the hosts FINGERPRINT (sorted hosts string) the user
 // saw in the first-enable confirm. A manifest update that changes the hosts list mismatches the
@@ -140,7 +159,11 @@ async function injectPackageTheme(d: Discovered): Promise<void> {
 	if (!theme) return;
 	const css = await readPluginPackageAsset(d.id, theme.file);
 	if (css == null) return;
-	if (scanCssThreats(css).length && !trustedCssPackages.getSnapshot().includes(d.id)) return;
+	if (
+		scanCssThreats(css).length &&
+		trustedCssPackages.getSnapshot()[d.id] !== (await cssConsentFingerprint(css))
+	)
+		return;
 	removePackageTheme(d.id);
 	const el = document.createElement('style');
 	el.setAttribute('data-pkg-theme', d.id);
@@ -162,6 +185,13 @@ const runningSources = new Map<string, () => void>();
 function stopPackageSource(id: string): void {
 	runningSources.get(id)?.();
 	runningSources.delete(id);
+}
+
+function unapplyPackage(id: string): void {
+	unregisterTemplates(`pkg:${id}`);
+	removePackageTheme(id);
+	unregisterSource(`pkg:${id}`);
+	stopPackageSource(id);
 }
 
 function netConsented(d: Discovered): boolean {
@@ -187,35 +217,33 @@ function packageCatalog(m: PluginPackageManifest): SensorCatalogEntry[] {
 
 // ---- registration ------------------------------------------------------------------------------
 
-// Apply one package's enabled state: register/unregister its template group (keyed by the
-// package's display name — that's the heading the palette shows), add/remove its theme style,
+// Apply one package's enabled state: register/unregister its template group (keyed by stable
+// package id, with the display name used only as the palette heading), add/remove its theme style,
 // and start/stop its sandboxed source (+ catalog entries).
 async function applyPackage(d: Discovered, enabled: boolean): Promise<void> {
-	if (!d.manifest) return; // unparsed packages register nothing
-	if (enabled) {
-		if (d.manifest.templates.length) {
-			registerTemplates(d.manifest.name, packageTemplates(d.manifest));
+	if (!enabled || !d.manifest) {
+		unapplyPackage(d.id);
+		return;
+	}
+	// Reapplication is replacement, not an additive merge. A same-id manifest that drops its theme,
+	// templates, or source must not leave the previous capability alive.
+	unapplyPackage(d.id);
+	if (d.manifest.templates.length) {
+		registerTemplates(`pkg:${d.id}`, packageTemplates(d.manifest), d.manifest.name);
+	}
+	await injectPackageTheme(d);
+	if (d.manifest.source) {
+		const m = d.manifest;
+		registerSource({
+			id: `pkg:${d.id}`,
+			start: async () => () => undefined, // lifecycle owned here, not by startAllSources
+			catalogEntries: () => packageCatalog(m)
+		});
+		// Consent-gated: a hosts list the user never confirmed (fresh enable race, manifest
+		// edited on disk, update that changed hosts) keeps the loop OFF, fail-closed.
+		if (hubRef && netConsented(d)) {
+			runningSources.set(d.id, await startPackageSource(m, hubRef));
 		}
-		await injectPackageTheme(d);
-		if (d.manifest.source) {
-			const m = d.manifest;
-			registerSource({
-				id: `pkg:${d.id}`,
-				start: async () => () => undefined, // lifecycle owned here, not by startAllSources
-				catalogEntries: () => packageCatalog(m)
-			});
-			stopPackageSource(d.id); // refresh re-applies — never stack two loops
-			// Consent-gated: a hosts list the user never confirmed (fresh enable race, manifest
-			// edited on disk, update that changed hosts) keeps the loop OFF, fail-closed.
-			if (hubRef && netConsented(d)) {
-				runningSources.set(d.id, await startPackageSource(m, hubRef));
-			}
-		}
-	} else {
-		unregisterTemplates(d.manifest.name);
-		removePackageTheme(d.id);
-		unregisterSource(`pkg:${d.id}`);
-		stopPackageSource(d.id);
 	}
 }
 
@@ -224,13 +252,11 @@ async function applyPackage(d: Discovered, enabled: boolean): Promise<void> {
  * the Plugins panel opens (so a freshly dropped folder shows up without a restart). A package
  * that vanished from disk keeps nothing registered (its group is unregistered below).
  */
-export async function refreshPackages(): Promise<void> {
+async function refreshPackagesNow(): Promise<void> {
 	const files = await listPluginPackages();
-	// Unregister groups for packages that disappeared since the last scan.
-	const liveIds = new Set(files.map((f) => f.id));
-	for (const [id, d] of discovered) {
-		if (!liveIds.has(id)) void applyPackage(d, false);
-	}
+	// Drop the complete previous runtime view before parsing the replacement snapshot. This is also
+	// the fail-closed path for a same-id package whose new manifest is invalid or removes a capability.
+	for (const d of discovered.values()) await applyPackage(d, false);
 	discovered.clear();
 	for (const f of files) {
 		const result = parsePluginPackage(f.id, f.manifest);
@@ -255,6 +281,16 @@ export async function refreshPackages(): Promise<void> {
 	}
 }
 
+// Every caller shares one queue. This prevents an older async scan from committing after a newer
+// install/update/remove scan and keeps source stop/start transitions strictly ordered.
+let refreshTail: Promise<void> = Promise.resolve();
+
+export function refreshPackages(): Promise<void> {
+	const pending = refreshTail.then(refreshPackagesNow, refreshPackagesNow);
+	refreshTail = pending.catch(() => undefined);
+	return pending;
+}
+
 let initialized = false;
 
 /** One-shot init per window (Canvas mount, both roles — idempotent like registerBuiltinPlugins).
@@ -271,11 +307,11 @@ export async function initPackages(hub: TelemetryHub): Promise<void> {
  * Flip one package's enabled state, LIVE (templates appear in / vanish from the palette without
  * a reload; the theme style tag follows; a source's poll loop starts/stops). On the FIRST enable
  * of a package whose theme CSS scans with threats AND/OR which declares a network source,
- * `confirmEnable` is asked ONCE with a combined message stating both facts (the Plugins panel
- * passes window.confirm); declining aborts the enable. Both consents are stored — CSS by package
- * id, network by hosts FINGERPRINT (so changed hosts re-prompt) — and subsequent boots apply
- * without asking again. Other windows (overlays) pick the change up on their next reload — the
- * allowlist is shared localStorage.
+ * `confirmEnable` is asked with a combined message stating both facts (the Plugins panel passes
+ * window.confirm); declining aborts the enable. Both consents are stored — CSS by an exact-content
+ * SHA-256 fingerprint, network by hosts FINGERPRINT — so changed content/hosts re-prompt while
+ * unchanged packages apply on subsequent boots. Other windows pick the change up on their next
+ * reload; localStorage is shared.
  */
 export async function togglePackage(
 	id: string,
@@ -286,10 +322,17 @@ export async function togglePackage(
 	if (!d?.manifest) return; // unknown / unparsed → not toggleable
 	if (enabled) {
 		let cssSummary: string | null = null;
-		if (d.manifest.theme && !trustedCssPackages.getSnapshot().includes(id)) {
+		let approvedCssFingerprint: string | null = null;
+		if (d.manifest.theme) {
 			const css = await readPluginPackageAsset(id, d.manifest.theme.file);
 			const threats = css ? scanCssThreats(css) : [];
-			if (threats.length) cssSummary = threatSummary(threats);
+			if (css && threats.length) {
+				const fingerprint = await cssConsentFingerprint(css);
+				if (trustedCssPackages.getSnapshot()[id] !== fingerprint) {
+					cssSummary = threatSummary(threats);
+					approvedCssFingerprint = fingerprint;
+				}
+			}
 		}
 		const source = d.manifest.source;
 		const fingerprint = source ? consentFingerprint(source.hosts) : null;
@@ -300,7 +343,9 @@ export async function togglePackage(
 				...(needsNet && source ? { hosts: source.hosts, pollSeconds: source.pollSeconds } : {})
 			});
 			if (!confirmEnable(message)) return;
-			if (cssSummary !== null) trustedCssPackages.update((ids) => [...ids, id]);
+			if (approvedCssFingerprint !== null) {
+				trustedCssPackages.update((m) => ({ ...m, [id]: approvedCssFingerprint }));
+			}
 			if (needsNet && fingerprint !== null) {
 				netConsentPackages.update((m) => ({ ...m, [id]: fingerprint }));
 			}
@@ -367,7 +412,7 @@ export async function updatePackage(id: string): Promise<PackageOpResult> {
 	if (!d?.install) return { ok: false, error: 'package was not installed from a URL' };
 	if (enabledPackages.getSnapshot().includes(id)) await applyPackage(d, false);
 	try {
-		await installPluginPackage(reinstallSource(d.install));
+		await installPluginPackage(reinstallSource(d.install), id);
 	} catch (err) {
 		await refreshPackages(); // restore the (still enabled) old version's registration
 		return { ok: false, error: String(err) };
@@ -394,21 +439,27 @@ export async function updatePackage(id: string): Promise<PackageOpResult> {
  */
 export async function removePackage(id: string): Promise<PackageOpResult> {
 	const d = discovered.get(id);
+	try {
+		await removePluginPackage(id);
+	} catch (err) {
+		// The directory still exists: preserve enabled state and both approvals byte-for-byte.
+		await refreshPackages();
+		return { ok: false, error: String(err) };
+	}
 	if (d) await applyPackage(d, false);
 	enabledPackages.update((ids) => ids.filter((x) => x !== id));
-	trustedCssPackages.update((ids) => ids.filter((x) => x !== id));
+	trustedCssPackages.update((m) => {
+		if (m[id] === undefined) return m;
+		const rest = { ...m };
+		delete rest[id];
+		return rest;
+	});
 	netConsentPackages.update((m) => {
 		if (m[id] === undefined) return m;
 		const rest = { ...m };
 		delete rest[id];
 		return rest;
 	});
-	try {
-		await removePluginPackage(id);
-	} catch (err) {
-		await refreshPackages();
-		return { ok: false, error: String(err) };
-	}
 	await refreshPackages();
 	return { ok: true };
 }
@@ -421,8 +472,9 @@ export function resetPackagesForTest(): void {
 	discovered.clear();
 	publishRows();
 	enabledPackages.set([]);
-	trustedCssPackages.set([]);
+	trustedCssPackages.set({});
 	netConsentPackages.set({});
 	hubRef = null;
 	initialized = false;
+	refreshTail = Promise.resolve();
 }

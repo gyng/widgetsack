@@ -3,10 +3,11 @@
 // sensor hub, calls the LLM provider on the widget's own schedule (interval or cron), and exposes
 // the text; the pure meters/Assistant meter just renders what it's given. Pure logic lives
 // elsewhere — the schedule math in core/schedule.ts, the prompt in core/llm.ts.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTelemetryHub } from './telemetryContext';
 import type { SensorValue, TelemetryHub } from '../core/telemetry';
 import { buildAssistantMessages } from '../core/llm';
+import { singleFlight } from '../core/singleFlight';
 import { cronMatches, intervalMs, isCron } from '../core/schedule';
 import { isStudioWindow } from '../overlay';
 import { speakSmart } from './plugins/llm-tts';
@@ -58,7 +59,12 @@ export type AssistantConfig = {
 	sensors: string;
 	speak?: boolean;
 };
-export type AssistantState = { text: string; busy: boolean; error: string; refresh: () => void };
+export type AssistantState = {
+	text: string;
+	busy: boolean;
+	error: string;
+	refresh: () => Promise<void>;
+};
 
 export function useAssistant(cfg: AssistantConfig): AssistantState {
 	const hub = useTelemetryHub();
@@ -72,7 +78,7 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 		cfgRef.current = cfg;
 	});
 
-	const generate = useCallback(async (): Promise<void> => {
+	const generateOnce = useCallback(async (): Promise<void> => {
 		setBusy(true);
 		setError('');
 		try {
@@ -90,6 +96,9 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 			setBusy(false);
 		}
 	}, [hub]);
+	// Provider calls can outlive the shortest schedule. Collapse ticks/manual refreshes that arrive
+	// mid-request into one trailing refresh so calls never overlap or complete out of order.
+	const generate = useMemo(() => singleFlight(generateOnce), [generateOnce]);
 
 	useEffect(() => {
 		// Auto-generation runs ONLY on the overlay (the always-on surface). The studio shows the last
@@ -127,6 +136,6 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 		};
 	}, [cfg.schedule, generate]);
 
-	const refresh = useCallback(() => void generate(), [generate]);
+	const refresh = useCallback(() => generate(), [generate]);
 	return { text, busy, error, refresh };
 }

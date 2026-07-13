@@ -136,6 +136,7 @@ describe('startPackageSource', () => {
 	});
 
 	it('stop() halts the loop and disposes the sandbox', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const hub = createTelemetryHub();
 		stop = await startPackageSource(manifest(), hub);
 		await until(() => textOf(hub, 'pkg.wx.status') === 'ok');
@@ -144,5 +145,6 @@ describe('startPackageSource', () => {
 		const seen = fetches.length;
 		await new Promise((r) => setTimeout(r, 50));
 		expect(fetches.length).toBe(seen); // no further ticks
+		warn.mockRestore();
 	});
 });

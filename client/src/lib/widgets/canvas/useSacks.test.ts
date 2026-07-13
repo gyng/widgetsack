@@ -323,6 +323,27 @@ describe('importSack', () => {
 		expect(adoptTheme).toHaveBeenCalledWith('Nord-imported');
 	});
 
+	it('aborts the import without committing when its theme cannot be persisted', async () => {
+		const sack = packSack({
+			name: 's',
+			library: libWith('imp'),
+			theme: { name: 'Imported', css: ':root{}' },
+			tokens: { '--t': '9' }
+		});
+		readSack.mockResolvedValue(JSON.stringify(sack));
+		saveThemeCss.mockRejectedValue(new Error('disk full'));
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		const { result, commitOp } = setup({ navSection: 'settings' });
+
+		await act(async () => {
+			await result.current.importSack('s');
+		});
+
+		expect(commitOp).not.toHaveBeenCalled();
+		expect(adoptTheme).not.toHaveBeenCalled();
+		expect(alert).toHaveBeenCalledWith(expect.stringContaining('disk full'));
+	});
+
 	it('confirms before importing a theme whose CSS contains threats; declining aborts everything', async () => {
 		const sack = packSack({
 			name: 's',

@@ -1,7 +1,7 @@
 [package]
 name = "widgetsack"
 # Keep in lockstep with tauri.conf.json's version (the bundle/updater source of truth).
-version = "0.0.51"
+version = "0.0.52"
 description = "widgetsack desktop widget platform"
 authors = ["you"]
 license = "MIT OR Apache-2.0"
@@ -94,6 +94,8 @@ windows = { version = "0.61", features = [
     # SECURITY_ATTRIBUTES param), DeviceIoControl in System_IO, IOCTL_DISK_PERFORMANCE +
     # DISK_PERFORMANCE in System_Ioctl.
     "Win32_Security",
+    # Per-user DPAPI encryption for HA/MQTT/LLM credential-bearing config files.
+    "Win32_Security_Cryptography",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_Ioctl",
@@ -136,4 +138,3 @@ default = [ "custom-protocol" ]
 # this feature is used for production builds where `devPath` points to the filesystem
 # DO NOT remove this
 custom-protocol = [ "tauri/custom-protocol" ]
-

@@ -23,21 +23,32 @@ vi.mock('@tauri-apps/api/core', () => ({
 let loadLayoutRaw: string | null = null;
 let saveRejects = false;
 let savedContents: string | null = null;
+let savedTouchedMonitors: string[] | undefined;
+let savedTouchedGlobals: string[] | undefined;
 
 beforeEach(() => {
 	loadLayoutRaw = null;
 	saveRejects = false;
 	savedContents = null;
+	savedTouchedMonitors = undefined;
+	savedTouchedGlobals = undefined;
 	invoke.mockReset();
-	invoke.mockImplementation(async (cmd: string, args?: { contents?: string }) => {
-		if (cmd === COMMANDS.loadLayout) return loadLayoutRaw;
-		if (cmd === COMMANDS.saveLayout) {
-			if (saveRejects) throw new Error('save_layout rejected');
-			savedContents = args?.contents ?? null;
-			return undefined;
+	invoke.mockImplementation(
+		async (
+			cmd: string,
+			args?: { contents?: string; touchedMonitors?: string[]; touchedGlobals?: string[] }
+		) => {
+			if (cmd === COMMANDS.loadLayout) return loadLayoutRaw;
+			if (cmd === COMMANDS.saveLayout) {
+				if (saveRejects) throw new Error('save_layout rejected');
+				savedContents = args?.contents ?? null;
+				savedTouchedMonitors = args?.touchedMonitors;
+				savedTouchedGlobals = args?.touchedGlobals;
+				return undefined;
+			}
+			throw new Error(`unexpected command ${cmd}`);
 		}
-		throw new Error(`unexpected command ${cmd}`);
-	});
+	);
 });
 afterEach(() => {
 	vi.useRealTimers();
@@ -98,6 +109,7 @@ describe('persistToDisk — widgets.json assembly', () => {
 		expect(out).not.toHaveProperty('theme');
 		expect(out).not.toHaveProperty('themeLock');
 		expect(out).not.toHaveProperty('tokens');
+		expect(savedTouchedMonitors).toEqual(['mon-A']);
 		expect(out).not.toHaveProperty('library');
 		const monitors = out.monitors as Record<string, MonitorLayout>;
 		expect(Object.keys(monitors)).toEqual(['mon-A']);
@@ -158,7 +170,22 @@ describe('persistToDisk — widgets.json assembly', () => {
 			theme: 'builtin:dark'
 		});
 		// Unlocked here so the GLOBAL theme falls back to the file's existing global (inherit-default).
-		const { result } = renderHook(() => usePersistence(editorState({ themeLock: false }), 'mon-A'));
+		const { result } = renderHook(() =>
+			usePersistence(
+				editorState({
+					themeLock: false,
+					savedBaseline: {
+						monitor: monitorWith(),
+						library: undefined,
+						theme: '',
+						themeLock: false,
+						globalTheme: 'builtin:dark',
+						tokens: {}
+					}
+				}),
+				'mon-A'
+			)
+		);
 		await act(async () => {
 			await result.current.persistToDisk([]);
 		});
@@ -304,8 +331,8 @@ describe('persistToDisk — widgets.json assembly', () => {
 		warn.mockRestore();
 	});
 
-	it('survives a load_layout that throws / returns garbage and still writes a fresh monitors map', async () => {
-		// loadLayout rejects → the catch falls back to an empty monitors map (no other monitors).
+	it('refuses to overwrite widgets.json when load_layout throws', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		invoke.mockImplementation(async (cmd: string, args?: { contents?: string }) => {
 			if (cmd === COMMANDS.loadLayout) throw new Error('disk read failed');
 			if (cmd === COMMANDS.saveLayout) {
@@ -314,11 +341,131 @@ describe('persistToDisk — widgets.json assembly', () => {
 			}
 		});
 		const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));
+		let ok = true;
+		await act(async () => {
+			ok = await result.current.persistToDisk([]);
+		});
+		expect(ok).toBe(false);
+		expect(savedContents).toBeNull();
+		expect(warn).toHaveBeenCalledOnce();
+	});
+
+	it('names every monitor changed by a cross-monitor move in the transaction', async () => {
+		loadLayoutRaw = JSON.stringify({
+			version: 2,
+			monitors: { 'mon-B': monitorWith('keep') }
+		});
+		const extras: Extra[] = [{ key: 'mon-B', leaf: leaf(createWidget('text', 'moved')) }];
+		const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));
+		await act(async () => {
+			await result.current.persistToDisk(extras);
+		});
+		expect(savedTouchedMonitors).toEqual(['mon-A', 'mon-B']);
+	});
+
+	it('does not mark unchanged cached globals as touched during a monitor-only save', async () => {
+		const oldLibrary: Library = { version: 1, defs: [] };
+		const baseline: Baseline = {
+			monitor: monitorWith('old-monitor'),
+			library: oldLibrary,
+			theme: 'old-theme',
+			themeLock: true,
+			tokens: { '--old': '1' }
+		};
+		loadLayoutRaw = JSON.stringify({
+			version: 2,
+			monitors: { 'mon-A': monitorWith('disk-monitor') },
+			library: {
+				version: 1,
+				defs: [{ id: 'new', name: 'New', size: { w: 100, h: 100 }, child: monitorWith().root }]
+			},
+			theme: 'new-theme',
+			themeLock: false,
+			tokens: { '--new': '2' }
+		});
+		const { result } = renderHook(() =>
+			usePersistence(
+				editorState({
+					monitor: monitorWith('local-monitor'),
+					library: oldLibrary,
+					selectedTheme: 'old-theme',
+					themeLock: true,
+					tokenOverrides: { '--old': '1' },
+					savedBaseline: baseline
+				}),
+				'mon-A'
+			)
+		);
+
 		await act(async () => {
 			await result.current.persistToDisk([]);
 		});
-		const monitors = written().monitors as Record<string, MonitorLayout>;
-		expect(Object.keys(monitors)).toEqual(['mon-A']);
+
+		expect(savedTouchedGlobals).toEqual([]);
+	});
+
+	it('marks only intentionally edited global fields as touched', async () => {
+		const oldLibrary: Library = { version: 1, defs: [] };
+		const newLibrary: Library = {
+			version: 1,
+			defs: [{ id: 'new', name: 'New', size: { w: 100, h: 100 }, child: monitorWith().root }]
+		};
+		const baseline: Baseline = {
+			monitor: monitorWith(),
+			library: oldLibrary,
+			theme: 'old-theme',
+			themeLock: true,
+			tokens: {}
+		};
+		const { result } = renderHook(() =>
+			usePersistence(
+				editorState({
+					library: newLibrary,
+					selectedTheme: 'new-theme',
+					themeLock: true,
+					savedBaseline: baseline
+				}),
+				'mon-A'
+			)
+		);
+
+		await act(async () => {
+			await result.current.persistToDisk([]);
+		});
+
+		expect(savedTouchedGlobals).toEqual(['library', 'theme']);
+	});
+
+	it('omits intentionally cleared library and locked theme instead of falling back to disk', async () => {
+		const oldLibrary: Library = { version: 1, defs: [] };
+		const baseline: Baseline = {
+			monitor: monitorWith(),
+			library: oldLibrary,
+			theme: 'old-theme',
+			themeLock: true,
+			globalTheme: 'old-theme',
+			tokens: {}
+		};
+		loadLayoutRaw = JSON.stringify({
+			version: 2,
+			monitors: { 'mon-A': monitorWith() },
+			library: oldLibrary,
+			theme: 'old-theme'
+		});
+		const { result } = renderHook(() =>
+			usePersistence(
+				editorState({ library: undefined, selectedTheme: '', savedBaseline: baseline }),
+				'mon-A'
+			)
+		);
+
+		await act(async () => {
+			await result.current.persistToDisk([]);
+		});
+
+		expect(savedTouchedGlobals).toEqual(['library', 'theme']);
+		expect(written()).not.toHaveProperty('library');
+		expect(written()).not.toHaveProperty('theme');
 	});
 });
 
@@ -396,6 +543,31 @@ describe('writeBaseline — revert path', () => {
 		expect(written().theme).toBe('builtin:dracula');
 	});
 
+	it('restores the saved global inherit-theme when cancelling a previewed lock change', async () => {
+		loadLayoutRaw = JSON.stringify({
+			version: 2,
+			monitors: { 'mon-A': monitorWith() },
+			theme: 'preview-global'
+		});
+		const { result } = renderHook(() =>
+			usePersistence(editorState({ selectedTheme: 'preview-global', themeLock: true }), 'mon-A')
+		);
+
+		await act(async () => {
+			await result.current.writeBaseline(
+				baseline({
+					themeLock: false,
+					theme: 'monitor-theme',
+					globalTheme: 'saved-inherit-theme'
+				}),
+				'mon-A'
+			);
+		});
+
+		expect(savedTouchedGlobals).toEqual(['theme', 'themeLock']);
+		expect(written().theme).toBe('saved-inherit-theme');
+	});
+
 	it('returns false when save_layout rejects', async () => {
 		saveRejects = true;
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
@@ -408,18 +580,21 @@ describe('writeBaseline — revert path', () => {
 		warn.mockRestore();
 	});
 
-	it('falls back to an empty monitors map when the load read throws', async () => {
+	it('refuses to overwrite widgets.json when the baseline reload throws', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		invoke.mockImplementation(async (cmd: string, args?: { contents?: string }) => {
 			if (cmd === COMMANDS.loadLayout) throw new Error('read failed');
 			savedContents = args?.contents ?? null;
 			return undefined;
 		});
 		const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));
+		let ok = true;
 		await act(async () => {
-			await result.current.writeBaseline(baseline(), 'mon-A');
+			ok = await result.current.writeBaseline(baseline(), 'mon-A');
 		});
-		const monitors = written().monitors as Record<string, MonitorLayout>;
-		expect(Object.keys(monitors)).toEqual(['mon-A']);
+		expect(ok).toBe(false);
+		expect(savedContents).toBeNull();
+		expect(warn).toHaveBeenCalledOnce();
 	});
 });
 

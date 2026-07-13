@@ -31,7 +31,7 @@ function withModel(
 			},
 			timeline: timeline ? { ...timeline, last_updated_at_ms: 0 } : null,
 			media: null,
-			source: s.source
+			source: s.source ?? ''
 		}
 	};
 	return s;

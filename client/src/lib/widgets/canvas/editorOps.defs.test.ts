@@ -3,7 +3,7 @@
 // (Partial<EditorState>) the reducer applies via spread; they never mutate the input. We assert on
 // the observable result (the patched tree shape, ids, library defs, the returned boolean/value),
 // never on internals.
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
 	cfgNum,
 	clone,
@@ -367,19 +367,25 @@ describe('deleteDef', () => {
 	});
 
 	it('refuses to delete a def that is in use (returns empty patch)', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const s = state({
 			monitor: { root: container('root', 'col', []), floating: [instanceOf('def-1')] },
 			library: { version: 1, defs: [gaugeDef('def-1')] }
 		});
 		expect(deleteDef(s, 'def-1')).toEqual({});
+		expect(warn).toHaveBeenCalledOnce();
+		warn.mockRestore();
 	});
 
 	it('refuses to delete the def currently being edited (returns empty patch)', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const s = state({
 			library: { version: 1, defs: [gaugeDef('def-1')] },
 			editingDefId: 'def-1'
 		});
 		expect(deleteDef(s, 'def-1')).toEqual({});
+		expect(warn).toHaveBeenCalledOnce();
+		warn.mockRestore();
 	});
 
 	it('is a no-op (empty patch) when there is no library', () => {

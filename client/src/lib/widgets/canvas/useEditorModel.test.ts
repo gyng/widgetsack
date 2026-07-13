@@ -245,7 +245,29 @@ describe('history reset + baseline', () => {
 		expect(b).not.toBeNull();
 		expect(b.monitor).toBe(result.current.state.monitor);
 		expect(b.theme).toBe('builtin:dark');
+		expect(b.globalTheme).toBe('builtin:dark');
 		expect(b.tokens).toEqual({ '--accent': '#f00' });
+	});
+
+	it('keeps the global inherit-theme separate in an unlocked baseline', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		act(() =>
+			result.current.dispatch({
+				type: 'load',
+				patch: {
+					selectedTheme: 'monitor-theme',
+					themeLock: false,
+					globalTheme: 'global-inherit-theme'
+				}
+			})
+		);
+		act(() => result.current.dispatch({ type: 'setBaseline' }));
+
+		expect(result.current.state.savedBaseline).toMatchObject({
+			theme: 'monitor-theme',
+			themeLock: false,
+			globalTheme: 'global-inherit-theme'
+		});
 	});
 
 	it('setBaseline mid-def-edit also re-anchors the def-edit baseline to the scoped monitor', () => {

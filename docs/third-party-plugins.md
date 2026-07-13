@@ -238,8 +238,8 @@ forms:
 | any `https://…/plugin.json` URL               | that exact manifest (self-hosted packages)                        |
 
 The backend downloads the manifest plus every asset it declares (`theme.file` and `source.file`
-— fetched from the same directory), then writes `plugins/<id>/` exactly as if you had dropped the
-folder by hand.
+— fetched from the same directory), stages the complete package beside `plugins/<id>/`, then swaps
+the directory into place. A failed download or disk write leaves the prior package untouched.
 Provenance is recorded in a sidecar, `plugins/<id>/.install.json`:
 
 ```json
@@ -258,18 +258,23 @@ manifest). Nothing is checked or fetched in the background, ever.
 and theme live, stops its source, and clears its enable flag **and** any stored theme-CSS /
 network consent — a re-installed package starts from zero trust. An *Update* that changes the
 `source.hosts` list also drops the stored network consent: the new hosts stay unfetched until
-you toggle the package off and on and confirm them.
+you toggle the package off and on and confirm them. Theme-CSS consent is tied to the exact reviewed
+stylesheet by a compact SHA-256 fingerprint (the CSS itself is not copied into local storage), so
+changed threat-flagged CSS likewise remains uninjected until it is confirmed. If the filesystem
+refuses a removal, the package stays enabled and its existing approvals remain intact.
 
 Security of remote installs:
 
-- **https only** — `http://` sources are rejected; the GitHub shorthand forms always resolve to
-  `raw.githubusercontent.com` over https.
+- **https only, no redirects** — `http://` sources are rejected; the GitHub shorthand forms always
+  resolve to `raw.githubusercontent.com` over https, and manifest/asset redirects are rejected.
 - **Size caps** — the manifest and each asset are capped at 256 KiB (10 s timeout); only
   `.css`/`.json`/`.js` filenames that pass the same allowlist as local packages are
   fetched/written.
 - **Installs land disabled** — a fetched package goes through exactly the same opt-in toggle,
   structural validation, CSS threat scan, and first-enable consent (including the network-hosts
   confirm) as a hand-dropped folder. The link is a delivery mechanism, not a trust grant.
+- **Package IDs cannot be overwritten by a fresh install** — remove the existing package first, or
+  use its explicit *Update* action. Updates must return the same manifest ID as the installed row.
 
 ## Updating / removing
 
