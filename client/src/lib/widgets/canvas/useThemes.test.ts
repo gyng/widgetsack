@@ -22,6 +22,16 @@ vi.mock('../../overlay', () => ({
 	deleteThemeCss: (...a: [string]) => deleteThemeCss(...a)
 }));
 
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((res, rej) => {
+		resolve = res;
+		reject = rej;
+	});
+	return { promise, resolve, reject };
+}
+
 function setup(opts: { studio?: boolean; selectedTheme?: string } = {}) {
 	const dispatch = vi.fn() as unknown as EditorModel['dispatch'];
 	// Invoke the run callback like the real reducer does, so the `() => ({})` history-no-op patch
@@ -96,6 +106,35 @@ describe('applyTheme / adoptTheme / setTheme (CSS swaps)', () => {
 		expect(dispatch).toHaveBeenCalledWith({ type: 'setTheme', name: 'builtin:dark' });
 		expect(commitOp).toHaveBeenCalledTimes(1);
 		await waitFor(() => expect(result.current.themeCss).toBe('/*set*/'));
+	});
+
+	it('keeps the latest CSS when rapid selections resolve out of order', async () => {
+		const first = deferred<string>();
+		const second = deferred<string>();
+		resolveThemeCss.mockImplementation((name) =>
+			name === 'first' ? first.promise : second.promise
+		);
+		const { result, commitOp } = setup();
+		let firstRun!: Promise<void>;
+		let secondRun!: Promise<void>;
+		act(() => {
+			firstRun = result.current.setTheme('first');
+			secondRun = result.current.setTheme('second');
+		});
+		// Persistence is tied to the selection, not delayed behind stylesheet I/O.
+		expect(commitOp).toHaveBeenCalledTimes(2);
+
+		await act(async () => {
+			second.resolve('/*second*/');
+			await secondRun;
+		});
+		expect(result.current.themeCss).toBe('/*second*/');
+
+		await act(async () => {
+			first.resolve('/*first*/');
+			await firstRun;
+		});
+		expect(result.current.themeCss).toBe('/*second*/');
 	});
 });
 
@@ -180,6 +219,27 @@ describe('theme editor dialog', () => {
 		await waitFor(() => expect(result.current.themeList).toEqual(['fresh']));
 	});
 
+	it('keeps the editor and draft open when persistence fails', async () => {
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		saveThemeCss.mockRejectedValue(new Error('disk full'));
+		const { result, dispatch, commitOp } = setup();
+		act(() => {
+			result.current.setThemeEditorOpen(true);
+			result.current.setThemeDraftName('fresh');
+			result.current.setThemeDraft('.fresh{}');
+		});
+
+		await act(async () => {
+			await result.current.saveThemeEditor();
+		});
+
+		expect(result.current.themeEditorOpen).toBe(true);
+		expect(result.current.themeDraft).toBe('.fresh{}');
+		expect(dispatch).not.toHaveBeenCalled();
+		expect(commitOp).not.toHaveBeenCalled();
+		expect(alert).toHaveBeenCalledWith(expect.stringContaining('disk full'));
+	});
+
 	it('saveThemeEditor confirms before clobbering a DIFFERENT existing theme; declining aborts', async () => {
 		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
 		const { result } = setup();
@@ -251,6 +311,21 @@ describe('deleteTheme', () => {
 		expect(deleteThemeCss).toHaveBeenCalledWith('mine');
 		await waitFor(() => expect(result.current.themeList).toEqual(['other']));
 		expect(dispatch).not.toHaveBeenCalled(); // selection untouched
+	});
+
+	it('preserves an active theme when the filesystem delete fails', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		deleteThemeCss.mockRejectedValue(new Error('locked'));
+		const { result, dispatch, commitOp } = setup({ selectedTheme: 'mine' });
+
+		await act(async () => {
+			await result.current.deleteTheme('mine');
+		});
+
+		expect(dispatch).not.toHaveBeenCalled();
+		expect(commitOp).not.toHaveBeenCalled();
+		expect(alert).toHaveBeenCalledWith(expect.stringContaining('locked'));
 	});
 
 	it('deleting the ACTIVE theme falls back to (default): dispatch setTheme "" + clears CSS', async () => {

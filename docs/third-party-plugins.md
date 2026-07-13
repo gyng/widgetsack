@@ -259,7 +259,9 @@ and theme live, stops its source, and clears its enable flag **and** any stored 
 network consent — a re-installed package starts from zero trust. An *Update* that changes the
 `source.hosts` list also drops the stored network consent: the new hosts stay unfetched until
 you toggle the package off and on and confirm them. Theme-CSS consent is tied to the exact reviewed
-stylesheet, so changed threat-flagged CSS likewise remains uninjected until it is confirmed.
+stylesheet by a compact SHA-256 fingerprint (the CSS itself is not copied into local storage), so
+changed threat-flagged CSS likewise remains uninjected until it is confirmed. If the filesystem
+refuses a removal, the package stays enabled and its existing approvals remain intact.
 
 Security of remote installs:
 

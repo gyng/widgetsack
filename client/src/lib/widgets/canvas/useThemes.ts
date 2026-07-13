@@ -65,13 +65,19 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 	// applyTheme reads the latest selectedTheme via a ref (it's called from listeners + after sets).
 	// Mirrored in a commit effect (not during render); every read happens later, off-render.
 	const themeRef = useRef(selectedTheme);
+	const cssRequestRef = useRef(0);
 	useEffect(() => {
 		themeRef.current = selectedTheme;
 	});
+	const resolveLatest = useCallback(async (name: string) => {
+		const request = ++cssRequestRef.current;
+		const css = await resolveThemeCss(name);
+		if (request === cssRequestRef.current && themeRef.current === name) setThemeCss(css);
+	}, []);
 
 	const applyTheme = useCallback(async () => {
-		setThemeCss(await resolveThemeCss(themeRef.current));
-	}, []);
+		await resolveLatest(themeRef.current);
+	}, [resolveLatest]);
 	// Display label for a selection string: a built-in shows its catalog name, '' is the default
 	// reset, and a user theme is its bare filename. Also the basis for fork/export filenames.
 	const themeLabel = useCallback((name: string): string => {
@@ -82,20 +88,24 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 
 	// Sync the ref + the live CSS to `name` WITHOUT dispatching — for callers whose dispatch/commit
 	// already set selectedTheme (reloadLayout's load patch, importSack's commit).
-	const adoptTheme = useCallback(async (name: string) => {
-		themeRef.current = name;
-		setThemeCss(await resolveThemeCss(name));
-	}, []);
+	const adoptTheme = useCallback(
+		async (name: string) => {
+			themeRef.current = name;
+			await resolveLatest(name);
+		},
+		[resolveLatest]
+	);
 
 	const setTheme = useCallback(
 		async (name: string) => {
 			dispatch({ type: 'setTheme', name });
 			themeRef.current = name;
-			setThemeCss(await resolveThemeCss(name));
-			// saveLayout(): theme-only change → commit (history no-op, triggers a write).
+			// Persist the selection immediately; stylesheet I/O is a presentation side effect and must
+			// neither delay the write nor let an older resolution overwrite a newer selection.
 			commitOp(() => ({}));
+			await resolveLatest(name);
 		},
-		[dispatch, commitOp]
+		[dispatch, commitOp, resolveLatest]
 	);
 
 	// Theme editor (item 5). A real (focus-managed) dialog: autofocus on open, focus-return on
@@ -150,14 +160,19 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 		if (name !== themeOpenedName && themeList.includes(name)) {
 			if (!window.confirm(`Overwrite the existing theme "${name}"?`)) return;
 		}
-		await saveThemeCss(name, themeDraft);
+		try {
+			await saveThemeCss(name, themeDraft);
+		} catch (err) {
+			window.alert(`Could not save theme "${name}": ${String(err)}`);
+			return;
+		}
 		setThemeList(await listThemes());
 		dispatch({ type: 'setTheme', name });
 		themeRef.current = name;
-		setThemeCss(await loadThemeCss(name));
 		commitOp(() => ({})); // saveLayout()
+		await resolveLatest(name);
 		setThemeEditorOpen(false);
-	}, [themeDraftName, themeDraft, themeOpenedName, themeList, dispatch, commitOp]);
+	}, [themeDraftName, themeDraft, themeOpenedName, themeList, dispatch, commitOp, resolveLatest]);
 	// Duplicate a theme to a free "<name>-copy" stem and open the copy for editing.
 	const duplicateTheme = useCallback(
 		async (name: string) => {
@@ -167,7 +182,12 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 			let candidate = base;
 			let i = 2;
 			while (existing.has(candidate)) candidate = `${base}${i++}`;
-			await saveThemeCss(candidate, await resolveThemeCss(name));
+			try {
+				await saveThemeCss(candidate, await resolveThemeCss(name));
+			} catch (err) {
+				window.alert(`Could not duplicate theme "${name}": ${String(err)}`);
+				return;
+			}
 			setThemeList(await listThemes());
 			await openThemeEditor(candidate);
 		},
@@ -178,11 +198,17 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 	const deleteTheme = useCallback(
 		async (name: string) => {
 			if (!window.confirm(`Delete the theme "${name}"? This removes themes/${name}.css.`)) return;
-			await deleteThemeCss(name);
+			try {
+				await deleteThemeCss(name);
+			} catch (err) {
+				window.alert(`Could not delete theme "${name}": ${String(err)}`);
+				return;
+			}
 			setThemeList(await listThemes());
 			if (themeRef.current === name) {
 				dispatch({ type: 'setTheme', name: '' });
 				themeRef.current = '';
+				cssRequestRef.current++;
 				setThemeCss('');
 				commitOp(() => ({}));
 			}

@@ -39,6 +39,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use nvml_wrapper::{
@@ -678,8 +679,19 @@ fn net_link_samples(_ts: u64) -> Vec<SensorSample> {
 ///
 /// A plain `std::sync::Mutex` (locks are brief and synchronous — never held across an
 /// `.await`). Managed in `main.rs` and updated by the `set_active_sensors` command.
-#[derive(Default)]
-pub struct ActiveSensors(pub Mutex<HashMap<String, HashSet<String>>>);
+pub struct ActiveSensors(pub Mutex<HashMap<String, HashSet<String>>>, AtomicBool);
+
+impl Default for ActiveSensors {
+    fn default() -> Self {
+        Self(Mutex::new(HashMap::new()), AtomicBool::new(false))
+    }
+}
+
+impl ActiveSensors {
+    fn has_reported(&self) -> bool {
+        self.1.load(Ordering::Acquire)
+    }
+}
 
 /// Drop a destroyed window's demand record so its wildcard or concrete ids cannot keep expensive
 /// polling alive after the webview is gone.
@@ -703,30 +715,35 @@ pub async fn set_active_sensors<R: Runtime>(
 ) -> Result<(), ()> {
     let mut map = state.0.lock().unwrap_or_else(|e| e.into_inner());
     map.insert(window.label().to_string(), ids.into_iter().collect());
+    state.1.store(true, Ordering::Release);
     Ok(())
 }
 
-/// True if any window's active set wants a sensor matching `pred`. Default-ON for safety: a match
-/// counts when the union of every window's reported set is EMPTY (nobody has reported yet, so don't
-/// blank sensors at startup), OR any window asked for everything (`"*"`), OR any window's id
-/// satisfies `pred`.
+/// True if any window's active set wants a sensor matching `pred`. The caller separately decides
+/// whether the pre-first-report startup fallback applies; once a report has arrived, an empty union
+/// correctly means no demand (including the zero-window state after every reporter was destroyed).
 pub(crate) fn any_wanted(
     active: &HashMap<String, HashSet<String>>,
     pred: impl Fn(&str) -> bool,
 ) -> bool {
-    if active.values().all(|ids| ids.is_empty()) {
-        return true;
-    }
     active
         .values()
         .any(|ids| ids.contains("*") || ids.iter().any(|id| pred(id)))
 }
 
+fn any_wanted_or_unreported(
+    active: &HashMap<String, HashSet<String>>,
+    reported: bool,
+    pred: impl Fn(&str) -> bool,
+) -> bool {
+    !reported || any_wanted(active, pred)
+}
+
 /// Should the GPU be sampled this tick? Any active `gpu.*` id (or the `"*"` wildcard) turns the
 /// whole NVML block on; nothing else pays for it. A prefix test (not a fixed id list) so new
 /// `gpu.*` sensors are covered automatically.
-fn gpu_wanted(active: &HashMap<String, HashSet<String>>) -> bool {
-    any_wanted(active, |id| id.starts_with("gpu."))
+fn gpu_wanted(active: &HashMap<String, HashSet<String>>, reported: bool) -> bool {
+    any_wanted_or_unreported(active, reported, |id| id.starts_with("gpu."))
 }
 
 /// Per-metric demand for the "top process" sensors (`proc.<metric>.top.*`). The (gated, expensive)
@@ -917,12 +934,13 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         ) = {
             let active: tauri::State<ActiveSensors> = app.state();
             let g = active.0.lock().unwrap_or_else(|e| e.into_inner());
-            let pw = |p: &str| any_wanted(&g, |id| id.starts_with(p));
+            let reported = active.has_reported();
+            let pw = |p: &str| any_wanted_or_unreported(&g, reported, |id| id.starts_with(p));
             (
-                gpu_wanted(&g),
-                any_wanted(&g, |id| id.starts_with("disk.")),
-                any_wanted(&g, is_disk_io_id),
-                any_wanted(&g, |id| id == "host.procs"),
+                gpu_wanted(&g, reported),
+                any_wanted_or_unreported(&g, reported, |id| id.starts_with("disk.")),
+                any_wanted_or_unreported(&g, reported, is_disk_io_id),
+                any_wanted_or_unreported(&g, reported, |id| id == "host.procs"),
                 ProcWants {
                     cpu: pw("proc.cpu.top"),
                     mem: pw("proc.mem.top"),
@@ -930,13 +948,13 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
                     gpu: pw("proc.gpu.top"),
                 },
                 proc_watch_names(&g),
-                any_wanted(&g, |id| id == "cpu.freq"),
-                any_wanted(&g, is_perf_id),
-                any_wanted(&g, is_cpufreq_id),
-                any_wanted(&g, is_netlink_id),
-                any_wanted(&g, |id| id.starts_with("net.conn")),
-                any_wanted(&g, is_wifi_id),
-                any_wanted(&g, |id| id.starts_with("recyclebin")),
+                any_wanted_or_unreported(&g, reported, |id| id == "cpu.freq"),
+                any_wanted_or_unreported(&g, reported, is_perf_id),
+                any_wanted_or_unreported(&g, reported, is_cpufreq_id),
+                any_wanted_or_unreported(&g, reported, is_netlink_id),
+                any_wanted_or_unreported(&g, reported, |id| id.starts_with("net.conn")),
+                any_wanted_or_unreported(&g, reported, is_wifi_id),
+                any_wanted_or_unreported(&g, reported, |id| id.starts_with("recyclebin")),
             )
         };
         let want_proctop = proc_w.any();
@@ -1429,10 +1447,10 @@ mod tests {
 
     #[test]
     fn destroyed_window_drops_its_sensor_demand() {
-        let state = ActiveSensors(Mutex::new(active(&[
-            ("studio", &["*"]),
-            ("overlay-1", &["gpu.util"]),
-        ])));
+        let state = ActiveSensors(
+            Mutex::new(active(&[("studio", &["*"]), ("overlay-1", &["gpu.util"])])),
+            AtomicBool::new(true),
+        );
         remove_active_window(&state, "studio");
         let map = state.0.lock().unwrap();
         assert!(!map.contains_key("studio"));
@@ -1440,34 +1458,50 @@ mod tests {
     }
 
     #[test]
-    fn gpu_wanted_defaults_on_when_nobody_reported() {
-        // Empty map: no window has reported yet → sample everything for safety.
-        assert!(gpu_wanted(&HashMap::new()));
-        // A window that reported an empty set is treated like "not reported yet".
-        assert!(gpu_wanted(&active(&[("main", &[])])));
+    fn destroying_the_last_reporter_keeps_expensive_demand_off() {
+        let state = ActiveSensors(
+            Mutex::new(active(&[("main", &["gpu.util"])])),
+            AtomicBool::new(true),
+        );
+        remove_active_window(&state, "main");
+        let map = state.0.lock().unwrap();
+        assert!(!gpu_wanted(&map, state.has_reported()));
+    }
+
+    #[test]
+    fn gpu_wanted_defaults_on_only_before_the_first_demand_report() {
+        // Before any webview reports, preserve the startup safety fallback.
+        assert!(gpu_wanted(&HashMap::new(), false));
+        // Once a live window has explicitly reported an empty set, expensive polling is off.
+        assert!(!gpu_wanted(&active(&[("main", &[])]), true));
+        // The remembered report state also keeps a later zero-window map off.
+        assert!(!gpu_wanted(&HashMap::new(), true));
     }
 
     #[test]
     fn gpu_wanted_false_when_only_cheap_sensors() {
-        assert!(!gpu_wanted(&active(&[("main", &["cpu.total"])])));
-        assert!(!gpu_wanted(&active(&[
-            ("main", &["cpu.total", "mem.used"]),
-            ("overlay-1", &["net.down"])
-        ])));
+        assert!(!gpu_wanted(&active(&[("main", &["cpu.total"])]), true));
+        assert!(!gpu_wanted(
+            &active(&[
+                ("main", &["cpu.total", "mem.used"]),
+                ("overlay-1", &["net.down"])
+            ]),
+            true
+        ));
     }
 
     #[test]
     fn gpu_wanted_true_for_any_gpu_prefixed_id() {
         // The prefix gate covers both the original and the new gpu.* ids.
-        assert!(gpu_wanted(&active(&[("main", &["gpu.util"])])));
-        assert!(gpu_wanted(&active(&[("main", &["gpu.vram.total"])])));
-        assert!(gpu_wanted(&active(&[("main", &["gpu.clock.core"])])));
-        assert!(gpu_wanted(&active(&[("main", &["gpu.power"])])));
+        assert!(gpu_wanted(&active(&[("main", &["gpu.util"])]), true));
+        assert!(gpu_wanted(&active(&[("main", &["gpu.vram.total"])]), true));
+        assert!(gpu_wanted(&active(&[("main", &["gpu.clock.core"])]), true));
+        assert!(gpu_wanted(&active(&[("main", &["gpu.power"])]), true));
     }
 
     #[test]
     fn gpu_wanted_true_for_star_sentinel() {
-        assert!(gpu_wanted(&active(&[("studio", &["*"])])));
+        assert!(gpu_wanted(&active(&[("studio", &["*"])]), true));
     }
 
     #[test]

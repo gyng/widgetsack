@@ -652,6 +652,19 @@ fn valid_name(name: &str) -> bool {
         && name
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || c == ' ' || c == '_' || c == '-')
+        && !windows_device_name(name)
+}
+
+fn windows_device_name(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    if matches!(upper.as_str(), "CON" | "PRN" | "AUX" | "NUL") {
+        return true;
+    }
+    ["COM", "LPT"].iter().any(|prefix| {
+        upper.strip_prefix(prefix).is_some_and(|suffix| {
+            matches!(suffix, "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9")
+        })
+    })
 }
 
 fn valid_sack_name(name: &str) -> bool {
@@ -1005,12 +1018,19 @@ fn manifest_url_from_sidecar(source: &str, reff: &str) -> Option<String> {
 }
 
 /// A 10s-timeout https client for the (small) manifest/asset fetches.
-fn install_http_client() -> Result<reqwest::Client, String> {
-    reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())
+fn install_http_client() -> Result<&'static reqwest::Client, String> {
+    static CLIENT: std::sync::OnceLock<Result<reqwest::Client, String>> =
+        std::sync::OnceLock::new();
+    CLIENT
+        .get_or_init(|| {
+            reqwest::Client::builder()
+                .redirect(reqwest::redirect::Policy::none())
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .map_err(|e| e.to_string())
+        })
+        .as_ref()
+        .map_err(Clone::clone)
 }
 
 /// GET `url` and return its body as text, enforcing `FETCH_CAP` while streaming (a hostile or
@@ -1230,7 +1250,7 @@ pub async fn install_plugin_package(
             .to_string()
     })?;
     let client = install_http_client()?;
-    let manifest_text = fetch_text_capped(&client, &resolved.manifest_url).await?;
+    let manifest_text = fetch_text_capped(client, &resolved.manifest_url).await?;
     let json: serde_json::Value = serde_json::from_str(&manifest_text)
         .map_err(|_| "downloaded plugin.json is not valid JSON".to_string())?;
     let id = json
@@ -1266,7 +1286,7 @@ pub async fn install_plugin_package(
                 return Err(format!("declared asset \"{file}\" has an unsafe filename"));
             }
             let body =
-                fetch_text_capped(&client, &asset_url_for(&resolved.manifest_url, file)).await?;
+                fetch_text_capped(client, &asset_url_for(&resolved.manifest_url, file)).await?;
             assets.push((file.to_string(), body));
         }
     }
@@ -1329,7 +1349,7 @@ pub async fn check_plugin_package_update(
     let url = manifest_url_from_sidecar(&source, reff)
         .ok_or_else(|| "install record has an invalid source".to_string())?;
     let client = install_http_client()?;
-    let manifest_text = fetch_text_capped(&client, &url).await?;
+    let manifest_text = fetch_text_capped(client, &url).await?;
     let json: serde_json::Value = serde_json::from_str(&manifest_text)
         .map_err(|_| "remote plugin.json is not valid JSON".to_string())?;
     let latest = json
@@ -1428,11 +1448,7 @@ pub async fn package_fetch(
     if !host_allowed(&url, &hosts) {
         return Err(format!("url is not in the package's host allowlist: {url}"));
     }
-    let client = reqwest::Client::builder()
-        .redirect(reqwest::redirect::Policy::none())
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| e.to_string())?;
+    let client = install_http_client()?;
     let resp = client
         .get(&url)
         .send()
@@ -1888,6 +1904,13 @@ mod tests {
     }
 
     #[test]
+    fn package_http_requests_share_one_connection_pool() {
+        let first = install_http_client().unwrap();
+        let second = install_http_client().unwrap();
+        assert!(std::ptr::eq(first, second));
+    }
+
+    #[test]
     fn truncate_chars_caps_at_chars_not_bytes() {
         assert_eq!(truncate_chars("short", 10), "short");
         assert_eq!(truncate_chars("abcdef", 3), "abc…");
@@ -1963,6 +1986,14 @@ mod tests {
         assert!(!valid_name(" lead")); // leading space (Windows trims → name collision)
         assert!(!valid_name("trail ")); // trailing space
         assert!(!valid_name("   ")); // all whitespace
+        for reserved in [
+            "CON", "con", "PRN", "AUX", "NUL", "COM1", "com9", "LPT1", "lpt9",
+        ] {
+            assert!(
+                !valid_name(reserved),
+                "Windows device name {reserved} must be rejected"
+            );
+        }
     }
 
     #[test]

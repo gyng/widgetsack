@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, it, expect } from 'vitest';
 import { isDirectUrl, imageFit } from './imageSrc';
 
@@ -10,6 +12,16 @@ describe('isDirectUrl', () => {
 		expect(isDirectUrl('/abs/path.png')).toBe(true);
 		expect(isDirectUrl('photo.jpg')).toBe(false);
 		expect(isDirectUrl('  subfolder-cat.png ')).toBe(false);
+	});
+
+	it('keeps production CSP aligned with the supported remote image schemes', () => {
+		const config = JSON.parse(
+			readFileSync(resolve(process.cwd(), '../widgetsack/tauri.conf.json'), 'utf8')
+		) as { app: { security: { csp: string } } };
+		const imgDirective = config.app.security.csp
+			.split(';')
+			.find((directive) => directive.trim().startsWith('img-src'));
+		expect(imgDirective?.split(/\s+/)).toEqual(expect.arrayContaining(['http:', 'https:']));
 	});
 });
 

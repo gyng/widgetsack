@@ -84,7 +84,7 @@
         },
         "enable": true
       },
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost http://art.localhost blob: data:; media-src 'self' asset: http://asset.localhost blob: data:; font-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; script-src 'self' 'wasm-unsafe-eval'; frame-src 'self' http: https:"
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost http://art.localhost blob: data: http: https:; media-src 'self' asset: http://asset.localhost blob: data:; font-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; script-src 'self' 'wasm-unsafe-eval'; frame-src 'self' http: https:"
     }
   }
 }
