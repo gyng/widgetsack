@@ -88,14 +88,15 @@ describe('MonitorSwitchHost (container wiring)', () => {
 		expect(container.querySelector('.ms-name')?.textContent).toBe('DisplayPort 1');
 	});
 
-	it('renders the default input set (and ignores clicks) when no monitor resolves', async () => {
+	it('shows an unavailable state without inert source buttons when no monitor resolves', async () => {
 		listMonitorInputs.mockResolvedValue([]); // empty list, blank target → selected = null
 		const { container } = render(<MonitorSwitchHost />);
-		// monitorInputRows falls back to DEFAULT_INPUTS (DP1, DP2, HDMI1, HDMI2)
-		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(4));
-		expect(container.querySelector('[data-part="empty"]')).toBeNull(); // not "missing" (no target)
-		// no resolved gdi → pick() early-returns, never calls the switch
-		fireEvent.click(container.querySelector('.ms-row')!);
+		await waitFor(() =>
+			expect(container.querySelector('[data-part="empty"]')?.textContent).toBe(
+				'no DDC monitor found'
+			)
+		);
+		expect(container.querySelector('.ms-row')).toBeNull();
 		expect(setMonitorInput).not.toHaveBeenCalled();
 	});
 
@@ -181,20 +182,68 @@ describe('MonitorSwitchHost (container wiring)', () => {
 		setIntervalSpy.mockRestore();
 	});
 
-	it('keeps the optimistic updater null-safe when picking before the target resolves', async () => {
-		// The lookup never resolves: with a configured target the default input rows still render
-		// (missing only flips after a resolved lookup), so a click reaches pick() while selected is
-		// null — gdi falls back to the target and the optimistic setSelected updater keeps the null.
+	it('shows a loading state and no source buttons while the target lookup is pending', () => {
 		listMonitorInputs.mockReturnValue(new Promise(() => {}));
 		const { container } = render(<MonitorSwitchHost monitor={'\\\\.\\DISPLAY7'} />);
-		const rows = container.querySelectorAll('.ms-row');
-		expect(rows.length).toBe(4); // DEFAULT_INPUTS while the lookup is pending
-		await act(async () => {
-			fireEvent.click(rows[0]);
-		});
-		expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY7', expect.any(Number));
-		// no monitor resolved → nothing to highlight optimistically
-		expect(container.querySelector('.ms-row[data-active="true"]')).toBeNull();
+		expect(container.querySelector('[data-part="empty"]')?.textContent).toBe('loading…');
+		expect(container.querySelector('.ms-row')).toBeNull();
+		expect(setMonitorInput).not.toHaveBeenCalled();
+	});
+
+	it('ignores an older refresh that resolves after a newer focus refresh', async () => {
+		let resolveOld!: (monitors: MonitorInputs[]) => void;
+		let resolveNew!: (monitors: MonitorInputs[]) => void;
+		listMonitorInputs
+			.mockImplementationOnce(() => new Promise((resolve) => (resolveOld = resolve)))
+			.mockImplementationOnce(() => new Promise((resolve) => (resolveNew = resolve)));
+		const { container } = render(<MonitorSwitchHost />);
+		fireEvent(window, new Event('focus'));
+		await act(async () => resolveNew([mon({ current_input: 0x0f })]));
+		await waitFor(() =>
+			expect(container.querySelector('.ms-row[data-active="true"]')?.textContent).toContain(
+				'DisplayPort 1'
+			)
+		);
+		await act(async () => resolveOld([mon({ current_input: 0x11 })]));
+		expect(container.querySelector('.ms-row[data-active="true"]')?.textContent).toContain(
+			'DisplayPort 1'
+		);
+	});
+
+	it('never renders a stale monitor when the configured target changes', async () => {
+		let resolveFirst!: (monitors: MonitorInputs[]) => void;
+		listMonitorInputs
+			.mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+			.mockResolvedValueOnce([
+				mon({ gdi: '\\\\.\\DISPLAY2', friendly: 'Second', primary: false, current_input: 0x0f })
+			]);
+		const { container, rerender } = render(<MonitorSwitchHost monitor={'\\\\.\\DISPLAY1'} />);
+		rerender(<MonitorSwitchHost monitor={'\\\\.\\DISPLAY2'} />);
+		await waitFor(() => expect(container.querySelector('.ms-title')?.textContent).toBe('Second'));
+		await act(async () =>
+			resolveFirst([mon({ gdi: '\\\\.\\DISPLAY1', friendly: 'First', current_input: 0x11 })])
+		);
+		expect(container.querySelector('.ms-title')?.textContent).toBe('Second');
+		expect(container.querySelector('.ms-row[data-active="true"]')?.textContent).toContain(
+			'DisplayPort 1'
+		);
+	});
+
+	it('disables every source and ignores repeated picks while a switch is pending', async () => {
+		let resolveSwitch!: (ok: boolean) => void;
+		setMonitorInput.mockImplementation(() => new Promise((resolve) => (resolveSwitch = resolve)));
+		const { container } = render(<MonitorSwitchHost />);
+		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
+		const dp = [...container.querySelectorAll('.ms-row')].find((row) =>
+			row.textContent?.includes('DisplayPort 1')
+		)!;
+		fireEvent.click(dp);
+		expect(
+			[...container.querySelectorAll<HTMLButtonElement>('.ms-row')].every((row) => row.disabled)
+		).toBe(true);
+		fireEvent.click(dp);
+		expect(setMonitorInput).toHaveBeenCalledTimes(1);
+		await act(async () => resolveSwitch(true));
 	});
 
 	it('refreshes the active input on window focus', async () => {

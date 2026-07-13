@@ -65,7 +65,9 @@ const TOKEN_DESCRIPTIONS: Record<string, string> = {
 	'--np-font': 'Body font family.',
 	'--np-font-display': 'Display font family (large numerals / headings).',
 	'--np-radius': 'Corner radius for widget chrome.',
-	'--np-gap': 'Default gap between elements inside a widget.'
+	'--np-gap': 'Default gap between elements inside a widget.',
+	'--np-control-size': 'Minimum target size for compact interactive controls.',
+	'--np-touch-target': 'Minimum target size for large, touch-first controls.'
 };
 
 // Escape a cell value so a literal `|` can't break the Markdown table.

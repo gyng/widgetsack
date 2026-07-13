@@ -48,7 +48,7 @@
 	/* Big, tiled, finger-friendly buttons (wrap to fill the widget). */
 	flex: 1 1 var(--ms-btn-min, 84px);
 	min-width: var(--ms-btn-min, 84px);
-	min-height: var(--ms-btn-h, 44px); /* >= 44px: the common minimum touch target */
+	min-height: var(--ms-btn-h, var(--np-touch-target, 44px));
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -101,7 +101,7 @@
 .monitorswitch[data-compact] .ms-row {
 	flex: 0 0 auto;
 	min-width: 0;
-	min-height: 0;
+	min-height: var(--np-control-size, 28px);
 	justify-content: flex-start;
 	padding: 2px 8px;
 	border: 0;

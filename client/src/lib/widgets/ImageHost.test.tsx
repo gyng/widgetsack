@@ -66,4 +66,20 @@ describe('ImageHost', () => {
 		});
 		expect(imgSrc(container)).toBe('asset://localhost/second.png');
 	});
+
+	it('does not show the previous image while a new filename is resolving', async () => {
+		let resolveSecond!: (url: string) => void;
+		wallpaperAssetUrl
+			.mockResolvedValueOnce('asset://localhost/first.png')
+			.mockImplementationOnce(() => new Promise<string>((resolve) => (resolveSecond = resolve)));
+		const { container, rerender } = render(<ImageHost src="first.png" />);
+		await waitFor(() => expect(imgSrc(container)).toBe('asset://localhost/first.png'));
+
+		rerender(<ImageHost src="second.png" />);
+		expect(imgSrc(container)).toBeNull();
+		expect(container.querySelector('[data-empty="true"]')).toBeTruthy();
+
+		await act(async () => resolveSecond('asset://localhost/second.png'));
+		expect(imgSrc(container)).toBe('asset://localhost/second.png');
+	});
 });

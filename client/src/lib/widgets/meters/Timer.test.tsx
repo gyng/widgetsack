@@ -106,4 +106,16 @@ describe('Timer (default, self-sourcing) wires useTimer to TimerView', () => {
 		expect(container.querySelector('[data-part="label"]')?.textContent).toBe('Pomodoro');
 		expect(val(container)).toBe('01:00:00');
 	});
+
+	it('uses widgetId to restore its state after remount', () => {
+		localStorage.clear();
+		const first = render(<Timer mode="stopwatch" widgetId="timer-widget" />);
+		act(() => fireEvent.click(first.getByLabelText('Start')));
+		act(() => vi.advanceTimersByTime(2000));
+		first.unmount();
+		act(() => vi.advanceTimersByTime(1000));
+		const second = render(<Timer mode="stopwatch" widgetId="timer-widget" />);
+		expect(val(second.container)).toBe('00:03');
+		localStorage.clear();
+	});
 });

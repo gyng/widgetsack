@@ -1,0 +1,32 @@
+/* Shared interaction treatment for widget controls. It keeps the shipped compact industrial look,
+   while making keyboard focus unmistakable and pending actions visibly non-interactive. */
+:where(
+	.np-button,
+	.timer-btn,
+	.as-row,
+	.ms-row,
+	.vol-mute,
+	.vol-slider,
+	.np-nowplaying [role='slider'],
+	.np-nowplaying button,
+	.np-ha-switch,
+	.np-ha-scene,
+	.np-ha-lock,
+	.np-ha-fan button,
+	.np-ha-fan input,
+	.np-ha-cover button,
+	.np-ha-cover input,
+	.np-ha-input button,
+	.np-ha-input input,
+	.np-ha-input select,
+	.np-ha-media button,
+	.np-ha-media input,
+	.np-note textarea
+):focus-visible {
+	outline: 2px solid var(--np-accent, rgb(119, 196, 211));
+	outline-offset: 2px;
+}
+
+:where(.as-row, .ms-row):disabled {
+	opacity: 0.6;
+}

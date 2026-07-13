@@ -36,6 +36,9 @@ export default function AudioSwitcher({ devices, currentId, onPick, busyId, colo
 							className="as-row"
 							data-active={d.active || undefined}
 							data-busy={busyId === d.id || undefined}
+							aria-pressed={d.active}
+							aria-busy={busyId === d.id || undefined}
+							disabled={busyId != null}
 							onClick={() => onPick(d.id)}
 							title={d.name}
 						>

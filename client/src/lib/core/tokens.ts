@@ -26,7 +26,9 @@ export const DEFAULT_TOKENS: Tokens = {
 	'--np-font': "'Bahnschrift', 'Arial Narrow', sans-serif",
 	'--np-font-display': "'Bahnschrift', 'Arial Narrow', sans-serif",
 	'--np-radius': '2px',
-	'--np-gap': '4px'
+	'--np-gap': '4px',
+	'--np-control-size': '28px', // compact interactive control target
+	'--np-touch-target': '44px' // large / touch-first control target
 };
 
 // CSS generic family keywords (+ global values): a font-family value leading with one of these has

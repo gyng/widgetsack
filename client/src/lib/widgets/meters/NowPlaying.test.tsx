@@ -373,6 +373,9 @@ describe('NowPlaying — seek + timeline', () => {
 		);
 		const bar = container.querySelector('[data-part="progress"]') as HTMLElement;
 		expect(bar.getAttribute('data-seekable')).toBe('true');
+		expect(bar.getAttribute('role')).toBe('slider');
+		expect(bar.getAttribute('tabindex')).toBe('0');
+		expect(bar.getAttribute('aria-valuenow')).toBe('65');
 		// happy-dom getBoundingClientRect returns zeros; stub a 200px-wide bar so the fraction is real.
 		bar.getBoundingClientRect = () =>
 			({ left: 0, width: 200, top: 0, height: 4, right: 200, bottom: 4, x: 0, y: 0 }) as DOMRect;
@@ -382,6 +385,18 @@ describe('NowPlaying — seek + timeline', () => {
 			service: 'seek',
 			data: { source: 'spotify.exe', value: 100 }
 		});
+	});
+
+	it('supports keyboard seeking with arrows, Home, and End', () => {
+		const onControl = vi.fn();
+		const { container } = render(
+			<NowPlaying session={seekableSession()} caps={caps} onControl={onControl} />
+		);
+		const bar = container.querySelector('[data-part="progress"]') as HTMLElement;
+		fireEvent.keyDown(bar, { key: 'ArrowRight' });
+		fireEvent.keyDown(bar, { key: 'Home' });
+		fireEvent.keyDown(bar, { key: 'End' });
+		expect(onControl.mock.calls.map((call) => call[0].data?.value)).toEqual([70, 0, 200]);
 	});
 
 	it('clamps a seek click past the right edge to the end of the track', () => {
@@ -418,6 +433,8 @@ describe('NowPlaying — seek + timeline', () => {
 		);
 		const bar = container.querySelector('[data-part="progress"]') as HTMLElement;
 		expect(bar.getAttribute('data-seekable')).toBe('false');
+		expect(bar.getAttribute('role')).toBeNull();
+		expect(bar.getAttribute('tabindex')).toBeNull();
 		fireEvent.click(bar, { clientX: 50 });
 		expect(onControl).not.toHaveBeenCalled();
 	});

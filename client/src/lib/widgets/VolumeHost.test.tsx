@@ -5,8 +5,8 @@ import { act, fireEvent, render, cleanup } from '@testing-library/react';
 // the presentational Volume meter. We assert the host's wiring: poll → state, optimistic set + the
 // drag-hold suppression, and the mute toggle.
 const getAudioVolume = vi.fn();
-const setAudioVolume = vi.fn<(level: number) => Promise<void>>(() => Promise.resolve());
-const setAudioMute = vi.fn<(muted: boolean) => Promise<void>>(() => Promise.resolve());
+const setAudioVolume = vi.fn<(level: number) => Promise<boolean>>(() => Promise.resolve(true));
+const setAudioMute = vi.fn<(muted: boolean) => Promise<boolean>>(() => Promise.resolve(true));
 vi.mock('../audio/volume', () => ({
 	getAudioVolume: () => getAudioVolume(),
 	setAudioVolume: (l: number) => setAudioVolume(l),
@@ -110,6 +110,20 @@ describe('VolumeHost', () => {
 			fireEvent.click(muteBtn);
 		});
 		expect(setAudioMute).toHaveBeenLastCalledWith(false);
+	});
+
+	it('serializes rapid volume writes so an older request cannot finish last', async () => {
+		let resolveFirst!: (ok: boolean) => void;
+		setAudioVolume.mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)));
+		const { container } = render(<VolumeHost />);
+		await act(async () => Promise.resolve());
+		fireEvent.change(slider(container), { target: { value: '30' } });
+		fireEvent.change(slider(container), { target: { value: '70' } });
+		expect(setAudioVolume).toHaveBeenCalledTimes(1);
+		expect(setAudioVolume).toHaveBeenCalledWith(0.3);
+		await act(async () => resolveFirst(true));
+		expect(setAudioVolume).toHaveBeenCalledTimes(2);
+		expect(setAudioVolume).toHaveBeenLastCalledWith(0.7);
 	});
 
 	it('ignores a null reading from the backend (stays at —)', async () => {

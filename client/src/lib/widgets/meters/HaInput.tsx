@@ -3,7 +3,7 @@
 // control: input_boolean → toggle, input_button → press, input_select → dropdown, input_number →
 // slider, input_text → text field. Each emits onControl with the right {domain, service, data}, which
 // Canvas turns into ha_call_service. service_data is built by the pure core/haControls helpers.
-import type { ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
 	entityDomain,
 	inputNumberSetValue,
@@ -21,6 +21,46 @@ type Props = {
 	label?: string;
 	onControl?: (e: ControlEvent) => void;
 };
+
+function HaTextInput({
+	name,
+	value,
+	onCommit
+}: {
+	name: string;
+	value: string;
+	onCommit: (value: string) => void;
+}) {
+	const [draft, setDraft] = useState(value);
+	const submitted = useRef(value);
+
+	useEffect(() => {
+		setDraft(value);
+		submitted.current = value;
+	}, [value]);
+
+	const commit = (): void => {
+		if (draft === submitted.current) return;
+		submitted.current = draft;
+		onCommit(draft);
+	};
+
+	return (
+		<input
+			type="text"
+			className="hi-text"
+			data-part="text"
+			value={draft}
+			aria-label={`${name} value`}
+			onChange={(event) => setDraft(event.currentTarget.value)}
+			onKeyDown={(event) => {
+				if (event.key !== 'Enter') return;
+				commit();
+			}}
+			onBlur={commit}
+		/>
+	);
+}
 
 export default function HaInput({ value = null, label, onControl }: Props) {
 	const s = (value ?? null) as HaState | null;
@@ -54,7 +94,8 @@ export default function HaInput({ value = null, label, onControl }: Props) {
 			</button>
 		);
 	} else if (domain === 'input_select') {
-		const options = (attrs.options as string[] | undefined) ?? [];
+		const advertised = (attrs.options as string[] | undefined) ?? [];
+		const options = state && !advertised.includes(state) ? [state, ...advertised] : advertised;
 		control = (
 			<select
 				className="hi-select"
@@ -94,19 +135,11 @@ export default function HaInput({ value = null, label, onControl }: Props) {
 		);
 	} else if (domain === 'input_text') {
 		control = (
-			<input
-				type="text"
-				className="hi-text"
-				data-part="text"
-				defaultValue={state}
-				aria-label={`${name} value`}
-				onKeyDown={(e) => {
-					if (e.key !== 'Enter') return;
-					const c = inputTextSetValue(e.currentTarget.value);
-					emit(c.service, c.data);
-				}}
-				onBlur={(e) => {
-					const c = inputTextSetValue(e.currentTarget.value);
+			<HaTextInput
+				name={name}
+				value={state}
+				onCommit={(value) => {
+					const c = inputTextSetValue(value);
 					emit(c.service, c.data);
 				}}
 			/>

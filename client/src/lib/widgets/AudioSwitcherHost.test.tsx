@@ -106,6 +106,38 @@ describe('AudioSwitcherHost (container wiring)', () => {
 		expect(warn).toHaveBeenCalledWith('audio switch failed; reverted to the real default');
 	});
 
+	it('ignores an older refresh that resolves after a newer focus refresh', async () => {
+		let resolveOld!: (id: string | null) => void;
+		let resolveNew!: (id: string | null) => void;
+		getDefaultAudioOutput
+			.mockImplementationOnce(() => new Promise((resolve) => (resolveOld = resolve)))
+			.mockImplementationOnce(() => new Promise((resolve) => (resolveNew = resolve)));
+		const { container } = render(<AudioSwitcherHost />);
+		fireEvent(window, new Event('focus'));
+		await act(async () => resolveNew('hp'));
+		await waitFor(() =>
+			expect(rowByName(container, 'Headphones').getAttribute('data-active')).toBe('true')
+		);
+		await act(async () => resolveOld('spk'));
+		expect(rowByName(container, 'Headphones').getAttribute('data-active')).toBe('true');
+	});
+
+	it('disables every row and ignores repeated picks while a switch is pending', async () => {
+		let resolveSwitch!: (ok: boolean) => void;
+		setDefaultAudioOutput.mockImplementation(
+			() => new Promise((resolve) => (resolveSwitch = resolve))
+		);
+		const { container } = render(<AudioSwitcherHost />);
+		await waitFor(() => expect(container.querySelectorAll('.as-row')).toHaveLength(2));
+		fireEvent.click(rowByName(container, 'Headphones'));
+		expect(
+			[...container.querySelectorAll<HTMLButtonElement>('.as-row')].every((row) => row.disabled)
+		).toBe(true);
+		fireEvent.click(rowByName(container, 'Headphones'));
+		expect(setDefaultAudioOutput).toHaveBeenCalledTimes(1);
+		await act(async () => resolveSwitch(true));
+	});
+
 	it('re-polls on window focus and on the interval tick, and stops after unmount (alive guard)', async () => {
 		vi.useFakeTimers();
 		const { unmount } = render(<AudioSwitcherHost />);

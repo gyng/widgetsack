@@ -14,19 +14,21 @@ export default function ImageHost({ src = '', fit = 'contain', alt = '' }: Props
 	// The synchronous cases (empty, or a direct URL) resolve during render; `null` means the source is
 	// a bare filename that needs the async wallpapers/ lookup below.
 	const direct = !s ? '' : isDirectUrl(s) ? s : null;
-	const [resolved, setResolved] = useState('');
+	const [resolved, setResolved] = useState<{ src: string; url: string } | null>(null);
 
 	useEffect(() => {
 		if (direct !== null) return; // handled during render
 		// A bare filename → resolve against the wallpapers/ folder (best-effort; empty on failure).
 		let alive = true;
 		void wallpaperAssetUrl(s).then((u) => {
-			if (alive) setResolved(u);
+			if (alive) setResolved({ src: s, url: u });
 		});
 		return () => {
 			alive = false;
 		};
 	}, [direct, s]);
 
-	return <ImageWidget url={direct ?? resolved} fit={fit} alt={alt} />;
+	return (
+		<ImageWidget url={direct ?? (resolved?.src === s ? resolved.url : '')} fit={fit} alt={alt} />
+	);
 }

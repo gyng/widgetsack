@@ -16,6 +16,8 @@ describe('tokens', () => {
 			expect(TOKEN_NAMES).toContain(name);
 		}
 		expect(DEFAULT_TOKENS['--np-accent']).toBe('rgb(119, 196, 211)');
+		expect(DEFAULT_TOKENS['--np-control-size']).toBe('28px');
+		expect(DEFAULT_TOKENS['--np-touch-target']).toBe('44px');
 	});
 
 	it('exposes semantic state colours so meters need not hardcode them', () => {

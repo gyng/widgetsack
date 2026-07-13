@@ -90,7 +90,7 @@ export default function HaMediaPlayer({
 						<button
 							type="button"
 							className={muted ? 'on' : ''}
-							aria-label={`Mute ${name}`}
+							aria-label={`${muted ? 'Unmute' : 'Mute'} ${name}`}
 							aria-pressed={muted}
 							onClick={() => call('volume_mute', { is_volume_muted: !muted })}
 						>

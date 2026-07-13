@@ -50,15 +50,16 @@ export default function Calendar({
 	});
 	const headers = weekdayHeader ? weekdayOrder(localeDayNames(locale, 'short'), firstDayIdx) : null;
 	const vars = color ? ({ '--cal-accent': color } as CSSProperties) : undefined;
+	const monthLabel = formatClock(now, 'MMMM YYYY', locale);
 
 	return (
 		<div className="calendar np-calendar" style={vars} data-continuous={continuous || undefined}>
 			{showTitle && (
 				<div className="cal-title" data-part="title">
-					{formatClock(now, 'MMMM YYYY', locale)}
+					{monthLabel}
 				</div>
 			)}
-			<div className="cal-grid" data-part="grid">
+			<div className="cal-grid" data-part="grid" role="grid" aria-label={monthLabel}>
 				{headers && (
 					<div className="cal-row cal-head" role="row">
 						{headers.map((name, i) => (

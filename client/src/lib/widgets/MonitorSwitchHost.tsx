@@ -3,7 +3,7 @@
 // MonitorSwitch meter plain props. A bespoke host — like AudioSwitcherHost — because it sources from
 // commands, not a sensor. Registered as the `monitorswitch` component in registry.tsx. The pure
 // shaping (which rows, names, stats) lives in core/monitorInputs.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MonitorSwitch from './meters/MonitorSwitch';
 import { listMonitorInputs, setMonitorInput, type MonitorInputs } from '../ddc/monitors';
 import { formatStats, monitorInputRows } from '../core/monitorInputs';
@@ -33,20 +33,34 @@ export default function MonitorSwitchHost({
 	color
 }: Props) {
 	const target = monitor?.trim() ?? '';
-	const [selected, setSelected] = useState<MonitorInputs | null>(null);
-	const [missing, setMissing] = useState(false);
+	const [snapshot, setSnapshot] = useState<{
+		target: string;
+		selected: MonitorInputs | null;
+		missing: boolean;
+	} | null>(null);
 	const [busyValue, setBusyValue] = useState<number | null>(null);
+	const refreshId = useRef(0);
+	const mounted = useRef(true);
+	const busy = useRef(false);
+	const targetRef = useRef(target);
+	targetRef.current = target;
+	const currentSnapshot = snapshot?.target === target ? snapshot : null;
+	const selected = currentSnapshot?.selected ?? null;
+	const missing = currentSnapshot?.missing ?? false;
+	const loading = currentSnapshot === null;
 
 	const refresh = useCallback(async (): Promise<void> => {
+		const request = ++refreshId.current;
 		const list = await listMonitorInputs(target || undefined);
 		const found = target
 			? (list.find((m) => m.gdi === target) ?? null)
 			: (list.find((m) => m.primary) ?? list[0] ?? null);
-		setSelected(found);
-		setMissing(Boolean(target) && found === null);
+		if (!mounted.current || request !== refreshId.current || targetRef.current !== target) return;
+		setSnapshot({ target, selected: found, missing: Boolean(target) && found === null });
 	}, [target]);
 
 	useEffect(() => {
+		mounted.current = true;
 		let alive = true;
 		const onFocus = (): void => void refresh();
 		onFocus(); // initial load (kept off the effect's sync path — refresh setStates after an await)
@@ -56,6 +70,8 @@ export default function MonitorSwitchHost({
 		}, REFRESH_MS);
 		return () => {
 			alive = false;
+			mounted.current = false;
+			refreshId.current += 1;
 			window.removeEventListener('focus', onFocus);
 			window.clearInterval(timer);
 		};
@@ -63,21 +79,34 @@ export default function MonitorSwitchHost({
 
 	const pick = useCallback(
 		async (value: number): Promise<void> => {
-			const gdi = selected?.gdi ?? target;
-			if (!gdi) return;
+			const gdi = selected?.gdi;
+			if (busy.current || !gdi) return;
+			busy.current = true;
+			refreshId.current += 1;
 			setBusyValue(value);
-			setSelected((s) => (s ? { ...s, current_input: value } : s)); // optimistic highlight
-			const ok = await setMonitorInput(gdi, value);
-			setBusyValue(null);
-			await refresh(); // reconcile with the input the monitor actually reports (snaps back on failure)
-			if (!ok) console.warn('monitor input switch failed; reverted to the reported input');
+			setSnapshot((current) =>
+				current?.target === target && current.selected
+					? { ...current, selected: { ...current.selected, current_input: value } }
+					: current
+			); // optimistic highlight
+			try {
+				const ok = await setMonitorInput(gdi, value);
+				if (targetRef.current === target) {
+					await refresh(); // reconcile with what the monitor actually reports (snaps back on failure)
+				}
+				if (!ok) console.warn('monitor input switch failed; reverted to the reported input');
+			} finally {
+				busy.current = false;
+				if (mounted.current) setBusyValue(null);
+			}
 		},
 		[selected, target, refresh]
 	);
 
 	const current = showCurrent ? (selected?.current_input ?? null) : null;
 	const rows = useMemo(
-		() => monitorInputRows({ discovered: selected?.supported ?? [], spec: sources, current }),
+		() =>
+			selected ? monitorInputRows({ discovered: selected.supported, spec: sources, current }) : [],
 		[selected, sources, current]
 	);
 	const title = label?.trim() || selected?.friendly || 'Monitor';
@@ -97,6 +126,8 @@ export default function MonitorSwitchHost({
 			showStats={showStats}
 			busyValue={busyValue}
 			missing={missing}
+			loading={loading}
+			unavailable={!loading && !missing && selected === null}
 			compact={compact}
 			onPick={pick}
 			color={color}

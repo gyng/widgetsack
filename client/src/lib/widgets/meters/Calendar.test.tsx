@@ -12,6 +12,9 @@ afterEach(() => {
 describe('Calendar meter', () => {
 	it('renders a 7-column weekday header and highlights today by default', () => {
 		const { container } = render(<Calendar />);
+		const grid = container.querySelector('.cal-grid');
+		expect(grid?.getAttribute('role')).toBe('grid');
+		expect(grid?.getAttribute('aria-label')).toMatch(/\w+ \d{4}/);
 		expect(container.querySelectorAll('.cal-head .cal-wd')).toHaveLength(7);
 		expect(container.querySelectorAll('.cal-today')).toHaveLength(1); // today is in the month grid
 		const rows = container.querySelectorAll('.cal-row:not(.cal-head)');
