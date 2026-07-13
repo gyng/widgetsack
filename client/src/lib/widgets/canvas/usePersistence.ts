@@ -20,11 +20,35 @@ type PersistView = {
 	library: Library | undefined;
 	selectedTheme: string;
 	themeLock: boolean;
+	globalTheme: string | undefined;
 	tokenOverrides: Record<string, string>;
 	editingDefId: string | null;
 	savedMonitor: MonitorLayout | null;
+	savedBaseline: Baseline | null;
 	studio: boolean;
 };
+
+type GlobalField = 'library' | 'theme' | 'themeLock' | 'tokens';
+
+const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+function touchedGlobals(
+	current: Pick<PersistView, 'selectedTheme' | 'themeLock' | 'tokenOverrides'> & {
+		library: Library | undefined;
+	},
+	baseline: Baseline | null
+): GlobalField[] {
+	if (!baseline) return ['library', 'theme', 'themeLock', 'tokens'];
+	const touched: GlobalField[] = [];
+	if (!sameJson(current.library, baseline.library)) touched.push('library');
+	if (current.themeLock !== baseline.themeLock) {
+		touched.push('theme', 'themeLock');
+	} else if (current.themeLock && current.selectedTheme !== baseline.theme) {
+		touched.push('theme');
+	}
+	if (!sameJson(current.tokenOverrides, baseline.tokens)) touched.push('tokens');
+	return touched;
+}
 
 export type Persistence = {
 	// Flush the debounced preview write now (Save): writes incl. queued cross-monitor moves. Resolves
@@ -47,9 +71,11 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 		library: state.library,
 		selectedTheme: state.selectedTheme,
 		themeLock: state.themeLock,
+		globalTheme: state.globalTheme,
 		tokenOverrides: state.tokenOverrides,
 		editingDefId: state.editingDefId,
 		savedMonitor: state.savedMonitor,
+		savedBaseline: state.savedBaseline,
 		studio: state.studio
 	});
 	// Refresh the mirror in a commit effect (not during render); the debounced writer + Save read
@@ -61,9 +87,11 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 			library: state.library,
 			selectedTheme: state.selectedTheme,
 			themeLock: state.themeLock,
+			globalTheme: state.globalTheme,
 			tokenOverrides: state.tokenOverrides,
 			editingDefId: state.editingDefId,
 			savedMonitor: state.savedMonitor,
+			savedBaseline: state.savedBaseline,
 			studio: state.studio
 		};
 	});
@@ -83,8 +111,9 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 			monitors = (obj ? parseLayoutAny(obj) : null)?.monitors ?? {};
 			fileLib = obj?.library as Library | undefined;
 			fileTheme = typeof obj?.theme === 'string' ? (obj.theme as string) : undefined;
-		} catch {
-			monitors = {};
+		} catch (err) {
+			console.warn('load_layout failed; refusing to overwrite widgets.json', err);
+			return false;
 		}
 		// While editing a def, fold the in-progress def back into the library + persist the REAL
 		// monitor (not the scoped editing tree). (Svelte's syncEditingDef() + savedMonitor swap.)
@@ -113,18 +142,27 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 			// pending extra leaf, instead of being rebuilt away.
 			monitors[extra.key] = { ...t, floating: [...(t.floating ?? []), extra.leaf] };
 		}
-		const lib = library ?? fileLib;
+		const globalFields = touchedGlobals({ ...v, library }, v.savedBaseline);
 		const tokens = v.tokenOverrides;
 		const out: Record<string, unknown> = { version: 2, monitors };
-		if (lib) out.library = lib;
+		if (library !== undefined) out.library = library;
+		else if (!globalFields.includes('library') && fileLib) out.library = fileLib;
 		// LOCKED → the selection IS the global theme (every monitor uses it). UNLOCKED → preserve the
 		// existing global as the inherit-default (the per-monitor override rides on the record above).
-		const globalTheme = v.themeLock ? v.selectedTheme || fileTheme : fileTheme;
+		const globalTheme = globalFields.includes('theme')
+			? v.themeLock
+				? v.selectedTheme
+				: fileTheme
+			: fileTheme;
 		if (globalTheme) out.theme = globalTheme;
 		if (!v.themeLock) out.themeLock = false; // absent ⇒ locked (the default), so only write when off
 		if (tokens && Object.keys(tokens).length) out.tokens = tokens;
 		try {
-			await invoke(COMMANDS.saveLayout, { contents: JSON.stringify(out, null, 2) });
+			await invoke(COMMANDS.saveLayout, {
+				contents: JSON.stringify(out, null, 2),
+				touchedMonitors: [...new Set([v.myMonitor, ...extras.map((extra) => extra.key)])],
+				touchedGlobals: globalFields
+			});
 			return true;
 		} catch (err) {
 			console.warn('save_layout failed', err);
@@ -136,6 +174,7 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 	// library/theme/tokens with the baseline's values for THIS monitor. Mirrors persistToDisk but
 	// sources the editor values from `b` (and the baseline is never mid-def, so no def fold).
 	const writeBaseline = useCallback(async (b: Baseline, myMonitor: string): Promise<boolean> => {
+		const v = view.current;
 		let monitors: LayoutV2['monitors'] = {};
 		let fileLib: Library | undefined;
 		let fileTheme: string | undefined;
@@ -145,22 +184,32 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 			monitors = (obj ? parseLayoutAny(obj) : null)?.monitors ?? {};
 			fileLib = obj?.library as Library | undefined;
 			fileTheme = typeof obj?.theme === 'string' ? (obj.theme as string) : undefined;
-		} catch {
-			monitors = {};
+		} catch (err) {
+			console.warn('load_layout failed; refusing to overwrite widgets.json', err);
+			return false;
 		}
 		const baseNoTheme: MonitorLayout = { ...b.monitor };
 		delete baseNoTheme.theme;
 		monitors[myMonitor] = b.themeLock ? baseNoTheme : { ...baseNoTheme, theme: b.theme };
-		const lib = b.library ?? fileLib;
-		const globalTheme = b.themeLock ? b.theme || fileTheme : fileTheme;
+		const globalFields = touchedGlobals(v, b);
+		const globalTheme = globalFields.includes('theme')
+			? b.themeLock
+				? b.theme
+				: (b.globalTheme ?? fileTheme)
+			: fileTheme;
 		const tokens = b.tokens;
 		const out: Record<string, unknown> = { version: 2, monitors };
-		if (lib) out.library = lib;
+		if (b.library !== undefined) out.library = b.library;
+		else if (!globalFields.includes('library') && fileLib) out.library = fileLib;
 		if (globalTheme) out.theme = globalTheme;
 		if (!b.themeLock) out.themeLock = false; // absent ⇒ locked (the default)
 		if (tokens && Object.keys(tokens).length) out.tokens = tokens;
 		try {
-			await invoke(COMMANDS.saveLayout, { contents: JSON.stringify(out, null, 2) });
+			await invoke(COMMANDS.saveLayout, {
+				contents: JSON.stringify(out, null, 2),
+				touchedMonitors: [myMonitor],
+				touchedGlobals: globalFields
+			});
 			return true;
 		} catch (err) {
 			console.warn('save_layout failed', err);

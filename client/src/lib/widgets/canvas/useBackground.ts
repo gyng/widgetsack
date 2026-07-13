@@ -23,7 +23,7 @@ export type Background = {
 	resolveWallpaper: (name: string) => string;
 	/** The wallpapers/ folder contents (the Background section's image/video picker). */
 	wallpaperFiles: string[];
-	refreshWallpapers: () => void;
+	refreshWallpapers: () => Promise<void>;
 	patchBg: (patch: Partial<BackgroundSpec>) => void;
 	setBgKind: (kind: BackgroundKind) => void;
 	clearBg: () => void;
@@ -53,11 +53,11 @@ export function useBackground({ studio, navSection, monitor, handleOp }: Deps): 
 	// The wallpapers/ folder contents (the Background section's image/video picker). Refreshed when
 	// the section opens — so a file dropped into the folder appears after a re-open or ↻.
 	const [wallpaperFiles, setWallpaperFiles] = useState<string[]>([]);
-	const refreshWallpapers = useCallback(() => {
-		listWallpapers().then(setWallpaperFiles);
+	const refreshWallpapers = useCallback(async () => {
+		setWallpaperFiles(await listWallpapers());
 	}, []);
 	useEffect(() => {
-		if (studio && navSection === 'background') refreshWallpapers();
+		if (studio && navSection === 'background') void refreshWallpapers();
 	}, [studio, navSection, refreshWallpapers]);
 	// Merge a patch into the current background spec (creating a default 'color' base if none yet),
 	// or switch kind (which resets `src`, since a colour, a filename and a URL aren't interchangeable).

@@ -102,13 +102,9 @@ fn mqtt_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
 
 pub fn load_mqtt_config<R: Runtime>(app: &AppHandle<R>) -> Result<Option<MqttConfig>, String> {
     let path = mqtt_config_path(app)?;
-    match std::fs::read_to_string(&path) {
-        Ok(txt) => serde_json::from_str(&txt)
-            .map(Some)
-            .map_err(|e| e.to_string()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err.to_string()),
-    }
+    crate::secure_config::read(&path)?
+        .map(|txt| serde_json::from_str(&txt).map_err(|e| e.to_string()))
+        .transpose()
 }
 
 // ---- pure seams (unit-tested, no I/O) ----
@@ -376,7 +372,7 @@ pub async fn save_mqtt_config(
         discovery,
     };
     let txt = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
-    std::fs::write(&path, txt).map_err(|e| e.to_string())
+    crate::secure_config::write(&path, &txt)
 }
 
 /// The non-secret config (everything except the password).

@@ -139,12 +139,16 @@ describe('DesignerListPanel template groups', () => {
 	it('labels a plugin template group "Templates · <group>" (built-ins stay plain "Templates")', () => {
 		// A plugin package contributes its own group; the built-in group keeps the unqualified header.
 		registerTemplates('My Pack', [{ ...TEMPLATES[1], id: 'pack-system', name: 'Pack System' }]);
+		let unmount: () => void = () => undefined;
 		try {
-			const { getByText } = render(<DesignerListPanel {...baseProps()} />);
+			const view = render(<DesignerListPanel {...baseProps()} />);
+			unmount = view.unmount;
+			const { getByText } = view;
 			expect(getByText('Templates')).toBeTruthy();
 			expect(getByText('Templates · My Pack')).toBeTruthy();
 			expect(getByText('Pack System')).toBeTruthy();
 		} finally {
+			unmount();
 			unregisterTemplates('My Pack');
 		}
 	});
@@ -170,12 +174,14 @@ describe('DesignerListPanel header actions', () => {
 	});
 
 	it('alerts a failure (and does not claim success) when the copy fails', async () => {
+		const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 		vi.mocked(copyToClipboard).mockResolvedValueOnce(false);
 		const { getByText } = render(<DesignerListPanel {...baseProps()} />);
 		fireEvent.click(getByText('⧉ Copy widget reference'));
 		await waitFor(() =>
 			expect(alertSpy).toHaveBeenCalledWith(expect.stringMatching(/Copy failed/i))
 		);
+		expect(log).toHaveBeenCalledOnce();
 	});
 });
 

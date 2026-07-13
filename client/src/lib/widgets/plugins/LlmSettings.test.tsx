@@ -703,14 +703,18 @@ describe('LlmSettings', () => {
 			const { container, getByText, queryByText } = renderPanel();
 			await act(async () => {}); // flush the status prefill (saved key → canSubmit)
 			expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1');
-			fireEvent.click(button(container, 'Save'));
-			await act(async () => {}); // flush the save → status-refresh chain
+			await act(async () => {
+				fireEvent.click(button(container, 'Save'));
+				await Promise.resolve();
+				await Promise.resolve();
+			});
 			expect(getByText('Saved ✓')).toBeTruthy();
-			act(() => {
-				vi.advanceTimersByTime(2500);
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(2500);
 			});
 			expect(queryByText('Saved ✓')).toBeNull();
 		} finally {
+			vi.clearAllTimers();
 			vi.useRealTimers();
 		}
 	});

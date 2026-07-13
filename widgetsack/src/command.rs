@@ -6,6 +6,10 @@ use notify::Watcher;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
+/// Serializes widgets.json read/merge/write transactions across every webview in this process.
+#[derive(Default)]
+pub struct LayoutIoState(tokio::sync::Mutex<()>);
+
 use crate::bridge::{CONTROLS_CHANGED_EVENT, LAYOUT_CHANGED_EVENT, THEMES_CHANGED_EVENT};
 use crate::{AppState, SessionRecord, log};
 
@@ -65,14 +69,100 @@ pub async fn load_layout(app: tauri::AppHandle) -> Result<Option<String>, String
     }
 }
 
-/// Write the layout file, creating the config directory if needed.
+/// Merge the monitor records changed by one editor transaction into the latest widgets.json value.
+/// Unknown top-level fields are preserved for forward compatibility; the frontend-owned global fields
+/// are replaced (or removed when omitted) from the incoming document.
+fn merge_layout_contents(
+    mut current: serde_json::Value,
+    incoming: serde_json::Value,
+    touched_monitors: &[String],
+    touched_globals: &[String],
+) -> Result<serde_json::Value, String> {
+    let current_obj = current
+        .as_object_mut()
+        .ok_or_else(|| "saved layout is not a JSON object".to_string())?;
+    let incoming_obj = incoming
+        .as_object()
+        .ok_or_else(|| "incoming layout is not a JSON object".to_string())?;
+    let incoming_monitors = incoming_obj
+        .get("monitors")
+        .and_then(|v| v.as_object())
+        .ok_or_else(|| "incoming layout has no monitors object".to_string())?;
+    let current_monitors = current_obj
+        .entry("monitors")
+        .or_insert_with(|| serde_json::json!({}))
+        .as_object_mut()
+        .ok_or_else(|| "saved layout monitors is not a JSON object".to_string())?;
+
+    for key in touched_monitors {
+        if let Some(value) = incoming_monitors.get(key) {
+            current_monitors.insert(key.clone(), value.clone());
+        } else {
+            current_monitors.remove(key);
+        }
+    }
+
+    if let Some(version) = incoming_obj.get("version") {
+        current_obj.insert("version".into(), version.clone());
+    }
+    for key in touched_globals {
+        if !matches!(key.as_str(), "library" | "theme" | "themeLock" | "tokens") {
+            return Err(format!("unknown touched global field: {key}"));
+        }
+        if let Some(value) = incoming_obj.get(key) {
+            current_obj.insert(key.clone(), value.clone());
+        } else {
+            // These fields are omission-sensitive: absent means reset to the frontend default.
+            current_obj.remove(key);
+        }
+    }
+    Ok(current)
+}
+
+/// Write the layout file, creating the config directory if needed. Editor writes identify the monitor
+/// records they changed; the backend merges those records under one lock and atomically replaces the
+/// file, so concurrent webviews cannot clobber unrelated monitors. A full-document caller (legacy-key
+/// migration) omits `touched_monitors` and replaces the document atomically.
 #[tauri::command]
-pub async fn save_layout(app: tauri::AppHandle, contents: String) -> Result<(), String> {
+pub async fn save_layout(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LayoutIoState>,
+    contents: String,
+    touched_monitors: Option<Vec<String>>,
+    touched_globals: Option<Vec<String>>,
+) -> Result<(), String> {
+    let _guard = state.0.lock().await;
     let path = layout_path(&app)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::write(&path, contents).map_err(|e| e.to_string())
+    let incoming: serde_json::Value = serde_json::from_str(&contents)
+        .map_err(|e| format!("incoming layout is invalid JSON: {e}"))?;
+    let output = if let Some(touched) = touched_monitors {
+        match fs::read_to_string(&path) {
+            Ok(raw) => {
+                let current = serde_json::from_str(&raw).map_err(|e| {
+                    format!("saved layout is invalid JSON; refusing overwrite: {e}")
+                })?;
+                merge_layout_contents(
+                    current,
+                    incoming,
+                    &touched,
+                    touched_globals.as_deref().unwrap_or_default(),
+                )?
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => incoming,
+            Err(err) => {
+                return Err(format!(
+                    "failed to read saved layout; refusing overwrite: {err}"
+                ));
+            }
+        }
+    } else {
+        incoming
+    };
+    let rendered = serde_json::to_string_pretty(&output).map_err(|e| e.to_string())?;
+    atomic_write(&path, &rendered)
 }
 
 /// Filename prefix for layout backups taken on parse failure (`widgets.json.bad-<epoch-ms>`).
@@ -154,7 +244,7 @@ pub async fn save_controls(app: tauri::AppHandle, contents: String) -> Result<()
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    fs::write(&path, contents).map_err(|e| e.to_string())
+    atomic_write(&path, &contents)
 }
 
 /// Open the webview devtools/inspector for the calling window (CSS development from the studio's
@@ -354,21 +444,48 @@ fn themes_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// sees a truncated/partial file. The temp name keeps the original and appends `.tmp`, so its
 /// extension is `tmp` (not `css`/`json`) and the directory watchers, which filter by extension,
 /// ignore it. Best-effort cleanup of the temp file on failure.
-fn atomic_write(path: &Path, contents: &str) -> Result<(), String> {
+pub(crate) fn atomic_write(path: &Path, contents: &str) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_TEMP: AtomicU64 = AtomicU64::new(0);
     let file_name = path
         .file_name()
         .and_then(|s| s.to_str())
         .ok_or_else(|| "write path has no file name".to_string())?;
     let mut tmp = path.to_path_buf();
-    tmp.set_file_name(format!("{file_name}.tmp"));
+    let seq = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+    tmp.set_file_name(format!("{file_name}.tmp-{}-{seq}", std::process::id()));
     if let Err(err) = fs::write(&tmp, contents) {
         let _ = fs::remove_file(&tmp);
         return Err(err.to_string());
     }
-    fs::rename(&tmp, path).map_err(|e| {
+    replace_file(&tmp, path).inspect_err(|_| {
         let _ = fs::remove_file(&tmp);
-        e.to_string()
     })
+}
+
+#[cfg(not(windows))]
+fn replace_file(from: &Path, to: &Path) -> Result<(), String> {
+    fs::rename(from, to).map_err(|e| e.to_string())
+}
+
+#[cfg(windows)]
+fn replace_file(from: &Path, to: &Path) -> Result<(), String> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Storage::FileSystem::{
+        MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
+    };
+    use windows::core::PCWSTR;
+
+    let from_wide: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
+    let to_wide: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
+    unsafe {
+        MoveFileExW(
+            PCWSTR(from_wide.as_ptr()),
+            PCWSTR(to_wide.as_ptr()),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    }
+    .map_err(|e| e.to_string())
 }
 
 /// The theme names (file stems of `themes/*.css`), sorted. The frontend adds a synthetic
@@ -583,7 +700,7 @@ pub fn write_sack(app: tauri::AppHandle, name: String, contents: String) -> Resu
     let dir = sacks_dir(&app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{name}.sack.json"));
-    fs::write(&path, contents).map_err(|e| e.to_string())?;
+    atomic_write(&path, &contents)?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -643,7 +760,7 @@ pub fn save_layout_as(
     let dir = layouts_dir(&app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{name}.layout.json"));
-    fs::write(&path, contents).map_err(|e| e.to_string())?;
+    atomic_write(&path, &contents)?;
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -890,6 +1007,7 @@ fn manifest_url_from_sidecar(source: &str, reff: &str) -> Option<String> {
 /// A 10s-timeout https client for the (small) manifest/asset fetches.
 fn install_http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
         .timeout(std::time::Duration::from_secs(10))
         .build()
         .map_err(|e| e.to_string())
@@ -1003,14 +1121,109 @@ pub struct InstalledPackage {
     pub version: String,
 }
 
-/// Install (or re-install — that IS the update path) a package from `source` (see
-/// `resolve_package_source` for the accepted forms). Fetches the manifest, minimally reads
-/// `id`/`version`/`theme.file` (full validation stays in the frontend), fetches every declared
-/// asset, and only THEN writes — a failed download never leaves a half-installed directory.
+fn plugin_install_lock() -> &'static tokio::sync::Mutex<()> {
+    static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
+    LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+
+fn package_sibling_path(root: &Path, id: &str, kind: &str) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static NEXT_DIR: AtomicU64 = AtomicU64::new(0);
+    let seq = NEXT_DIR.fetch_add(1, Ordering::Relaxed);
+    root.join(format!(".{id}.{kind}-{}-{seq}", std::process::id()))
+}
+
+/// Build a complete package in an invisible sibling directory, then swap it into place. The target
+/// remains byte-for-byte untouched if any staged write fails; updates also remove stale old assets.
+fn install_package_directory_with(
+    root: &Path,
+    id: &str,
+    manifest: &str,
+    assets: &[(String, String)],
+    sidecar: &str,
+    replace: bool,
+    mut write_file: impl FnMut(&Path, &str) -> Result<(), String>,
+) -> Result<(), String> {
+    fs::create_dir_all(root).map_err(|e| e.to_string())?;
+    let target = root.join(id);
+    if target.exists() != replace {
+        return Err(if replace {
+            format!("package \"{id}\" is no longer installed")
+        } else {
+            format!("package id \"{id}\" is already installed")
+        });
+    }
+
+    let stage = package_sibling_path(root, id, "stage");
+    fs::create_dir(&stage).map_err(|e| e.to_string())?;
+    let staged = (|| {
+        write_file(&stage.join("plugin.json"), manifest)?;
+        for (name, body) in assets {
+            write_file(&stage.join(name), body)?;
+        }
+        write_file(&stage.join(INSTALL_SIDECAR), sidecar)
+    })();
+    if let Err(err) = staged {
+        let _ = fs::remove_dir_all(&stage);
+        return Err(err);
+    }
+
+    if !replace {
+        return fs::rename(&stage, &target).map_err(|err| {
+            let _ = fs::remove_dir_all(&stage);
+            err.to_string()
+        });
+    }
+
+    let backup = package_sibling_path(root, id, "backup");
+    fs::rename(&target, &backup).map_err(|err| {
+        let _ = fs::remove_dir_all(&stage);
+        err.to_string()
+    })?;
+    if let Err(err) = fs::rename(&stage, &target) {
+        let rollback = fs::rename(&backup, &target);
+        let _ = fs::remove_dir_all(&stage);
+        return match rollback {
+            Ok(()) => Err(err.to_string()),
+            Err(rollback_err) => Err(format!(
+                "package swap failed ({err}); rollback also failed ({rollback_err})"
+            )),
+        };
+    }
+    if let Err(err) = fs::remove_dir_all(&backup) {
+        eprintln!("installed package {id}, but failed to remove its backup: {err}");
+    }
+    Ok(())
+}
+
+fn install_package_directory(
+    root: &Path,
+    id: &str,
+    manifest: &str,
+    assets: &[(String, String)],
+    sidecar: &str,
+    replace: bool,
+) -> Result<(), String> {
+    install_package_directory_with(
+        root,
+        id,
+        manifest,
+        assets,
+        sidecar,
+        replace,
+        |path, body| fs::write(path, body).map_err(|e| e.to_string()),
+    )
+}
+
+/// Install a package from `source` (see `resolve_package_source` for accepted forms). `replace_id`
+/// is required for an update and must match the downloaded manifest; without it, an existing id is
+/// never overwritten. All declared assets are fetched before a complete staged directory is swapped
+/// into place, so download/write failures cannot leave a half-installed package.
 #[tauri::command]
 pub async fn install_plugin_package(
     app: tauri::AppHandle,
     source: String,
+    replace_id: Option<String>,
 ) -> Result<InstalledPackage, String> {
     let resolved = resolve_package_source(&source).ok_or_else(|| {
         "unrecognized source — use owner/repo, a github.com repo URL, or an https URL ending in /plugin.json"
@@ -1027,6 +1240,13 @@ pub async fn install_plugin_package(
         .to_string();
     if !valid_name(&id) {
         return Err("manifest \"id\" is missing or not a safe folder name".to_string());
+    }
+    if let Some(expected) = &replace_id
+        && (!valid_name(expected) || expected != &id)
+    {
+        return Err(format!(
+            "update expected package id \"{expected}\", but manifest declares \"{id}\""
+        ));
     }
     let version = json
         .get("version")
@@ -1050,12 +1270,6 @@ pub async fn install_plugin_package(
             assets.push((file.to_string(), body));
         }
     }
-    let dir = plugins_dir(&app)?.join(&id);
-    fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    atomic_write(&dir.join("plugin.json"), &manifest_text)?;
-    for (name, body) in &assets {
-        atomic_write(&dir.join(name), body)?;
-    }
     let installed_at = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
@@ -1066,7 +1280,15 @@ pub async fn install_plugin_package(
         "version": version,
         "installedAt": installed_at,
     });
-    atomic_write(&dir.join(INSTALL_SIDECAR), &sidecar.to_string())?;
+    let _guard = plugin_install_lock().lock().await;
+    install_package_directory(
+        &plugins_dir(&app)?,
+        &id,
+        &manifest_text,
+        &assets,
+        &sidecar.to_string(),
+        replace_id.is_some(),
+    )?;
     Ok(InstalledPackage { id, version })
 }
 
@@ -1129,10 +1351,11 @@ pub async fn check_plugin_package_update(
 /// Delete `plugins/<id>/` (works for installed AND hand-dropped packages — it's just a dir
 /// delete). Ok even if it's already gone (idempotent, like the other deletes here).
 #[tauri::command]
-pub fn remove_plugin_package(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub async fn remove_plugin_package(app: tauri::AppHandle, id: String) -> Result<(), String> {
     if !valid_name(&id) {
         return Err("invalid package id".to_string());
     }
+    let _guard = plugin_install_lock().lock().await;
     match fs::remove_dir_all(plugins_dir(&app)?.join(&id)) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -1432,8 +1655,237 @@ pub fn watch_controls(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{client_log_level, stale_backups, truncate_chars, valid_name, version_is_newer};
+    use super::{
+        atomic_write, client_log_level, install_http_client, install_package_directory,
+        install_package_directory_with, merge_layout_contents, stale_backups, truncate_chars,
+        valid_name, version_is_newer,
+    };
     use crate::log::LogLevel;
+    use serde_json::json;
+
+    #[test]
+    fn layout_transaction_replaces_only_explicitly_touched_monitors_and_global_fields() {
+        let current = json!({
+            "version": 2,
+            "monitors": {
+                "a": { "root": { "id": "old-a" } },
+                "b": { "root": { "id": "keep-b" } }
+            },
+            "theme": "old",
+            "tokens": { "--old": "1" },
+            "future": { "preserve": true }
+        });
+        let incoming = json!({
+            "version": 2,
+            "monitors": {
+                "a": { "root": { "id": "new-a" } },
+                "b": { "root": { "id": "stale-b" } }
+            },
+            "themeLock": false
+        });
+        let merged = merge_layout_contents(
+            current,
+            incoming,
+            &["a".into()],
+            &["theme".into(), "themeLock".into(), "tokens".into()],
+        )
+        .unwrap();
+        assert_eq!(merged["monitors"]["a"]["root"]["id"], "new-a");
+        assert_eq!(merged["monitors"]["b"]["root"]["id"], "keep-b");
+        assert_eq!(merged["themeLock"], false);
+        assert!(merged.get("theme").is_none());
+        assert!(merged.get("tokens").is_none());
+        assert_eq!(merged["future"]["preserve"], true);
+    }
+
+    #[test]
+    fn layout_transaction_can_replace_multiple_monitors() {
+        let current = json!({
+            "version": 2,
+            "monitors": { "a": 1, "b": 2, "c": 3 }
+        });
+        let incoming = json!({
+            "version": 2,
+            "monitors": { "a": 10, "b": 20 }
+        });
+        let merged =
+            merge_layout_contents(current, incoming, &["a".into(), "b".into()], &[]).unwrap();
+        assert_eq!(merged["monitors"], json!({ "a": 10, "b": 20, "c": 3 }));
+    }
+
+    #[test]
+    fn layout_transaction_preserves_newer_globals_for_monitor_only_save() {
+        let current = json!({
+            "version": 2,
+            "monitors": { "a": { "root": { "id": "old-a" } } },
+            "library": { "version": 1, "defs": [{ "id": "new-library" }] },
+            "theme": "new-theme",
+            "themeLock": false,
+            "tokens": { "--new": "2" }
+        });
+        let stale_incoming = json!({
+            "version": 2,
+            "monitors": { "a": { "root": { "id": "new-a" } } },
+            "library": { "version": 1, "defs": [{ "id": "old-library" }] },
+            "theme": "old-theme",
+            "tokens": { "--old": "1" }
+        });
+
+        let merged = merge_layout_contents(current, stale_incoming, &["a".into()], &[]).unwrap();
+
+        assert_eq!(merged["monitors"]["a"]["root"]["id"], "new-a");
+        assert_eq!(merged["library"]["defs"][0]["id"], "new-library");
+        assert_eq!(merged["theme"], "new-theme");
+        assert_eq!(merged["themeLock"], false);
+        assert_eq!(merged["tokens"], json!({ "--new": "2" }));
+    }
+
+    #[test]
+    fn atomic_write_replaces_an_existing_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "widgetsack-atomic-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        std::fs::write(&path, "old").unwrap();
+
+        atomic_write(&path, "new").unwrap();
+
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    fn package_test_dir(label: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "widgetsack-package-{label}-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
+    }
+
+    #[test]
+    fn package_staging_failure_leaves_existing_install_unchanged() {
+        let root = package_test_dir("staging-failure");
+        let target = root.join("demo");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("plugin.json"), "old manifest").unwrap();
+        std::fs::write(target.join("old.css"), "old css").unwrap();
+        let mut writes = 0;
+
+        let result = install_package_directory_with(
+            &root,
+            "demo",
+            "new manifest",
+            &[("new.css".into(), "new css".into())],
+            "new sidecar",
+            true,
+            |path, body| {
+                writes += 1;
+                if writes == 2 {
+                    Err("simulated disk failure".into())
+                } else {
+                    std::fs::write(path, body).map_err(|e| e.to_string())
+                }
+            },
+        );
+
+        assert_eq!(result.unwrap_err(), "simulated disk failure");
+        assert_eq!(
+            std::fs::read_to_string(target.join("plugin.json")).unwrap(),
+            "old manifest"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("old.css")).unwrap(),
+            "old css"
+        );
+        assert!(!target.join("new.css").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn package_update_swaps_the_complete_directory_and_removes_stale_assets() {
+        let root = package_test_dir("swap");
+        let target = root.join("demo");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("plugin.json"), "old manifest").unwrap();
+        std::fs::write(target.join("stale.css"), "stale").unwrap();
+
+        install_package_directory(
+            &root,
+            "demo",
+            "new manifest",
+            &[("source.js".into(), "new source".into())],
+            "new sidecar",
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(
+            std::fs::read_to_string(target.join("plugin.json")).unwrap(),
+            "new manifest"
+        );
+        assert_eq!(
+            std::fs::read_to_string(target.join("source.js")).unwrap(),
+            "new source"
+        );
+        assert!(!target.join("stale.css").exists());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn fresh_package_install_refuses_an_existing_id() {
+        let root = package_test_dir("collision");
+        let target = root.join("demo");
+        std::fs::create_dir_all(&target).unwrap();
+        std::fs::write(target.join("plugin.json"), "keep me").unwrap();
+
+        let err =
+            install_package_directory(&root, "demo", "new", &[], "sidecar", false).unwrap_err();
+
+        assert!(err.contains("already installed"));
+        assert_eq!(
+            std::fs::read_to_string(target.join("plugin.json")).unwrap(),
+            "keep me"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn install_client_does_not_follow_redirects() {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0_u8; 1024];
+            let _ = stream.read(&mut request);
+            stream
+                .write_all(
+                    b"HTTP/1.1 302 Found\r\nLocation: http://127.0.0.1:9/private\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+
+        let response = install_http_client()
+            .unwrap()
+            .get(format!("http://{address}/plugin.json"))
+            .send()
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), reqwest::StatusCode::FOUND);
+        server.join().unwrap();
+    }
 
     #[test]
     fn truncate_chars_caps_at_chars_not_bytes() {

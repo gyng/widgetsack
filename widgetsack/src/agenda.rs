@@ -344,7 +344,7 @@ pub async fn save_agenda_config(
         poll_interval_secs: poll_seconds.clamp(MIN_INTERVAL, MAX_INTERVAL),
     };
     let txt = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
-    std::fs::write(&path, txt).map_err(|e| e.to_string())
+    crate::command::atomic_write(&path, &txt)
 }
 
 #[tauri::command]

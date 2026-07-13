@@ -28,6 +28,7 @@ vi.mock('../../overlay', () => ({ copyToClipboard: vi.fn(() => Promise.resolve(t
 import NowPlayingSettings from './NowPlayingSettings';
 import { defaultState, mediaStore, type SessionRecord } from '../../../stores/stores';
 import { copyToClipboard } from '../../overlay';
+import { getMediaCapabilities } from '../../components/NowPlaying/source';
 
 const session = (source: string, title: string): SessionRecord => ({
 	session_id: 1,
@@ -64,6 +65,9 @@ const session = (source: string, title: string): SessionRecord => ({
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	// Most tests do not exercise capabilities. Keep that effect pending so it cannot update after a
+	// synchronous assertion; the one capabilities test opts into a resolved result and awaits it.
+	vi.mocked(getMediaCapabilities).mockImplementation(() => new Promise(() => undefined));
 	mediaStore.set({
 		...defaultState,
 		sourcePriority: '',
@@ -74,6 +78,17 @@ beforeEach(() => {
 
 describe('NowPlayingSettings', () => {
 	it('renders the editable lists + the live bindable-sensor values', async () => {
+		vi.mocked(getMediaCapabilities).mockResolvedValue({
+			play: true,
+			pause: true,
+			playpause: true,
+			stop: false,
+			next: true,
+			previous: true,
+			shuffle: false,
+			repeat: false,
+			seek: true
+		});
 		const { container, getByText, findByText } = render(<NowPlayingSettings />);
 		expect(container.querySelectorAll('textarea').length).toBe(2); // priority + ignore
 		// np.* live values reflect the active (non-ignored) session.

@@ -338,6 +338,20 @@ describe('template registry (register / unregister / list / subscribe)', () => {
 		expect(listTemplateGroups().find((g) => g.group === PLUGIN_GROUP)?.templates).toEqual([sample]);
 	});
 
+	it('keeps groups with the same display label separate when their identities differ', () => {
+		const second = { ...sample, id: 'plugin-widget-2' };
+		registerTemplates('pkg:one', [sample], 'Shared Name');
+		registerTemplates('pkg:two', [second], 'Shared Name');
+
+		const shared = listTemplateGroups().filter((g) => g.group === 'Shared Name');
+		expect(shared.map((g) => g.templates[0]?.id)).toEqual(['plugin-widget', 'plugin-widget-2']);
+		unregisterTemplates('pkg:one');
+		expect(getTemplate('plugin-widget')).toBeUndefined();
+		expect(getTemplate('plugin-widget-2')).toBe(second);
+
+		unregisterTemplates('pkg:two');
+	});
+
 	it('getTemplate finds a template contributed by a registered group (loop continues past built-ins)', () => {
 		expect(getTemplate('plugin-widget')).toBeUndefined();
 		registerTemplates(PLUGIN_GROUP, [sample]);

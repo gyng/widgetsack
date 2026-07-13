@@ -166,7 +166,7 @@ fn write_control_file<R: Runtime>(app: &AppHandle<R>, url: &str, token: &str) {
         let _ = std::fs::create_dir_all(parent);
     }
     let body = json!({ "url": url, "token": token }).to_string();
-    let _ = std::fs::write(path, body);
+    let _ = crate::command::atomic_write(&path, &body);
 }
 
 fn remove_control_file<R: Runtime>(app: &AppHandle<R>) {

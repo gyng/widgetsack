@@ -42,6 +42,20 @@ vi.mock('../ddc/monitors', () => ({
 	setMonitorInput: vi.fn().mockResolvedValue(true)
 }));
 
+const originalConsoleError = console.error;
+let inspectorErrorSpy: ReturnType<typeof vi.spyOn>;
+beforeEach(() => {
+	// The Inspector wiring matrix mounts/unmounts the async monitor probe and external template
+	// registry dozens of times. Vitest can report their already-cancelled completion against the next
+	// test. Filter only that known act diagnostic; application errors remain visible.
+	inspectorErrorSpy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+		const text = args.map(String).join(' ');
+		if (text.includes('not wrapped in act') && text.includes('Inspector')) return;
+		originalConsoleError(...args);
+	});
+});
+afterEach(() => inspectorErrorSpy.mockRestore());
+
 const w = (over: Partial<WidgetInstance> = {}): WidgetInstance => ({
 	id: 'w1',
 	type: 'clock',
@@ -291,11 +305,13 @@ describe('Inspector add-palette open state', () => {
 				tree: () => leaf(w({ id: 'p', type: 'text' }))
 			}
 		]);
+		let unmount: () => void = () => undefined;
 		try {
-			render(<Inspector onOp={vi.fn()} />);
+			unmount = render(<Inspector onOp={vi.fn()} />).unmount;
 			expect(within(palette()).getByText('Templates · MyPlugin', { selector: '.hd' })).toBeTruthy();
 			expect(within(palette()).getByRole('button', { name: /^Plugin Widget/ })).toBeTruthy();
 		} finally {
+			unmount();
 			unregisterTemplates('MyPlugin');
 		}
 	});
@@ -737,6 +753,10 @@ describe('Inspector config-field reset (macro / monitorSources / toggle)', () =>
 				onOp={onOp}
 			/>
 		);
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
 		// With a non-empty spec the editor shows a (manual) row, not the empty-state placeholder —
 		// wait for the detect effect to settle on the row-count status before interacting.
 		await screen.findByText('1 input');
@@ -1035,12 +1055,14 @@ describe('Inspector template options form — unlabeled param', () => {
 				tree: () => leaf(w({ id: 'p', type: 'text' }))
 			}
 		]);
+		let unmount: () => void = () => undefined;
 		try {
-			render(<Inspector onOp={vi.fn()} />);
+			unmount = render(<Inspector onOp={vi.fn()} />).unmount;
 			// No `label` on the spec → the key names both the visible row and the select's aria-label.
 			expect(within(palette()).getByLabelText('Key Only — lang')).toBeTruthy();
 			expect(within(palette()).getByText('lang', { selector: 'label' })).toBeTruthy();
 		} finally {
+			unmount();
 			unregisterTemplates('KeyOnly');
 		}
 	});
@@ -1178,12 +1200,17 @@ describe('Inspector remaining branch wiring', () => {
 				onOp={vi.fn()}
 			/>
 		);
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
 		expect(within(panel()).getByText('macro help')).toBeTruthy();
 		expect(within(panel()).getByText('sources help')).toBeTruthy();
 		expect(within(panel()).getByText('toggle help')).toBeTruthy();
 		expect(within(panel()).getByText('text help')).toBeTruthy();
-		// Let the (mocked) monitor-inputs detect effect settle inside the test.
-		await screen.findByPlaceholderText('0x11=Desktop, 0x12=Switch');
+		// Let the (mocked) monitor-inputs detect effect settle inside the test. The placeholder exists
+		// before that promise resolves, so wait for the post-scan status instead.
+		await screen.findByText('0 inputs');
 	});
 
 	it('clears the sources spec to undefined when the last monitor input is unchecked', async () => {
@@ -1197,6 +1224,10 @@ describe('Inspector remaining branch wiring', () => {
 				onOp={onOp}
 			/>
 		);
+		await act(async () => {
+			await Promise.resolve();
+			await Promise.resolve();
+		});
 		// The manual 0x11 entry appears as one checked row once detection resolves; unchecking it
 		// empties the spec, which the Inspector stores as undefined.
 		await screen.findByText('1 input');

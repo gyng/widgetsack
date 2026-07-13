@@ -17,7 +17,7 @@ export const npSource: SensorSource = {
 		// Make sure the media feed is flowing into mediaStore (idempotent), then mirror the active
 		// session into the hub on every change. Re-derives selection the same way the widget does
 		// (ignore filter + priority sort) so the sensors track exactly what's shown.
-		startMediaSource();
+		await startMediaSource();
 		const push = () => {
 			const s = mediaStore.getSnapshot();
 			const active = sortSessionsByPriority(

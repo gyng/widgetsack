@@ -24,24 +24,30 @@ export const sortSessionsByPriority = (
 	currentSessions: Record<number, SessionRecord>,
 	sourcePriority: string
 ) => {
-	const orderedMedia = Object.values(currentSessions)
-		.sort(
-			(a, b) =>
-				(b?.timestamp_updated?.secs_since_epoch ?? 0) -
-				(a?.timestamp_updated?.secs_since_epoch ?? 0)
-		)
-		.sort((a, b) => {
-			let aPriority = sourcePriority.indexOf(a?.source?.toLowerCase() ?? '_____FIXME_____');
-			let bPriority = sourcePriority.indexOf(b?.source?.toLowerCase() ?? '_____FIXME_____');
+	const rank = new Map(
+		sourcePriority
+			.split('\n')
+			.map((source) => source.trim().toLowerCase())
+			.filter(Boolean)
+			.map((source, index) => [source, index])
+	);
+	const priorityOf = (session: SessionRecord): number =>
+		rank.get(session.source?.toLowerCase() ?? '') ?? Number.MAX_SAFE_INTEGER;
+	const playingOf = (session: SessionRecord): number =>
+		session.last_model_update?.Model?.playback?.status === 'Playing' ? 0 : 1;
 
-			aPriority = aPriority === -1 ? Number.MAX_VALUE : aPriority;
-			bPriority = bPriority === -1 ? Number.MAX_VALUE : bPriority;
-
-			return aPriority - bPriority;
-		})
-		.sort((_, b) => (b.last_model_update?.Model?.playback?.status === 'Playing' ? 1 : -1));
-
-	return orderedMedia;
+	return Object.values(currentSessions).sort((a, b) => {
+		const playing = playingOf(a) - playingOf(b);
+		if (playing !== 0) return playing;
+		const priority = priorityOf(a) - priorityOf(b);
+		if (priority !== 0) return priority;
+		const aTime = a.timestamp_updated;
+		const bTime = b.timestamp_updated;
+		const seconds = (bTime?.secs_since_epoch ?? 0) - (aTime?.secs_since_epoch ?? 0);
+		if (seconds !== 0) return seconds;
+		const nanos = (bTime?.nanos_since_epoch ?? 0) - (aTime?.nanos_since_epoch ?? 0);
+		return nanos !== 0 ? nanos : a.session_id - b.session_id;
+	});
 };
 
 // Insert/replace a session record, evicting any OTHER tracked session that shares its (non-empty)

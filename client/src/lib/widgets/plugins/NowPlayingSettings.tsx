@@ -48,7 +48,7 @@ export default function NowPlayingSettings() {
 	// Ensure the media feed is running in this (studio) window so detected sources + live values
 	// populate even when no now-playing widget is on the studio's own layout. Idempotent.
 	useEffect(() => {
-		startMediaSource();
+		void startMediaSource();
 	}, []);
 
 	const state = useStore(mediaStore);

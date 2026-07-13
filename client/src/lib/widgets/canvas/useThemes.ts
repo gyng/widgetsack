@@ -39,7 +39,7 @@ export type Themes = {
 	/** Make `name` the live theme WITHOUT dispatching: sync the ref + swap the CSS (load/import). */
 	adoptTheme: (name: string) => Promise<void>;
 	/** User picked a theme: dispatch + apply CSS + commit (a history no-op that triggers a write). */
-	setTheme: (name: string) => void;
+	setTheme: (name: string) => Promise<void>;
 	// The theme-editor dialog (a real focus-managed dialog).
 	themeEditorOpen: boolean;
 	setThemeEditorOpen: (open: boolean) => void;
@@ -88,10 +88,10 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 	}, []);
 
 	const setTheme = useCallback(
-		(name: string) => {
+		async (name: string) => {
 			dispatch({ type: 'setTheme', name });
 			themeRef.current = name;
-			resolveThemeCss(name).then(setThemeCss);
+			setThemeCss(await resolveThemeCss(name));
 			// saveLayout(): theme-only change → commit (history no-op, triggers a write).
 			commitOp(() => ({}));
 		},

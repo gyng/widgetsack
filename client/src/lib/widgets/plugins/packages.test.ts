@@ -11,19 +11,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // can make the remote (throwing) commands resolve or reject per test.
 type PkgFile = { id: string; manifest: string; install: string | null };
 let listFiles: PkgFile[] = [];
+let listImpl: () => Promise<PkgFile[]>;
+let listCalls = 0;
 const assets = new Map<string, string>(); // keyed by `${id}/${name}`
 let installImpl: (source: string) => Promise<{ id: string; version: string }>;
 let checkImpl: (id: string) => Promise<{ current: string; latest: string; source: string }>;
 let removeImpl: (id: string) => Promise<void>;
 const installCalls: string[] = [];
+const replaceCalls: Array<string | undefined> = [];
 const removeCalls: string[] = [];
 
 vi.mock('./packages-commands', () => ({
-	listPluginPackages: () => Promise.resolve(listFiles),
+	listPluginPackages: () => {
+		listCalls += 1;
+		return listImpl();
+	},
 	readPluginPackageAsset: (id: string, name: string) =>
 		Promise.resolve(assets.get(`${id}/${name}`) ?? null),
-	installPluginPackage: (source: string) => {
+	installPluginPackage: (source: string, replaceId?: string) => {
 		installCalls.push(source);
+		replaceCalls.push(replaceId);
 		return installImpl(source);
 	},
 	checkPluginPackageUpdate: (id: string) => checkImpl(id),
@@ -114,8 +121,11 @@ const hub = createTelemetryHub();
 beforeEach(() => {
 	resetPackagesForTest();
 	listFiles = [];
+	listCalls = 0;
+	listImpl = () => Promise.resolve(listFiles);
 	assets.clear();
 	installCalls.length = 0;
+	replaceCalls.length = 0;
 	removeCalls.length = 0;
 	sourceStarts.length = 0;
 	sourceStops.length = 0;
@@ -155,6 +165,33 @@ describe('refreshPackages → packagesStore rows', () => {
 		expect(row.hosts).toEqual([]);
 		expect(row.installedFrom).toBeNull();
 		expect(row.installedVersion).toBeUndefined();
+	});
+
+	it('serializes overlapping refreshes so the final scan is the newest disk state', async () => {
+		let releaseFirst!: (files: PkgFile[]) => void;
+		const firstResult = new Promise<PkgFile[]>((resolve) => {
+			releaseFirst = resolve;
+		});
+		listImpl = () => (listCalls === 1 ? firstResult : Promise.resolve(listFiles));
+
+		const first = refreshPackages();
+		const second = refreshPackages();
+		await Promise.resolve(); // let the queue start its first scan
+		expect(listCalls).toBe(1);
+		setFiles([
+			{
+				id: 'pack-b',
+				manifest: manifestJson({ id: 'pack-b', name: 'Newest' }),
+				install: null
+			}
+		]);
+		releaseFirst([{ id: 'pack-a', manifest: manifestJson({ name: 'Stale' }), install: null }]);
+
+		await first;
+		await second;
+
+		expect(listCalls).toBe(2);
+		expect(packagesStore.getSnapshot().map((row) => row.id)).toEqual(['pack-b']);
 	});
 
 	it('rows an unparsed manifest as an error (folder id as name, no toggle metadata)', async () => {
@@ -282,6 +319,26 @@ describe('togglePackage — enabling a plain package', () => {
 
 		expect(enabledPackages.getSnapshot()).not.toContain('pack-a');
 		expect(listTemplateGroups().find((g) => g.group === 'Pack A')).toBeUndefined();
+	});
+
+	it('keeps two enabled packages with the same display name independently registered', async () => {
+		setFiles([
+			{ id: 'pack-a', manifest: manifestJson(), install: null },
+			{
+				id: 'pack-b',
+				manifest: manifestJson({ id: 'pack-b', name: 'Pack A', templates: [template('t2')] }),
+				install: null
+			}
+		]);
+		await refreshPackages();
+		await togglePackage('pack-a', true);
+		await togglePackage('pack-b', true);
+
+		let shared = listTemplateGroups().filter((g) => g.group === 'Pack A');
+		expect(shared.map((g) => g.templates[0]?.id)).toEqual(['pkg:pack-a:t1', 'pkg:pack-b:t2']);
+		await togglePackage('pack-a', false);
+		shared = listTemplateGroups().filter((g) => g.group === 'Pack A');
+		expect(shared.map((g) => g.templates[0]?.id)).toEqual(['pkg:pack-b:t2']);
 	});
 
 	it('does nothing for an unknown or unparsed package id', async () => {
@@ -604,6 +661,7 @@ describe('updatePackage', () => {
 
 		await updatePackage('pack-a');
 		expect(installCalls).toEqual(['https://github.com/owner/repo/tree/v2']);
+		expect(replaceCalls).toEqual(['pack-a']);
 	});
 
 	it('restores the old registration and returns an error when the re-install fails', async () => {
@@ -659,6 +717,46 @@ describe('updatePackage', () => {
 		await togglePackage('pack-a', false);
 		await togglePackage('pack-a', true, confirm);
 		expect(confirm).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not inherit CSS consent when an update changes a threat-flagged stylesheet', async () => {
+		const oldCss = 'body { background: url(https://old.example/pixel); }';
+		const newCss = 'body { background: url(https://new.example/pixel); }';
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({ theme: { name: 'T', file: 'theme.css' } }),
+				install: sidecarJson()
+			}
+		]);
+		assets.set('pack-a/theme.css', oldCss);
+		await initPackages(hub);
+		await togglePackage('pack-a', true, () => true);
+		expect(styleTagFor('pack-a')?.textContent).toBe(oldCss);
+
+		installImpl = () => {
+			assets.set('pack-a/theme.css', newCss);
+			setFiles([
+				{
+					id: 'pack-a',
+					manifest: manifestJson({
+						version: '2.0.0',
+						theme: { name: 'T', file: 'theme.css' }
+					}),
+					install: sidecarJson({ version: '2.0.0' })
+				}
+			]);
+			return Promise.resolve({ id: 'pack-a', version: '2.0.0' });
+		};
+
+		await updatePackage('pack-a');
+
+		expect(styleTagFor('pack-a')).toBeNull();
+		const confirm = vi.fn(() => true);
+		await togglePackage('pack-a', false);
+		await togglePackage('pack-a', true, confirm);
+		expect(confirm).toHaveBeenCalledTimes(1);
+		expect(styleTagFor('pack-a')?.textContent).toBe(newCss);
 	});
 });
 

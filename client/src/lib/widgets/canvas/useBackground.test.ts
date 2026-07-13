@@ -98,7 +98,7 @@ describe('useBackground', () => {
 		// refreshWallpapers re-reads the folder on demand.
 		listWallpapers.mockResolvedValue(['only.png']);
 		await act(async () => {
-			result.current.refreshWallpapers();
+			await result.current.refreshWallpapers();
 		});
 		await waitFor(() => expect(result.current.wallpaperFiles).toEqual(['only.png']));
 	});
@@ -116,10 +116,11 @@ describe('useBackground', () => {
 	});
 
 	it('patchBg merges into the existing spec via setBackground', () => {
+		wallpaperAssetUrl.mockReturnValue(new Promise(() => undefined));
 		const handleOp = vi.fn<(op: LayoutOp) => void>();
 		const m = monitor({ background: { kind: 'image', src: 'wall.png' } });
 		const { result } = renderHook(() =>
-			useBackground({ studio: true, navSection: 'background', monitor: m, handleOp })
+			useBackground({ studio: true, navSection: 'layouts', monitor: m, handleOp })
 		);
 		act(() => result.current.patchBg({ opacity: 0.5 }));
 		expect(handleOp).toHaveBeenCalledWith({
@@ -131,7 +132,7 @@ describe('useBackground', () => {
 	it('patchBg starts from a default color base when there is no background yet', () => {
 		const handleOp = vi.fn<(op: LayoutOp) => void>();
 		const { result } = renderHook(() =>
-			useBackground({ studio: true, navSection: 'background', monitor: monitor(), handleOp })
+			useBackground({ studio: true, navSection: 'layouts', monitor: monitor(), handleOp })
 		);
 		act(() => result.current.patchBg({ src: '#abc' }));
 		expect(handleOp).toHaveBeenCalledWith({
@@ -141,10 +142,11 @@ describe('useBackground', () => {
 	});
 
 	it('setBgKind keeps src when the kind is unchanged, else resets it', () => {
+		wallpaperAssetUrl.mockReturnValue(new Promise(() => undefined));
 		const handleOp = vi.fn<(op: LayoutOp) => void>();
 		const m = monitor({ background: { kind: 'image', src: 'wall.png' } });
 		const { result } = renderHook(() =>
-			useBackground({ studio: true, navSection: 'background', monitor: m, handleOp })
+			useBackground({ studio: true, navSection: 'layouts', monitor: m, handleOp })
 		);
 		act(() => result.current.setBgKind('image')); // same kind → keep src
 		expect(handleOp).toHaveBeenLastCalledWith({
@@ -161,7 +163,7 @@ describe('useBackground', () => {
 	it('clearBg dispatches setBackground with an undefined spec', () => {
 		const handleOp = vi.fn<(op: LayoutOp) => void>();
 		const { result } = renderHook(() =>
-			useBackground({ studio: true, navSection: 'background', monitor: monitor(), handleOp })
+			useBackground({ studio: true, navSection: 'layouts', monitor: monitor(), handleOp })
 		);
 		act(() => result.current.clearBg());
 		expect(handleOp).toHaveBeenCalledWith({ op: 'setBackground', spec: undefined });

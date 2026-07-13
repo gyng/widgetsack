@@ -185,7 +185,7 @@ export default function StudioSettingsPanel({
 							</span>
 							<select
 								value={theme.selected}
-								onChange={(e) => theme.setTheme(e.currentTarget.value)}
+								onChange={(e) => void theme.setTheme(e.currentTarget.value)}
 								aria-label={theme.lock ? 'Theme for all monitors' : 'Theme for this monitor'}
 							>
 								{theme.options.map((o) => (

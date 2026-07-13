@@ -36,7 +36,7 @@ beforeEach(() => {
 	isStudioWindow.mockReturnValue(false);
 });
 afterEach(() => {
-	vi.runOnlyPendingTimers();
+	vi.clearAllTimers();
 	vi.useRealTimers();
 	vi.clearAllMocks();
 });
@@ -48,7 +48,7 @@ describe('useAssistant', () => {
 		const { result } = renderHook(() => useAssistant(cfg()), { wrapper });
 
 		await act(async () => {
-			result.current.refresh();
+			await result.current.refresh();
 		});
 
 		expect(llmComplete).toHaveBeenCalledOnce();
@@ -74,7 +74,7 @@ describe('useAssistant', () => {
 			{ wrapper }
 		);
 		await act(async () => {
-			result.current.refresh();
+			await result.current.refresh();
 		});
 		const userMsg = (llmComplete.mock.calls[0]![0] as { role: string; content: string }[]).find(
 			(m) => m.role === 'user'
@@ -87,7 +87,7 @@ describe('useAssistant', () => {
 	it('speaks the result when speak is enabled', async () => {
 		const { result } = renderHook(() => useAssistant(cfg({ speak: true })), { wrapper });
 		await act(async () => {
-			result.current.refresh();
+			await result.current.refresh();
 		});
 		expect(speakSmart).toHaveBeenCalledWith('the briefing');
 	});
@@ -96,7 +96,7 @@ describe('useAssistant', () => {
 		llmComplete.mockRejectedValueOnce(new Error('rate limited'));
 		const { result } = renderHook(() => useAssistant(cfg()), { wrapper });
 		await act(async () => {
-			result.current.refresh();
+			await result.current.refresh();
 		});
 		expect(result.current.error).toContain('rate limited');
 		expect(result.current.busy).toBe(false);
@@ -133,6 +133,28 @@ describe('useAssistant', () => {
 		expect(llmComplete).toHaveBeenCalledTimes(2);
 	});
 
+	it('never overlaps slow provider calls and coalesces missed ticks into one trailing run', async () => {
+		let resolveFirst!: (value: string) => void;
+		llmComplete.mockImplementationOnce(
+			() => new Promise<string>((resolve) => (resolveFirst = resolve))
+		);
+		renderHook(() => useAssistant(cfg({ schedule: '1s' })), { wrapper });
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(3000);
+		});
+		expect(llmComplete).toHaveBeenCalledTimes(1);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(45_000);
+		});
+		expect(llmComplete).toHaveBeenCalledTimes(1);
+		await act(async () => {
+			resolveFirst('first');
+			await Promise.resolve();
+			await Promise.resolve();
+		});
+		expect(llmComplete).toHaveBeenCalledTimes(2);
+	});
+
 	it('unmounting before the first delay cancels the pending auto-generation', async () => {
 		// Cleanup clears the first-delay timeout and every interval (which is also why the tick's
 		// `!cancelled` guard can never observe cancelled=true — no timer survives to call it).
@@ -152,7 +174,7 @@ describe('useAssistant', () => {
 		});
 		expect(llmComplete).not.toHaveBeenCalled(); // no auto run
 		await act(async () => {
-			result.current.refresh(); // but manual refresh still works
+			await result.current.refresh(); // but manual refresh still works
 		});
 		expect(llmComplete).toHaveBeenCalledOnce();
 	});

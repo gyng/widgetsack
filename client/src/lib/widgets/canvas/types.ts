@@ -17,6 +17,8 @@ export type Baseline = {
 	library: Library | undefined;
 	theme: string;
 	themeLock: boolean;
+	/** Saved global inherit-theme, distinct from `theme` when per-monitor themes are unlocked. */
+	globalTheme?: string;
 	tokens: Record<string, string>;
 };
 
@@ -42,6 +44,8 @@ export type EditorState = {
 	// `theme` and every monitor uses it; when false the picker sets the CURRENT monitor's own theme
 	// (MonitorLayout.theme), so each display can differ. Toggled from studio Settings.
 	themeLock: boolean;
+	/** Last loaded global inherit-theme; `selectedTheme` may instead be this monitor's override. */
+	globalTheme?: string;
 	tokenOverrides: Record<string, string>;
 	// Def editor (6b): while editing a def, `monitor` is the scoped tree and the real monitor is
 	// stashed in `savedMonitor`. `defEditBaseline` is the scoped tree as of def-edit START, so the

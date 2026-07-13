@@ -681,6 +681,16 @@ fn net_link_samples(_ts: u64) -> Vec<SensorSample> {
 #[derive(Default)]
 pub struct ActiveSensors(pub Mutex<HashMap<String, HashSet<String>>>);
 
+/// Drop a destroyed window's demand record so its wildcard or concrete ids cannot keep expensive
+/// polling alive after the webview is gone.
+pub(crate) fn remove_active_window(state: &ActiveSensors, label: &str) {
+    state
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(label);
+}
+
 /// Record the set of sensor ids window `window.label()` is currently consuming.
 ///
 /// The frontend calls `invoke("set_active_sensors", { ids })` whenever its set of
@@ -1415,6 +1425,18 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    #[test]
+    fn destroyed_window_drops_its_sensor_demand() {
+        let state = ActiveSensors(Mutex::new(active(&[
+            ("studio", &["*"]),
+            ("overlay-1", &["gpu.util"]),
+        ])));
+        remove_active_window(&state, "studio");
+        let map = state.0.lock().unwrap();
+        assert!(!map.contains_key("studio"));
+        assert_eq!(map["overlay-1"], HashSet::from(["gpu.util".to_string()]));
     }
 
     #[test]

@@ -80,9 +80,9 @@ describe('priority', () => {
 
 		const sorted = sortSessionsByPriority(sessions, priority);
 
-		expect(sorted.at(2)!.source).toBe('barbaz');
+		expect(sorted.at(0)!.source).toBe('barbaz');
 		expect(sorted.at(1)!.source).toBe('foobar');
-		expect(sorted.at(0)!.source).toBe('notinlist');
+		expect(sorted.at(2)!.source).toBe('notinlist');
 	});
 
 	it('sorts media by playing status after sorting by priority list', () => {
@@ -129,9 +129,9 @@ describe('priority', () => {
 		};
 		const priority = 'barbaz\nfoobar';
 		const sorted = sortSessionsByPriority(sessions, priority);
-		expect(sorted.at(2)!.source).toBe('barbaz');
+		expect(sorted.at(0)!.source).toBe('barbaz');
 		expect(sorted.at(1)!.source).toBe('foobar');
-		expect(sorted.at(0)!.source).toBeUndefined();
+		expect(sorted.at(2)!.source).toBeUndefined();
 
 		// Same outcome with the source-less record FIRST, so it also lands in the comparator's
 		// b-slot (both the `a?.source` and `b?.source` fallbacks run).
@@ -141,9 +141,9 @@ describe('priority', () => {
 			4: { ...sessionRecord, session_id: 4, source: 'foobar' }
 		};
 		const sorted2 = sortSessionsByPriority(reversed, priority);
-		expect(sorted2.at(2)!.source).toBe('barbaz');
+		expect(sorted2.at(0)!.source).toBe('barbaz');
 		expect(sorted2.at(1)!.source).toBe('foobar');
-		expect(sorted2.at(0)!.source).toBeUndefined();
+		expect(sorted2.at(2)!.source).toBeUndefined();
 	});
 
 	it('sorts media by last updated timestamp otherwise', () => {
@@ -171,9 +171,20 @@ describe('priority', () => {
 
 		const sorted = sortSessionsByPriority(sessions, priority);
 
-		expect(sorted.at(2)!.source).toBe('notinlist');
+		expect(sorted.at(0)!.source).toBe('notinlist');
 		expect(sorted.at(1)!.source).toBe('barbaz');
-		expect(sorted.at(0)!.source).toBe('foobar');
+		expect(sorted.at(2)!.source).toBe('foobar');
+	});
+
+	it('matches priority entries as exact lines rather than substrings', () => {
+		const sessions: Record<number, SessionRecord> = {
+			0: { ...sessionRecord, session_id: 0, source: 'foo' },
+			1: { ...sessionRecord, session_id: 1, source: 'foobar' }
+		};
+
+		const sorted = sortSessionsByPriority(sessions, 'foobar');
+
+		expect(sorted.map((s) => s.source)).toEqual(['foobar', 'foo']);
 	});
 });
 

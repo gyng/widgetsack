@@ -258,6 +258,68 @@ pass with the simplest code, then refactor under green.
   the solver, sensor math, serialization shape) can be exercised without real media,
   hardware, or a window.
 
+### Testing pyramid
+
+Keep the suite bottom-heavy. Choose the lowest layer that can prove the behavior; move upward only
+when the risk depends on framework, bridge, browser, or operating-system integration.
+
+1. **Unit / pure-seam tests (most tests).** Exercise `lib/core/*`, reducers, parsers, schedulers,
+   geometry/math helpers, serialization contracts, and Rust pure seams directly. These should be
+   fast, deterministic, exhaustive around meaningful boundaries, and require no React, Tauri,
+   filesystem, network, clock, or hardware unless that dependency is the subject of the seam.
+2. **Component / integration tests (fewer tests).** Use Testing Library for observable React
+   behavior and focused adapter tests for store, filesystem, event, or command orchestration. Mock
+   at the outer boundary (for example Tauri `invoke`/`listen`), not between internal collaborators,
+   and verify the data or UI that crosses the boundary.
+3. **E2E tests (fewest tests).** Use Playwright for critical studio/overlay journeys whose value
+   comes from real browser layout, focus, pointer/keyboard interaction, persistence wiring, or role
+   behavior. Cover representative happy paths and high-impact regressions; do not duplicate every
+   pure or component-level permutation in E2E.
+4. **Manual / hardware smoke checks (exceptional).** Reserve these for Windows APIs, real media,
+   GPU/audio/display hardware, or destructive/external integrations that cannot be made
+   deterministic. Document the procedure and keep automated pure seams underneath it. Expensive or
+   intrusive Rust smoke tests must stay explicitly `#[ignore]` with a reason.
+
+If a behavior can be tested at two layers, prefer the lower layer and keep at most one higher-level
+test to prove the wiring. A healthy pyramid has many tiny domain tests, a smaller set of component
+and adapter tests, and a compact E2E suite—not the same assertions repeated at every layer.
+
+### Write high-value tests
+
+A test is valuable when it would fail for a plausible user-visible regression and clearly explain
+what contract broke. Optimize for defect detection and confidence, not test count or incidental
+coverage.
+
+- **Assert behavior and contracts, not implementation.** Prefer returned values, persisted JSON,
+  emitted bridge shapes, store snapshots, rendered text/roles, and user interactions. Avoid testing
+  private helpers through mocks, exact call sequences that are not contractual, DOM structure added
+  only for styling, or broad snapshots that accept unrelated churn.
+- **Prove the risk that motivated the change.** A bug test should fail before the fix for the right
+  reason. For races and lifecycle bugs, control ordering and assert the harmful outcome cannot occur
+  (stale overwrite, duplicate listener, overlapping request, mutation of an old snapshot, leaked
+  demand). For bridge changes, assert both serialization shape and the matching consumer contract.
+- **Cover meaningful partitions, not permutations.** Usually test the representative success path,
+  important boundary values, and distinct failure/recovery paths. Use table-driven tests when the
+  same rule has several inputs; do not multiply tests for equivalent cases merely to raise coverage.
+- **Keep tests deterministic and isolated.** Control time, randomness, async completion, filesystem
+  paths, and event order. Never depend on the public network, local user state, real hardware, test
+  execution order, or arbitrary sleeps. Await async work and restore timers, listeners, registries,
+  stores, mocks, and temporary files during cleanup.
+- **Use the smallest realistic fixture.** Include only the fields needed to expose the behavior,
+  while keeping fixtures valid according to the real Rust↔TypeScript or layout/widget contract.
+  Prefer builders and focused examples over giant production dumps.
+- **Keep assertions precise but resilient.** Assert all outputs that define the contract and no
+  irrelevant formatting/order unless it is itself required. Ensure error-path tests verify both the
+  error and the safety property—for example that corrupt input does not overwrite a valid file.
+- **Avoid low-value tests.** Do not add tests that only prove a mock returned its configured value,
+  repeat TypeScript's type checking, exercise framework/library behavior, or mirror the source line
+  by line. Delete or consolidate redundant tests when a stronger test subsumes them.
+- **Treat test diagnostics as failures to investigate.** Unexpected React `act` warnings, unhandled
+  rejections, console errors, leaked timers, and post-test state updates indicate an incomplete or
+  racy test even if the runner exits successfully. Fix the lifecycle or await the work; suppress a
+  diagnostic only when it is a narrowly identified environment artifact and keep other errors
+  visible.
+
 `state.rs::updater` is covered by a `#[cfg(test)] mod tests` block (create/update/delete);
 keep it green when you touch the reducer. Pure-seam tests in `sensors.rs` / `ha.rs` show the
 same pattern to follow for new seams.

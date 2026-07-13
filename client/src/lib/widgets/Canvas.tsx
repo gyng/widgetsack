@@ -148,6 +148,7 @@ import { useSplitters } from './canvas/useSplitters';
 import { useStudioInit } from './canvas/useStudioInit';
 import { recordWidgetRender } from './canvas/widgetProfile';
 import type { EditorState, Extra, MonitorOption } from './canvas/types';
+import Select from './Select';
 import type { SettingsTab } from './StudioSettingsPanel';
 import mascotUrl from '../../assets/mascot.png';
 import './Canvas.css';
@@ -170,7 +171,6 @@ const ThemePreview = lazy(() => import('./ThemePreview'));
 const TokenFields = lazy(() => import('./TokenFields'));
 const Outline = lazy(() => import('./Outline'));
 const NavRail = lazy(() => import('./NavRail'));
-const Select = lazy(() => import('./Select'));
 const SensorList = lazy(() => import('./SensorList'));
 const ThemeList = lazy(() => import('./ThemeList'));
 const StudioSettingsPanel = lazy(() => import('./StudioSettingsPanel'));
@@ -944,6 +944,7 @@ export default function Canvas({ studio = false }: Props) {
 			// An explicit '' (default tokens) on the monitor is honored — it's a string, so the ?? keeps it.
 			const lock = obj?.themeLock !== false;
 			patch.themeLock = lock;
+			patch.globalTheme = typeof obj?.theme === 'string' ? obj.theme : '';
 			const t = lock ? obj?.theme : (mon?.theme ?? obj?.theme);
 			if (typeof t === 'string' && t !== stateThemeRef.current) {
 				patch.selectedTheme = t;
@@ -1011,8 +1012,7 @@ export default function Canvas({ studio = false }: Props) {
 			import('./BackgroundPanel'),
 			import('./PluginsPanel'),
 			import('./DesignerListPanel'),
-			import('./MultiInspector'),
-			import('./Select')
+			import('./MultiInspector')
 		]).catch(() => undefined);
 	}, [studio]);
 

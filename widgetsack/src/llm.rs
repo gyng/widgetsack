@@ -284,11 +284,9 @@ fn llm_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
 /// exist.
 pub fn load_llm_file<R: Runtime>(app: &AppHandle<R>) -> Result<Option<LlmFile>, String> {
     let path = llm_config_path(app)?;
-    match std::fs::read_to_string(&path) {
-        Ok(txt) => parse_config_json(&txt).map(Some),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err.to_string()),
-    }
+    crate::secure_config::read(&path)?
+        .map(|txt| parse_config_json(&txt))
+        .transpose()
 }
 
 /// The resolved ACTIVE provider config (the flat request config the HTTP seams consume), or `None`
@@ -788,7 +786,7 @@ pub async fn save_llm_config(
         file.agent_control = a;
     }
     let txt = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
-    std::fs::write(&path, txt).map_err(|e| e.to_string())
+    crate::secure_config::write(&path, &txt)
 }
 
 /// The (non-secret) config for EVERY configured provider + the active selection — never any api_key,

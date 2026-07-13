@@ -14,7 +14,7 @@ export type SystemTime = {
 
 export type SessionRecord = {
 	session_id: number;
-	source: string;
+	source: string | null;
 	timestamp_created: SystemTime | null;
 	timestamp_updated: SystemTime | null;
 	// Both mirror Rust `Option<SessionUpdateEventWrapper>` (state.rs) — nullable. The backend also now
@@ -128,16 +128,55 @@ export const defaultState: State = {
 const MEDIA_STORE_KEY = '_mediaStore';
 
 function parseMediaStore(raw: unknown): State {
-	// TODO: Validate deserialised values and do migrations if needed
-	const o = (raw ?? {}) as Partial<SerializedState>;
+	const o =
+		typeof raw === 'object' && raw !== null && !Array.isArray(raw)
+			? (raw as Record<string, unknown>)
+			: {};
+	const finite = (value: unknown): value is number =>
+		typeof value === 'number' && Number.isFinite(value);
+	const point = (value: unknown): value is { x: number; y: number } =>
+		typeof value === 'object' &&
+		value !== null &&
+		finite((value as Record<string, unknown>).x) &&
+		finite((value as Record<string, unknown>).y);
+	const preferredMonitor = (value: unknown): value is MonitorInfo | null => {
+		if (value === null) return true;
+		if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+		const monitor = value as Record<string, unknown>;
+		const size = monitor.size as Record<string, unknown> | null;
+		return (
+			(monitor.name === null || typeof monitor.name === 'string') &&
+			point(monitor.position) &&
+			typeof size === 'object' &&
+			size !== null &&
+			finite(size.width) &&
+			size.width > 0 &&
+			finite(size.height) &&
+			size.height > 0
+		);
+	};
+	const savedPosition = (value: unknown): value is SavedPosition | null => {
+		if (value === null) return true;
+		if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+		const position = value as Record<string, unknown>;
+		return (
+			finite(position.x) &&
+			finite(position.y) &&
+			finite(position.width) &&
+			position.width > 0 &&
+			finite(position.height) &&
+			position.height > 0 &&
+			finite(position.timestamp)
+		);
+	};
 	return {
 		...defaultState,
-		...(o.sourcePriority !== undefined && { sourcePriority: o.sourcePriority }),
-		...(o.ignoreList !== undefined && { ignoreList: o.ignoreList }),
-		...(o.styleOverride !== undefined && { styleOverride: o.styleOverride }),
-		...(o.preferredMonitor !== undefined && { preferredMonitor: o.preferredMonitor }),
-		...(o.savedPosition !== undefined && { savedPosition: o.savedPosition }),
-		...(o.restoreToSavedPosition !== undefined && {
+		...(typeof o.sourcePriority === 'string' && { sourcePriority: o.sourcePriority }),
+		...(typeof o.ignoreList === 'string' && { ignoreList: o.ignoreList }),
+		...(typeof o.styleOverride === 'string' && { styleOverride: o.styleOverride }),
+		...(preferredMonitor(o.preferredMonitor) && { preferredMonitor: o.preferredMonitor }),
+		...(savedPosition(o.savedPosition) && { savedPosition: o.savedPosition }),
+		...(typeof o.restoreToSavedPosition === 'boolean' && {
 			restoreToSavedPosition: o.restoreToSavedPosition
 		})
 	};
@@ -203,9 +242,8 @@ export type HandleDeleteOpts = {
 };
 export function handleDelete(opts: HandleDeleteOpts) {
 	mediaStore.update((cur) => {
-		const copy = { ...cur };
-		const copySessions = copy.sessions;
-		delete copySessions[opts.sessionRecord.session_id];
-		return copy;
+		const sessions = { ...cur.sessions };
+		delete sessions[opts.sessionRecord.session_id];
+		return { ...cur, sessions };
 	});
 }

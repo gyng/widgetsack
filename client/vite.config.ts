@@ -15,7 +15,10 @@ export default defineConfig({
 	// output back to `build/` or the desktop bundle finds no frontend.
 	build: {
 		outDir: 'build',
-		emptyOutDir: true
+		emptyOutDir: true,
+		// QuickJS-WASM and the complete overlay widget registry are intentionally substantial lazy
+		// chunks; both remain below this reviewed ceiling (and their gzip sizes are reported by Vite).
+		chunkSizeWarningLimit: 700
 	},
 	// CodeMirror (the studio's CSS editor) throws "Unrecognized extension value … multiple instances
 	// of @codemirror/state" if more than one copy of that package loads — its extensions use

@@ -57,7 +57,7 @@ beforeEach(() => {
 
 describe('themeLabel', () => {
 	it('maps a built-in selection to its catalog name, blank to (default), and a user name verbatim', () => {
-		const { result } = setup();
+		const { result } = setup({ studio: false });
 		expect(result.current.themeLabel('builtin:nord')).toBe('Nord');
 		expect(result.current.themeLabel('')).toBe('(default)');
 		expect(result.current.themeLabel('mytheme.css')).toBe('mytheme.css');
@@ -91,7 +91,7 @@ describe('applyTheme / adoptTheme / setTheme (CSS swaps)', () => {
 		resolveThemeCss.mockResolvedValue('/*set*/');
 		const { result, dispatch, commitOp } = setup();
 		await act(async () => {
-			result.current.setTheme('builtin:dark');
+			await result.current.setTheme('builtin:dark');
 		});
 		expect(dispatch).toHaveBeenCalledWith({ type: 'setTheme', name: 'builtin:dark' });
 		expect(commitOp).toHaveBeenCalledTimes(1);

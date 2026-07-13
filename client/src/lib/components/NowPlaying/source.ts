@@ -29,7 +29,7 @@ export type MediaCaps = {
 
 /** Ask the backend which controls the matched (or current) session supports. Returns null when the
  * query can't run (non-Windows, no backend in tests) so the caller shows every button by default. */
-export function getMediaCapabilities(source?: string): Promise<MediaCaps | null> {
+export function getMediaCapabilities(source?: string | null): Promise<MediaCaps | null> {
 	return invoke<MediaCaps | null>(COMMANDS.mediaCapabilities, { source: source ?? null }).catch(
 		() => null
 	);
@@ -46,18 +46,63 @@ export function mediaControl(
 	return invoke(COMMANDS.mediaControl, { action, source, value });
 }
 
-let started = false;
+type MediaDelta = { kind: 'update' | 'delete'; record: SessionRecord };
 
-export function startMediaSource(): void {
-	if (started) return;
-	started = true;
-	invoke<{ sessions: Record<number, SessionRecord> }>(COMMANDS.getInitialSessions, { message: '' })
-		.then((ev) => handleInitialize({ sessions: ev.sessions }))
-		.catch(() => undefined);
-	tauriEvent.listen<SessionRecord>(EVENTS.sessionUpdate, (ev) =>
-		handleUpdate({ sessionRecord: ev.payload })
-	);
-	tauriEvent.listen<SessionRecord>(EVENTS.sessionDelete, (ev) =>
-		handleDelete({ sessionRecord: ev.payload })
-	);
+let startPromise: Promise<void> | null = null;
+
+function applyDelta(delta: MediaDelta): void {
+	if (delta.kind === 'delete') handleDelete({ sessionRecord: delta.record });
+	else handleUpdate({ sessionRecord: delta.record });
+}
+
+async function attachMediaSource(): Promise<void> {
+	// Subscribe before asking for the snapshot. Deltas arriving while invoke is in flight are queued,
+	// then replayed after initialization, so an update/delete can never be overwritten by an older
+	// snapshot. Session-create is an upsert just like session-update on the frontend.
+	let live = false;
+	const queued: MediaDelta[] = [];
+	const receive = (delta: MediaDelta): void => {
+		if (live) applyDelta(delta);
+		else queued.push(delta);
+	};
+	const listeners = await Promise.allSettled([
+		tauriEvent.listen<SessionRecord>(EVENTS.sessionCreate, (ev) =>
+			receive({ kind: 'update', record: ev.payload })
+		),
+		tauriEvent.listen<SessionRecord>(EVENTS.sessionUpdate, (ev) =>
+			receive({ kind: 'update', record: ev.payload })
+		),
+		tauriEvent.listen<SessionRecord>(EVENTS.sessionDelete, (ev) =>
+			receive({ kind: 'delete', record: ev.payload })
+		)
+	]);
+	const failed = listeners.find((result) => result.status === 'rejected');
+	if (failed?.status === 'rejected') {
+		for (const result of listeners) if (result.status === 'fulfilled') result.value();
+		throw failed.reason;
+	}
+
+	try {
+		const initial = await invoke<{ sessions: Record<number, SessionRecord> }>(
+			COMMANDS.getInitialSessions,
+			{ message: '' }
+		);
+		handleInitialize({ sessions: initial.sessions });
+	} catch (error) {
+		// The live listeners are still useful when the initial snapshot is unavailable.
+		console.warn('Could not load the initial media sessions', error);
+	}
+	for (const delta of queued) applyDelta(delta);
+	live = true;
+}
+
+/** Start the per-webview media feed once. A listener-attachment failure resets the singleton so a
+ * later widget/settings mount can retry; an initial-snapshot failure keeps the live feed running. */
+export function startMediaSource(): Promise<void> {
+	if (startPromise) return startPromise;
+	startPromise = attachMediaSource().catch((error) => {
+		startPromise = null;
+		console.warn('Could not start the media event source', error);
+	});
+	return startPromise;
 }

@@ -101,6 +101,43 @@ describe('mediaStore creation (parseMediaStore seam)', () => {
 		const { mediaStore } = await load();
 		expect(mediaStore.getSnapshot().preferredMonitor).toBeNull();
 	});
+
+	it('falls back per field when persisted preferences have invalid types or shapes', async () => {
+		localStorage.setItem(
+			MEDIA_STORE_KEY,
+			JSON.stringify({
+				sourcePriority: 7,
+				ignoreList: ['spotify'],
+				styleOverride: false,
+				preferredMonitor: { name: 1, position: { x: 0 }, size: null },
+				savedPosition: { x: 1, y: 2, width: -3, height: 4, timestamp: 5 },
+				restoreToSavedPosition: 'yes'
+			})
+		);
+
+		const { mediaStore, defaultState } = await load();
+
+		expect(mediaStore.getSnapshot()).toEqual(defaultState);
+	});
+
+	it('accepts a structurally valid monitor and finite positive saved position', async () => {
+		const preferredMonitor = {
+			name: null,
+			position: { x: -1920, y: 0 },
+			size: { width: 1920, height: 1080 }
+		};
+		const savedPosition = { x: 10, y: 20, width: 500, height: 300, timestamp: 123 };
+		localStorage.setItem(
+			MEDIA_STORE_KEY,
+			JSON.stringify({ preferredMonitor, savedPosition, restoreToSavedPosition: true })
+		);
+
+		const { mediaStore } = await load();
+
+		expect(mediaStore.getSnapshot().preferredMonitor).toEqual(preferredMonitor);
+		expect(mediaStore.getSnapshot().savedPosition).toEqual(savedPosition);
+		expect(mediaStore.getSnapshot().restoreToSavedPosition).toBe(true);
+	});
 });
 
 describe('serializeMediaStore (persist seam)', () => {
@@ -201,10 +238,14 @@ describe('handleDelete', () => {
 	it('removes the record for the given session_id', async () => {
 		const { mediaStore, handleUpdate, handleDelete } = await load();
 		handleUpdate({ sessionRecord: rec({ session_id: 9, source: 'x.exe' }) });
-		expect(mediaStore.getSnapshot().sessions[9]).toBeDefined();
+		const previous = mediaStore.getSnapshot();
+		expect(previous.sessions[9]).toBeDefined();
 		handleDelete({ sessionRecord: rec({ session_id: 9, source: 'x.exe' }) });
 		expect(mediaStore.getSnapshot().sessions[9]).toBeUndefined();
 		expect(mediaStore.getSnapshot().sessions).toEqual({});
+		// External-store snapshots are immutable contracts: deleting from the new state must not
+		// retroactively mutate a value a React render (or another subscriber) already captured.
+		expect(previous.sessions[9]).toBeDefined();
 	});
 
 	it('is a no-op (leaves other sessions intact) when the id is absent', async () => {
