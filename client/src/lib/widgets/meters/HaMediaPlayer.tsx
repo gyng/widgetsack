@@ -40,7 +40,6 @@ export default function HaMediaPlayer({
 	const active = state !== 'off' && state !== 'unavailable' && state !== 'standby';
 	const vol = attrs.volume_level as number | undefined; // 0..1
 	const muted = attrs.is_volume_muted === true;
-	const hasVolume = showVolume && vol != null;
 
 	const call = (service: string, data?: Record<string, unknown>): void =>
 		onControl?.({ domain: 'media_player', service, ...(data ? { data } : {}) });
@@ -85,7 +84,7 @@ export default function HaMediaPlayer({
 						</button>
 					</div>
 				)}
-				{hasVolume && (
+				{showVolume && vol != null && (
 					<div className="ha-media-vol" data-part="volume">
 						<button
 							type="button"
@@ -100,7 +99,7 @@ export default function HaMediaPlayer({
 							type="range"
 							min={0}
 							max={100}
-							value={Math.round((vol ?? 0) * 100)}
+							value={Math.round(vol * 100)}
 							aria-label={`${name} volume`}
 							onChange={(e) => setVol(Number(e.currentTarget.value))}
 						/>

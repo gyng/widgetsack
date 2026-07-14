@@ -387,16 +387,32 @@ describe('NowPlaying — seek + timeline', () => {
 		});
 	});
 
-	it('supports keyboard seeking with arrows, Home, and End', () => {
+	it('supports keyboard seeking with every arrow, Home, and End', () => {
 		const onControl = vi.fn();
 		const { container } = render(
 			<NowPlaying session={seekableSession()} caps={caps} onControl={onControl} />
 		);
 		const bar = container.querySelector('[data-part="progress"]') as HTMLElement;
 		fireEvent.keyDown(bar, { key: 'ArrowRight' });
+		fireEvent.keyDown(bar, { key: 'ArrowUp' });
+		fireEvent.keyDown(bar, { key: 'ArrowLeft' });
+		fireEvent.keyDown(bar, { key: 'ArrowDown' });
 		fireEvent.keyDown(bar, { key: 'Home' });
 		fireEvent.keyDown(bar, { key: 'End' });
-		expect(onControl.mock.calls.map((call) => call[0].data?.value)).toEqual([70, 0, 200]);
+		expect(onControl.mock.calls.map((call) => call[0].data?.value)).toEqual([
+			70, 70, 60, 60, 0, 200
+		]);
+	});
+
+	it('ignores unrelated seek keys and a zero-width progress bar', () => {
+		const onControl = vi.fn();
+		const { container } = render(
+			<NowPlaying session={seekableSession()} caps={caps} onControl={onControl} />
+		);
+		const bar = container.querySelector('[data-part="progress"]') as HTMLElement;
+		fireEvent.keyDown(bar, { key: 'PageDown' });
+		fireEvent.click(bar, { clientX: 50 });
+		expect(onControl).not.toHaveBeenCalled();
 	});
 
 	it('clamps a seek click past the right edge to the end of the track', () => {
@@ -422,6 +438,7 @@ describe('NowPlaying — seek + timeline', () => {
 		const { container } = render(<NowPlaying session={s} caps={caps} onControl={onControl} />);
 		const bar = container.querySelector('[data-part="progress"]') as HTMLElement;
 		fireEvent.click(bar, { clientX: 50 });
+		fireEvent.keyDown(bar, { key: 'ArrowRight' });
 		expect(onControl).not.toHaveBeenCalled();
 	});
 

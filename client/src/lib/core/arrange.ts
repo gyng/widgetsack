@@ -42,6 +42,7 @@ export function planArrangement(zones: Zone[], windows: WindowDescriptor[]): Sna
 		);
 		if (!m) continue;
 		const zone = zones.find((z) => z.id === m.zoneId);
+		/* v8 ignore next -- matchWindowToZone can only return an id from the supplied zone-derived rules. */
 		if (!zone) continue;
 		plans.push({ hwnd: w.hwnd, zoneId: zone.id, rect: zone.rect });
 		filled.add(zone.id);

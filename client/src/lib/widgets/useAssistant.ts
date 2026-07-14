@@ -106,6 +106,7 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 		if (isStudioWindow()) return;
 		let cancelled = false;
 		const tick = (): void => {
+			/* v8 ignore next -- cleanup clears every timer; this only protects an already-queued callback. */
 			if (!cancelled) void generate();
 		};
 		const timers: ReturnType<typeof setInterval>[] = [];

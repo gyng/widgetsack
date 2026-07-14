@@ -194,6 +194,13 @@ describe('refreshPackages → packagesStore rows', () => {
 		expect(packagesStore.getSnapshot().map((row) => row.id)).toEqual(['pack-b']);
 	});
 
+	it('recovers the shared refresh queue after a scan rejects', async () => {
+		listImpl = vi.fn().mockRejectedValueOnce(new Error('disk unavailable')).mockResolvedValue([]);
+		await expect(refreshPackages()).rejects.toThrow('disk unavailable');
+		await expect(refreshPackages()).resolves.toBeUndefined();
+		expect(listCalls).toBe(2);
+	});
+
 	it('rows an unparsed manifest as an error (folder id as name, no toggle metadata)', async () => {
 		setFiles([{ id: 'pack-a', manifest: '{not json', install: null }]);
 		await refreshPackages();
@@ -930,6 +937,26 @@ describe('resetPackagesForTest', () => {
 		expect(listTemplateGroups().find((g) => g.group === 'Pack A')).toBeUndefined();
 		expect(styleTagFor('pack-a')).toBeNull();
 	});
+
+	it('stops running package sources before clearing module state', async () => {
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({
+					source: { file: 'src.js', pollSeconds: 30, hosts: ['api.example.com'] },
+					sensors: [{ id: 'temp' }]
+				}),
+				install: null
+			}
+		]);
+		await initPackages(hub);
+		await togglePackage('pack-a', true, () => true);
+		sourceStops.length = 0;
+
+		resetPackagesForTest();
+
+		expect(sourceStops).toEqual(['pack-a']);
+	});
 });
 
 // ---- netConsent store parse (parseConsentMap) ----------------------------------------------------
@@ -969,4 +996,37 @@ describe('netConsent persisted map parsing', () => {
 		localStorage.removeItem('widgetsack.packages.netConsent');
 		vi.resetModules();
 	});
+});
+
+describe('CSS consent persisted map parsing', () => {
+	it('keeps only SHA-256 fingerprints from persisted consent', async () => {
+		const css = 'body { background: url(https://example.com/pixel.png); }';
+		const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(css));
+		const valid = `sha256:${Array.from(new Uint8Array(digest), (byte) =>
+			byte.toString(16).padStart(2, '0')
+		).join('')}`;
+		localStorage.setItem(
+			'widgetsack.packages.cssTrusted',
+			JSON.stringify({ valid, stale: 'yes', nonString: 123 })
+		);
+		vi.resetModules();
+		const m = await import('./packages');
+		setFiles([
+			{
+				id: 'valid',
+				manifest: manifestJson({ id: 'valid', theme: { name: 'T', file: 'theme.css' } }),
+				install: null
+			}
+		]);
+		assets.set('valid/theme.css', css);
+		await m.initPackages(createTelemetryHub());
+		const confirm = vi.fn(() => true);
+		await m.togglePackage('valid', true, confirm);
+
+		expect(confirm).not.toHaveBeenCalled();
+		expect(styleTagFor('valid')).not.toBeNull();
+		m.resetPackagesForTest();
+		localStorage.removeItem('widgetsack.packages.cssTrusted');
+		vi.resetModules();
+	}, 15_000);
 });

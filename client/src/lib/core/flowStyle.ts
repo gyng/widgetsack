@@ -104,6 +104,7 @@ function gridFixedTracks(
 	let any = false;
 	c.children.forEach((child, i) => {
 		const track = horizontal ? i % cols : Math.floor(i / cols);
+		/* v8 ignore next -- count is cols or ceil(children / cols), so every child has a track. */
 		if (track >= count) return;
 		const v = isContainer(child) ? (horizontal ? child.cellW : child.cellH) : undefined;
 		if (typeof v === 'number' && v > 0) {

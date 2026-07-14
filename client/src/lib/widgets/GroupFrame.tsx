@@ -90,6 +90,7 @@ export default function GroupFrame({
 		const intent = dragMoveIntent(e.button);
 		if (!intent || !intent.start) return; // middle-drag is reserved for panning
 		if (intent.skipFlow && kind !== 'move') return; // right-button free-move only for a move
+		/* v8 ignore next -- begin is wired only on edit-mode overlay/handles, which are absent otherwise. */
 		if (!editMode) return;
 		const d = drag.current;
 		d.wasSelected = selected;

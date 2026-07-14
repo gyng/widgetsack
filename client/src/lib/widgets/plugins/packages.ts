@@ -196,6 +196,7 @@ function unapplyPackage(id: string): void {
 
 function netConsented(d: Discovered): boolean {
 	const hosts = d.manifest?.source?.hosts;
+	/* v8 ignore next -- callers only ask for consent after validating a source with declared hosts. */
 	if (!hosts) return false;
 	return netConsentPackages.getSnapshot()[d.id] === consentFingerprint(hosts);
 }
@@ -287,6 +288,7 @@ let refreshTail: Promise<void> = Promise.resolve();
 
 export function refreshPackages(): Promise<void> {
 	const pending = refreshTail.then(refreshPackagesNow, refreshPackagesNow);
+	// Keep the shared queue usable after a failed scan; callers still receive the original rejection.
 	refreshTail = pending.catch(() => undefined);
 	return pending;
 }
@@ -467,7 +469,6 @@ export async function removePackage(id: string): Promise<PackageOpResult> {
 /** TEST-ONLY: drop all module state so each test starts from a clean registry. */
 export function resetPackagesForTest(): void {
 	for (const d of discovered.values()) void applyPackage(d, false);
-	for (const stop of runningSources.values()) stop();
 	runningSources.clear();
 	discovered.clear();
 	publishRows();

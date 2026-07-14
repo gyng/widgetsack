@@ -126,6 +126,41 @@ describe('VolumeHost', () => {
 		expect(setAudioVolume).toHaveBeenLastCalledWith(0.7);
 	});
 
+	it('continues queued volume writes after a backend rejection', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		let rejectFirst!: (error: Error) => void;
+		setAudioVolume.mockImplementationOnce(
+			() => new Promise((_resolve, reject) => (rejectFirst = reject))
+		);
+		const { container } = render(<VolumeHost />);
+		await act(async () => Promise.resolve());
+		fireEvent.change(slider(container), { target: { value: '20' } });
+		fireEvent.change(slider(container), { target: { value: '80' } });
+		await act(async () => rejectFirst(new Error('device disappeared')));
+
+		expect(warn).toHaveBeenCalledWith('volume write failed', expect.any(Error));
+		expect(setAudioVolume).toHaveBeenLastCalledWith(0.8);
+	});
+
+	it('serializes rapid mute writes and continues after a rejection', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		let rejectFirst!: (error: Error) => void;
+		setAudioMute.mockImplementationOnce(
+			() => new Promise((_resolve, reject) => (rejectFirst = reject))
+		);
+		const { container } = render(<VolumeHost />);
+		await act(async () => Promise.resolve());
+		const mute = container.querySelector('button.vol-mute')!;
+		fireEvent.click(mute);
+		fireEvent.click(mute);
+		expect(setAudioMute).toHaveBeenCalledTimes(1);
+		await act(async () => rejectFirst(new Error('endpoint unavailable')));
+
+		expect(warn).toHaveBeenCalledWith('mute write failed', expect.any(Error));
+		expect(setAudioMute).toHaveBeenCalledTimes(2);
+		expect(setAudioMute).toHaveBeenLastCalledWith(false);
+	});
+
 	it('ignores a null reading from the backend (stays at —)', async () => {
 		getAudioVolume.mockResolvedValue(null);
 		const { container } = render(<VolumeHost />);

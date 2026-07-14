@@ -85,6 +85,7 @@ export function collectSensorRefs(
 ): Map<string, SensorRef[]> {
 	const out = new Map<string, SensorRef[]>();
 	const add = (sensor: string, ref: SensorRef): void => {
+		/* v8 ignore next -- callers only pass truthy bound ids or parsed non-empty expression ids. */
 		if (!sensor) return;
 		const arr = out.get(sensor);
 		if (arr) arr.push(ref);

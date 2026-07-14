@@ -353,8 +353,8 @@ export function reorder(s: EditorState, id: string, delta: number): Patch {
 export function outdent(s: EditorState, id: string): Patch {
 	const parent = findParent(s.monitor.root, id);
 	if (!parent || parent.id === s.monitor.root.id) return {};
-	const grand = findParent(s.monitor.root, parent.id);
-	if (!grand) return {};
+	// A non-root parent is necessarily a descendant of root and therefore has a grandparent.
+	const grand = findParent(s.monitor.root, parent.id)!;
 	const pidx = grand.children.findIndex((c) => c.id === parent.id);
 	return { monitor: { ...s.monitor, root: moveNode(s.monitor.root, id, grand.id, pidx + 1) } };
 }

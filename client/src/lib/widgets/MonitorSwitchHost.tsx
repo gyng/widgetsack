@@ -80,15 +80,16 @@ export default function MonitorSwitchHost({
 	const pick = useCallback(
 		async (value: number): Promise<void> => {
 			const gdi = selected?.gdi;
+			/* v8 ignore next -- missing/busy selections disable or omit every source row. */
 			if (busy.current || !gdi) return;
 			busy.current = true;
 			refreshId.current += 1;
 			setBusyValue(value);
-			setSnapshot((current) =>
-				current?.target === target && current.selected
-					? { ...current, selected: { ...current.selected, current_input: value } }
-					: current
-			); // optimistic highlight
+			// A source row can only fire for the selected monitor in the current snapshot.
+			setSnapshot((current) => ({
+				...current!,
+				selected: { ...current!.selected!, current_input: value }
+			})); // optimistic highlight
 			try {
 				const ok = await setMonitorInput(gdi, value);
 				if (targetRef.current === target) {

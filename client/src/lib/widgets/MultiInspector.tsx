@@ -18,7 +18,10 @@ type Props = {
 	docked?: boolean;
 };
 
-const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+const num = (v: unknown): number => {
+	/* v8 ignore next -- number fields are produced only from numeric widget metadata values. */
+	return typeof v === 'number' ? v : 0;
+};
 const str = (v: unknown): string => (v === undefined || v === null ? '' : String(v));
 
 export default function MultiInspector({

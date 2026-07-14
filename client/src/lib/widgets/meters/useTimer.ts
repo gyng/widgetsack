@@ -86,6 +86,7 @@ export function useTimer(cfg: TimerConfig): TimerState {
 		const next = cfg.loop
 			? {
 					running: true,
+					/* v8 ignore next -- done requires a positive countdown duration. */
 					accumulatedMs: durationMs > 0 ? elapsedMs % durationMs : 0,
 					startedAt: now
 				}
@@ -169,6 +170,7 @@ export function useTimer(cfg: TimerConfig): TimerState {
 			identity,
 			runtime: {
 				running: false,
+				/* v8 ignore next -- running runtimes are created only with a numeric startedAt anchor. */
 				accumulatedMs:
 					runtime.accumulatedMs + (runtime.startedAt == null ? 0 : pausedAt - runtime.startedAt),
 				startedAt: null

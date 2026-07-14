@@ -122,6 +122,42 @@ describe('MonitorSwitchHost (container wiring)', () => {
 		});
 	});
 
+	it('does not reconcile an old target after the configured monitor changes mid-switch', async () => {
+		let finishSwitch!: (ok: boolean) => void;
+		setMonitorInput.mockImplementationOnce(
+			() => new Promise((resolve) => (finishSwitch = resolve))
+		);
+		const { container, rerender } = render(<MonitorSwitchHost monitor={'\\\\.\\DISPLAY1'} />);
+		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
+		const dp = [...container.querySelectorAll('.ms-row')].find((r) =>
+			r.textContent?.includes('DisplayPort 1')
+		);
+		fireEvent.click(dp as Element);
+		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledTimes(1));
+		const callsBeforeTargetChange = listMonitorInputs.mock.calls.length;
+
+		rerender(<MonitorSwitchHost monitor={'\\\\.\\DISPLAY2'} />);
+		await act(async () => finishSwitch(true));
+		expect(listMonitorInputs.mock.calls.length).toBe(callsBeforeTargetChange + 1);
+		expect(listMonitorInputs).toHaveBeenLastCalledWith('\\\\.\\DISPLAY2');
+	});
+
+	it('does not update busy state after an in-flight monitor switch unmounts', async () => {
+		let finishSwitch!: (ok: boolean) => void;
+		setMonitorInput.mockImplementationOnce(
+			() => new Promise((resolve) => (finishSwitch = resolve))
+		);
+		const { container, unmount } = render(<MonitorSwitchHost />);
+		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
+		const dp = [...container.querySelectorAll('.ms-row')].find((r) =>
+			r.textContent?.includes('DisplayPort 1')
+		);
+		fireEvent.click(dp as Element);
+		unmount();
+		await act(async () => finishSwitch(true));
+		expect(setMonitorInput).toHaveBeenCalledTimes(1);
+	});
+
 	it('warns and reverts when a switch fails (monitor reports the old input)', async () => {
 		setMonitorInput.mockResolvedValue(false);
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);

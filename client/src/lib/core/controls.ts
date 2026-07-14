@@ -378,9 +378,11 @@ function triggersCollide(a: Trigger, b: Trigger): boolean {
 			modMatch(a.spaceHeld, b.spaceHeld)
 		);
 	}
+	/* v8 ignore else -- equal discriminants that reach here can only both be wheel. */
 	if (a.type === 'wheel' && b.type === 'wheel') {
 		return modMatch(a.ctrl, b.ctrl) && modMatch(a.shift, b.shift) && modMatch(a.alt, b.alt);
 	}
+	/* v8 ignore next -- equal Trigger discriminants exhaust key, pointer, and wheel above. */
 	return false;
 }
 

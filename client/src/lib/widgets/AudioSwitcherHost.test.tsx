@@ -138,6 +138,19 @@ describe('AudioSwitcherHost (container wiring)', () => {
 		await act(async () => resolveSwitch(true));
 	});
 
+	it('does not update busy state after an in-flight switch unmounts', async () => {
+		let resolveSwitch!: (ok: boolean) => void;
+		setDefaultAudioOutput.mockImplementation(
+			() => new Promise((resolve) => (resolveSwitch = resolve))
+		);
+		const { container, unmount } = render(<AudioSwitcherHost />);
+		await waitFor(() => expect(container.querySelectorAll('.as-row')).toHaveLength(2));
+		fireEvent.click(rowByName(container, 'Headphones'));
+		unmount();
+		await act(async () => resolveSwitch(true));
+		expect(setDefaultAudioOutput).toHaveBeenCalledTimes(1);
+	});
+
 	it('re-polls on window focus and on the interval tick, and stops after unmount (alive guard)', async () => {
 		vi.useFakeTimers();
 		const { unmount } = render(<AudioSwitcherHost />);

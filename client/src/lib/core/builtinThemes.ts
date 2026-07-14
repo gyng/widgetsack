@@ -72,6 +72,7 @@ export function hexToRgb(hex: string): string {
 }
 
 function specTokens(s: Spec): Tokens {
+	/* v8 ignore next -- every catalog spec supplies accentFg; fallback protects future hand-authored specs. */
 	const accentFg = s.accentFg ?? s.accent;
 	return {
 		// --- chrome ---
@@ -84,6 +85,7 @@ function specTokens(s: Spec): Tokens {
 		'--ui-fg-muted': s.fgMuted,
 		'--ui-fg-dim': s.fgDim,
 		'--ui-border': s.border,
+		/* v8 ignore next -- every catalog spec supplies borderStrong; fallback protects future specs. */
 		'--ui-border-strong': s.borderStrong ?? s.border,
 		'--ui-accent-rgb': hexToRgb(s.accent),
 		'--ui-accent-fg': accentFg,

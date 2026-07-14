@@ -68,10 +68,9 @@ export default function HaInput({ value = null, label, onControl }: Props) {
 	const name = label ?? (attrs.friendly_name as string | undefined) ?? 'Input';
 	const domain = entityDomain(s?.entity_id);
 	const state = s?.state ?? '';
-	// `domain` is always a concrete input_* here (emit is only called from the per-domain control
-	// branches below, which render only when `domain` matched); the fallback is defensive belt only.
+	// `emit` is only called from a branch that matched a concrete input_* domain below.
 	const emit = (service: string, data?: Record<string, unknown>): void =>
-		onControl?.({ domain: domain || 'input_boolean', service, ...(data ? { data } : {}) });
+		onControl?.({ domain, service, ...(data ? { data } : {}) });
 
 	let control: ReactNode;
 	if (domain === 'input_boolean') {

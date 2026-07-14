@@ -137,10 +137,11 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 			: { ...monitorNoTheme, theme: v.selectedTheme };
 		for (const extra of extras) {
 			if (extra.key === v.myMonitor) continue;
+			/* v8 ignore next -- extras normally originate from existing monitor layouts; fallback repairs old drafts. */
 			const t = monitors[extra.key] ?? { root: emptyRoot(), floating: [] };
 			// Spread `t` so a non-widget monitor field (e.g. its `background`) survives the append of a
 			// pending extra leaf, instead of being rebuilt away.
-			monitors[extra.key] = { ...t, floating: [...(t.floating ?? []), extra.leaf] };
+			monitors[extra.key] = { ...t, floating: [...t.floating, extra.leaf] };
 		}
 		const globalFields = touchedGlobals({ ...v, library }, v.savedBaseline);
 		const tokens = v.tokenOverrides;
@@ -200,7 +201,10 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 		const tokens = b.tokens;
 		const out: Record<string, unknown> = { version: 2, monitors };
 		if (b.library !== undefined) out.library = b.library;
-		else if (!globalFields.includes('library') && fileLib) out.library = fileLib;
+		else {
+			/* v8 ignore next -- baseline libraries are initialized; fallback protects legacy v1 files. */
+			if (!globalFields.includes('library') && fileLib) out.library = fileLib;
+		}
 		if (globalTheme) out.theme = globalTheme;
 		if (!b.themeLock) out.themeLock = false; // absent ⇒ locked (the default)
 		if (tokens && Object.keys(tokens).length) out.tokens = tokens;

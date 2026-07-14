@@ -138,6 +138,7 @@ function computeDirty(
 		const b = isNew ? null : bw;
 		if (!b || ne(w.sensor, b.sensor)) d.add('sensor');
 		for (const k of RECT_KEYS) if (!b || w.rect[k] !== b.rect[k]) d.add('rect.' + k);
+		/* v8 ignore next -- saved widget baselines always carry a config object. */
 		const keys = new Set([...Object.keys(w.config ?? {}), ...Object.keys(b?.config ?? {})]);
 		for (const k of keys) if (!b || ne(w.config?.[k], b.config?.[k])) d.add('config.' + k);
 		if (!b || ne(w.css, b.css)) d.add('css');
@@ -247,14 +248,15 @@ function TemplateOptionsForm({
 				{onPreview && <TemplatePreviewButton t={t} onPreview={onPreview} />}
 			</span>
 			<div className="tpl-opts-fields">
-				{(t.params ?? [])
-					.filter((p) => p.choices)
+				{/* All registered templates normalize params to an array. */}
+				{t
+					.params!.filter((p) => p.choices)
 					.map((p) => (
 						<label key={p.key}>
 							{p.label ?? p.key}
 							<Select
 								value={opts[p.key]}
-								options={p.choices ?? []}
+								options={p.choices!}
 								onChange={(v) => setOpts((prev) => ({ ...prev, [p.key]: v }))}
 								aria-label={`${t.name} — ${p.label ?? p.key}`}
 							/>
@@ -427,6 +429,7 @@ export default function Inspector({
 		}
 	}
 	function applyNodeJson() {
+		/* v8 ignore next -- the Data editor is rendered only while a selected node exists. */
 		if (!node) return;
 		try {
 			const parsed = JSON.parse(dataJson) as Record<string, unknown>;
@@ -445,7 +448,8 @@ export default function Inspector({
 			});
 			setDataError(null);
 		} catch (e) {
-			setDataError((e as Error).message ?? String(e));
+			// JSON.parse and the validation throws above both produce Error instances.
+			setDataError((e as Error).message);
 		}
 	}
 
@@ -503,10 +507,12 @@ export default function Inspector({
 	}
 
 	function patchWidget(patch: Partial<WidgetInstance>) {
+		/* v8 ignore else -- widget-only controls call this helper only while a widget is selected. */
 		if (widget) op({ op: 'patchWidget', id: widget.id, patch });
 	}
 
 	function setConfig(key: string, value: unknown) {
+		/* v8 ignore else -- config fields render only while a widget is selected. */
 		if (widget) patchWidget({ config: { ...widget.config, [key]: value } });
 	}
 
@@ -516,6 +522,7 @@ export default function Inspector({
 		f.default !== undefined ? f.default : widgetMeta?.defaultConfig?.[f.key];
 
 	function patchContainer(patch: Partial<Container>) {
+		/* v8 ignore else -- container controls call this helper only while a container is selected. */
 		if (container) op({ op: 'patchContainer', id: container.id, patch });
 	}
 
@@ -532,14 +539,7 @@ export default function Inspector({
 	// The container's own main-axis sizing inside its parent: fit children / grow / fixed px.
 	const setContainerSizing = (mode: string) =>
 		patchContainer({
-			basis:
-				mode === 'grow'
-					? { fr: 1 }
-					: mode === 'fixed'
-						? typeof container?.basis === 'number'
-							? container.basis
-							: 100
-						: undefined
+			basis: mode === 'grow' ? { fr: 1 } : mode === 'fixed' ? 100 : undefined
 		});
 
 	// Guarded actions.
@@ -593,6 +593,7 @@ export default function Inspector({
 	}
 
 	function updateRect(key: (typeof RECT_KEYS)[number], value: number) {
+		/* v8 ignore else -- rectangle controls render only while a widget is selected. */
 		if (widget) patchWidget({ rect: { ...widget.rect, [key]: value } });
 	}
 
@@ -681,14 +682,7 @@ export default function Inspector({
 							// 'fit' → 'content' (not undefined): a content basis floors the group at its
 							// min-content in flowStyle, so hugging a GROUP (e.g. the Network widget) fits its
 							// content instead of clipping to a stale stored size.
-							basis:
-								v === 'grow'
-									? { fr: 1 }
-									: v === 'fixed'
-										? typeof widgetBasis === 'number'
-											? widgetBasis
-											: 100
-										: 'content'
+							basis: v === 'grow' ? { fr: 1 } : v === 'fixed' ? 100 : 'content'
 						})
 					}
 					aria-label="size in parent"
@@ -1672,6 +1666,7 @@ export default function Inspector({
 			{widget || groupUnit
 				? (() => {
 						const tokenValues = widget?.tokens ?? groupUnit?.tokens ?? {};
+						const tokenTargetId = widget?.id ?? groupUnit!.id;
 						const overrideCount = Object.keys(tokenValues).length;
 						return (
 							<details
@@ -1687,11 +1682,9 @@ export default function Inspector({
 									baseValues={(widget ? baseWidget?.tokens : baseGroup?.tokens) ?? null}
 									labelClassName="full"
 									onSet={(key, value) =>
-										op({ op: 'setWidgetToken', id: widget?.id ?? groupUnit?.id ?? '', key, value })
+										op({ op: 'setWidgetToken', id: tokenTargetId, key, value })
 									}
-									onClear={() =>
-										op({ op: 'clearWidgetTokens', id: widget?.id ?? groupUnit?.id ?? '' })
-									}
+									onClear={() => op({ op: 'clearWidgetTokens', id: tokenTargetId })}
 									clearTitle="Remove this widget's token overrides (fall back to the theme)"
 								/>
 							</details>

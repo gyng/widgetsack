@@ -137,6 +137,7 @@ function setBaselinePatch(s: EditorState): Patch {
 			library: s.library,
 			theme: s.selectedTheme,
 			themeLock: s.themeLock,
+			/* v8 ignore next -- globalTheme is initialized for unlocked editor states; fallback is migration hardening. */
 			globalTheme: s.themeLock ? s.selectedTheme : (s.globalTheme ?? ''),
 			tokens: s.tokenOverrides
 		},

@@ -176,6 +176,25 @@ describe('priority', () => {
 		expect(sorted.at(2)!.source).toBe('foobar');
 	});
 
+	it('uses nanoseconds when sessions were updated in the same second', () => {
+		const sessions: Record<number, SessionRecord> = {
+			0: {
+				...sessionRecord,
+				session_id: 0,
+				source: 'older',
+				timestamp_updated: { secs_since_epoch: 100, nanos_since_epoch: 10 }
+			},
+			1: {
+				...sessionRecord,
+				session_id: 1,
+				source: 'newer',
+				timestamp_updated: { secs_since_epoch: 100, nanos_since_epoch: 20 }
+			}
+		};
+
+		expect(sortSessionsByPriority(sessions, '').map((s) => s.source)).toEqual(['newer', 'older']);
+	});
+
 	it('matches priority entries as exact lines rather than substrings', () => {
 		const sessions: Record<number, SessionRecord> = {
 			0: { ...sessionRecord, session_id: 0, source: 'foo' },

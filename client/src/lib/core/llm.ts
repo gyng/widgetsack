@@ -20,6 +20,7 @@ import {
 	isLeaf,
 	leaf,
 	type Container,
+	type Leaf,
 	type LayoutNode,
 	type MonitorLayout
 } from './layoutTree';
@@ -279,10 +280,10 @@ export function describeLayout(monitor: MonitorLayout): LayoutItem[] {
 			node.children.forEach((c) => walk(c, node.id));
 			return;
 		}
-		if (isLeaf(node) && !isGroup(node.unit)) {
+		if (!isGroup(node.unit)) {
 			const u = node.unit;
 			out.push({ id: u.id, type: u.type, sensor: u.sensor, container: parent });
-		} else if (isLeaf(node) && isGroup(node.unit)) {
+		} else {
 			out.push({ id: node.unit.id, type: 'group', container: parent });
 		}
 	};
@@ -494,11 +495,12 @@ export function applyAssistantOps(
 					errors.push(`cannot configure "${op.id}" — not a widget`);
 					break;
 				}
-				root = updateNode(root, op.id, (n) =>
-					isLeaf(n) && !isGroup(n.unit)
-						? { ...n, unit: { ...n.unit, config: { ...n.unit.config, ...op.config } } }
-						: n
-				);
+				root = updateNode(root, op.id, (n) => {
+					// patchUnitExists above guarantees the target passed to this callback is a primitive leaf.
+					const leaf = n as Leaf;
+					const unit = leaf.unit as WidgetInstance;
+					return { ...leaf, unit: { ...unit, config: { ...unit.config, ...op.config } } };
+				});
 				applied++;
 				break;
 			}
@@ -514,9 +516,12 @@ export function applyAssistantOps(
 					errors.push(`"${op.id}" is self-sourcing — ignored sensor "${op.sensor}"`);
 					break;
 				}
-				root = updateNode(root, op.id, (n) =>
-					isLeaf(n) && !isGroup(n.unit) ? { ...n, unit: { ...n.unit, sensor: op.sensor } } : n
-				);
+				root = updateNode(root, op.id, (n) => {
+					// non-null leafBinds plus the bind gate guarantee a primitive leaf target.
+					const leaf = n as Leaf;
+					const unit = leaf.unit as WidgetInstance;
+					return { ...leaf, unit: { ...unit, sensor: op.sensor } };
+				});
 				applied++;
 				break;
 			}
