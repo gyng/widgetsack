@@ -73,7 +73,11 @@
 	background: var(--ms-row-hover, rgba(255, 255, 255, 0.14));
 }
 .ms-row:active {
-	transform: translateY(1px);
+	/* Press affordance that stays INSIDE the button's box. The list is `overflow: auto`, and a
+	   translateY(1px) here let a pressed bottom-row button poke 1px past the list's edge whenever the
+	   tiles exactly filled the widget — which flashed a vertical scrollbar on every click. A centred
+	   scale-down can never extend the scrollable area. */
+	transform: scale(0.985);
 }
 .ms-row[data-active] {
 	background: var(--ms-active-bg, rgba(119, 196, 211, 0.22));
