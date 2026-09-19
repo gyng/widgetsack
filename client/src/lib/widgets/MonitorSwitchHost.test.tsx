@@ -14,6 +14,7 @@ import type { MonitorInputs } from '../ddc/monitors';
 
 const mon = (over: Partial<MonitorInputs> = {}): MonitorInputs => ({
 	gdi: '\\\\.\\DISPLAY1',
+	stable: 'DELD154-UID184579',
 	friendly: 'Dell U2720Q',
 	primary: true,
 	current_input: 0x11, // HDMI 1
@@ -54,6 +55,25 @@ describe('MonitorSwitchHost (container wiring)', () => {
 			expect(container.querySelector('[data-part="empty"]')?.textContent).toBe('monitor not found')
 		);
 		expect(container.querySelector('.ms-row')).toBeNull();
+	});
+
+	it('resolves a configured target by its stable identity key, never by a blank one', async () => {
+		listMonitorInputs.mockResolvedValue([
+			mon({ gdi: '\\\\.\\DISPLAY1', stable: '', primary: true, current_input: 0x11 }),
+			mon({
+				gdi: '\\\\.\\DISPLAY2',
+				stable: 'CRXED00-UID184576',
+				primary: false,
+				current_input: 0x0f
+			})
+		]);
+		const { container } = render(<MonitorSwitchHost monitor="CRXED00-UID184576" />);
+		await waitFor(() =>
+			expect(container.querySelector('.ms-row[data-active="true"]')?.textContent).toContain(
+				'DisplayPort 1'
+			)
+		);
+		expect(listMonitorInputs).toHaveBeenCalledWith('CRXED00-UID184576');
 	});
 
 	it('uses the label override as the title when provided', async () => {
@@ -200,6 +220,33 @@ describe('MonitorSwitchHost (container wiring)', () => {
 			);
 			expect(active?.textContent).toContain('DisplayPort 1');
 			unmount(); // tears down the interval + focus listener
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('skips an interval tick while a DDC read is still in flight (no pile-up mid input-switch)', async () => {
+		vi.useFakeTimers();
+		try {
+			// A monitor mid input-switch answers DDC slowly: the initial read is still pending when the
+			// next poll tick arrives. Ticks must not stack blocking reads behind it.
+			let resolveFirst!: (monitors: MonitorInputs[]) => void;
+			listMonitorInputs.mockImplementationOnce(
+				() => new Promise((resolve) => (resolveFirst = resolve))
+			);
+			const { container, unmount } = render(<MonitorSwitchHost />);
+			expect(listMonitorInputs).toHaveBeenCalledTimes(1);
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(8000 * 2); // two ticks while the read is pending
+			});
+			expect(listMonitorInputs).toHaveBeenCalledTimes(1);
+			await act(async () => resolveFirst([mon()]));
+			expect(container.querySelectorAll('.ms-row')).toHaveLength(2);
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(8000); // the read settled → polling resumes
+			});
+			expect(listMonitorInputs).toHaveBeenCalledTimes(2);
+			unmount();
 		} finally {
 			vi.useRealTimers();
 		}

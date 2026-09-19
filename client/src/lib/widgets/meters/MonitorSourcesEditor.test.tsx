@@ -11,6 +11,7 @@ import type { MonitorInputs } from '../../ddc/monitors';
 
 const mon = (over: Partial<MonitorInputs> = {}): MonitorInputs => ({
 	gdi: '\\\\.\\DISPLAY1',
+	stable: 'DELD154-UID184579',
 	friendly: 'Dell',
 	primary: true,
 	current_input: 0x11,

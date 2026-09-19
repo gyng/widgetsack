@@ -8,10 +8,12 @@ import type { TelemetryHub } from '../../core/telemetry';
 import type { StudioInitDeps } from './useStudioInit';
 import { useStudioInit } from './useStudioInit';
 
-const fillOwnMonitor = vi.fn((key: string) => Promise.resolve(void key));
+const fillOwnMonitor = vi.fn((key: string): Promise<void> => Promise.resolve(void key));
 const fillPrimaryMonitor = vi.fn(() => Promise.resolve());
 const setMainWindowVisible = vi.fn((visible: boolean) => Promise.resolve(void visible));
 let monitorParamValue: string | null = null;
+/** The topology-change callback the hook handed to watchDisplayChanges (the refit trigger). */
+let onDisplayChange: (() => void) | null = null;
 
 vi.mock('../../overlay', () => ({
 	fillOwnMonitor: (key: string) => fillOwnMonitor(key),
@@ -19,9 +21,13 @@ vi.mock('../../overlay', () => ({
 	setMainWindowVisible: (v: boolean) => setMainWindowVisible(v),
 	monitorParam: () => monitorParamValue,
 	listThemes: vi.fn(async () => []),
+	logClient: vi.fn(),
 	openStudio: vi.fn(() => Promise.resolve()),
 	studioMonitorOptions: vi.fn(async () => []),
-	watchDisplayChanges: vi.fn(() => () => undefined)
+	watchDisplayChanges: vi.fn((cb: () => void) => {
+		onDisplayChange = cb;
+		return () => undefined;
+	})
 }));
 vi.mock('../../core/plugin', () => ({
 	startAllSources: vi.fn(async () => () => undefined)
@@ -53,6 +59,47 @@ function makeDeps(overrides: Partial<StudioInitDeps> = {}): StudioInitDeps {
 beforeEach(() => {
 	vi.clearAllMocks();
 	monitorParamValue = null;
+	onDisplayChange = null;
+});
+
+describe('useStudioInit display-change refit', () => {
+	it('a topology change re-fits a secondary AND refreshes its work area', async () => {
+		monitorParamValue = 'DISPLAY3';
+		const deps = makeDeps();
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(fillOwnMonitor).toHaveBeenCalledWith('DISPLAY3'));
+		await waitFor(() => expect(deps.updateWorkArea).toHaveBeenCalledTimes(1)); // init
+		fillOwnMonitor.mockClear();
+		vi.mocked(deps.updateWorkArea).mockClear();
+
+		onDisplayChange!();
+		await waitFor(() => expect(fillOwnMonitor).toHaveBeenCalledWith('DISPLAY3'));
+		// The taskbar inset is re-read after the move: a window that moves without resizing fires
+		// no `resize`, which was the only other trigger, leaving the flow root rebased on stale data.
+		await waitFor(() => expect(deps.updateWorkArea).toHaveBeenCalledTimes(1));
+	});
+
+	it('a burst of topology changes collapses into one in-flight refit plus one trailing rerun', async () => {
+		monitorParamValue = 'DISPLAY3';
+		const deps = makeDeps();
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(fillOwnMonitor).toHaveBeenCalledWith('DISPLAY3'));
+		fillOwnMonitor.mockClear();
+		// Hold the first refit open so the burst lands while it is in flight (an HDMI switch fires
+		// the poller, the scale-change listener and the refit event within the same second).
+		let release!: () => void;
+		fillOwnMonitor.mockImplementationOnce(
+			() => new Promise<void>((resolve) => (release = resolve))
+		);
+		onDisplayChange!();
+		onDisplayChange!();
+		onDisplayChange!();
+		await waitFor(() => expect(fillOwnMonitor).toHaveBeenCalledTimes(1));
+		release();
+		await waitFor(() => expect(fillOwnMonitor).toHaveBeenCalledTimes(2));
+		await new Promise((r) => setTimeout(r, 20));
+		expect(fillOwnMonitor).toHaveBeenCalledTimes(2); // not three: the burst was coalesced
+	});
 });
 
 describe('useStudioInit window-role reveal', () => {

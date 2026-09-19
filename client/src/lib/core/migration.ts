@@ -79,12 +79,13 @@ export function migrateV1(v1: LayoutV1): LayoutV2 {
 // ---- monitor-key migration (index → stable device key) --------------------
 
 /**
- * Remap legacy NUMERIC monitor keys (the old `availableMonitors()` enumeration index — unstable
- * across reboots/hot-plugs, the "layout drawn on the wrong monitor" bug) to stable device keys
- * ('DISPLAY3' …), using `mapping` (old index key → device key) gathered by the adapter from the
- * CURRENT enumeration. Positionally correct at migration time, stable ever after. 'default' (the
- * primary) and already-migrated device keys pass through; a numeric key with no current monitor
- * (unplugged) is kept as-is so its layout isn't orphaned silently. Returns null when nothing
+ * Remap legacy monitor keys to the stable identity keys of today, using `mapping` (legacy key →
+ * stable key) gathered by the adapter from the CURRENT enumeration. Two legacy generations exist:
+ * the NUMERIC `availableMonitors()` index ('1' — reshuffled across reboots/hot-plugs) and the GDI
+ * device tag ('DISPLAY3' — re-numbered by Windows whenever displays re-enumerate, which on
+ * 2026-09-19 put a layout on the wrong monitor). Positionally correct at migration time, stable
+ * ever after. 'default' (the primary) and any key the mapping doesn't name pass through; a legacy
+ * key with no current monitor (unplugged) is kept as-is so its layout isn't orphaned silently. Returns null when nothing
  * needed remapping (caller skips the save). Pure, and generic over the monitor VALUE so the
  * adapter can remap the raw on-disk JSON record without round-tripping it through the parser
  * (which would strip fields the structural whitelist doesn't know).
@@ -96,10 +97,13 @@ export function migrateMonitorKeys<T>(
 	let changed = false;
 	const out: Record<string, T> = {};
 	for (const [key, mon] of Object.entries(monitors)) {
-		const isLegacyIndex = key !== 'default' && /^\d+$/.test(key);
-		const next = isLegacyIndex ? mapping[key] : undefined;
-		// Don't clobber an existing (already-migrated) monitor entry with a remapped legacy one.
-		if (next && next !== key && !(next in monitors)) {
+		// Any non-default key the mapping names is legacy: a pre-device-key enumeration index ('1')
+		// or a GDI device tag ('DISPLAY3') from before stable identity keys — Windows re-numbers those.
+		const next = key !== 'default' ? mapping[key] : undefined;
+		// Don't clobber an existing (already-migrated) monitor entry with a remapped legacy one, nor
+		// one a legacy key earlier in this pass already migrated onto (first writer wins; the loser
+		// keeps its legacy key rather than silently vanishing).
+		if (next && next !== key && !(next in monitors) && !(next in out)) {
 			out[next] = mon;
 			changed = true;
 		} else {

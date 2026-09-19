@@ -49,11 +49,23 @@ export default function MonitorSwitchHost({
 	const missing = currentSnapshot?.missing ?? false;
 	const loading = currentSnapshot === null;
 
+	// DDC reads in flight. A monitor mid input-switch answers slowly (or not at all until the switch
+	// settles), so the interval tick stands down while one is pending instead of stacking blocking
+	// reads behind it; focus + post-switch reconciles still go through (they carry fresh intent).
+	const inFlight = useRef(0);
+
 	const refresh = useCallback(async (): Promise<void> => {
 		const request = ++refreshId.current;
-		const list = await listMonitorInputs(target || undefined);
+		inFlight.current += 1;
+		let list: MonitorInputs[];
+		try {
+			list = await listMonitorInputs(target || undefined);
+		} finally {
+			inFlight.current -= 1;
+		}
+		// A configured target is a stable identity key (new picker) or a GDI name (older configs).
 		const found = target
-			? (list.find((m) => m.gdi === target) ?? null)
+			? (list.find((m) => m.gdi === target || (m.stable !== '' && m.stable === target)) ?? null)
 			: (list.find((m) => m.primary) ?? list[0] ?? null);
 		if (!mounted.current || request !== refreshId.current || targetRef.current !== target) return;
 		setSnapshot({ target, selected: found, missing: Boolean(target) && found === null });
@@ -66,7 +78,7 @@ export default function MonitorSwitchHost({
 		onFocus(); // initial load (kept off the effect's sync path — refresh setStates after an await)
 		window.addEventListener('focus', onFocus);
 		const timer = window.setInterval(() => {
-			if (alive) void refresh();
+			if (alive && inFlight.current === 0) void refresh();
 		}, REFRESH_MS);
 		return () => {
 			alive = false;
