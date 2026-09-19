@@ -23,6 +23,8 @@
 	font: inherit;
 	cursor: pointer;
 	line-height: 1;
+	min-width: var(--np-control-size, 28px);
+	min-height: var(--np-control-size, 28px);
 }
 .vol-icon {
 	font-size: var(--vol-icon-size, 1.2em);
@@ -34,7 +36,7 @@
 .vol-slider {
 	flex: 1 1 0;
 	min-width: 0;
-	height: 4px;
+	height: var(--np-control-size, 28px);
 	-webkit-appearance: none;
 	appearance: none;
 	border-radius: 2px;
@@ -45,6 +47,9 @@
 		var(--vol-accent, var(--np-accent, rgb(119, 196, 211))) 0 var(--vol-fill, 0%),
 		var(--np-label, rgba(255, 255, 255, 0.2)) var(--vol-fill, 0%) 100%
 	);
+	background-size: 100% 4px;
+	background-repeat: no-repeat;
+	background-position: center;
 }
 .volume[data-muted] .vol-slider {
 	filter: grayscale(1) opacity(0.6);

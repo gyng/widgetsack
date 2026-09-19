@@ -37,6 +37,22 @@ describe('AudioSwitcher meter', () => {
 			(r) => r.getAttribute('data-busy') === 'true'
 		);
 		expect(busy?.textContent).toContain('Headphones');
+		expect(
+			[...container.querySelectorAll<HTMLButtonElement>('.as-row')].every((row) => row.disabled)
+		).toBe(true);
+	});
+
+	it('exposes the active row as a pressed toggle', () => {
+		const { container } = render(
+			<AudioSwitcher devices={devices} currentId="a" onPick={() => undefined} />
+		);
+		const rows = [...container.querySelectorAll('.as-row')];
+		expect(
+			rows.find((row) => row.textContent?.includes('Speakers'))?.getAttribute('aria-pressed')
+		).toBe('true');
+		expect(
+			rows.find((row) => row.textContent?.includes('Headphones'))?.getAttribute('aria-pressed')
+		).toBe('false');
 	});
 
 	it('shows a dash with no devices', () => {

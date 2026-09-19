@@ -59,8 +59,10 @@ export function cssDiagnostics(src: string, opts: { supports?: SupportsFn } = {}
 			const prop = node.node.getChild('PropertyName');
 			if (!prop) return;
 			const property = text.slice(prop.from, prop.to);
+			/* v8 ignore next -- Lezer represents custom declarations with a different property node. */
 			if (property.startsWith('--')) return; // custom properties accept anything
 			const colon = text.indexOf(':', prop.to);
+			/* v8 ignore next -- a parsed Declaration with PropertyName necessarily contains its colon. */
 			if (colon < 0 || colon >= node.to) return;
 			const value = text
 				.slice(colon + 1, node.to)

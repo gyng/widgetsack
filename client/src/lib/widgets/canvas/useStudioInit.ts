@@ -7,6 +7,7 @@ import { useEffect, useRef } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { EVENTS } from '../../bridge/contract';
 import { startAllSources } from '../../core/plugin';
+import { singleFlight } from '../../core/singleFlight';
 import type { TelemetryHub } from '../../core/telemetry';
 import {
 	fillOwnMonitor,
@@ -73,7 +74,14 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// event fires for that, so an overlay otherwise stays anchored to stale coordinates and clips).
 			// Each role re-runs its own fit: a secondary re-fits itself, the primary re-fits + reconciles
 			// its overlays, the studio refreshes its monitor list.
-			const refit = async (): Promise<void> => {
+			// Single-flight with a trailing rerun (core/singleFlight.ts): an HDMI switch fires the
+			// topology poller, the refit event and (per DPI hop) the scale-change listener within the
+			// same second, and each refit is ~8 window IPC round trips — interleaving them races
+			// setPosition/setSize against each other. Collapsing the burst still lands the last one.
+			const refit = singleFlight(async (): Promise<void> => {
+				const role = dep.studio ? 'studio' : (ownKey ?? 'main');
+				const t0 = Date.now();
+				logClient('info', 'overlay', `refit start (${role})`);
 				if (dep.studio) {
 					d.current.setMonitorOptions(await studioMonitorOptions());
 				} else if (ownKey) {
@@ -82,9 +90,17 @@ export function useStudioInit(deps: StudioInitDeps): void {
 					await fillPrimaryMonitor();
 					await d.current.syncPrimaryOverlays();
 				}
+				// Re-read the work area (taskbar inset) after the move: a window that only MOVED fires
+				// no `resize`, which was the sole other trigger, so the flow root stayed rebased on
+				// whichever monitor the window sat on at its last resize.
+				if (!dep.studio) await d.current.updateWorkArea();
+				logClient('info', 'overlay', `refit done (${role}) in ${Date.now() - t0}ms`);
+			});
+			const triggerRefit = (): void => {
+				refit().catch((err) => logClient('error', 'overlay', `refit failed: ${String(err)}`));
 			};
-			unlistenRefit = await listen(EVENTS.refitOverlays, () => void refit());
-			stopDisplayWatch = watchDisplayChanges(() => void refit());
+			unlistenRefit = await listen(EVENTS.refitOverlays, triggerRefit);
+			stopDisplayWatch = watchDisplayChanges(triggerRefit);
 			if (cancelled) {
 				unlistenRefit?.();
 				stopDisplayWatch?.();

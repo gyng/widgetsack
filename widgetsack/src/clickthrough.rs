@@ -152,13 +152,21 @@ pub fn set_overlay_wallpaper(
 fn set_wallpaper_parent(window: &tauri::WebviewWindow, enabled: bool) -> Result<String, String> {
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FindWindowW, SMTO_NORMAL, SendMessageTimeoutW, SetParent,
+        EnumWindows, FindWindowW, GetParent, SMTO_NORMAL, SendMessageTimeoutW, SetParent,
     };
     use windows::core::w;
 
     let hwnd = HWND(window.hwnd().map_err(|e| e.to_string())?.0 as _);
 
     if !enabled {
+        // Already a top-level window (the common case: every refit re-applies the 'top'/'bottom'
+        // layer and passes through here) → nothing to detach. Skip the SetParent: it runs on the
+        // main thread and is a synchronous Win32 re-parent that is pure churn here — and a display
+        // topology change (the moment refits fire) is exactly when the shell is busiest.
+        // (`GetParent` is `Err` for a NULL parent in windows-rs.)
+        if unsafe { GetParent(hwnd) }.is_err() {
+            return Ok("already a normal overlay (no wallpaper parent)".to_string());
+        }
         // Re-attach to the desktop root → a normal top-level overlay again.
         unsafe { SetParent(hwnd, None) }.map_err(|e| e.to_string())?;
         return Ok("detached from the wallpaper (normal overlay)".to_string());

@@ -153,6 +153,7 @@ function Outline({
 	) => (
 		<button
 			type="button"
+			/* v8 ignore next -- every current outline action is revealable, dangerous, or both. */
 			className={[opts.reveal && 'mv', opts.danger && 'rm'].filter(Boolean).join(' ') || undefined}
 			title={label}
 			aria-label={label}

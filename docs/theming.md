@@ -36,6 +36,8 @@ theme only needs to set the ones it changes; anything it omits falls back to the
 | `--np-font-display` | `'Bahnschrift', 'Arial Narrow', sans-serif` | Display font family (large numerals / headings). |
 | `--np-radius` | `2px` | Corner radius for widget chrome. |
 | `--np-gap` | `4px` | Default gap between elements inside a widget. |
+| `--np-control-size` | `28px` | Minimum target size for compact interactive controls. |
+| `--np-touch-target` | `44px` | Minimum target size for large, touch-first controls. |
 
 ## Chrome tokens (the editor itself)
 

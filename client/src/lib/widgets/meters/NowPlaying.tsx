@@ -18,6 +18,7 @@ import {
 	useEffect,
 	useRef,
 	useState,
+	type KeyboardEvent as ReactKeyboardEvent,
 	type MouseEvent as ReactMouseEvent,
 	type TransitionEvent as ReactTransitionEvent
 } from 'react';
@@ -246,12 +247,33 @@ export default function NowPlaying({ session, caps = null, label, onControl }: P
 	};
 
 	const seekable = can('seek');
+	const seekTo = (value: number): void => {
+		if (!duration) return;
+		send('seek', Math.min(duration, Math.max(0, value)));
+	};
 	const seek = (e: ReactMouseEvent<HTMLDivElement>) => {
 		e.stopPropagation();
 		if (!duration) return;
 		const r = e.currentTarget.getBoundingClientRect();
+		if (r.width <= 0) return;
 		const frac = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-		send('seek', frac * duration);
+		seekTo(frac * duration);
+	};
+	const seekWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+		const value =
+			event.key === 'ArrowRight' || event.key === 'ArrowUp'
+				? position + 5
+				: event.key === 'ArrowLeft' || event.key === 'ArrowDown'
+					? position - 5
+					: event.key === 'Home'
+						? 0
+						: event.key === 'End'
+							? duration
+							: null;
+		if (value === null) return;
+		event.preventDefault();
+		event.stopPropagation();
+		seekTo(value);
 	};
 
 	return (
@@ -293,7 +315,15 @@ export default function NowPlaying({ session, caps = null, label, onControl }: P
 						className="np-progress"
 						data-part="progress"
 						data-seekable={seekable}
+						role={seekable ? 'slider' : undefined}
+						tabIndex={seekable ? 0 : undefined}
+						aria-label={seekable ? 'Track position' : undefined}
+						aria-valuemin={seekable ? 0 : undefined}
+						aria-valuemax={seekable ? duration : undefined}
+						aria-valuenow={seekable ? position : undefined}
+						aria-valuetext={seekable ? `${fmtTime(position)} of ${fmtTime(duration)}` : undefined}
 						onClick={seekable ? seek : undefined}
+						onKeyDown={seekable ? seekWithKeyboard : undefined}
 						style={seekable ? { cursor: 'pointer' } : undefined}
 					>
 						<div

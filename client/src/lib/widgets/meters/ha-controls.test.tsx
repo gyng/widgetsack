@@ -494,7 +494,7 @@ describe('HA control fallbacks (null value, default names, off/alt states)', () 
 				}}
 			/>
 		);
-		const mute = getByLabelText('Mute Speaker');
+		const mute = getByLabelText('Unmute Speaker');
 		expect(mute.textContent).toBe('🔇');
 		expect(mute.className).toContain('on');
 		expect(mute.getAttribute('aria-pressed')).toBe('true');

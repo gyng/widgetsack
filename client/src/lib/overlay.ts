@@ -18,12 +18,14 @@ import type { WindowDescriptor } from './core/windowMatch';
 import { monitorHasWidgets } from './core/layoutTree';
 import { builtinCss } from './core/builtinThemes';
 import { compareMonitorOptions, monitorOptionLabel } from './monitorLabel';
-import { monitorByKey, monitorDeviceKey } from './monitorKey';
+import { gdiTag, monitorByKey, monitorDeviceKey, type StableIds } from './monitorKey';
 import { migrateMonitorKeys, parseLayoutAny } from './core/migration';
+import { legacyKeyMapping, type WindowGeometryHint } from './core/monitorMigration';
 import { readOverlayPrefs, type OverlayLayer } from './widgets/canvas/overlayPrefs';
 import type { OverlayPresentation } from './widgets/canvas/overlayPresentation';
 import { COMMANDS, EVENTS } from './bridge/contract';
 import { singleFlight } from './core/singleFlight';
+import { fitWindowVerified, type PhysicalBox } from './core/windowFit';
 
 /** Route an overlay-lifecycle failure to BOTH this window's console (so a live devtools session
  *  still sees it) and the backend's persistent rotating log file (so it survives the webview
@@ -130,11 +132,15 @@ async function populatedMonitorKeys(
 			if (migrated) {
 				obj.monitors = migrated;
 				await invoke(COMMANDS.saveLayout, { contents: JSON.stringify(obj, null, 2) });
-				console.info(
-					'[overlay] migrated legacy monitor index keys → device keys:',
-					Object.entries(legacyMapping)
-						.map(([a, b]) => `${a}→${b}`)
-						.join(', ')
+				// Persist it: a layout that lands on the wrong monitor after an upgrade is a question
+				// the log file must be able to answer ("which key became which, from which enumeration").
+				logClient(
+					'info',
+					'overlay',
+					'migrated legacy monitor keys → stable identity keys: ' +
+						Object.entries(legacyMapping)
+							.map(([a, b]) => `${a}→${b}`)
+							.join(', ')
 				);
 			}
 		}
@@ -270,6 +276,53 @@ export async function monitorWorkArea(): Promise<Rect | null> {
 	}
 }
 
+/** The window-side half of a monitor fit (core/windowFit.ts holds the pure retry policy): a
+ * `Window`-like target (the current window or a `WebviewWindow` handle) is positioned + sized onto
+ * `m` in PHYSICAL px, its outer geometry is read back, and the fit is re-applied while it differs.
+ * On Windows a fit is not the last word — a DPI hop between monitors (WM_DPICHANGED inside our own
+ * SetWindowPos, answered by tao with the OS-suggested rect) or a display-topology change can leave
+ * the window a few px off, which shows up as widgets clipped at a monitor edge. Any retry or final
+ * mismatch is logged with the observed rect so a stubborn case is diagnosable from the log file. */
+async function fitWindowToMonitor(
+	win: {
+		setPosition: (p: PhysicalPosition) => Promise<void>;
+		setSize: (s: PhysicalSize) => Promise<void>;
+		outerPosition: () => Promise<{ x: number; y: number }>;
+		outerSize: () => Promise<{ width: number; height: number }>;
+	},
+	m: Monitor,
+	what: string
+): Promise<void> {
+	const target: PhysicalBox = {
+		x: m.position.x,
+		y: m.position.y,
+		w: m.size.width,
+		h: m.size.height
+	};
+	const result = await fitWindowVerified(
+		{
+			setPosition: (x, y) => win.setPosition(new PhysicalPosition(x, y)),
+			setSize: (w, h) => win.setSize(new PhysicalSize(w, h)),
+			readBack: async () => {
+				const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
+				return { x: pos.x, y: pos.y, w: size.width, h: size.height };
+			}
+		},
+		target,
+		{ sleep: (ms) => new Promise((r) => setTimeout(r, ms)) }
+	);
+	if (result.mismatch !== null) {
+		logClient(
+			result.ok ? 'info' : 'warn',
+			'overlay',
+			`${what}: fit to ${m.name ?? '?'} ${target.w}x${target.h}@${target.x},${target.y} ` +
+				(result.ok
+					? `converged after ${result.attempts} passes (was ${result.mismatch})`
+					: `still off after ${result.attempts} passes (${result.mismatch})`)
+		);
+	}
+}
+
 // Guard so repeat fillPrimaryMonitor() calls don't stack duplicate onScaleChanged listeners.
 let scaleListenerWired = false;
 
@@ -281,8 +334,7 @@ export async function fillPrimaryMonitor(): Promise<void> {
 	const monitor = (await primaryMonitor()) ?? (await currentMonitor());
 	if (!monitor) return;
 	const win = getCurrentWindow();
-	await win.setPosition(new PhysicalPosition(monitor.position.x, monitor.position.y));
-	await win.setSize(new PhysicalSize(monitor.size.width, monitor.size.height));
+	await fitWindowToMonitor(win, monitor, 'fillPrimaryMonitor');
 	// Re-assert borderless AFTER the resize: on Windows an undecorated window keeps a thin
 	// accent-coloured border (tauri-apps/discussions/9469), and setSize can revive it even when
 	// the config has shadow:false. Also force decorations off — the window-state plugin can
@@ -333,14 +385,14 @@ let ownScaleListenerWired = false;
  * orphan). */
 export async function fillOwnMonitor(key: string): Promise<void> {
 	try {
-		const m = monitorByKey(await availableMonitors(), key);
+		const [monitors, ids] = await Promise.all([availableMonitors(), displayIds()]);
+		const m = monitorByKey(monitors, key, ids.stable);
 		if (!m) {
 			console.warn(`fillOwnMonitor: no monitor matches key '${key}'`);
 			return;
 		}
 		const win = getCurrentWindow();
-		await win.setPosition(new PhysicalPosition(m.position.x, m.position.y));
-		await win.setSize(new PhysicalSize(m.size.width, m.size.height));
+		await fitWindowToMonitor(win, m, `fillOwnMonitor(${key})`);
 		// Same re-asserts as the spawn side: no border/title bar (the window-state plugin can restore
 		// a stale decorations:true) and click-through BEFORE the window is ever visible.
 		await win.setDecorations(false);
@@ -390,7 +442,12 @@ export function watchDisplayChanges(onChange: () => void): () => void {
 		if (!alive) return;
 		try {
 			const s = sig(await availableMonitors());
-			if (last !== null && s !== last) onChange();
+			if (last !== null && s !== last) {
+				// Persist the before/after topology (the log file outlives the webview): a hang or a
+				// mis-fit during an HDMI switch was otherwise invisible in the postmortem.
+				logClient('info', 'overlay', `display topology changed: [${last}] → [${s}]`);
+				onChange();
+			}
 			last = s;
 		} catch {
 			/* transient enumeration failure — retry next tick */
@@ -845,10 +902,10 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 export async function studioMonitorOptions(): Promise<
 	{ key: string; label: string; name: string; w: number; h: number }[]
 > {
-	const [all, primary, friendlyByDevice] = await Promise.all([
+	const [all, primary, ids] = await Promise.all([
 		availableMonitors(),
 		primaryMonitor(),
-		displayNamesByDevice()
+		displayIds()
 	]);
 	const options = all.map((m, i) => {
 		const isPrimary =
@@ -865,11 +922,11 @@ export async function studioMonitorOptions(): Promise<
 		const name = (m.name ?? '').replace(/^[\\.?]+/, '') || `Monitor ${i + 1}`;
 		// Case-insensitive merge: GDI device names are uppercase on both sides today, but normalizing the
 		// lookup key guards against the friendly name silently vanishing if either source ever differs.
-		const friendly = friendlyByDevice.get(name.toUpperCase()) ?? '';
+		const friendly = ids.friendly.get(name.toUpperCase()) ?? '';
 		return {
-			// The KEY is the same stable device tag the label shows — keying by enumeration index put
-			// layouts on the wrong physical monitor whenever Windows re-ordered the enumeration.
-			key: isPrimary ? 'default' : monitorDeviceKey(m.name, i),
+			// The KEY is the monitor's stable identity (monitorKey.ts) — NOT the DISPLAYn tag the label
+			// shows, which Windows re-numbers across re-enumerations, and not the enumeration index.
+			key: isPrimary ? 'default' : monitorDeviceKey(m.name, i, ids.stable),
 			label: monitorOptionLabel({
 				device: name,
 				friendly,
@@ -889,19 +946,38 @@ export async function studioMonitorOptions(): Promise<
 	return options.sort(compareMonitorOptions);
 }
 
-/** Friendly monitor names from the Win32 backend (`list_display_names`), keyed by the stripped GDI
- * device tag (DISPLAYn) so it lines up with `studioMonitorOptions`' own `name`. Returns an empty Map on
- * non-Windows / a plain browser / tests, or if the command is unavailable — callers fall back to the
- * device tag alone. */
-async function displayNamesByDevice(): Promise<Map<string, string>> {
+/** Per-display identity from the Win32 backend (`list_display_names`), keyed by the stripped GDI device
+ * tag (DISPLAYn) so it joins onto Tauri's `Monitor.name`: `friendly` = the EDID model name (labels;
+ * upper-cased tag key), `stable` = the durable identity key layouts are keyed on (monitorKey.ts; blank
+ * entries dropped so "unknown" falls back to the tag). Both empty on non-Windows / a plain browser /
+ * tests, or if the command is unavailable — every caller then falls back to the GDI tag alone. */
+async function displayIds(): Promise<{ friendly: Map<string, string>; stable: StableIds }> {
+	const friendly = new Map<string, string>();
+	const stable = new Map<string, string>();
 	try {
 		const list =
-			(await invoke<{ gdi: string; friendly: string }[]>(COMMANDS.listDisplayNames)) ?? [];
-		return new Map(
-			list.map((d) => [d.gdi.replace(/^[\\.?]+/, '').toUpperCase(), (d.friendly ?? '').trim()])
-		);
+			(await invoke<{ gdi: string; friendly: string; stable?: string }[]>(
+				COMMANDS.listDisplayNames
+			)) ?? [];
+		for (const d of list) {
+			const tag = gdiTag(d.gdi);
+			friendly.set(tag.toUpperCase(), (d.friendly ?? '').trim());
+			const id = (d.stable ?? '').trim();
+			if (tag && id) stable.set(tag, id);
+		}
 	} catch {
-		return new Map();
+		/* no backend — tags only */
+	}
+	return { friendly, stable };
+}
+
+/** Last saved physical size per app window (backend `window_state_hints`), the tie-breaker the
+ * layout-key migration uses when Windows has re-numbered displays. Empty on any failure. */
+async function windowStateHints(): Promise<WindowGeometryHint[]> {
+	try {
+		return (await invoke<WindowGeometryHint[]>(COMMANDS.windowStateHints)) ?? [];
+	} catch {
+		return [];
 	}
 }
 
@@ -977,19 +1053,30 @@ export async function closeWindow(): Promise<void> {
  * (the loser errors). Wrapped in {@link singleFlight} below so overlapping calls collapse into the
  * in-flight pass plus at most one trailing rerun that picks up whatever changed meanwhile. */
 async function reconcileOverlaysOnce(): Promise<void> {
-	const [monitors, primary, existing] = await Promise.all([
+	const [monitors, primary, existing, ids, hints] = await Promise.all([
 		availableMonitors(),
 		primaryMonitor(),
-		getAllWebviewWindows()
+		getAllWebviewWindows(),
+		displayIds(),
+		windowStateHints()
 	]);
 	const isPrimaryMon = (m: Monitor): boolean =>
 		!!primary && m.position.x === primary.position.x && m.position.y === primary.position.y;
-	// Old index key → stable device key, from the CURRENT enumeration: positionally correct for a
-	// layout saved by the index-keyed builds, and the basis the keys stay stable on afterwards.
-	const legacyMapping: Record<string, string> = {};
-	monitors.forEach((m, i) => {
-		if (!isPrimaryMon(m)) legacyMapping[String(i)] = monitorDeviceKey(m.name, i);
-	});
+	// Legacy key → stable identity key (core/monitorMigration.ts): the old enumeration index AND the
+	// GDI tag (Windows re-numbers DISPLAYn, so a tag-keyed layout is legacy too), by today's names —
+	// except where a saved overlay window's size pins a legacy key to one specific monitor, which
+	// survives the names having been re-numbered since the layout was saved.
+	const legacyMapping = legacyKeyMapping(
+		monitors.map((m, i) => ({
+			index: i,
+			key: monitorDeviceKey(m.name, i, ids.stable),
+			tag: gdiTag(m.name),
+			primary: isPrimaryMon(m),
+			w: m.size.width,
+			h: m.size.height
+		})),
+		hints
+	);
 	const populated = await populatedMonitorKeys(legacyMapping);
 	if (populated === null) {
 		// Couldn't read the layout this pass — skip it entirely rather than treat "no data" as
@@ -1008,16 +1095,18 @@ async function reconcileOverlaysOnce(): Promise<void> {
 		if (isPrimaryMon(m)) {
 			continue;
 		}
-		const key = monitorDeviceKey(m.name, i);
+		const key = monitorDeviceKey(m.name, i, ids.stable);
 		const label = `overlay-${key}`;
 		const have = byLabel.get(label);
-		// Close any pre-device-key window for this slot so an old `overlay-<i>` doesn't linger
-		// alongside its renamed successor after the migration.
-		const legacy = byLabel.get(`overlay-${i}`);
-		if (legacy && legacy.label !== label) {
-			await legacy
-				.close()
-				.catch((err) => console.warn('close legacy overlay failed', legacy.label, err));
+		// Close any legacy-keyed window for this slot (`overlay-<i>` from the index era, `overlay-DISPLAYn`
+		// from the GDI-tag era) so it doesn't linger alongside its renamed successor after the migration.
+		for (const legacyLabel of [`overlay-${i}`, `overlay-${gdiTag(m.name)}`]) {
+			const legacy = byLabel.get(legacyLabel);
+			if (legacy && legacy.label !== label) {
+				await legacy
+					.close()
+					.catch((err) => console.warn('close legacy overlay failed', legacy.label, err));
+			}
 		}
 		const want = populated.has(key);
 		// Close an overlay whose monitor no longer has any widgets.
@@ -1048,8 +1137,7 @@ async function reconcileOverlaysOnce(): Promise<void> {
 		// re-runs the same setup via fillOwnMonitor (idempotent), so it reveals either way.
 		w.once('tauri://created', async () => {
 			try {
-				await w.setPosition(new PhysicalPosition(m.position.x, m.position.y));
-				await w.setSize(new PhysicalSize(m.size.width, m.size.height));
+				await fitWindowToMonitor(w, m, `spawn ${label}`);
 				// Re-assert after the resize (see fillPrimaryMonitor) so no border/title bar
 				// remains — the window-state plugin can restore a stale decorations:true.
 				await w.setDecorations(false);
@@ -1065,13 +1153,16 @@ async function reconcileOverlaysOnce(): Promise<void> {
 				} else if (layer === 'top') {
 					await w.setAlwaysOnTop(true);
 				}
-				// #12: DPI/scale hot-plug. Re-fit this overlay to monitor `m` (captured) when its
-				// scale factor changes at runtime. Scale-change only — physical monitor add/remove
-				// is out of scope here (reconcileOverlays handles open/close on layout change).
+				// #12: DPI/scale hot-plug. Re-fit this overlay to ITS monitor when its scale factor
+				// changes at runtime — resolved afresh by device key, NOT the `m` captured above: a
+				// topology change (HDMI switch, monitor re-arranged) can move the monitor, and a DPI
+				// hop that follows would otherwise re-anchor the overlay to the stale coordinates.
+				// Scale-change only — monitor add/remove is reconcileOverlays' job on layout change.
 				await w.onScaleChanged(() => {
 					(async () => {
-						await w.setPosition(new PhysicalPosition(m.position.x, m.position.y));
-						await w.setSize(new PhysicalSize(m.size.width, m.size.height));
+						const [mons, live] = await Promise.all([availableMonitors(), displayIds()]);
+						const now = monitorByKey(mons, key, live.stable);
+						if (now) await fitWindowToMonitor(w, now, `scale-change ${label}`);
 					})().catch((err) =>
 						logClient(
 							'warn',

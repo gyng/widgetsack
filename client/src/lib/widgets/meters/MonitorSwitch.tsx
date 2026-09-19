@@ -15,6 +15,8 @@ type Props = {
 	// The configured monitor isn't present (unplugged / switched away / wrong id) — show a hint
 	// instead of buttons that would target nothing.
 	missing?: boolean;
+	loading?: boolean;
+	unavailable?: boolean;
 	// Compact list (small rows) instead of the default large touch buttons.
 	compact?: boolean;
 	onPick: (value: number) => void;
@@ -28,6 +30,8 @@ export default function MonitorSwitch({
 	showStats,
 	busyValue,
 	missing,
+	loading,
+	unavailable,
 	compact,
 	onPick,
 	color
@@ -44,9 +48,17 @@ export default function MonitorSwitch({
 				<span className="ms-title">{title}</span>
 				{showStats && stats ? <span className="ms-stats">{stats}</span> : null}
 			</div>
-			{missing ? (
+			{loading ? (
+				<div className="ms-empty" data-part="empty">
+					loading…
+				</div>
+			) : missing ? (
 				<div className="ms-empty" data-part="empty">
 					monitor not found
+				</div>
+			) : unavailable ? (
+				<div className="ms-empty" data-part="empty">
+					no DDC monitor found
 				</div>
 			) : rows.length === 0 ? (
 				<div className="ms-empty" data-part="empty">
@@ -61,7 +73,9 @@ export default function MonitorSwitch({
 							className="ms-row"
 							data-active={r.active || undefined}
 							data-busy={busyValue === r.value || undefined}
-							aria-pressed={r.active || undefined}
+							aria-pressed={r.active}
+							aria-busy={busyValue === r.value || undefined}
+							disabled={busyValue != null}
 							onClick={() => onPick(r.value)}
 							title={r.label}
 						>

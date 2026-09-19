@@ -47,6 +47,7 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.listWallpapers:
 			case COMMANDS.getLogs:
 			case COMMANDS.systemFonts:
+			case COMMANDS.windowStateHints:
 			case COMMANDS.listDisplayNames:
 				// 'list_display_names' (Windows-only friendly monitor names) has no real displays under the
 				// mock, so the switcher falls back to the device tag — and the boot stays self-policing.

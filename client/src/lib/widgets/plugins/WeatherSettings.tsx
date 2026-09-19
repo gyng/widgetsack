@@ -60,6 +60,7 @@ export default function WeatherSettings() {
 	const dirtied = () => setSaved(false);
 
 	const onSave = async () => {
+		/* v8 ignore next -- invalid/saving states disable the only Save control; guard protects direct calls. */
 		if (!valid || saving) return;
 		setSaving(true);
 		try {

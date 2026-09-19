@@ -7,10 +7,13 @@ import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from '../bridge/contract';
 
 /** One monitor's input-switching state. Mirrors `MonitorInputs` in widgetsack/src/ddc.rs. Keyed by
- *  `gdi` (`\\.\DISPLAYn`). `currentInput` / `supported` are DDC/CI (VCP 0x60) and only filled for the
- *  queried target; `width`/`height`/`refreshHz` are the OS display mode (0 if unknown). */
+ *  `gdi` (`\\.\DISPLAYn`) and by `stable` (the durable identity key, '' when unknown — Windows
+ *  re-numbers GDI names, so a configured target may be either). `currentInput` / `supported` are DDC/CI
+ *  (VCP 0x60) and only filled for the queried target; `width`/`height`/`refreshHz` are the OS display
+ *  mode (0 if unknown). */
 export type MonitorInputs = {
 	gdi: string;
+	stable: string;
 	friendly: string;
 	primary: boolean;
 	current_input: number | null;
@@ -20,8 +23,8 @@ export type MonitorInputs = {
 	refresh_hz: number;
 };
 
-/** All monitors; DDC (current/supported) is filled only for `target` (a GDI device name) — or the
- *  primary monitor when omitted. Empty list off-Windows / on failure. */
+/** All monitors; DDC (current/supported) is filled only for `target` (a stable identity key or a GDI
+ *  device name) — or the primary monitor when omitted. Empty list off-Windows / on failure. */
 export async function listMonitorInputs(target?: string): Promise<MonitorInputs[]> {
 	try {
 		return (

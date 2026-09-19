@@ -16,6 +16,10 @@ export default function VolumeHost({ color }: Props) {
 	// to the (slightly stale) backend value mid-drag. Released a beat after the last change.
 	const holdRef = useRef(false);
 	const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const queuedVolume = useRef<number | null>(null);
+	const volumeWriting = useRef(false);
+	const queuedMute = useRef<boolean | null>(null);
+	const muteWriting = useRef(false);
 
 	useEffect(() => {
 		let alive = true;
@@ -35,23 +39,64 @@ export default function VolumeHost({ color }: Props) {
 		};
 	}, []);
 
-	const onSet = useCallback((l: number): void => {
-		holdRef.current = true;
-		setLevel(l); // optimistic
-		void setAudioVolume(l);
-		if (holdTimer.current) clearTimeout(holdTimer.current);
-		holdTimer.current = setTimeout(() => {
-			holdRef.current = false;
-		}, 400);
+	const flushVolume = useCallback(async (): Promise<void> => {
+		if (volumeWriting.current) return;
+		volumeWriting.current = true;
+		try {
+			while (queuedVolume.current !== null) {
+				const value = queuedVolume.current;
+				queuedVolume.current = null;
+				try {
+					await setAudioVolume(value);
+				} catch (error) {
+					console.warn('volume write failed', error);
+				}
+			}
+		} finally {
+			volumeWriting.current = false;
+		}
 	}, []);
+
+	const flushMute = useCallback(async (): Promise<void> => {
+		if (muteWriting.current) return;
+		muteWriting.current = true;
+		try {
+			while (queuedMute.current !== null) {
+				const value = queuedMute.current;
+				queuedMute.current = null;
+				try {
+					await setAudioMute(value);
+				} catch (error) {
+					console.warn('mute write failed', error);
+				}
+			}
+		} finally {
+			muteWriting.current = false;
+		}
+	}, []);
+
+	const onSet = useCallback(
+		(l: number): void => {
+			holdRef.current = true;
+			setLevel(l); // optimistic
+			queuedVolume.current = l;
+			void flushVolume();
+			if (holdTimer.current) clearTimeout(holdTimer.current);
+			holdTimer.current = setTimeout(() => {
+				holdRef.current = false;
+			}, 400);
+		},
+		[flushVolume]
+	);
 
 	const onToggleMute = useCallback((): void => {
 		setMuted((prev) => {
 			const next = !prev;
-			void setAudioMute(next);
+			queuedMute.current = next;
+			void flushMute();
 			return next;
 		});
-	}, []);
+	}, [flushMute]);
 
 	return (
 		<Volume level={level} muted={muted} onSet={onSet} onToggleMute={onToggleMute} color={color} />

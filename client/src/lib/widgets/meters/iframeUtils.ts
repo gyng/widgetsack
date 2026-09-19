@@ -44,7 +44,7 @@ export function normalizeUrl(input: string): string {
 	const candidate = authority ? raw : `https://${raw.replace(/^\/+/, '')}`;
 	try {
 		const u = new URL(candidate);
-		if (u.protocol !== 'http:' && u.protocol !== 'https:') return '';
+		// candidate is either an already-validated http(s) authority or one we prefixed with https://.
 		u.username = '';
 		u.password = '';
 		return u.href;

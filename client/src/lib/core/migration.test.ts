@@ -29,6 +29,37 @@ describe('migrateMonitorKeys', () => {
 		const out = migrateMonitorKeys({ DISPLAY2: keep, '1': legacy }, { '1': 'DISPLAY2' });
 		expect(out).toBeNull(); // legacy '1' stays put rather than overwriting DISPLAY2
 	});
+
+	it('remaps GDI-tag keys to the stable identity keys the mapping names', () => {
+		// Windows re-numbers \.\DISPLAYn across re-enumerations, so 'DISPLAY3' is a legacy key too:
+		// the mapping (built from the current enumeration) carries tag → stable-id entries as well.
+		const strip = mon();
+		const out = migrateMonitorKeys(
+			{ default: mon(), DISPLAY3: strip },
+			{ '1': 'CRXED00-UID184576', DISPLAY3: 'CRXED00-UID184576', DISPLAY1: 'DELD154-UID184579' }
+		);
+		expect(out && Object.keys(out).sort()).toEqual(['CRXED00-UID184576', 'default']);
+		expect(out?.['CRXED00-UID184576']).toBe(strip);
+	});
+
+	it('when two legacy keys map to one stable key, the first wins and the other keeps its key', () => {
+		const strip = mon();
+		const stray = mon();
+		const out = migrateMonitorKeys(
+			{ DISPLAY3: strip, DISPLAY2: stray },
+			{ DISPLAY3: 'CRXED00-UID184576', DISPLAY2: 'CRXED00-UID184576' }
+		);
+		expect(out).toEqual({ 'CRXED00-UID184576': strip, DISPLAY2: stray });
+	});
+
+	it('leaves default and any key the mapping does not name untouched', () => {
+		expect(
+			migrateMonitorKeys(
+				{ default: mon(), 'CRXED00-UID184576': mon() },
+				{ DISPLAY2: 'CRXED00-UID184576', default: 'nope' }
+			)
+		).toBeNull();
+	});
 });
 
 const widget = (id: string, x: number, y: number, w: number, h: number): WidgetInstance => ({

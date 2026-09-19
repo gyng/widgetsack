@@ -125,6 +125,7 @@ function WidgetHost({
 	useLayoutEffect(() => {
 		if (!contentSize || !onMeasure || typeof ResizeObserver === 'undefined') return;
 		const el = boxRef.current;
+		/* v8 ignore next -- the layout effect runs only after the host div ref has attached. */
 		if (!el) return;
 		const report = () => {
 			const w = Math.round(el.offsetWidth);
@@ -231,6 +232,7 @@ function WidgetHost({
 		const intent = dragMoveIntent(e.button);
 		if (!intent || !intent.start) return; // middle-drag is reserved for panning
 		if (intent.skipFlow && !(movable && kind === 'move')) return;
+		/* v8 ignore next -- begin is wired only on edit-mode overlay/handles, which are absent otherwise. */
 		if (!editMode) return;
 		const d = drag.current;
 		d.wasSelected = selected;

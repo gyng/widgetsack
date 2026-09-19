@@ -40,7 +40,9 @@ const CAP_KEYS: (keyof MediaCaps)[] = [
 // Format a live sensor value for the read-out (text as-is, scalar tidied). '—' for empty/idle.
 function fmtSensorValue(v: SensorValue): string {
 	if (v.kind === 'text') return v.value || '—';
+	/* v8 ignore else -- mediaSensorSamples emits only text and scalar values. */
 	if (v.kind === 'scalar') return Number.isInteger(v.value) ? String(v.value) : v.value.toFixed(1);
+	/* v8 ignore next -- mediaSensorSamples emits only text and scalar values. */
 	return '—';
 }
 
@@ -132,7 +134,7 @@ export default function NowPlayingSettings() {
 			armTimer.current = setTimeout(() => setArmed(false), 3000);
 			return;
 		}
-		if (armTimer.current) clearTimeout(armTimer.current);
+		clearTimeout(armTimer.current!);
 		setArmed(false);
 		// Keep the live sessions; restore only the saved settings.
 		mediaStore.update((s) => ({ ...defaultState, sessions: s.sessions }));

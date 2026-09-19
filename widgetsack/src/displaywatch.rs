@@ -165,7 +165,22 @@ fn on_display_change() {
         // Window creation must run on the main thread (same constraint as keepalive/watch_layout).
         let dispatched = app.run_on_main_thread(move || {
             RESPAWN_PENDING.store(false, Ordering::SeqCst);
-            if should_respawn_on_display_change(handle.webview_windows().len()) {
+            let windows = handle.webview_windows().len();
+            let respawn = should_respawn_on_display_change(windows);
+            // Always leave a trace: a display change is exactly the moment a hang or a mis-fit
+            // happens, and the log file (unlike the webview) survives it.
+            crate::log::info("displaywatch", "display change")
+                .field("windows", windows)
+                .field(
+                    "action",
+                    if respawn {
+                        "respawn main"
+                    } else {
+                        "stand down (live windows refit themselves)"
+                    },
+                )
+                .emit();
+            if respawn {
                 crate::command::respawn_main_hidden(&handle, "display change");
             }
         });

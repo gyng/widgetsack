@@ -222,6 +222,7 @@ export default function HaSettings() {
 	const canSubmit = url.trim().length > 0 && !saving;
 
 	const onSave = async () => {
+		/* v8 ignore next -- canSubmit=false disables the only Save control; guard protects direct calls. */
 		if (!canSubmit) return;
 		setSaving(true);
 		try {

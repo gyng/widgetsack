@@ -55,7 +55,8 @@ export function magnitudeColor(v: number): Rgb {
 		if (m <= stops[i][0]) {
 			const [t0, c0] = stops[i - 1];
 			const [t1, c1] = stops[i];
-			const f = (m - t0) / (t1 - t0 || 1);
+			// Stops are a fixed, strictly increasing table, so the denominator is always positive.
+			const f = (m - t0) / (t1 - t0);
 			return [
 				Math.round(c0[0] + (c1[0] - c0[0]) * f),
 				Math.round(c0[1] + (c1[1] - c0[1]) * f),
@@ -63,6 +64,7 @@ export function magnitudeColor(v: number): Rgb {
 			];
 		}
 	}
+	/* v8 ignore next -- m is clamped to 1 and the final stop is exactly 1. */
 	return stops[stops.length - 1][1];
 }
 
@@ -83,7 +85,7 @@ export type Pip = { frac: number; label: string };
 export function pipPositions(freqs: number[], fmin: number, fmax: number, linear: boolean): Pip[] {
 	if (fmax <= fmin || fmin <= 0) return [];
 	const span = linear ? fmax - fmin : Math.log(fmax) - Math.log(fmin);
-	if (span <= 0) return [];
+	// The validated positive, increasing bounds make both linear and logarithmic spans positive.
 	return freqs
 		.filter((f) => f >= fmin && f <= fmax)
 		.map((f) => {

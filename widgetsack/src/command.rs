@@ -178,6 +178,50 @@ fn stale_backups(mut names: Vec<String>, keep: usize) -> Vec<String> {
     names.split_off(keep.min(names.len()))
 }
 
+/// The last-known physical size of each app window, from the window-state plugin's
+/// `.window-state.json` (written on a clean exit). Mirrors `WindowGeometryHint` in
+/// client/src/lib/core/monitorMigration.ts. Used ONCE, by the layout-key migration: when Windows has
+/// re-numbered `\\.\DISPLAYn` since a layout was saved, the name alone points at the wrong monitor,
+/// but the overlay window that rendered that key was exactly monitor-sized — so its saved size
+/// identifies the physical monitor the layout belongs on. Best-effort: empty on any failure.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct WindowGeometryHint {
+    pub label: String,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// Pure seam: `.window-state.json` (`{ "<label>": { "width": w, "height": h, … }, … }`) → hints.
+/// Entries without both numeric dimensions are skipped; anything unparseable yields an empty list.
+pub fn parse_window_state_hints(json: &str) -> Vec<WindowGeometryHint> {
+    let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    map.iter()
+        .filter_map(|(label, v)| {
+            let width = v.get("width")?.as_f64()?;
+            let height = v.get("height")?.as_f64()?;
+            Some(WindowGeometryHint {
+                label: label.clone(),
+                width,
+                height,
+            })
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub async fn window_state_hints(app: tauri::AppHandle) -> Vec<WindowGeometryHint> {
+    // The plugin writes to the plain app config dir (not the `multi/` sub-root config_root uses).
+    let Ok(dir) = app.path().app_config_dir() else {
+        return Vec::new();
+    };
+    match fs::read_to_string(dir.join(".window-state.json")) {
+        Ok(json) => parse_window_state_hints(&json),
+        Err(_) => Vec::new(),
+    }
+}
+
 /// Copy the CURRENT widgets.json aside as `widgets.json.bad-<epoch-ms>` — called by the frontend
 /// when it fails to PARSE the layout, BEFORE the running app (now on an in-memory default) can
 /// save over the original and destroy whatever was hand-recoverable in it. Keeps the newest
@@ -1672,9 +1716,9 @@ pub fn watch_controls(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        atomic_write, client_log_level, install_http_client, install_package_directory,
-        install_package_directory_with, merge_layout_contents, stale_backups, truncate_chars,
-        valid_name, version_is_newer,
+        WindowGeometryHint, atomic_write, client_log_level, install_http_client,
+        install_package_directory, install_package_directory_with, merge_layout_contents,
+        parse_window_state_hints, stale_backups, truncate_chars, valid_name, version_is_newer,
     };
     use crate::log::LogLevel;
     use serde_json::json;
@@ -2168,5 +2212,38 @@ mod tests {
         assert!(!super::valid_wallpaper_name("sub/dir.png")); // separator
         assert!(!super::valid_wallpaper_name("a\\b.png")); // separator
         assert!(!super::valid_wallpaper_name("")); // empty
+    }
+    #[test]
+    fn window_state_hints_keep_label_and_size_and_skip_incomplete_entries() {
+        let json = r#"{
+            "studio": { "width": 1767, "height": 1016, "x": 1027, "y": 380, "maximized": false },
+            "overlay-DISPLAY3": { "width": 2560, "height": 720, "x": 652, "y": 2160 },
+            "broken": { "width": "wide" },
+            "partial": { "height": 5 }
+        }"#;
+        let mut hints = parse_window_state_hints(json);
+        hints.sort_by(|a, b| a.label.cmp(&b.label));
+        assert_eq!(
+            hints,
+            vec![
+                WindowGeometryHint {
+                    label: "overlay-DISPLAY3".into(),
+                    width: 2560.0,
+                    height: 720.0
+                },
+                WindowGeometryHint {
+                    label: "studio".into(),
+                    width: 1767.0,
+                    height: 1016.0
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn window_state_hints_are_empty_for_garbage() {
+        assert!(parse_window_state_hints("").is_empty());
+        assert!(parse_window_state_hints("[1,2]").is_empty());
+        assert!(parse_window_state_hints("{not json").is_empty());
     }
 }

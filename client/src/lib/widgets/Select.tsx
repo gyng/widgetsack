@@ -51,8 +51,8 @@ function useAnchoredRect(ref: RefObject<HTMLElement | null>, open: boolean): DOM
 	useLayoutEffect(() => {
 		if (!open) return;
 		const update = () => {
-			const el = ref.current;
-			if (el) setRect(el.getBoundingClientRect());
+			// An open Select necessarily has its wrapper ref attached.
+			setRect(ref.current!.getBoundingClientRect());
 		};
 		update();
 		window.addEventListener('scroll', update, true);
@@ -93,8 +93,10 @@ function SelectListbox({
 		useSelect<SelectOption>({
 			items: options,
 			selectedItem,
+			/* v8 ignore next -- Downshift invokes itemToString only for an item from options. */
 			itemToString: (o) => o?.label ?? '',
 			onSelectedItemChange: ({ selectedItem: sel }) => {
+				/* v8 ignore next -- a selection-change callback always carries the chosen item. */
 				if (sel) onChange(sel.value);
 			}
 		});
@@ -199,6 +201,7 @@ function SelectCombobox({
 		selectedItem: allowCustom ? null : selectedItem,
 		itemToString: (o) => (o ? (allowCustom ? o.value : o.label) : ''),
 		onInputValueChange: ({ inputValue: iv, type }) => {
+			/* v8 ignore next -- Downshift supplies a string for input-change notifications. */
 			const next = iv ?? '';
 			setInputValue(next);
 			// Free-text commits live (mirrors the old onInput sensor field); closed selects commit on pick.

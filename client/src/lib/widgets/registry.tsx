@@ -35,6 +35,7 @@ import AudioSwitcherHost from './AudioSwitcherHost';
 import MonitorSwitchHost from './MonitorSwitchHost';
 import VolumeHost from './VolumeHost';
 import ImageHost from './ImageHost';
+import './meters/Interactive.css';
 
 export type { MeterComponent };
 export { asMeter };

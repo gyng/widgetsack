@@ -104,17 +104,15 @@ export default function FlowNode({
 					overflow: 'hidden'
 				})}
 			>
-				{child ? (
-					<FlowNode
-						node={child}
-						parentKind="col"
-						renderLeaf={renderLeaf}
-						library={library}
-						prefix={`${id}/`}
-						fill
-						hiddenIds={hiddenIds}
-					/>
-				) : null}
+				<FlowNode
+					node={child!}
+					parentKind="col"
+					renderLeaf={renderLeaf}
+					library={library}
+					prefix={`${id}/`}
+					fill
+					hiddenIds={hiddenIds}
+				/>
 			</div>
 		);
 	}

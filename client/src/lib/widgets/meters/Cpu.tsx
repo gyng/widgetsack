@@ -23,10 +23,8 @@ type Props = {
 // overlay too, and on the 0–100% scale their thousands-of-MHz values plot off-screen as blank
 // sparklines that pad the grid with empties.
 const CORE_USAGE_ID = /^cpu\.core\.(\d+)$/;
-const coreIndex = (id: string): number => {
-	const m = CORE_USAGE_ID.exec(id);
-	return m ? Number(m[1]) : 0;
-};
+// Called only after CORE_USAGE_ID filtering, so the suffix is known to be a decimal index.
+const coreIndex = (id: string): number => Number(id.slice('cpu.core.'.length));
 
 export default function Cpu({
 	mode = 'cores',

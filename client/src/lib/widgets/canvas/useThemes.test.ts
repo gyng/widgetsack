@@ -289,6 +289,19 @@ describe('duplicateTheme', () => {
 		});
 		expect(saveThemeCss).toHaveBeenCalledWith('base-copy3', '/*src*/');
 	});
+
+	it('reports a duplicate failure and leaves the editor closed', async () => {
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		saveThemeCss.mockRejectedValueOnce(new Error('disk full'));
+		const { result } = setup();
+		await act(async () => {
+			await result.current.duplicateTheme('base');
+		});
+
+		expect(alert).toHaveBeenCalledWith('Could not duplicate theme "base": Error: disk full');
+		expect(result.current.themeEditorOpen).toBe(false);
+		expect(listThemes).not.toHaveBeenCalled();
+	});
 });
 
 describe('deleteTheme', () => {

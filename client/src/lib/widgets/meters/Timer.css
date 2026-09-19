@@ -35,6 +35,10 @@
 }
 
 .timer-btn {
+	min-width: var(--np-control-size, 28px);
+	min-height: var(--np-control-size, 28px);
+	display: inline-grid;
+	place-items: center;
 	border: none;
 	background: transparent;
 	color: inherit;
@@ -42,7 +46,7 @@
 	cursor: pointer;
 	font-size: 0.85em;
 	line-height: 1;
-	padding: 2px 4px;
+	padding: 0;
 }
 
 .timer-btn:hover {

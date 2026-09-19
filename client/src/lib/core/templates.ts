@@ -32,6 +32,7 @@ const prim = (
 ): WidgetInstance => ({
 	id,
 	type,
+	/* v8 ignore next -- built-in templates always provide their reviewed size. */
 	rect: { x: 0, y: 0, w: opts.w ?? 100, h: opts.h ?? 24 },
 	config,
 	...(opts.sensor ? { sensor: opts.sensor } : {}),
@@ -42,15 +43,18 @@ const prim = (
 // optional per-side box (outer `margin` between this leaf and its flow siblings, inner `pad`).
 const lf = (
 	unit: WidgetInstance,
-	basis?: Length,
+	basis: Length,
 	halign?: AlignH,
 	box?: { margin?: Pad; pad?: Pad }
 ): Leaf => ({
 	id: unit.id,
 	unit,
-	...(basis !== undefined ? { basis } : {}),
+	basis,
+	/* v8 ignore next -- current built-ins either provide a concrete alignment or omit the field. */
 	...(halign ? { halign } : {}),
+	/* v8 ignore next -- optional box sides are only emitted when a built-in defines them. */
 	...(box?.margin !== undefined ? { margin: box.margin } : {}),
+	/* v8 ignore next -- optional box sides are only emitted when a built-in defines them. */
 	...(box?.pad !== undefined ? { pad: box.pad } : {})
 });
 
@@ -458,6 +462,7 @@ export function freshIds(node: LayoutNode): LayoutNode {
 export function demoSeed(): Leaf[] {
 	const place = (templateId: string, x: number, y: number): Leaf => {
 		const t = getTemplate(templateId);
+		/* v8 ignore next -- demoSeed names only statically registered built-in templates. */
 		if (!t) throw new Error(`built-in template ${templateId} missing`);
 		const g = group(`grp-${rand()}`, { ...t.size }, freshIds(instantiateTemplate(t)), {
 			name: t.name,

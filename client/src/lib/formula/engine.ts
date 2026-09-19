@@ -132,8 +132,10 @@ export function evalExpr(
 		if (typeof v === 'boolean') return String(v);
 		return null;
 	} catch {
+		/* v8 ignore next -- native QuickJS reports expression faults through out.error; this is host hardening. */
 		return null;
 	} finally {
+		/* v8 ignore next -- reset handlers are installed for later evaluations, not invoked by this call. */
 		runtime.setInterruptHandler(() => false);
 	}
 }

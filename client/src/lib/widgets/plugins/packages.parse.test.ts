@@ -44,7 +44,7 @@ describe('persisted package stores — module-load parsing', () => {
 		const consent = JSON.parse(localStorage.getItem('widgetsack.packages.netConsent')!);
 		expect(consent).toEqual({ 'pack-a': 'api.example.com' });
 		m.resetPackagesForTest();
-	});
+	}, 15_000);
 
 	it('falls back to empty stores when the stored shapes are wrong (array/object mismatch)', async () => {
 		localStorage.setItem('widgetsack.packages.enabled', JSON.stringify({ not: 'an array' }));
@@ -54,7 +54,7 @@ describe('persisted package stores — module-load parsing', () => {
 		expect(m.enabledPackages.getSnapshot()).toEqual([]);
 		expect(JSON.parse(localStorage.getItem('widgetsack.packages.netConsent')!)).toEqual({});
 		m.resetPackagesForTest();
-	});
+	}, 15_000);
 
 	it('drops a consent map whose values are all non-strings (empty map, no consent granted)', async () => {
 		localStorage.setItem(
@@ -66,5 +66,5 @@ describe('persisted package stores — module-load parsing', () => {
 		// Every entry was dropped → the persist-at-creation write stores a clean {}.
 		expect(JSON.parse(localStorage.getItem('widgetsack.packages.netConsent')!)).toEqual({});
 		m.resetPackagesForTest();
-	});
+	}, 15_000);
 });

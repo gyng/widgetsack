@@ -751,12 +751,16 @@ export default function Canvas({ studio = false }: Props) {
 	}, [studio]);
 
 	// Monitors for the monitor-switch widget's monitor picker (studio only). Friendly EDID names where
-	// known, falling back to the GDI device tag. Empty list just leaves the "Primary monitor" option.
+	// known, falling back to the GDI device tag. The picked VALUE is the monitor's stable identity key
+	// (falling back to the GDI name only when none is known): Windows re-numbers \\.\DISPLAYn across
+	// re-enumerations, and the backend accepts either form. Empty list leaves the "Primary" option.
 	const [displayNames, setDisplayNames] = useState<{ id: string; name: string }[]>([]);
 	useEffect(() => {
 		if (!studio) return;
-		invoke<{ gdi: string; friendly: string }[]>(COMMANDS.listDisplayNames)
-			.then((list) => setDisplayNames(list.map((d) => ({ id: d.gdi, name: d.friendly || d.gdi }))))
+		invoke<{ gdi: string; friendly: string; stable?: string }[]>(COMMANDS.listDisplayNames)
+			.then((list) =>
+				setDisplayNames(list.map((d) => ({ id: d.stable || d.gdi, name: d.friendly || d.gdi })))
+			)
 			.catch(() => undefined);
 	}, [studio]);
 

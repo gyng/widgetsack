@@ -22,13 +22,16 @@
 use serde::Serialize;
 
 /// One monitor's input-switching state for the Monitor Switch widget. Mirrors `MonitorInputs` in
-/// `client/src/lib/ddc/monitors.ts`. Keyed by `gdi` (`\\.\DISPLAYn`). `current_input` / `supported`
-/// are DDC/CI (VCP 0x60) and are only filled for the queried `target` (DDC reads are slow); other
-/// monitors report `None` / empty. `width` / `height` / `refresh_hz` are the OS's current display mode
-/// (cheap, always filled — 0 if unknown). `friendly` is the EDID model name (may be empty).
+/// `client/src/lib/ddc/monitors.ts`. Keyed by `gdi` (`\\.\DISPLAYn`) AND by `stable` (display.rs'
+/// durable identity; empty when unknown) — the widget's configured target may be either, because the
+/// GDI name is re-numbered by Windows across re-enumerations. `current_input` / `supported` are DDC/CI
+/// (VCP 0x60) and are only filled for the queried `target` (DDC reads are slow); other monitors report
+/// `None` / empty. `width` / `height` / `refresh_hz` are the OS's current display mode (cheap, always
+/// filled — 0 if unknown). `friendly` is the EDID model name (may be empty).
 #[derive(Debug, Clone, Serialize)]
 pub struct MonitorInputs {
     pub gdi: String,
+    pub stable: String,
     pub friendly: String,
     pub primary: bool,
     pub current_input: Option<u32>,
@@ -40,6 +43,13 @@ pub struct MonitorInputs {
 
 /// MCCS VCP feature code for "Input Select" — the one code this widget reads, writes, and parses.
 const VCP_INPUT_SELECT: u8 = 0x60;
+
+/// Pure seam: does a monitor with GDI name `gdi` and stable key `stable` (empty when unknown) match a
+/// widget's configured `target`? Either identity is accepted so a layout keyed the old way keeps
+/// working; a blank stable key never matches (blank == "unknown", not a wildcard).
+pub fn target_matches(gdi: &str, stable: &str, target: &str) -> bool {
+    !target.is_empty() && (gdi == target || (!stable.is_empty() && stable == target))
+}
 
 // --- Pure seam (unit-tested, no I/O, cross-platform) -------------------------------------------
 
@@ -331,6 +341,7 @@ fn enumerate_blocking(target: Option<String>) -> Vec<MonitorInputs> {
     }
 
     let friendly = crate::display::friendly_map();
+    let stable = crate::display::stable_map();
 
     // Cheap base info for every monitor (no DDC yet).
     let mut bases: Vec<Base> = Vec::new();
@@ -348,11 +359,13 @@ fn enumerate_blocking(target: Option<String>) -> Vec<MonitorInputs> {
         }
     }
 
-    // Resolve which monitor to DDC-query: the requested GDI name, else the primary, else the first.
+    // Resolve which monitor to DDC-query: the requested monitor (by stable key or GDI name), else the
+    // primary, else the first.
     let want = target.unwrap_or_default();
+    let stable_of = |gdi: &str| stable.get(gdi).map(String::as_str).unwrap_or("");
     let target_idx = bases
         .iter()
-        .position(|b| !want.is_empty() && b.gdi == want)
+        .position(|b| target_matches(&b.gdi, stable_of(&b.gdi), &want))
         .or_else(|| bases.iter().position(|b| b.primary))
         .or_else(|| (!bases.is_empty()).then_some(0));
 
@@ -367,6 +380,7 @@ fn enumerate_blocking(target: Option<String>) -> Vec<MonitorInputs> {
             };
             MonitorInputs {
                 gdi: b.gdi.clone(),
+                stable: stable_of(&b.gdi).to_string(),
                 friendly: friendly.get(&b.gdi).cloned().unwrap_or_default(),
                 primary: b.primary,
                 current_input,
@@ -390,12 +404,16 @@ fn set_blocking(target: String, value: u32) -> Result<(), String> {
         return Err("no monitor specified".into());
     }
 
-    // Find the HMONITOR whose GDI device name matches `target`.
+    // Find the HMONITOR whose GDI device name OR stable key matches `target`.
+    let stable = crate::display::stable_map();
     let hmon = collect_hmonitors()
         .into_iter()
         .find(|&h| {
             monitor_gdi(h)
-                .map(|(gdi, _)| gdi == target)
+                .map(|(gdi, _)| {
+                    let stable_key = stable.get(&gdi).map(String::as_str).unwrap_or("");
+                    target_matches(&gdi, stable_key, &target)
+                })
                 .unwrap_or(false)
         })
         .ok_or_else(|| format!("monitor {target} not found"))?;
@@ -454,5 +472,26 @@ mod tests {
         // 14(60 05) is colour-preset code 0x14 carrying value 0x60 — must NOT be read as the 0x60 list.
         let caps = "(vcp(14(60 05) 60(11 12)))";
         assert_eq!(parse_vcp60_capabilities(caps), vec![0x11, 0x12]);
+    }
+    #[test]
+    fn target_matches_accepts_gdi_or_stable_but_never_blank() {
+        assert!(target_matches(
+            r"\\.\DISPLAY2",
+            "CRXED00-UID184576",
+            r"\\.\DISPLAY2"
+        ));
+        assert!(target_matches(
+            r"\\.\DISPLAY2",
+            "CRXED00-UID184576",
+            "CRXED00-UID184576"
+        ));
+        assert!(!target_matches(
+            r"\\.\DISPLAY2",
+            "CRXED00-UID184576",
+            r"\\.\DISPLAY3"
+        ));
+        // An unknown stable key is "unknown", not a wildcard — and an empty target selects nothing.
+        assert!(!target_matches(r"\\.\DISPLAY2", "", ""));
+        assert!(!target_matches(r"\\.\DISPLAY2", "", "anything"));
     }
 }

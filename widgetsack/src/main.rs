@@ -46,6 +46,7 @@ pub mod sensors;
 pub mod state;
 pub mod stocks;
 pub mod timings;
+pub mod watchdog;
 pub mod weather;
 pub mod wifi;
 pub mod windowmgr;
@@ -259,6 +260,7 @@ async fn main() -> Result<(), ()> {
             command::load_layout,
             command::save_layout,
             command::backup_layout,
+            command::window_state_hints,
             command::load_controls,
             command::save_controls,
             windowmgr::list_windows,
@@ -458,6 +460,10 @@ async fn main() -> Result<(), ()> {
             // monitor comes back (DDC input switch / replug) IF the app is at zero windows — the fast
             // path complementing keepalive's 30s retry. No-op off Windows.
             displaywatch::run_display_watcher(app.handle().clone());
+
+            // Main-thread stall watchdog: logs when the UI thread stops answering (the 2026-09-18
+            // HDMI-switch hang left no trace — WER saw it, the app log didn't). See watchdog.rs.
+            watchdog::run_main_thread_watchdog(app.handle().clone());
 
             // Tray menu (right-click): open the studio, the two overlay utilities, a launch-at-login
             // toggle, then Quit (separated). Edit mode is NOT here — it lives on Ctrl+E and the global

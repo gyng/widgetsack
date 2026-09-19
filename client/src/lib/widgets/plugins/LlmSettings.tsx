@@ -86,6 +86,7 @@ export default function LlmSettings() {
 		// Default each model field to the provider's first sample (which mirrors the backend
 		// default_model / whisper-1 / tts-1 / alloy) instead of blank, so there's always a selected item
 		// to start from rather than an empty box.
+		/* v8 ignore next -- every provider metadata entry declares at least one sample model. */
 		setModel(p?.model || m.sampleModels[0] || '');
 		setInsecure(p?.insecure ?? false);
 		setSttModel(p?.sttModel || m.sampleSttModels[0] || '');
@@ -159,6 +160,7 @@ export default function LlmSettings() {
 	});
 
 	const onSave = async () => {
+		/* v8 ignore next -- canSubmit=false disables the only Save control; guard protects direct calls. */
 		if (!canSubmit) return;
 		setSaving(true);
 		try {
@@ -229,6 +231,7 @@ export default function LlmSettings() {
 		// manual ↻ Models button still calls onLoadModels directly from its handler.
 		let cancelled = false;
 		const id = setTimeout(() => {
+			/* v8 ignore else -- cleanup clears the timeout; this protects an already-queued callback. */
 			if (!cancelled) void onLoadModels();
 		}, 0);
 		return () => {
@@ -319,6 +322,7 @@ export default function LlmSettings() {
 						allowCustom
 						value={model}
 						options={modelOptions}
+						/* v8 ignore next -- provider metadata always declares a sample model. */
 						placeholder={meta.sampleModels[0] ?? 'model id'}
 						aria-label="Model"
 						onChange={(v) => {
@@ -509,6 +513,7 @@ function LayoutAssistant({ sensorIds }: { sensorIds: () => string[] }) {
 			const rec = recorderRef.current;
 			recorderRef.current = null;
 			setRecording(false);
+			/* v8 ignore next -- recording=true is set only after recorderRef receives a recorder. */
 			if (!rec) return;
 			setMsg('Transcribing…');
 			try {

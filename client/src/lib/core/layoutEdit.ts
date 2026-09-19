@@ -148,7 +148,7 @@ export function flowLeaves(root: Container): Leaf[] {
 	const walk = (c: Container): void => {
 		for (const child of c.children) {
 			if (isLeaf(child)) out.push(child);
-			else if (isContainer(child)) walk(child);
+			else walk(child);
 		}
 	};
 	walk(root);
@@ -323,8 +323,8 @@ export function dropTarget(
 		const r = solved.get(lf.id);
 		if (!r) continue;
 		if (point.x < r.x || point.x >= r.x + r.w || point.y < r.y || point.y >= r.y + r.h) continue;
-		const parent = findParent(root, lf.id);
-		if (!parent) continue;
+		// flowLeaves only yields descendants of the container root, so every result has a parent.
+		const parent = findParent(root, lf.id)!;
 		const after = parent.kind === 'col' ? point.y >= r.y + r.h / 2 : point.x >= r.x + r.w / 2;
 		const siblings = parent.children.filter((c) => c.id !== draggingId);
 		const ti = siblings.findIndex((c) => c.id === lf.id);

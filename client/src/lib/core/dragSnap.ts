@@ -17,6 +17,7 @@ export type Pointer = { x: number; y: number; shift: boolean };
 export function armedZone(zones: Zone[], p: Pointer): Zone | null {
 	if (!p.shift) return null;
 	const id = hitTestZone(zones, p.x, p.y);
+	/* v8 ignore next -- hitTestZone only returns ids from this same zones array. */
 	return id ? (zones.find((z) => z.id === id) ?? null) : null;
 }
 

@@ -46,6 +46,7 @@ export const COMMANDS = {
 	loadLayout: 'load_layout',
 	saveLayout: 'save_layout',
 	backupLayout: 'backup_layout',
+	windowStateHints: 'window_state_hints',
 	listLayouts: 'list_layouts',
 	readLayout: 'read_layout',
 	saveLayoutAs: 'save_layout_as',

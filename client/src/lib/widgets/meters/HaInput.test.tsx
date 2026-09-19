@@ -66,6 +66,21 @@ describe('HaInput infers the control from the entity domain', () => {
 		expect(sel.options).toHaveLength(0);
 	});
 
+	it('input_select retains a current state that is missing from the advertised options', () => {
+		const { container } = render(
+			<HaInput
+				value={{
+					entity_id: 'input_select.mode',
+					state: 'legacy',
+					attributes: { options: ['a', 'b'] }
+				}}
+			/>
+		);
+		const select = container.querySelector('[data-part="select"]') as HTMLSelectElement;
+		expect(select.value).toBe('legacy');
+		expect(Array.from(select.options).map((option) => option.value)).toEqual(['legacy', 'a', 'b']);
+	});
+
 	it('input_number → a range slider clamped to the helper min/max emitting set_value', () => {
 		const onControl = vi.fn();
 		const { container } = render(
@@ -113,13 +128,13 @@ describe('HaInput infers the control from the entity domain', () => {
 		expect(range.value).toBe('0');
 	});
 
-	it('input_text → a text field emitting set_value on Enter and on blur', () => {
+	it('input_text emits once when Enter is followed by blur', () => {
 		const onControl = vi.fn();
 		const { container } = render(
 			<HaInput value={{ entity_id: 'input_text.note', state: 'hi' }} onControl={onControl} />
 		);
 		const text = container.querySelector('[data-part="text"]') as HTMLInputElement;
-		expect(text.defaultValue).toBe('hi');
+		expect(text.value).toBe('hi');
 		fireEvent.change(text, { target: { value: 'typed' } });
 		// A non-Enter key does nothing.
 		fireEvent.keyDown(text, { key: 'a' });
@@ -131,7 +146,17 @@ describe('HaInput infers the control from the entity domain', () => {
 			data: { value: 'typed' }
 		});
 		fireEvent.blur(text);
-		expect(onControl).toHaveBeenCalledTimes(2);
+		expect(onControl).toHaveBeenCalledTimes(1);
+	});
+
+	it('input_text follows external state changes until the user edits again', () => {
+		const { container, rerender } = render(
+			<HaInput value={{ entity_id: 'input_text.note', state: 'first' }} />
+		);
+		const text = container.querySelector('[data-part="text"]') as HTMLInputElement;
+		expect(text.value).toBe('first');
+		rerender(<HaInput value={{ entity_id: 'input_text.note', state: 'server update' }} />);
+		expect(text.value).toBe('server update');
 	});
 
 	it('an unknown / missing domain falls back to a plain value display', () => {

@@ -78,6 +78,7 @@ export async function createPackageSandbox(script: string): Promise<CreateSandbo
 		} catch (err) {
 			return { ok: false, error: String(err) };
 		} finally {
+			/* v8 ignore next -- reset handlers are installed for later calls, not invoked by this call. */
 			runtime.setInterruptHandler(() => false);
 		}
 	};

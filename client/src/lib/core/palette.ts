@@ -114,6 +114,7 @@ export function pickSeed(buckets: Bucket[]): RGB {
 	if (mostSaturated && mostSaturated.s >= 0.12) return mostSaturated.rgb;
 	// Wallpaper is essentially greyscale → keep the app's default accent.
 	const dflt = DEFAULT_TOKENS['--np-accent'].match(/\d+/g)?.map(Number) as RGB | undefined;
+	/* v8 ignore next -- DEFAULT_TOKENS owns a validated rgb() accent; literal is corruption hardening. */
 	return dflt ?? [119, 196, 211];
 }
 

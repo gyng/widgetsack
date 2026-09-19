@@ -78,7 +78,7 @@ export function buildRegistryTree(reg: HaRegistry, live: Record<string, LiveStat
 	for (const e of reg.entities) {
 		const dev = e.device_id != null ? deviceById.get(e.device_id) : undefined;
 		const inherits = e.area_id == null; // no explicit entity-level area override
-		const effectiveArea = e.area_id ?? (inherits ? (dev?.area_id ?? null) : null);
+		const effectiveArea = e.area_id ?? dev?.area_id ?? null;
 		const b = bucket(effectiveArea ?? '');
 		if (dev && inherits) {
 			const list = b.deviceEntities.get(dev.id) ?? [];
@@ -97,8 +97,7 @@ export function buildRegistryTree(reg: HaRegistry, live: Record<string, LiveStat
 
 	const out: TreeArea[] = [];
 	for (const key of orderedKeys) {
-		const b = buckets.get(key);
-		if (!b) continue;
+		const b = buckets.get(key)!;
 		const devices: TreeDevice[] = Array.from(b.deviceEntities.entries())
 			.map(([id, ents]) => ({
 				id,
@@ -107,7 +106,6 @@ export function buildRegistryTree(reg: HaRegistry, live: Record<string, LiveStat
 			}))
 			.sort(byName);
 		const looseEntities = b.loose.map(toTreeEntity).sort(byName);
-		if (!devices.length && !looseEntities.length) continue;
 		out.push({
 			areaId: key === '' ? null : key,
 			name: key === '' ? 'Unassigned' : (areaName.get(key) ?? key),

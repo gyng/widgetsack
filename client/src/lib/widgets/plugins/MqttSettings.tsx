@@ -76,6 +76,7 @@ export default function MqttSettings() {
 	const canSubmit = host.trim().length > 0 && !saving;
 
 	const onSave = async () => {
+		/* v8 ignore next -- canSubmit=false disables the only Save control; guard protects direct calls. */
 		if (!canSubmit) return;
 		setSaving(true);
 		setSaveError(null);

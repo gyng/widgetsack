@@ -60,7 +60,8 @@ export function currencySymbol(code: string | null | undefined): string {
 
 /** Friendly label for a Yahoo market state, or '' for an open/regular session (nothing to flag). */
 export function marketLabel(state: string | null | undefined): string {
-	switch ((state ?? '').toUpperCase()) {
+	const normalized = (state ?? '').toUpperCase();
+	switch (normalized) {
 		case '':
 		case 'REGULAR':
 			return '';
@@ -73,6 +74,6 @@ export function marketLabel(state: string | null | undefined): string {
 		case 'CLOSED':
 			return 'closed';
 		default:
-			return state ? state.toLowerCase() : '';
+			return normalized.toLowerCase();
 	}
 }

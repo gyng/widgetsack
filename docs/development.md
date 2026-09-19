@@ -39,5 +39,7 @@ $ (cd client && npm run lint)        # Prettier + ESLint
 
 ## Release
 
-1. Bump the version in [widgetsack/tauri.conf.json](../widgetsack/tauri.conf.json)
-2. Create a new release on the [releases](https://github.com/gyng/nowplaying-widget/releases) page.
+1. Bump the version in [widgetsack/tauri.conf.json](../widgetsack/tauri.conf.json) and
+   [widgetsack/Cargo.toml](../widgetsack/Cargo.toml)
+2. Add the release's section to [CHANGELOG.md](../CHANGELOG.md)
+3. Create a new release on the [releases](https://github.com/gyng/widgetsack/releases) page.

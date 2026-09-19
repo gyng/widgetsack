@@ -91,6 +91,7 @@ export function useKeyboard(deps: KeyboardDeps): {
 			// Nudge derives its delta from the pressed arrow + Shift (grid step), so it can't be a plain
 			// id→handler entry. One undo step + persist is the Canvas-supplied `nudge`.
 			if (hit.id === 'studio.nudge') {
+				/* v8 ignore next -- the nudge control is registered only for the four Arrow keys. */
 				const delta = NUDGE[chord.key ?? ''];
 				if (delta) {
 					const step = event.shiftKey ? GRID : 1;

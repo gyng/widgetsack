@@ -156,6 +156,7 @@ function gridFixedTracks(c: Container, count: number, horizontal: boolean): (num
 	const fixed: (number | null)[] = Array.from({ length: count }, () => null);
 	c.children.forEach((child, i) => {
 		const t = horizontal ? i % cols : Math.floor(i / cols);
+		/* v8 ignore next -- count is cols or gridRows(c), which covers every child index. */
 		if (t >= count) return;
 		const v = horizontal ? cellFixedW(child) : cellFixedH(child);
 		if (v != null) fixed[t] = Math.max(fixed[t] ?? 0, v);
@@ -172,9 +173,8 @@ function gridTracks(c: Container, available: number, count: number, horizontal: 
 	let flexWeight = 0;
 	for (let t = 0; t < count; t++) if (fixed[t] == null) flexWeight += trackWeight(weights, t);
 	const leftover = Math.max(0, available - gap * (count - 1) - fixedSum);
-	return fixed.map((v, t) =>
-		v != null ? v : flexWeight > 0 ? (leftover * trackWeight(weights, t)) / flexWeight : 0
-	);
+	// Each flexible track contributes a positive trackWeight, so flexWeight is non-zero whenever used.
+	return fixed.map((v, t) => (v != null ? v : (leftover * trackWeight(weights, t)) / flexWeight));
 }
 
 function gridColWidths(c: Container, contentW: number): number[] {
@@ -483,6 +483,7 @@ function intrinsicContainer(
 			const tracks = Array.from({ length: count }, () => 0);
 			c.children.forEach((child, i) => {
 				const t = horizontal ? i % cols : Math.floor(i / cols);
+				/* v8 ignore next -- count is cols or gridRows(c), which covers every child index. */
 				if (t >= count) return;
 				const fixed = horizontal ? cellFixedW(child) : cellFixedH(child);
 				tracks[t] = Math.max(tracks[t], fixed ?? extents[i]);

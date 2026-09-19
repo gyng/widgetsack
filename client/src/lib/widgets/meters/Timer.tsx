@@ -70,6 +70,7 @@ export function TimerView({
 }
 
 type Props = {
+	widgetId?: string;
 	mode?: TimerMode;
 	duration?: number;
 	format?: string;
@@ -79,6 +80,7 @@ type Props = {
 };
 
 export default function Timer({
+	widgetId,
 	mode = 'countdown',
 	duration = 300,
 	format = 'auto',
@@ -86,7 +88,12 @@ export default function Timer({
 	label = '',
 	color
 }: Props) {
-	const { seconds, running, done, toggle, reset } = useTimer({ mode, duration, loop });
+	const { seconds, running, done, toggle, reset } = useTimer({
+		mode,
+		duration,
+		loop,
+		storageKey: widgetId ? `widgetsack.timer.${widgetId}` : undefined
+	});
 	// A countdown shows the CEILING (4.2s left reads "00:05"); a stopwatch floors.
 	const shown = mode === 'countdown' ? Math.ceil(seconds) : seconds;
 	return (

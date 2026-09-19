@@ -48,7 +48,7 @@
 	/* Big, tiled, finger-friendly buttons (wrap to fill the widget). */
 	flex: 1 1 var(--ms-btn-min, 84px);
 	min-width: var(--ms-btn-min, 84px);
-	min-height: var(--ms-btn-h, 44px); /* >= 44px: the common minimum touch target */
+	min-height: var(--ms-btn-h, var(--np-touch-target, 44px));
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -73,7 +73,11 @@
 	background: var(--ms-row-hover, rgba(255, 255, 255, 0.14));
 }
 .ms-row:active {
-	transform: translateY(1px);
+	/* Press affordance that stays INSIDE the button's box. The list is `overflow: auto`, and a
+	   translateY(1px) here let a pressed bottom-row button poke 1px past the list's edge whenever the
+	   tiles exactly filled the widget — which flashed a vertical scrollbar on every click. A centred
+	   scale-down can never extend the scrollable area. */
+	transform: scale(0.985);
 }
 .ms-row[data-active] {
 	background: var(--ms-active-bg, rgba(119, 196, 211, 0.22));
@@ -101,7 +105,7 @@
 .monitorswitch[data-compact] .ms-row {
 	flex: 0 0 auto;
 	min-width: 0;
-	min-height: 0;
+	min-height: var(--np-control-size, 28px);
 	justify-content: flex-start;
 	padding: 2px 8px;
 	border: 0;

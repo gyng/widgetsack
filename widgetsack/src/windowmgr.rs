@@ -232,10 +232,15 @@ fn require_app_window(window: &tauri::WebviewWindow) -> Result<(), String> {
 /// conditional-container poller ("is app X open"), so it's allowed from any app window (not just the
 /// studio) — same trust boundary as `snap_window`. It only enumerates window metadata we already
 /// surface in the studio; no new capability is exposed to web content.
+/// `async` so the EnumWindows sweep (+ a DWM query per window) runs on a blocking-pool thread rather
+/// than the main/UI thread a sync command would occupy — this is polled ~1.5 s while any appOpen
+/// condition is live.
 #[tauri::command]
-pub fn list_windows(window: tauri::WebviewWindow) -> Result<Vec<WindowDescriptor>, String> {
+pub async fn list_windows(window: tauri::WebviewWindow) -> Result<Vec<WindowDescriptor>, String> {
     require_app_window(&window)?;
-    list_arrangeable()
+    tokio::task::spawn_blocking(list_arrangeable)
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Snap the window `hwnd` so its visible frame fills `rect` (physical px). Restores a maximized /

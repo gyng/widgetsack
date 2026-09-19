@@ -25,9 +25,9 @@ export async function startLlmSource(): Promise<UnlistenFn> {
 		attaching = (async () => {
 			try {
 				const u = await listen<LlmDelta>(LLM_DELTA_EVENT, (ev) => handleDelta(ev.payload));
-				// Everyone may have unsubscribed while we were attaching — if so, detach immediately.
-				if (refs <= 0) u();
-				else unlisten = u;
+				// startLlmSource does not expose its stop function until attachment resolves, so at least
+				// one reference necessarily remains here.
+				unlisten = u;
 			} catch {
 				// no Tauri runtime (plain-browser dev): streaming just won't fire.
 			} finally {

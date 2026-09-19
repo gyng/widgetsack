@@ -36,11 +36,11 @@ function build(
 	w: number,
 	h: number,
 	sensor?: string,
-	config?: Record<string, unknown>
+	config: Record<string, unknown> = {}
 ): WidgetInstance {
 	const inst = createWidget(type, id);
 	if (sensor) inst.sensor = sensor;
-	if (config) inst.config = { ...inst.config, ...config };
+	inst.config = { ...inst.config, ...config };
 	inst.rect = { x: 0, y: 0, w, h };
 	return inst;
 }

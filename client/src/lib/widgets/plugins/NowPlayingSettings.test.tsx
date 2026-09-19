@@ -148,6 +148,16 @@ describe('NowPlayingSettings', () => {
 		expect(container.querySelectorAll('details.nps-raw').length).toBe(2);
 	});
 
+	it('ignores a capabilities result that resolves after unmount', async () => {
+		let resolveCaps!: (value: Awaited<ReturnType<typeof getMediaCapabilities>>) => void;
+		vi.mocked(getMediaCapabilities).mockImplementationOnce(
+			() => new Promise((resolve) => (resolveCaps = resolve))
+		);
+		const { unmount } = render(<NowPlayingSettings />);
+		unmount();
+		await act(async () => resolveCaps(null));
+	});
+
 	it('formats a fractional scalar sensor to one decimal place', () => {
 		// position 1 / end 3 → progress 33.333… → np.progress reads "33.3" (the toFixed(1) arm).
 		const s = session('spotify.exe', 'Track');

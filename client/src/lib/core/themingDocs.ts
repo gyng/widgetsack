@@ -65,7 +65,9 @@ const TOKEN_DESCRIPTIONS: Record<string, string> = {
 	'--np-font': 'Body font family.',
 	'--np-font-display': 'Display font family (large numerals / headings).',
 	'--np-radius': 'Corner radius for widget chrome.',
-	'--np-gap': 'Default gap between elements inside a widget.'
+	'--np-gap': 'Default gap between elements inside a widget.',
+	'--np-control-size': 'Minimum target size for compact interactive controls.',
+	'--np-touch-target': 'Minimum target size for large, touch-first controls.'
 };
 
 // Escape a cell value so a literal `|` can't break the Markdown table.
@@ -74,9 +76,8 @@ const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ').
 function tokensTable(): string {
 	const rows = TOKEN_NAMES.map(
 		(name) =>
-			`| \`${name}\` | \`${cell(DEFAULT_TOKENS[name])}\` | ${cell(
-				TOKEN_DESCRIPTIONS[name] ?? ''
-			)} |`
+			/* v8 ignore next -- TOKEN_DESCRIPTIONS is exhaustive for TOKEN_NAMES. */
+			`| \`${name}\` | \`${cell(DEFAULT_TOKENS[name])}\` | ${cell(TOKEN_DESCRIPTIONS[name]!)} |`
 	);
 	return ['| token | default | purpose |', '| --- | --- | --- |', ...rows].join('\n');
 }
@@ -89,6 +90,7 @@ function chromeTokensTable(): string {
 function builtinCatalog(): string {
 	return BUILTIN_GROUP_ORDER.map((group) => {
 		const themes = BUILTIN_THEMES.filter((t) => t.group === group);
+		/* v8 ignore next -- every declared catalog group intentionally contains at least one theme. */
 		if (!themes.length) return '';
 		const label = group[0].toUpperCase() + group.slice(1);
 		return `- **${label}** — ${themes.map((t) => t.name).join(', ')}`;

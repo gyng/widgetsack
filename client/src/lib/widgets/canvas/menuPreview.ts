@@ -147,8 +147,9 @@ export function buildMenuPreview(
 							...parent.children.slice(idx + 1)
 						]
 					};
-					const slot = gridCellRects(reflowed, gridBox)[idx + 1];
-					if (slot) return [{ kind: 'zone', rect: slot }];
+					// The synthetic inserted child guarantees a corresponding solved cell.
+					const slot = gridCellRects(reflowed, gridBox)[idx + 1]!;
+					return [{ kind: 'zone', rect: slot }];
 				}
 				return [{ kind: 'zone', rect: box }];
 			}

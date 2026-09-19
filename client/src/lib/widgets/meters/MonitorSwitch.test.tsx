@@ -57,6 +57,23 @@ describe('MonitorSwitch meter', () => {
 			(r) => r.getAttribute('data-busy') === 'true'
 		);
 		expect(busy?.textContent).toContain('DisplayPort 1');
+		expect(
+			[...container.querySelectorAll<HTMLButtonElement>('.ms-row')].every((row) => row.disabled)
+		).toBe(true);
+	});
+
+	it('reports loading and unavailable states without rendering inert source buttons', () => {
+		const loading = render(
+			<MonitorSwitch title="Desk" rows={[]} loading onPick={() => undefined} />
+		);
+		expect(loading.container.querySelector('.ms-empty')?.textContent).toBe('loading…');
+		loading.unmount();
+		const unavailable = render(
+			<MonitorSwitch title="Desk" rows={[]} unavailable onPick={() => undefined} />
+		);
+		expect(unavailable.container.querySelector('.ms-empty')?.textContent).toBe(
+			'no DDC monitor found'
+		);
 	});
 
 	it('shows a "monitor not found" hint when missing', () => {

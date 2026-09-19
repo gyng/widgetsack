@@ -115,6 +115,7 @@ widgetsack/                 Rust / Tauri backend (the workspace member)
     clickthrough.rs         Per-widget interactive rects + click-through cursor watcher
     process_diag.rs         Host-process CPU/mem snapshot for the studio Diagnostics panel
     log.rs                  Structured LogRecord logging (console + ring buffer)
+    watchdog.rs             Main-thread stall watchdog → warn lines in the log when the UI thread stops answering
     command.rs              #[tauri::command] handlers (layout/theme/sack I/O, fonts, devtools)
   tauri.conf.json           Window config, build hooks, bundle settings (product "widgetsack")
   capabilities/             Tauri capability files
