@@ -16,6 +16,7 @@ import {
 	logClient,
 	monitorParam,
 	openStudio,
+	overlayDrift,
 	setMainWindowVisible,
 	studioMonitorOptions,
 	watchDisplayChanges
@@ -100,7 +101,12 @@ export function useStudioInit(deps: StudioInitDeps): void {
 				refit().catch((err) => logClient('error', 'overlay', `refit failed: ${String(err)}`));
 			};
 			unlistenRefit = await listen(EVENTS.refitOverlays, triggerRefit);
-			stopDisplayWatch = watchDisplayChanges(triggerRefit);
+			// Overlays also hand the poller a drift probe (own window vs its monitor); the studio is
+			// a normal window the user places, so it gets none.
+			stopDisplayWatch = watchDisplayChanges(
+				triggerRefit,
+				dep.studio ? undefined : () => overlayDrift(ownKey)
+			);
 			if (cancelled) {
 				unlistenRefit?.();
 				stopDisplayWatch?.();
