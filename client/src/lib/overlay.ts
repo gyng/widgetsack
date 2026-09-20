@@ -477,11 +477,24 @@ export function watchDisplayChanges(
 	let last: string | null = null;
 	let lastDrift: string | null = null;
 	let alive = true;
+	// One tick in flight at a time: every call below is a main-thread round trip, and setInterval
+	// keeps firing during a main-thread stall (exactly during display changes), so unguarded ticks
+	// would pile up across every window and each hold an async-runtime thread on a blocked getter.
+	let ticking = false;
 	const tick = async (): Promise<void> => {
-		if (!alive) return;
+		if (!alive || ticking) return;
+		ticking = true;
 		try {
 			const s = sig(await availableMonitors());
-			if (last !== null && s !== last) {
+			if (last === null) {
+				// Seeding tick: record the topology AND the drift baseline without firing. The primary
+				// installs this watcher before its own initial fit (still the 300x400 boot window), so
+				// firing here would start a second refit racing init — and reveal `main` early.
+				last = s;
+				if (probe) lastDrift = await probe();
+				return;
+			}
+			if (s !== last) {
 				// Persist the before/after topology (the log file outlives the webview): a hang or a
 				// mis-fit during an HDMI switch was otherwise invisible in the postmortem.
 				logClient('info', 'overlay', `display topology changed: [${last}] → [${s}]`);
@@ -508,9 +521,11 @@ export function watchDisplayChanges(
 			}
 		} catch {
 			/* transient enumeration failure — retry next tick */
+		} finally {
+			ticking = false;
 		}
 	};
-	void tick(); // seed `last` without firing
+	void tick(); // seed `last` (and the drift baseline) without firing
 	const timer = window.setInterval(() => void tick(), DISPLAY_POLL_MS);
 	const onFocus = (): void => void tick();
 	window.addEventListener('focus', onFocus);

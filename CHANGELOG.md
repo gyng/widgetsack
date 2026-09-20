@@ -3,6 +3,16 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.55
+
+### Fixed
+
+- **Primary overlay could reveal early with placeholder widgets at boot** (regression in 0.0.54). The
+  new drift check ran on the display poller's very first tick, before the primary window's initial
+  fit, so it reported the not-yet-fitted boot window as drifted and started a second refit racing
+  startup. The first tick now only records the baseline. The poller also no longer stacks ticks
+  while the main thread is busy.
+
 ## 0.0.54
 
 ### Fixed
