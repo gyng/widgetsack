@@ -7,6 +7,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { TelemetryHub } from '../../core/telemetry';
 import type { StudioInitDeps } from './useStudioInit';
 import { useStudioInit } from './useStudioInit';
+import { overlayDrift } from '../../overlay';
 
 const fillOwnMonitor = vi.fn((key: string): Promise<void> => Promise.resolve(void key));
 const fillPrimaryMonitor = vi.fn(() => Promise.resolve());
@@ -14,6 +15,8 @@ const setMainWindowVisible = vi.fn((visible: boolean) => Promise.resolve(void vi
 let monitorParamValue: string | null = null;
 /** The topology-change callback the hook handed to watchDisplayChanges (the refit trigger). */
 let onDisplayChange: (() => void) | null = null;
+/** The drift probe handed alongside it (overlays only). */
+let driftProbe: (() => Promise<string | null>) | null = null;
 
 vi.mock('../../overlay', () => ({
 	fillOwnMonitor: (key: string) => fillOwnMonitor(key),
@@ -23,9 +26,11 @@ vi.mock('../../overlay', () => ({
 	listThemes: vi.fn(async () => []),
 	logClient: vi.fn(),
 	openStudio: vi.fn(() => Promise.resolve()),
+	overlayDrift: vi.fn(async () => null),
 	studioMonitorOptions: vi.fn(async () => []),
-	watchDisplayChanges: vi.fn((cb: () => void) => {
+	watchDisplayChanges: vi.fn((cb: () => void, probe?: () => Promise<string | null>) => {
 		onDisplayChange = cb;
+		driftProbe = probe ?? null;
 		return () => undefined;
 	})
 }));
@@ -60,6 +65,7 @@ beforeEach(() => {
 	vi.clearAllMocks();
 	monitorParamValue = null;
 	onDisplayChange = null;
+	driftProbe = null;
 });
 
 describe('useStudioInit display-change refit', () => {
@@ -77,6 +83,23 @@ describe('useStudioInit display-change refit', () => {
 		// The taskbar inset is re-read after the move: a window that moves without resizing fires
 		// no `resize`, which was the only other trigger, leaving the flow root rebased on stale data.
 		await waitFor(() => expect(deps.updateWorkArea).toHaveBeenCalledTimes(1));
+	});
+
+	it('overlays hand the poller a drift probe for their own monitor; the studio does not', async () => {
+		monitorParamValue = 'CRXED00-UID184576';
+		renderHook(() => useStudioInit(makeDeps()));
+		await waitFor(() => expect(driftProbe).not.toBeNull());
+		await driftProbe!();
+		expect(vi.mocked(overlayDrift)).toHaveBeenCalledWith('CRXED00-UID184576');
+
+		// Studio: wait for ITS watchDisplayChanges registration (a fresh callback), then check that
+		// it came with no probe — not the stale null from the reset.
+		onDisplayChange = null;
+		driftProbe = () => Promise.resolve('stale');
+		monitorParamValue = null;
+		renderHook(() => useStudioInit(makeDeps({ studio: true })));
+		await waitFor(() => expect(onDisplayChange).not.toBeNull());
+		expect(driftProbe).toBeNull();
 	});
 
 	it('a burst of topology changes collapses into one in-flight refit plus one trailing rerun', async () => {

@@ -3,6 +3,19 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.54
+
+### Fixed
+
+- **Overlay 8 px off after being spawned across a DPI boundary.** A secondary overlay is created from
+  the primary's webview (on the primary monitor) and then moved to its own monitor; when the two
+  differ in scale, Windows re-places the window with a suggested rect that assumes the resize frame
+  the app hides, leaving it inflated by 8 px on every side (widgets clipped at the top/left). The
+  scale-change listener that would have re-fitted it was registered only after the move, so the event
+  could be missed and the window stayed off until restart. The listener is now wired before the fit,
+  and the display poller also checks each overlay against its monitor every few seconds and refits on
+  drift, so no OS re-placement can stick.
+
 ## 0.0.53
 
 ### Fixed

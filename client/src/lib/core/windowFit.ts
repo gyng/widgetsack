@@ -65,3 +65,15 @@ export async function fitWindowVerified(
 	}
 	return { ok: false, attempts, mismatch };
 }
+
+/** Drift-poll decision: given the mismatch the previous tick recorded (`last`, null = none) and the one
+ * seen now (`current`, null = the window sits exactly on its monitor), should a refit fire? Fires on a
+ * NEW mismatch only — a mismatch identical to the one a refit already failed to clear is not retried
+ * every tick (no 4 s refit loop against a window the OS won't let us place), but any change to it,
+ * or a clean interval in between, arms the trigger again. Returns the value to remember as `last`. */
+export function driftTrigger(
+	last: string | null,
+	current: string | null
+): { fire: boolean; next: string | null } {
+	return { fire: current !== null && current !== last, next: current };
+}

@@ -25,7 +25,7 @@ import { readOverlayPrefs, type OverlayLayer } from './widgets/canvas/overlayPre
 import type { OverlayPresentation } from './widgets/canvas/overlayPresentation';
 import { COMMANDS, EVENTS } from './bridge/contract';
 import { singleFlight } from './core/singleFlight';
-import { fitWindowVerified, type PhysicalBox } from './core/windowFit';
+import { driftTrigger, fitMismatch, fitWindowVerified, type PhysicalBox } from './core/windowFit';
 
 /** Route an overlay-lifecycle failure to BOTH this window's console (so a live devtools session
  *  still sees it) and the backend's persistent rotating log file (so it survives the webview
@@ -334,6 +334,28 @@ export async function fillPrimaryMonitor(): Promise<void> {
 	const monitor = (await primaryMonitor()) ?? (await currentMonitor());
 	if (!monitor) return;
 	const win = getCurrentWindow();
+	// #12: DPI/scale hot-plug. When the primary monitor's scale factor changes at runtime
+	// (resolution/scale change, or this window moving to a differently-scaled display), the
+	// physical position/size must be recomputed against the now-primary monitor and the
+	// borderless/topmost state re-asserted. Registered once (guarded) so repeated
+	// fillPrimaryMonitor() calls don't stack listeners, and BEFORE the fit below: the fit itself
+	// can move the window across a DPI boundary, and Windows then re-places it with its own
+	// suggested rect (see fitWindowToMonitor) — a listener wired only afterwards missed that event
+	// and left the window off by the hidden frame. Scale-change only — physical monitor add/remove
+	// is out of scope here (handled by reconcileOverlays on layout change).
+	if (!scaleListenerWired) {
+		scaleListenerWired = true;
+		try {
+			await win.onScaleChanged(() => {
+				fillPrimaryMonitor().catch((err) =>
+					console.warn('fillPrimaryMonitor on scale change failed', err)
+				);
+			});
+		} catch (err) {
+			console.warn('onScaleChanged registration failed', err);
+			scaleListenerWired = false; // allow a retry on a later fill
+		}
+	}
 	await fitWindowToMonitor(win, monitor, 'fillPrimaryMonitor');
 	// Re-assert borderless AFTER the resize: on Windows an undecorated window keeps a thin
 	// accent-coloured border (tauri-apps/discussions/9469), and setSize can revive it even when
@@ -348,25 +370,6 @@ export async function fillPrimaryMonitor(): Promise<void> {
 		await applyOverlayLayer(readOverlayPrefs().overlayLayer);
 	} catch (err) {
 		console.warn('setDecorations/setShadow/overlay layer failed', err);
-	}
-	// #12: DPI/scale hot-plug. When the primary monitor's scale factor changes at runtime
-	// (resolution/scale change, or this window moving to a differently-scaled display), the
-	// physical position/size must be recomputed against the now-primary monitor and the
-	// borderless/topmost state re-asserted. Registered once (guarded) so repeated
-	// fillPrimaryMonitor() calls don't stack listeners. Scale-change only — physical monitor
-	// add/remove is out of scope here (handled by reconcileOverlays on layout change).
-	if (!scaleListenerWired) {
-		scaleListenerWired = true;
-		try {
-			await win.onScaleChanged(() => {
-				fillPrimaryMonitor().catch((err) =>
-					console.warn('fillPrimaryMonitor on scale change failed', err)
-				);
-			});
-		} catch (err) {
-			console.warn('onScaleChanged registration failed', err);
-			scaleListenerWired = false; // allow a retry on a later fill
-		}
 	}
 }
 
@@ -392,6 +395,17 @@ export async function fillOwnMonitor(key: string): Promise<void> {
 			return;
 		}
 		const win = getCurrentWindow();
+		// #12: DPI/scale hot-plug — re-fit to our monitor when its scale factor changes (mirrors
+		// fillPrimaryMonitor; the device key stays stable across a scale change). Wired BEFORE the
+		// fit: a secondary is created from the primary's webview, i.e. on the primary's monitor, and
+		// the fit below is what moves it across the DPI boundary — Windows then re-places it with a
+		// suggested rect that assumes the resize frame tao hides (2026-09-20: 2576x736 at 644,2152
+		// for a 2560x720 strip at 652,2160). A listener wired after the fit missed that event, and
+		// nothing else re-fitted the window, so it stayed 8 px off until restart.
+		if (!ownScaleListenerWired) {
+			ownScaleListenerWired = true;
+			await win.onScaleChanged(() => void fillOwnMonitor(key));
+		}
 		await fitWindowToMonitor(win, m, `fillOwnMonitor(${key})`);
 		// Same re-asserts as the spawn side: no border/title bar (the window-state plugin can restore
 		// a stale decorations:true) and click-through BEFORE the window is ever visible.
@@ -404,14 +418,35 @@ export async function fillOwnMonitor(key: string): Promise<void> {
 		// setMainWindowVisible). Safe to apply the full layer here, incl. the wallpaper SetParent,
 		// which must run from this overlay's own webview anyway.
 		await applyOverlayLayer(readOverlayPrefs().overlayLayer);
-		// #12: DPI/scale hot-plug — re-fit to our monitor when its scale factor changes (mirrors
-		// fillPrimaryMonitor; the device key stays stable across a scale change).
-		if (!ownScaleListenerWired) {
-			ownScaleListenerWired = true;
-			await win.onScaleChanged(() => void fillOwnMonitor(key));
-		}
 	} catch (err) {
 		logClient('error', 'overlay', `fillOwnMonitor(${key}) failed: ${String(err)}`);
+	}
+}
+
+/** How far THIS overlay window sits from the monitor it should cover (`key` = its device key, null
+ * = the primary), as a `fitMismatch` string, or null when it fits exactly / can't be judged (no such
+ * monitor, windowed-debug mode where the user drags overlays freely, a failed read). The topology
+ * poller feeds this to `driftTrigger` so an overlay the OS re-placed after our fit (a DPI-hop
+ * suggested rect, a window restored by "remember window locations") is refitted within a tick. */
+export async function overlayDrift(key: string | null): Promise<string | null> {
+	try {
+		if (readOverlayPrefs().debugWindowed) return null;
+		let m: Monitor | null;
+		if (key) {
+			const [monitors, ids] = await Promise.all([availableMonitors(), displayIds()]);
+			m = monitorByKey(monitors, key, ids.stable);
+		} else {
+			m = (await primaryMonitor()) ?? (await currentMonitor());
+		}
+		if (!m) return null;
+		const win = getCurrentWindow();
+		const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
+		return fitMismatch(
+			{ x: m.position.x, y: m.position.y, w: m.size.width, h: m.size.height },
+			{ x: pos.x, y: pos.y, w: size.width, h: size.height }
+		);
+	} catch {
+		return null;
 	}
 }
 
@@ -425,7 +460,10 @@ const DISPLAY_POLL_MS = 4000;
  * geometries differs from the last seen. Cheap (one fast call per tick). Returns a cleanup fn. Without
  * this, overlays go stale on a topology change — e.g. dragging a monitor in Windows display settings
  * leaves an overlay anchored to the old coordinates (clipped/misaligned) until the app restarts. */
-export function watchDisplayChanges(onChange: () => void): () => void {
+export function watchDisplayChanges(
+	onChange: () => void,
+	probe?: () => Promise<string | null>
+): () => void {
 	const sig = (mons: Awaited<ReturnType<typeof availableMonitors>>): string =>
 		mons
 			.map(
@@ -437,6 +475,7 @@ export function watchDisplayChanges(onChange: () => void): () => void {
 			.sort()
 			.join('|');
 	let last: string | null = null;
+	let lastDrift: string | null = null;
 	let alive = true;
 	const tick = async (): Promise<void> => {
 		if (!alive) return;
@@ -446,9 +485,27 @@ export function watchDisplayChanges(onChange: () => void): () => void {
 				// Persist the before/after topology (the log file outlives the webview): a hang or a
 				// mis-fit during an HDMI switch was otherwise invisible in the postmortem.
 				logClient('info', 'overlay', `display topology changed: [${last}] → [${s}]`);
+				last = s;
 				onChange();
+				return;
 			}
 			last = s;
+			// Same topology — but is THIS window still where it belongs? The OS can re-place an overlay
+			// after our fit (a DPI-hop suggested rect that assumes a frame we hide, "remember window
+			// locations" on reconnect); nothing else would ever correct that. One refit per distinct
+			// mismatch (core/windowFit driftTrigger), so a placement the OS refuses can't loop.
+			if (probe) {
+				const drift = driftTrigger(lastDrift, await probe());
+				lastDrift = drift.next;
+				if (drift.fire) {
+					logClient(
+						'info',
+						'overlay',
+						`overlay drifted off its monitor (${drift.next}); refitting`
+					);
+					onChange();
+				}
+			}
 		} catch {
 			/* transient enumeration failure — retry next tick */
 		}

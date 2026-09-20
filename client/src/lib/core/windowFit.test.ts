@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fitMismatch, fitWindowVerified, type PhysicalBox } from './windowFit';
+import { driftTrigger, fitMismatch, fitWindowVerified, type PhysicalBox } from './windowFit';
 
 const target: PhysicalBox = { x: 652, y: 2160, w: 2560, h: 720 };
 
@@ -86,5 +86,24 @@ describe('fitWindowVerified', () => {
 		win.readBack.mockRejectedValue(new Error('window gone'));
 		const result = await fitWindowVerified(win, target, { sleep: async () => undefined });
 		expect(result).toEqual({ ok: true, attempts: 1, mismatch: null });
+	});
+});
+
+describe('driftTrigger', () => {
+	it('fires on a new mismatch and remembers it', () => {
+		expect(driftTrigger(null, 'y 2152≠2160')).toEqual({ fire: true, next: 'y 2152≠2160' });
+	});
+
+	it('does not re-fire while the same mismatch persists after a refit', () => {
+		expect(driftTrigger('y 2152≠2160', 'y 2152≠2160')).toEqual({
+			fire: false,
+			next: 'y 2152≠2160'
+		});
+	});
+
+	it('re-arms when the mismatch changes or clears', () => {
+		expect(driftTrigger('y 2152≠2160', 'x 644≠652')).toEqual({ fire: true, next: 'x 644≠652' });
+		expect(driftTrigger('y 2152≠2160', null)).toEqual({ fire: false, next: null });
+		expect(driftTrigger(null, null)).toEqual({ fire: false, next: null });
 	});
 });
