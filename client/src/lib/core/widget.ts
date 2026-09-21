@@ -1072,7 +1072,15 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				key: 'sources',
 				label: 'sources',
 				kind: 'monitorSources',
-				help: 'pick which inputs to show, rename them (e.g. HDMI 2 → Switch 2), and optionally pair each with a monitor speaker volume (0–100) that is set just before switching to it; blank = show all detected'
+				help: 'pick which inputs to show, rename them (e.g. HDMI 2 → Switch 2), and optionally pair each with a volume (0–100, e.g. 0x12=NS2@20) applied when switching to it — only while "volume target" is not off; blank = show all detected'
+			},
+			{
+				key: 'volumeTarget',
+				label: 'volume target',
+				kind: 'select',
+				options: ['off', 'system', 'monitor'],
+				default: 'off',
+				help: 'what a source’s paired volume (the @NN in sources) changes when you switch: off (default — volumes are ignored), system = the Windows master volume after the switch, monitor = the monitor’s own speakers over DDC/CI just before the switch'
 			},
 			text('label', 'label', { help: 'title override (blank = the monitor’s name)' }),
 			{

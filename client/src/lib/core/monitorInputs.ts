@@ -3,8 +3,27 @@
 // module names the standard MCCS input codes, parses the user's `sources` config, and merges the
 // discovered + configured + current inputs into display rows for the meter.
 
-/** `volume` (0–100) is the monitor's own speaker volume (DDC/CI VCP 0x62) to set when this input is
- *  chosen; absent = leave the volume alone. */
+/** `volume` (0–100) is a volume to apply when this input is chosen — which volume (the Windows
+ *  master level, or the monitor's own speakers over DDC/CI) is the widget's `volumeTarget` config;
+ *  absent, or `volumeTarget: 'off'` (the default), = leave every volume alone. */
+export type VolumeTarget = 'off' | 'system' | 'monitor';
+export const VOLUME_TARGETS: readonly VolumeTarget[] = ['off', 'system', 'monitor'];
+export const DEFAULT_VOLUME_TARGET: VolumeTarget = 'off';
+
+/** Normalise the `volumeTarget` config (unknown / missing → 'off'). Pure. */
+export function parseVolumeTarget(raw: unknown): VolumeTarget {
+	return raw === 'system' || raw === 'monitor' ? raw : 'off';
+}
+
+/** What to do with a source's paired volume for a given target: null = nothing (feature off, or
+ *  no volume on this source). Pure. */
+export function volumeAction(
+	target: VolumeTarget,
+	volume: number | undefined
+): { target: 'system' | 'monitor'; volume: number } | null {
+	if (target === 'off' || volume === undefined) return null;
+	return { target, volume };
+}
 export type MonitorInputRow = { value: number; label: string; active: boolean; volume?: number };
 export type SourceSpec = { value: number; label: string; volume?: number };
 
@@ -77,7 +96,8 @@ function parseCode(s: string): number | null {
 
 /** Parse the optional `sources` config: a comma/newline-separated list of `code`, `code=label`,
  *  `code@volume` or `code=label@volume` entries (code = decimal `17`, hex `0x11`, or `11h`; volume =
- *  0–100, the monitor speaker level to set when that input is chosen). Blank/invalid entries are
+ *  0–100, applied to the widget's `volumeTarget` when that input is chosen — ignored while the target
+ *  is 'off', the default). Blank/invalid entries are
  *  dropped; a missing label defaults to the MCCS name. Lets a user choose WHICH inputs appear (and
  *  order + rename them, and pair each with a volume) without a multi-select control. Pure. */
 export function parseSourceSpec(spec: string | undefined): SourceSpec[] {
@@ -151,7 +171,7 @@ export type SourceEditorRow = {
 	label: string;
 	include: boolean;
 	detected: boolean;
-	/** Monitor speaker volume (0–100) to set on switch; null = leave it alone. */
+	/** Volume (0–100) paired with this input (see `volumeTarget`); null = leave it alone. */
 	volume: number | null;
 };
 

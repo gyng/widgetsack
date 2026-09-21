@@ -6,7 +6,10 @@ import {
 	monitorInputRows,
 	parseSourceSpec,
 	parseVolumeInput,
-	sourceEditorRows
+	parseVolumeTarget,
+	sourceEditorRows,
+	volumeAction,
+	DEFAULT_VOLUME_TARGET
 } from './monitorInputs';
 
 describe('inputName', () => {
@@ -224,8 +227,8 @@ describe('buildSourceSpec', () => {
 	});
 });
 
-describe('per-source volume (`@NN` suffix)', () => {
-	it('parses an optional monitor volume after the label or the bare code', () => {
+describe('per-source system volume (`@NN` suffix)', () => {
+	it('parses an optional system volume after the label or the bare code', () => {
 		expect(parseSourceSpec('0x12=NS2@35, 0x11@70, 0xf=PC')).toEqual([
 			{ value: 0x12, label: 'NS2', volume: 35 },
 			{ value: 0x11, label: 'HDMI 1', volume: 70 },
@@ -276,5 +279,24 @@ describe('parseVolumeInput', () => {
 		expect(parseVolumeInput('35.6')).toBe(36);
 		expect(parseVolumeInput('250')).toBe(100);
 		expect(parseVolumeInput('-3')).toBe(0);
+	});
+});
+
+describe('volume target', () => {
+	it('is OFF by default and normalises unknown values to off', () => {
+		expect(DEFAULT_VOLUME_TARGET).toBe('off');
+		expect(parseVolumeTarget(undefined)).toBe('off');
+		expect(parseVolumeTarget('')).toBe('off');
+		expect(parseVolumeTarget('speakers')).toBe('off');
+		expect(parseVolumeTarget('system')).toBe('system');
+		expect(parseVolumeTarget('monitor')).toBe('monitor');
+	});
+
+	it('yields no action while off, or for a source with no paired volume', () => {
+		expect(volumeAction('off', 35)).toBeNull();
+		expect(volumeAction('system', undefined)).toBeNull();
+		expect(volumeAction('monitor', undefined)).toBeNull();
+		expect(volumeAction('system', 35)).toEqual({ target: 'system', volume: 35 });
+		expect(volumeAction('monitor', 0)).toEqual({ target: 'monitor', volume: 0 });
 	});
 });
