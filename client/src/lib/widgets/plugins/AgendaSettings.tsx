@@ -1,6 +1,9 @@
 // The Agenda plugin's settings pane (studio → Plugins → Agenda). A container (AGENTS.md §6): owns the
-// form state, drives the Tauri commands via agenda-commands.ts. A public ICS URL — nothing secret. The
-// live badge reads the `agenda.status` telemetry sample through the hub. Reuses the `has-*` styling.
+// form state, drives the Tauri commands via agenda-commands.ts. The ICS URL is a SECRET (a calendar's
+// private address embeds a token that reads the whole calendar), so — like the HA token field — it is
+// write-only: never read back (the status carries only the saved host), and a blank field on save
+// means "keep the saved one". The live badge reads the `agenda.status` telemetry sample through the
+// hub. Reuses the `has-*` styling.
 import { useEffect, useState } from 'react';
 import { useTelemetryHub } from '../telemetryContext';
 import { useSensor } from '../useSensor';
@@ -12,13 +15,23 @@ import {
 	agendaDisconnect
 } from './agenda-commands';
 
+/** The hostname of a feed URL for the "saved" placeholder ('' when it doesn't parse). Pure. */
+export function hostOf(url: string): string {
+	try {
+		return new URL(url.replace(/^webcal:\/\//i, 'https://')).hostname;
+	} catch {
+		return '';
+	}
+}
+
 export default function AgendaSettings() {
 	const hub = useTelemetryHub();
 	const status = useSensor(hub, 'agenda.status');
 	const statusText = status.value?.kind === 'text' ? status.value.value : null;
 	const badge = haStatusBadge(statusText);
 
-	const [url, setUrl] = useState('');
+	const [url, setUrl] = useState(''); // write-only: blank = keep the saved feed
+	const [savedHost, setSavedHost] = useState('');
 	const [title, setTitle] = useState('');
 	const [poll, setPoll] = useState(30); // minutes (the backend stores seconds)
 	const [configured, setConfigured] = useState(false);
@@ -31,7 +44,7 @@ export default function AgendaSettings() {
 		agendaConfigStatus()
 			.then((s) => {
 				if (!alive) return;
-				setUrl(s.url || '');
+				setSavedHost(s.host || '');
 				setTitle(s.title || '');
 				setPoll(Math.round((s.pollSeconds || 1800) / 60));
 				setConfigured(s.configured);
@@ -48,7 +61,8 @@ export default function AgendaSettings() {
 		return () => clearTimeout(t);
 	}, [saved]);
 
-	const valid = /^(https?|webcal):\/\//i.test(url.trim());
+	// A blank URL is valid only when a feed is already saved (it means "keep it").
+	const valid = url.trim() === '' ? configured : /^(https?|webcal):\/\//i.test(url.trim());
 	const dirtied = () => setSaved(false);
 
 	const onSave = async () => {
@@ -56,9 +70,14 @@ export default function AgendaSettings() {
 		if (!valid || saving) return;
 		setSaving(true);
 		try {
-			await saveAgendaConfig({ url: url.trim(), title, pollSeconds: Math.max(5, poll) * 60 });
+			const next = url.trim();
+			await saveAgendaConfig({ url: next, title, pollSeconds: Math.max(5, poll) * 60 });
 			await agendaDisconnect();
 			await agendaConnect();
+			if (next) {
+				setSavedHost(hostOf(next));
+				setUrl(''); // the secret never lingers in the field once it is saved
+			}
 			setConfigured(true);
 			setSaved(true);
 		} finally {
@@ -85,9 +104,14 @@ export default function AgendaSettings() {
 			<label className="has-field">
 				ICS URL
 				<input
-					type="text"
+					type="password"
 					inputMode="url"
-					placeholder="https://calendar.google.com/…/basic.ics"
+					autoComplete="off"
+					placeholder={
+						configured
+							? `•••••••• saved${savedHost ? ` (${savedHost})` : ''} — leave blank to keep`
+							: 'https://calendar.google.com/…/basic.ics'
+					}
 					value={url}
 					aria-invalid={url !== '' && !valid}
 					onChange={(e) => {

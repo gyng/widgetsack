@@ -278,6 +278,106 @@ describe('useTranscribe — lifecycle', () => {
 		expect(rec.stop).not.toHaveBeenCalled();
 	});
 
+	it('cancels a recorder whose start resolves AFTER unmount (mic not left captured)', async () => {
+		let resolveStart!: (r: ReturnType<typeof makeRecorder>) => void;
+		startRecording.mockImplementationOnce(
+			() => new Promise((res) => (resolveStart = res as typeof resolveStart))
+		);
+		const { result, unmount } = renderHook(() => useTranscribe(cfg()));
+		act(() => {
+			result.current.toggle();
+		});
+		unmount(); // getUserMedia still pending → nothing to cancel yet
+		const rec = makeRecorder();
+		await act(async () => {
+			resolveStart(rec);
+		});
+		expect(rec.cancel).toHaveBeenCalledOnce();
+		expect(rec.stop).not.toHaveBeenCalled();
+	});
+
+	it('swallows a getUserMedia rejection that lands after unmount', async () => {
+		let rejectStart!: (e: unknown) => void;
+		startRecording.mockImplementationOnce(
+			() => new Promise((_, rej) => (rejectStart = rej as typeof rejectStart))
+		);
+		const { result, unmount } = renderHook(() => useTranscribe(cfg()));
+		act(() => {
+			result.current.toggle();
+		});
+		unmount();
+		await expect(
+			act(async () => {
+				rejectStart(new Error('permission denied'));
+			})
+		).resolves.toBeUndefined();
+	});
+
+	it('stops the stop→transcribe→translate→speak chain when it unmounts mid-transcribe', async () => {
+		let resolveTranscribe!: (text: string) => void;
+		llmTranscribe.mockImplementationOnce(
+			() => new Promise((res) => (resolveTranscribe = res as typeof resolveTranscribe))
+		);
+		const { result, unmount } = renderHook(() =>
+			useTranscribe(cfg({ mode: 'translate', speak: true }))
+		);
+		await act(async () => {
+			result.current.toggle(); // start
+		});
+		await act(async () => {
+			result.current.toggle(); // stop → transcribe pending
+		});
+		unmount();
+		await act(async () => {
+			resolveTranscribe('hello');
+		});
+		// Neither the translate step nor TTS runs for a widget that no longer exists.
+		expect(llmComplete).not.toHaveBeenCalled();
+		expect(speakSmart).not.toHaveBeenCalled();
+	});
+
+	it('does not speak a translation that lands after unmount', async () => {
+		let resolveComplete!: (text: string) => void;
+		llmComplete.mockImplementationOnce(
+			() => new Promise((res) => (resolveComplete = res as typeof resolveComplete))
+		);
+		const { result, unmount } = renderHook(() =>
+			useTranscribe(cfg({ mode: 'translate', speak: true }))
+		);
+		await act(async () => {
+			result.current.toggle();
+		});
+		await act(async () => {
+			result.current.toggle(); // stop → transcribe resolves → translate pending
+		});
+		expect(llmComplete).toHaveBeenCalledOnce();
+		unmount();
+		await act(async () => {
+			resolveComplete('hola');
+		});
+		expect(speakSmart).not.toHaveBeenCalled();
+	});
+
+	it('swallows a transcription failure that lands after unmount', async () => {
+		let rejectTranscribe!: (e: unknown) => void;
+		llmTranscribe.mockImplementationOnce(
+			() => new Promise((_, rej) => (rejectTranscribe = rej as typeof rejectTranscribe))
+		);
+		const { result, unmount } = renderHook(() => useTranscribe(cfg()));
+		await act(async () => {
+			result.current.toggle();
+		});
+		await act(async () => {
+			result.current.toggle();
+		});
+		unmount();
+		await expect(
+			act(async () => {
+				rejectTranscribe(new Error('late 500'));
+			})
+		).resolves.toBeUndefined();
+	});
+
 	it('uses the LATEST config at stop time (cfgRef freshness across a re-render)', async () => {
 		llmTranscribe.mockResolvedValueOnce('hello world');
 		llmComplete.mockResolvedValueOnce('bonjour le monde');

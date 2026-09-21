@@ -2,8 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { SessionRecord } from '../../../stores/stores';
 import { mediaSensorSamples, NP_SENSOR_IDS } from './sensors';
 
-// Build a SessionRecord whose Media[0] carries the given media/playback/timeline.
-const make = (over: {
+type Over = {
 	source?: string;
 	title?: string;
 	artist?: string;
@@ -13,40 +12,43 @@ const make = (over: {
 	repeat?: 'None' | 'Track' | 'List';
 	position?: number;
 	end?: number;
-}): SessionRecord => ({
+};
+
+// A SessionModel (the shape both Media[0] and Model carry) from the given fields.
+const sessionModel = (over: Over): NonNullable<SessionRecord['last_model_update']>['Model'] => ({
+	source: over.source ?? 'spotify.exe',
+	playback: {
+		auto_repeat: over.repeat ?? 'None',
+		rate: 1,
+		shuffle: over.shuffle ?? false,
+		status: (over.status ?? 'Playing') as never,
+		type: 'Music'
+	},
+	timeline:
+		over.position !== undefined || over.end !== undefined
+			? { start: 0, end: over.end ?? 0, position: over.position ?? 0, last_updated_at_ms: 0 }
+			: null,
+	media: {
+		album: over.albumTitle ? { artist: '', title: over.albumTitle, track_count: 0 } : null,
+		artist: over.artist ?? '',
+		genres: [],
+		playback_type: 'Music',
+		subtitle: '',
+		title: over.title ?? '',
+		track_number: null
+	}
+});
+
+// Build a SessionRecord whose Media[0] carries the given media/playback/timeline. `model` (when
+// given) is the LIVE model update, as the bridge delivers on play/pause/seek; otherwise the record
+// has no model update yet (the media copy is the only playback state).
+const make = (over: Over, model?: Over): SessionRecord => ({
 	session_id: 1,
 	source: over.source ?? 'spotify.exe',
 	timestamp_created: null,
 	timestamp_updated: null,
-	last_media_update: {
-		Media: [
-			{
-				source: over.source ?? 'spotify.exe',
-				playback: {
-					auto_repeat: over.repeat ?? 'None',
-					rate: 1,
-					shuffle: over.shuffle ?? false,
-					status: (over.status ?? 'Playing') as never,
-					type: 'Music'
-				},
-				timeline:
-					over.position !== undefined || over.end !== undefined
-						? { start: 0, end: over.end ?? 0, position: over.position ?? 0, last_updated_at_ms: 0 }
-						: null,
-				media: {
-					album: over.albumTitle ? { artist: '', title: over.albumTitle, track_count: 0 } : null,
-					artist: over.artist ?? '',
-					genres: [],
-					playback_type: 'Music',
-					subtitle: '',
-					title: over.title ?? '',
-					track_number: null
-				}
-			},
-			null
-		]
-	},
-	last_model_update: { Model: { playback: null, timeline: null, media: null, source: '' } }
+	last_media_update: { Media: [sessionModel(over), null] },
+	last_model_update: model ? { Model: sessionModel(model) } : null
 });
 
 // Convenience: id -> SensorValue, for terse assertions.
@@ -94,6 +96,30 @@ describe('mediaSensorSamples', () => {
 		expect(v['np.progress']).toEqual({ kind: 'scalar', value: 25 });
 		expect(v['np.shuffle']).toEqual({ kind: 'scalar', value: 1 });
 		expect(v['np.repeat']).toEqual({ kind: 'text', value: 'Track' });
+	});
+
+	it('reads playback + timeline from the LIVE model update, metadata from the media update', () => {
+		// The media update's playback copy goes stale after a pause/seek: only the model update moves.
+		const v = byId(
+			make(
+				{
+					title: 'Track',
+					status: 'Playing',
+					position: 10,
+					end: 100,
+					shuffle: false,
+					repeat: 'None'
+				},
+				{ title: 'stale', status: 'Paused', position: 50, end: 100, shuffle: true, repeat: 'List' }
+			)
+		);
+		expect(v['np.title']).toEqual({ kind: 'text', value: 'Track' });
+		expect(v['np.status']).toEqual({ kind: 'text', value: 'Paused' });
+		expect(v['np.playing']).toEqual({ kind: 'scalar', value: 0 });
+		expect(v['np.position']).toEqual({ kind: 'scalar', value: 50 });
+		expect(v['np.progress']).toEqual({ kind: 'scalar', value: 50 });
+		expect(v['np.shuffle']).toEqual({ kind: 'scalar', value: 1 });
+		expect(v['np.repeat']).toEqual({ kind: 'text', value: 'List' });
 	});
 
 	it('np.playing is 0 when paused; np.progress is 0 with no timeline', () => {

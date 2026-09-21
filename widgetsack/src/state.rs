@@ -46,48 +46,37 @@ pub fn updater(
             // is consumed so the emit below can strip the (unchanged) cover bytes rather than re-shipping
             // hundreds of KB over the IPC bridge on every tick.
             let is_model = matches!(ev, SessionUpdateEventWrapper::Model(_));
-            let maybe_existing = (*sessions).get(&session_id);
+            // gsmtc always sends SessionCreated before any update, so an update for an id we don't
+            // track is a LATE one — a player's last tick arriving after its SessionRemoved. Creating
+            // a record here would resurrect a zombie session (no source, never deleted again) that
+            // keeps the now-playing widget alive and pins its cover art forever. Drop it instead.
+            let Some(existing) = (*sessions).get(&session_id) else {
+                log::debug("session", "update for an untracked session dropped")
+                    .field("session_id", session_id)
+                    .field("kind", if is_model { "model" } else { "media" })
+                    .emit();
+                return ("unsupported", None);
+            };
             // TODO: create np-widget-specific models for sessions and map gsmtc to it
 
-            let updated_record = if let Some(existing) = maybe_existing {
-                let mut record_mut = SessionRecord {
-                    session_id: existing.session_id,
-                    source: existing.source.clone(),
-                    timestamp_created: existing.timestamp_created,
-                    timestamp_updated: Some(SystemTime::now()),
-                    // Check if this can be CoW?
-                    last_media_update: existing.last_media_update.clone(),
-                    last_model_update: existing.last_model_update.clone(),
-                };
-
-                match ev {
-                    SessionUpdateEventWrapper::Model(_) => {
-                        record_mut.last_model_update = Some(ev);
-                    }
-                    SessionUpdateEventWrapper::Media(_, _) => {
-                        record_mut.last_media_update = Some(ev);
-                    }
-                }
-
-                record_mut
-            } else {
-                let updated_ev: SessionUpdateEventWrapper = ev;
-                SessionRecord {
-                    session_id,
-                    source: None,
-                    timestamp_created: Some(SystemTime::now()),
-                    timestamp_updated: Some(SystemTime::now()),
-                    last_media_update: match updated_ev {
-                        SessionUpdateEventWrapper::Model(_) => None,
-                        // FIXME: awful clone here
-                        SessionUpdateEventWrapper::Media(_, _) => Some(updated_ev.clone()),
-                    },
-                    last_model_update: match updated_ev {
-                        SessionUpdateEventWrapper::Model(_) => Some(updated_ev),
-                        SessionUpdateEventWrapper::Media(_, _) => None,
-                    },
-                }
+            let mut updated_record = SessionRecord {
+                session_id: existing.session_id,
+                source: existing.source.clone(),
+                timestamp_created: existing.timestamp_created,
+                timestamp_updated: Some(SystemTime::now()),
+                // Check if this can be CoW?
+                last_media_update: existing.last_media_update.clone(),
+                last_model_update: existing.last_model_update.clone(),
             };
+
+            match ev {
+                SessionUpdateEventWrapper::Model(_) => {
+                    updated_record.last_model_update = Some(ev);
+                }
+                SessionUpdateEventWrapper::Media(_, _) => {
+                    updated_record.last_media_update = Some(ev);
+                }
+            }
 
             let _ = (*sessions).insert(session_id, updated_record.clone());
             // The stored record (above) keeps the art; the EMITTED one drops it on a model/timeline
@@ -259,6 +248,42 @@ mod tests {
         );
         // …and it is gone from the map afterwards.
         assert!(!sessions.contains_key(&7));
+    }
+
+    /// gsmtc always sends SessionCreated first, so an update for an untracked id is a LATE tick
+    /// arriving after the session was removed. It must not resurrect the session as a zombie
+    /// (source-less, never deleted again) that keeps now-playing alive and pins the cover art.
+    #[test]
+    fn update_after_delete_does_not_recreate_the_session() {
+        let mut sessions = HashMap::new();
+        let _ = updater(
+            &mut sessions,
+            NpSessionEvent::Create(
+                7,
+                ManagerEventWrapper::SessionCreated {
+                    session_id: 7,
+                    source: "fooplayer".to_string(),
+                },
+            ),
+        );
+        let _ = updater(
+            &mut sessions,
+            NpSessionEvent::Delete(7, ManagerEventWrapper::SessionRemoved { session_id: 7 }),
+        );
+        assert!(sessions.is_empty());
+
+        for ev in [
+            SessionUpdateEventWrapper::Model(model("fooplayer")),
+            SessionUpdateEventWrapper::Media(model("fooplayer"), None),
+        ] {
+            let (kind, delta) = updater(&mut sessions, NpSessionEvent::Update(7, ev));
+            assert_eq!(kind, "unsupported");
+            assert!(delta.is_none(), "a late update must not emit a record");
+            assert!(
+                sessions.is_empty(),
+                "a late update must not recreate the session"
+            );
+        }
     }
 
     #[test]

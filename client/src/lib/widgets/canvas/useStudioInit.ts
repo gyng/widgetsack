@@ -1,11 +1,11 @@
 // Init is NON-IDEMPOTENT (item 4): on mount run updateWorkArea + startAllSources(hub) + reloadLayout
 // + listen(layout_changed/themes_changed/toggle_edit/open_studio) + (primary) fill/reconcile. The
-// cleanup MUST call every UnlistenFn + the source stop + clearPreviewWrite. A `cancelled` flag
+// cleanup MUST call every UnlistenFn + the source stop + flushPreviewWrite. A `cancelled` flag
 // guards the async unsubscribe-after-unmount race. Assumes NO React.StrictMode — this runs once.
 // Ported verbatim from the Svelte onMount/onDestroy pair (same Tauri event/command strings).
 import { useEffect, useRef } from 'react';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-import { EVENTS } from '../../bridge/contract';
+import { EVENTS, type LayoutChangedPayload } from '../../bridge/contract';
 import { startAllSources } from '../../core/plugin';
 import { singleFlight } from '../../core/singleFlight';
 import type { TelemetryHub } from '../../core/telemetry';
@@ -23,6 +23,7 @@ import {
 	watchDisplayChanges
 } from '../../overlay';
 import type { MonitorOption } from './types';
+import { isForeignWriter } from './externalChange';
 
 export type StudioInitDeps = {
 	studio: boolean;
@@ -38,7 +39,11 @@ export type StudioInitDeps = {
 	setEdit: (v: boolean) => void;
 	setEditModeImmediate: () => void; // studio: editMode = true (no click-through round-trip)
 	setMonitorOptions: (o: MonitorOption[]) => void;
-	clearPreviewWrite: () => void;
+	/** Unmount: land (don't drop) a pending preview write so the last edit survives a close. */
+	flushPreviewWrite: () => void;
+	/** Studio only: widgets.json changed under the editor by ANOTHER writer (an overlay's edit
+	 * mode, a hand edit, a sync tool). The Canvas decides: reload silently, or offer Reload/Keep. */
+	onForeignLayoutChange: () => void;
 	/** Re-apply this overlay's presentation (decorations / click-through / z-order for the CURRENT
 	 * edit + windowed-debug state) — called after every refit, which only fits geometry. */
 	reapplyPresentation: () => Promise<void>;
@@ -149,9 +154,18 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			await dep.reloadControls();
 			unlistenControls = await listen(EVENTS.controlsChanged, () => d.current.reloadControls());
 
-			// Live-reload external edits to widgets.json (ignored while actively editing). On the
-			// primary main window, also reconcile overlays + own visibility as monitors gain/lose widgets.
-			unlistenLayout = await listen(EVENTS.layoutChanged, () => {
+			// Live-reload external edits to widgets.json. An OVERLAY ignores them while actively editing
+			// (its own edits are what's being written); on the primary main window a reload also
+			// reconciles overlays + own visibility as monitors gain/lose widgets. The STUDIO is always
+			// editing, so it instead filters on the WRITER: its own preview/save round-trips are already
+			// reflected in the editor, while a change by any other writer (an overlay in edit mode, a
+			// hand edit — no payload from the watcher) is handed to the Canvas, which reloads silently
+			// when nothing here would be lost or offers Reload / Keep mine (see externalChange.ts).
+			unlistenLayout = await listen<LayoutChangedPayload>(EVENTS.layoutChanged, (e) => {
+				if (dep.studio) {
+					if (isForeignWriter(e.payload?.writer, 'studio')) d.current.onForeignLayoutChange();
+					return;
+				}
 				if (d.current.editMode()) return;
 				d.current.reloadLayout().then(() => {
 					d.current.syncRects();
@@ -253,7 +267,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			unlistenRefit?.();
 			unlistenScale?.();
 			stopDisplayWatch?.();
-			d.current.clearPreviewWrite();
+			d.current.flushPreviewWrite();
 		};
 		// Run once on mount (non-idempotent). The body reads only the stable `d` ref, so the empty dep
 		// list is intentional and needs no exhaustive-deps suppression.

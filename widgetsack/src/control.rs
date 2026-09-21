@@ -10,6 +10,8 @@
 //!     (readable only by this user account); a malicious web page can't read it and the JSON
 //!     content-type forces a CORS preflight we don't answer — together these stop drive-by CSRF.
 //!   - `GET /health` is the only unauthenticated route (liveness check).
+//!   - `POST /ha` refuses physical-security services outright (`is_denied_service`: lock.unlock /
+//!     lock.open, alarm disarm/arm) — 403 + a warn log, regardless of the token.
 //!
 //! Reuses the existing command logic directly (`media::media_control`, `ha::ha_call_service`) — no new
 //! control paths. Pure seams (`parse_head`, `bearer_ok`, `now_playing_from_records`) are unit-tested.
@@ -112,6 +114,21 @@ fn bearer_ok(headers: &HashMap<String, String>, token: &str) -> bool {
         return false;
     };
     ct_eq(got.as_bytes(), token.as_bytes())
+}
+
+/// PURE SEAM: Home Assistant services an external agent may NEVER call through `/ha`, whatever the
+/// token says — physical-security actuation (unlocking / opening a lock, disarming or arming the alarm)
+/// is refused with 403 so a prompt-injected or runaway agent can't open the house. The user's own
+/// widgets (button macros in the studio) are not routed through here and stay unaffected. Matching is
+/// ASCII-case-insensitive on both parts; `alarm_control_panel.alarm_arm_*` covers every arm mode.
+fn is_denied_service(domain: &str, service: &str) -> bool {
+    let d = domain.trim().to_ascii_lowercase();
+    let s = service.trim().to_ascii_lowercase();
+    match d.as_str() {
+        "lock" => matches!(s.as_str(), "unlock" | "open"),
+        "alarm_control_panel" => s == "alarm_disarm" || s.starts_with("alarm_arm_"),
+        _ => false,
+    }
 }
 
 /// Whether the content type is JSON (forces a CORS preflight a drive-by page can't satisfy).
@@ -322,6 +339,19 @@ async fn handle_conn<R: Runtime>(app: AppHandle<R>, token: String, mut stream: T
                 .await;
                 return;
             }
+            if is_denied_service(&domain, &service) {
+                log::warn("control", "refused a denylisted HA service call")
+                    .field("domain", &domain)
+                    .field("service", &service)
+                    .emit();
+                write_resp(
+                    &mut stream,
+                    "403 Forbidden",
+                    &json!({ "error": format!("{domain}.{service} is not allowed via agent control") }),
+                )
+                .await;
+                return;
+            }
             let data = v.get("data").cloned().unwrap_or_else(|| json!({}));
             match crate::ha::ha_call_service(app.clone(), domain, service, data).await {
                 Ok(res) => {
@@ -463,6 +493,27 @@ mod tests {
         assert!(bearer_ok(&headers, "secret"));
         assert!(!bearer_ok(&headers, "other"));
         assert!(!bearer_ok(&HashMap::new(), "secret"));
+    }
+
+    #[test]
+    fn denies_physical_security_services_only() {
+        assert!(is_denied_service("lock", "unlock"));
+        assert!(is_denied_service("lock", "open"));
+        assert!(is_denied_service("Lock", " UNLOCK "));
+        assert!(is_denied_service("alarm_control_panel", "alarm_disarm"));
+        assert!(is_denied_service("alarm_control_panel", "alarm_arm_away"));
+        assert!(is_denied_service("alarm_control_panel", "alarm_arm_home"));
+        assert!(is_denied_service("alarm_control_panel", "alarm_arm_night"));
+        assert!(is_denied_service(
+            "alarm_control_panel",
+            "alarm_arm_vacation"
+        ));
+        // everything else stays callable (lights, media, locking a lock)
+        assert!(!is_denied_service("lock", "lock"));
+        assert!(!is_denied_service("light", "turn_on"));
+        assert!(!is_denied_service("alarm_control_panel", "alarm_trigger"));
+        assert!(!is_denied_service("media_player", "media_play"));
+        assert!(!is_denied_service("", ""));
     }
 
     #[test]

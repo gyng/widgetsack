@@ -2,7 +2,8 @@
 // single source of truth shared by the media->hub bridge (np-source.ts) and the settings pane's
 // live-values table (NowPlayingSettings.tsx). Framework-agnostic (no React/Tauri): takes a session
 // in and returns SensorSamples out, so it's unit-tested directly. Mirrors what the NowPlaying meter
-// reads (last_media_update.Media[0]) so the sensors match exactly what the widget shows.
+// reads — metadata from last_media_update.Media[0], playback/timeline from the LIVE
+// last_model_update.Model — so the sensors match exactly what the widget shows.
 
 import type { SensorSample, SensorValue } from '../../core/telemetry';
 import type { SessionRecord } from '../../../stores/stores';
@@ -32,10 +33,15 @@ export function mediaSensorSamples(
 	session: SessionRecord | undefined,
 	tsMs: number
 ): SensorSample[] {
-	const model = session?.last_media_update?.Media?.[0];
-	const media = model?.media;
-	const playback = model?.playback;
-	const timeline = model?.timeline;
+	// Metadata (title/artist/album) comes from the MEDIA update; playback + timeline from the MODEL
+	// update — the one that fires on play/pause/seek, while the media update's copy stays stale until
+	// the next track change (same split as NowPlaying.tsx). Fall back to the media model before any
+	// model update arrives.
+	const mediaModel = session?.last_media_update?.Media?.[0];
+	const liveModel = session?.last_model_update?.Model ?? mediaModel;
+	const media = mediaModel?.media;
+	const playback = liveModel?.playback;
+	const timeline = liveModel?.timeline;
 	const position = timeline?.position ?? 0;
 	const duration = timeline?.end ?? 0;
 	const progress = duration > 0 ? Math.min(100, Math.max(0, (position / duration) * 100)) : 0;

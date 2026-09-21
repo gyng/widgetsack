@@ -14,14 +14,21 @@ describe('isDirectUrl', () => {
 		expect(isDirectUrl('  subfolder-cat.png ')).toBe(false);
 	});
 
-	it('keeps production CSP aligned with the supported remote image schemes', () => {
+	it('keeps production CSP aligned with the supported remote image schemes (https only, never plain http)', () => {
 		const config = JSON.parse(
 			readFileSync(resolve(process.cwd(), '../widgetsack/tauri.conf.json'), 'utf8')
 		) as { app: { security: { csp: string } } };
-		const imgDirective = config.app.security.csp
-			.split(';')
-			.find((directive) => directive.trim().startsWith('img-src'));
-		expect(imgDirective?.split(/\s+/)).toEqual(expect.arrayContaining(['http:', 'https:']));
+		const directives = config.app.security.csp.split(';').map((d) => d.trim().split(/\s+/));
+		const img = directives.find((d) => d[0] === 'img-src');
+		expect(img).toEqual(expect.arrayContaining(['https:', 'data:']));
+		expect(img).not.toContain('http:'); // a cleartext image is an IP-leaking beacon anyone can read
+		const frame = directives.find((d) => d[0] === 'frame-src');
+		expect(frame).toEqual(expect.arrayContaining(['https:']));
+		expect(frame).not.toContain('http:');
+		// no <base> rewrites, no form posts, no plugins
+		for (const d of ['base-uri', 'form-action', 'object-src']) {
+			expect(directives.find((x) => x[0] === d)).toEqual([d, "'none'"]);
+		}
 	});
 });
 

@@ -54,6 +54,7 @@ import {
 	makeWidget,
 	outdent,
 	patchContainerOp,
+	patchFloating,
 	patchGroup,
 	patchUnit,
 	rand,
@@ -99,34 +100,80 @@ export {
 	clearWidgetTokens,
 	lookup,
 	setSolvedForFloat,
+	patchFloating,
 	DEFAULT_MONITOR
 };
 
 // --- snapshot / history helpers (operate on a state slice) ----------------------------------
 
+/** Same-key commits closer together than this fold into one undo step (a typing / key-repeat burst). */
+export const COALESCE_MS = 600;
+
 function snap(s: EditorState): Snap {
-	return { monitor: s.monitor, library: s.library };
+	return {
+		monitor: s.monitor,
+		library: s.library,
+		pendingExtras: s.pendingExtras,
+		tokenOverrides: s.tokenOverrides,
+		selectedTheme: s.selectedTheme,
+		themeLock: s.themeLock
+	};
+}
+
+// Reference/value equality over every snapshot field (the ops return new objects on change).
+function sameSnap(s: EditorState, t: Snap): boolean {
+	return (
+		s.monitor === t.monitor &&
+		s.library === t.library &&
+		s.pendingExtras === t.pendingExtras &&
+		s.tokenOverrides === t.tokenOverrides &&
+		s.selectedTheme === t.selectedTheme &&
+		s.themeLock === t.themeLock
+	);
+}
+
+// Restore a snapshot's fields onto the state (undo/redo).
+function applySnap(s: EditorState, t: Snap): EditorState {
+	return {
+		...s,
+		monitor: t.monitor,
+		library: t.library,
+		pendingExtras: t.pendingExtras,
+		tokenOverrides: t.tokenOverrides,
+		selectedTheme: t.selectedTheme,
+		themeLock: t.themeLock
+	};
 }
 
 // Re-baseline history to the current layout (no undo entries across this point).
 function resetHistoryPatch(next: EditorState): Patch {
-	return { undoStack: [], redoStack: [], lastSnap: snap(next), historyReady: true };
+	return {
+		undoStack: [],
+		redoStack: [],
+		lastSnap: snap(next),
+		historyReady: true,
+		lastCommit: null
+	};
 }
 
-// The commit point. If the layout changed since the last snapshot, push the previous snapshot for
-// undo and clear the redo branch, then advance lastSnap. A no-op when nothing changed.
-function recordHistory(next: EditorState): Patch {
+// The commit point. If anything in the snapshot changed since the last one, push the previous
+// snapshot for undo and clear the redo branch, then advance lastSnap. A no-op when nothing changed.
+// COALESCING: a commit carrying the same `coalesceKey` as the previous commit, within COALESCE_MS,
+// is folded into that undo step — the stack's top entry (the state before the burst began) stays
+// put and only lastSnap advances, so one Ctrl+Z undoes the whole typed word / held-arrow run.
+function recordHistory(next: EditorState, coalesceKey?: string, at = 0): Patch {
 	if (!next.historyReady) return {};
-	if (
-		next.lastSnap &&
-		next.monitor === next.lastSnap.monitor &&
-		next.library === next.lastSnap.library
-	)
-		return {};
+	if (next.lastSnap && sameSnap(next, next.lastSnap)) return {};
+	const lastCommit = coalesceKey ? { key: coalesceKey, at } : null;
+	const prev = next.lastCommit;
+	if (coalesceKey && prev && prev.key === coalesceKey && at - prev.at < COALESCE_MS) {
+		return { redoStack: [], lastSnap: snap(next), lastCommit };
+	}
 	return {
 		undoStack: [...next.undoStack, next.lastSnap ?? snap(next)].slice(-100),
 		redoStack: [],
-		lastSnap: snap(next)
+		lastSnap: snap(next),
+		lastCommit
 	};
 }
 
@@ -156,7 +203,13 @@ function setBaselinePatch(s: EditorState): Patch {
 // =============================================================================================
 
 type Action =
-	| { type: 'op'; run: (s: EditorState) => Patch; commit: boolean }
+	| {
+			type: 'op';
+			run: (s: EditorState) => Patch;
+			commit: boolean;
+			coalesceKey?: string; // fold same-key commits within COALESCE_MS into one undo step
+			at?: number; // the commit's wall-clock time (ms) — supplied by the dispatcher, for coalescing
+	  }
 	| { type: 'undo' }
 	| { type: 'redo' }
 	| { type: 'select'; id: string }
@@ -174,14 +227,16 @@ type Action =
 	| { type: 'setBaseline' }
 	| { type: 'load'; patch: Patch } // bulk set after reloadLayout (then resetHistory + setBaseline)
 	| { type: 'setTheme'; name: string } // mirror selectedTheme (applyTheme is a side-effect)
-	| { type: 'setMonitorKey' } // switch-monitor reset (clear selection/menu handled outside)
 	| { type: 'replaceMonitor'; monitor: MonitorLayout } // raw set (switchMonitor placeholder)
+	// After a Save wrote the queued cross-monitor moves: clear them from the state AND from every
+	// history entry, so an undo can't re-queue an extra that already landed on the other monitor.
+	| { type: 'extrasFlushed' }
 	| { type: 'revertToBaseline' } // Cancel / discard-on-switch: restore the saved baseline
 	| { type: 'patch'; patch: Patch }; // a plain non-committing patch (selectedIds, etc.)
 
-function commitPatch(next: EditorState): Patch {
+function commitPatch(next: EditorState, coalesceKey?: string, at?: number): Patch {
 	// next is the post-edit state; record undo then advance saveSeq so the persistence effect fires.
-	const hist = recordHistory(next);
+	const hist = recordHistory(next, coalesceKey, at);
 	return { ...hist, saveSeq: next.saveSeq + 1 };
 }
 
@@ -230,14 +285,14 @@ function reduceHistory(state: EditorState, action: HistoryAction): EditorState {
 			const redoStack = [...state.redoStack, snap(state)];
 			const prev = state.undoStack[state.undoStack.length - 1];
 			const undoStack = state.undoStack.slice(0, -1);
-			// monitor/library revert; lastSnap=prev so the commit records nothing; then commit (save).
+			// Revert every snapshot field; lastSnap=prev so the commit records nothing; then commit
+			// (save). lastCommit resets so the next same-key edit can't fold into the undone burst.
 			let next: EditorState = {
-				...state,
-				monitor: prev.monitor,
-				library: prev.library,
+				...applySnap(state, prev),
 				undoStack,
 				redoStack,
-				lastSnap: prev
+				lastSnap: prev,
+				lastCommit: null
 			};
 			next = { ...next, ...commitPatch(next) };
 			return next;
@@ -248,12 +303,11 @@ function reduceHistory(state: EditorState, action: HistoryAction): EditorState {
 			const next0 = state.redoStack[state.redoStack.length - 1];
 			const redoStack = state.redoStack.slice(0, -1);
 			let next: EditorState = {
-				...state,
-				monitor: next0.monitor,
-				library: next0.library,
+				...applySnap(state, next0),
 				undoStack,
 				redoStack,
-				lastSnap: next0
+				lastSnap: next0,
+				lastCommit: null
 			};
 			next = { ...next, ...commitPatch(next) };
 			return next;
@@ -463,7 +517,7 @@ function reduceDefEdit(state: EditorState, action: DefEditAction): EditorState {
 
 type LoadAction = Extract<
 	Action,
-	{ type: 'load' | 'setTheme' | 'replaceMonitor' | 'revertToBaseline' | 'setMonitorKey' }
+	{ type: 'load' | 'setTheme' | 'replaceMonitor' | 'revertToBaseline' | 'extrasFlushed' }
 >;
 
 function reduceLoad(state: EditorState, action: LoadAction): EditorState {
@@ -488,8 +542,19 @@ function reduceLoad(state: EditorState, action: LoadAction): EditorState {
 				pendingExtras: []
 			};
 		}
-		case 'setMonitorKey':
-			return state;
+		case 'extrasFlushed': {
+			// The extras are on disk now (other monitors' records). Strip them from the live state and
+			// from every snapshot: an undo that restored a stale queue would re-append the same leaf
+			// to the other monitor on the next Save (a duplicate).
+			const strip = (t: Snap): Snap => (t.pendingExtras.length ? { ...t, pendingExtras: [] } : t);
+			return {
+				...state,
+				pendingExtras: [],
+				undoStack: state.undoStack.map(strip),
+				redoStack: state.redoStack.map(strip),
+				lastSnap: state.lastSnap ? strip(state.lastSnap) : null
+			};
+		}
 	}
 }
 
@@ -500,7 +565,7 @@ function editorReducer(state: EditorState, action: Action): EditorState {
 			const setSelectedIds = 'selectedIds' in patch;
 			let next = { ...state, ...patch };
 			next = syncPrimary(next, setSelectedIds); // collapse the marquee unless the op set the set
-			if (action.commit) next = { ...next, ...commitPatch(next) };
+			if (action.commit) next = { ...next, ...commitPatch(next, action.coalesceKey, action.at) };
 			return next;
 		}
 		case 'patch': {
@@ -529,7 +594,7 @@ function editorReducer(state: EditorState, action: Action): EditorState {
 		case 'setTheme':
 		case 'replaceMonitor':
 		case 'revertToBaseline':
-		case 'setMonitorKey':
+		case 'extrasFlushed':
 			return reduceLoad(state, action);
 		default:
 			return state;
@@ -541,8 +606,9 @@ export type EditorModel = {
 	dispatch: React.Dispatch<Action>;
 	// The Inspector/Outline/context-menu funnel: ports the Svelte handleOp switch verbatim.
 	handleOp: (op: LayoutOp) => void;
-	// Convenience wrappers the Canvas calls directly (drag/drop/marquee/keyboard paths).
-	commitOp: (run: (s: EditorState) => Patch) => void; // mutate + saveLayout
+	// Convenience wrappers the Canvas calls directly (drag/drop/marquee/keyboard paths). An optional
+	// `coalesceKey` folds a same-key burst (typing, key-repeat) into ONE undo step — see recordHistory.
+	commitOp: (run: (s: EditorState) => Patch, coalesceKey?: string) => void; // mutate + saveLayout
 	mutateNoSave: (run: (s: EditorState) => Patch) => void; // mutate, no save (transient onChange)
 };
 
@@ -579,6 +645,7 @@ const initial = (studio: boolean, seedMonitor: MonitorLayout): EditorState => ({
 	redoStack: [],
 	lastSnap: null,
 	historyReady: false,
+	lastCommit: null,
 	savedBaseline: null,
 	pendingExtras: [],
 	saveSeq: 0,
@@ -597,7 +664,8 @@ export function useEditorModel(studio: boolean, seedFloating: Leaf[]): EditorMod
 	);
 
 	const commitOp = useCallback(
-		(run: (s: EditorState) => Patch) => dispatch({ type: 'op', run, commit: true }),
+		(run: (s: EditorState) => Patch, coalesceKey?: string) =>
+			dispatch({ type: 'op', run, commit: true, coalesceKey, at: Date.now() }),
 		[]
 	);
 	const mutateNoSave = useCallback(
@@ -713,7 +781,7 @@ export function useEditorModel(studio: boolean, seedFloating: Leaf[]): EditorMod
 					commitOp((s) => clearWidgetTokens(s, op.id));
 					return;
 				case 'patchWidget':
-					commitOp((s) => patchUnit(s, op.id, op.patch));
+					commitOp((s) => patchUnit(s, op.id, op.patch), op.coalesce);
 					return;
 				case 'setBasis':
 					commitOp((s) => setNodeBasis(s, op.id, op.basis));

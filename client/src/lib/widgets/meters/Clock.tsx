@@ -1,8 +1,10 @@
-// Self-sourcing meter: renders local time on a 1s tick. No sensor binding. BARE DOM — the look lives
+// Self-sourcing meter: renders local time on the shared 1 s wall clock (useNow — one boundary-aligned
+// timer per window, so every clock flips on the true second). No sensor binding. BARE DOM — the look lives
 // in Clock.css; a per-instance `color` is passed only as the `--clock-color` CSS variable (the class
 // resolves it with a --np-fg/token fallback), so it stays fully restylable via the editable css.
-import { useEffect, useState, type CSSProperties } from 'react';
+import { type CSSProperties } from 'react';
 import { formatClock } from '../../core/format';
+import { useNow } from '../useNow';
 import './Clock.css';
 
 type Props = {
@@ -14,14 +16,7 @@ type Props = {
 };
 
 export default function Clock({ format = 'HH:mm', label = '', color, locale = 'en' }: Props) {
-	const [now, setNow] = useState(new Date());
-
-	useEffect(() => {
-		const timer = setInterval(() => {
-			setNow(new Date());
-		}, 1000);
-		return () => clearInterval(timer);
-	}, []);
+	const now = new Date(useNow(1000));
 
 	const display = formatClock(now, format, locale);
 	const vars = color ? ({ '--clock-color': color } as CSSProperties) : undefined;

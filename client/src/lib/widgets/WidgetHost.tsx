@@ -8,6 +8,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	type KeyboardEvent as ReactKeyboardEvent,
 	type MouseEvent as ReactMouseEvent,
 	type PointerEvent as ReactPointerEvent
 } from 'react';
@@ -20,6 +21,7 @@ import { useSensor } from './useSensor';
 import { useSensorMap } from './useSensorMap';
 import { useFormulaFields } from '../formula/useFormula';
 import { dragMoveIntent } from './canvas/dragIntent';
+import { contextMenuAnchor } from './canvas/menuPosition';
 import WidgetErrorBoundary from './WidgetErrorBoundary';
 import './WidgetHost.css';
 
@@ -223,7 +225,19 @@ function WidgetHost({
 		// Swallow the contextmenu that trails a right-button free-move (consume-once, canvas-armed).
 		if (suppressContextMenu?.()) return;
 		onSelect?.({ id: selectId });
-		onContextMenu?.({ id: selectId, x: e.clientX, y: e.clientY });
+		// A keyboard-initiated contextmenu (Menu key / Shift+F10 on the focused overlay button) has no
+		// pointer position — anchor the menu at this widget's box instead of the window corner.
+		const at = contextMenuAnchor(e, e.currentTarget.getBoundingClientRect());
+		onContextMenu?.({ id: selectId, x: at.x, y: at.y });
+	};
+
+	// Keyboard access to the edit overlay: it is a real button (Tab reaches it), so Enter/Space
+	// select the widget the way a click does. (Move/resize stay pointer-only; Arrow nudges are the
+	// Canvas's global keyboard control once selected.)
+	const handleOverlayKey = (e: ReactKeyboardEvent) => {
+		if (e.key !== 'Enter' && e.key !== ' ') return;
+		e.preventDefault();
+		onSelect?.({ id: selectId });
 	};
 
 	function begin(kind: 'move' | ResizeHandle, e: ReactPointerEvent) {
@@ -326,6 +340,26 @@ function WidgetHost({
 		if (didMove && d.skipFlow) onSuppressContextMenu?.();
 	}
 
+	// The pointer was taken away mid-drag (pointercancel: a touch gesture / OS takeover, or the
+	// capture was lost — the element re-rendered away, a native dialog opened). Without this the
+	// widget stayed `active` with the drag ref armed until the next press, and the live onChange edits
+	// sat uncommitted (no undo step, no save). A flow ghost-drag simply aborts (nothing was mutated);
+	// a move/resize past the slop commits what has been applied so far. A no-op after a normal
+	// pointerup (end() already cleared the action; lostpointercapture always trails pointerup).
+	function cancel() {
+		const d = drag.current;
+		if (d.action === null) return;
+		const wasFlow = d.action === 'flow';
+		const didMove = d.moved;
+		d.action = null;
+		setAction(null);
+		if (wasFlow) {
+			setGhost({ dx: 0, dy: 0 });
+			return;
+		}
+		if (didMove) onCommit?.({ skipFlow: d.skipFlow });
+	}
+
 	const cls = ['widget'];
 	if (flow) cls.push('flow');
 	if (editMode) cls.push('editable');
@@ -407,6 +441,9 @@ function WidgetHost({
 						onPointerDown={(e) => begin('move', e)}
 						onPointerMove={move}
 						onPointerUp={end}
+						onPointerCancel={cancel}
+						onLostPointerCapture={cancel}
+						onKeyDown={handleOverlayKey}
 					/>
 					{movable &&
 						HANDLES.map((handle) => (
@@ -418,6 +455,8 @@ function WidgetHost({
 								onPointerDown={(e) => begin(handle, e)}
 								onPointerMove={move}
 								onPointerUp={end}
+								onPointerCancel={cancel}
+								onLostPointerCapture={cancel}
 							/>
 						))}
 				</>

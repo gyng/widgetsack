@@ -3,6 +3,62 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.57
+
+### Security
+
+- **Imported layouts are scanned and sandboxed.** A shared `.sack` file, a plugin package's templates, or
+  an AI-assistant layout operation could carry an unsandboxed interactive iframe, remote tracking images,
+  per-widget CSS that escaped its scope, or button macros hiding Home Assistant calls, with no prompt. Every
+  import now goes through one consent summary that lists iframes, remote images and backgrounds, button
+  macros and CSS threats; iframes from imported trees are forced into the sandbox; CSS that would escape
+  its scope wrapper is dropped; the CSS threat scanner sees through comments and escapes; and assistant
+  layout operations are validated against each widget's config schema.
+- **Prototype pollution closed.** A def parameter whose target walked into `__proto__` could poison the
+  whole editor from one shared sack; path walks now refuse those segments everywhere (params, template
+  scopes, the formula sandbox scope).
+- **Stored API keys can no longer be sent to an arbitrary URL.** The LLM model-list and test-connection
+  commands are studio-only and require an explicit key whenever the base URL differs from the saved one
+  or certificate checks are disabled; base URLs must be https (http only for localhost).
+- **Navigation and CSP hardening.** The top-level webview refuses navigation away from the app; images
+  and frames are https-only; `base-uri`, `form-action` and `object-src` are locked; the asset scope is
+  narrowed to wallpapers and fonts.
+- The calendar feed URL (a bearer secret for private calendars) is stored encrypted and never echoed
+  back; feed, calendar and album-art downloads are size-capped; agent control refuses lock unlock/open
+  and alarm disarm/arm services; package fetches require the package to be enabled and refuse local and
+  internal hosts. The plugin docs now describe the real trust model.
+
+### Fixed
+
+- **Stale "now playing" after the player quits.** A late media update arriving after the session was
+  removed resurrected a phantom session that kept the widget alive and pinned the cover art.
+- **Spectrum capture kept running** (WASAPI loopback and FFT) after an overlay window was destroyed; it
+  also pauses while the window is hidden.
+- `np.playing`, `np.status`, `np.position`, `np.progress`, `np.shuffle` and `np.repeat` reflected the
+  last track change rather than live play/pause/seek state.
+- The AI briefing could silently miss demand-gated sensors (GPU, top processes) on the overlay; the
+  Transcribe widget could leave the microphone open if it unmounted mid-permission-prompt.
+- Home Assistant state changes are batched (one bridge message per 250 ms) and only forwarded for
+  entities a window actually binds, with late binders primed from a cache.
+- Self-discovering meters (Disks, CPU cores) drop ids that stopped reporting, so an ejected drive no
+  longer shows a stale value forever.
+- Sparkline renders to a canvas instead of rewriting SVG points every tick (the pattern behind
+  long-running overlay memory growth).
+- Clocks, countdowns, timers and calendars share one boundary-aligned timer per window (no seconds
+  skipping); the Volume widget polls every 3 s and pauses while hidden.
+- **Studio:** rubber-band selection works from any empty point inside the monitor again (it only worked
+  from the gutter); undo after a cross-monitor move no longer duplicates the widget on save; theme, token
+  and lock changes are undoable; typing and key-repeat nudges coalesce into one undo step; measurement no
+  longer rebuilds observers on every drag frame or meter tick; click-through rects refresh when a theme
+  reveals controls; a single bad monitor entry no longer replaces the whole layout with the demo (the
+  layout is backed up and the affected monitor loads empty); overlay edit mode debounces and serialises
+  disk writes; the studio detects external layout changes ("Reload / Keep mine") instead of clobbering
+  them; switching monitors can no longer write an empty layout under the new key; the header menu and
+  context menus are keyboard-navigable and widgets are selectable from the keyboard; the Save button
+  copy now says edits preview live on the overlays.
+- Docs: the Clock format help describes the real (moment-style) tokens; Spectrum device/scale are
+  documented as app-wide; the generated widget reference now covers plugin widgets too.
+
 ## 0.0.56
 
 ### Fixed

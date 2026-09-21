@@ -699,20 +699,75 @@ async fn chat_once(cfg: &LlmConfig, messages: &[ChatMessage]) -> Result<String, 
     parse_chat_text(&cfg.provider, &v).ok_or_else(|| "the model returned no text".into())
 }
 
+/// PURE SEAM: may an ad-hoc (unsaved) request with a BLANK key fall back to the provider's SAVED key?
+/// Only when it would go to the same place the key was saved for: the effective base URL must equal
+/// the saved one, and the request must not switch TLS verification off. Otherwise a caller (a
+/// compromised webview, a hostile page in an unsandboxed frame with a bridge) could point `base_url`
+/// at its own host and have us send the stored secret there — so an explicit key is required.
+fn key_fallback_allowed(saved_base: &str, requested_base: &str, insecure: bool) -> bool {
+    !insecure && saved_base.trim_end_matches('/') == requested_base.trim_end_matches('/')
+}
+
+/// PURE SEAM: an ad-hoc `base_url` must be `https://`; `http://` is accepted ONLY for loopback hosts
+/// (`localhost`, `*.localhost`, `127.0.0.0/8`, `::1` — a local Ollama / LM Studio), so an API key
+/// can never be sent in the clear across a network. Blank means "the provider default" (always fine).
+fn check_base_url(base_url: &str) -> Result<(), String> {
+    let b = base_url.trim();
+    if b.is_empty() {
+        return Ok(());
+    }
+    let u = reqwest::Url::parse(b).map_err(|e| format!("invalid base URL: {e}"))?;
+    match u.scheme() {
+        "https" => Ok(()),
+        "http" => {
+            let loopback = u.host_str().is_some_and(|h| {
+                let h = h.trim_start_matches('[').trim_end_matches(']'); // IPv6 literal brackets
+                h.eq_ignore_ascii_case("localhost")
+                    || h.to_ascii_lowercase().ends_with(".localhost")
+                    || h.parse::<std::net::IpAddr>()
+                        .is_ok_and(|ip| ip.is_loopback())
+            });
+            if loopback {
+                Ok(())
+            } else {
+                Err(
+                    "base URL must be https:// (plain http:// is only allowed for localhost)"
+                        .into(),
+                )
+            }
+        }
+        other => Err(format!("base URL must be https:// (got {other}://)")),
+    }
+}
+
 /// Resolve the api_key for an ad-hoc (UNSAVED) request to `provider`: a blank incoming key means "use
-/// that provider's saved one" (the UI holds the key write-only, so testing a changed URL must reuse the
-/// stored secret).
+/// that provider's saved one" (the UI holds the key write-only, so testing a changed model must reuse
+/// the stored secret) — but ONLY when the request targets the saved base URL with TLS verification on
+/// (`key_fallback_allowed`); a changed URL or `insecure` needs an explicit key.
 fn resolve_key<R: Runtime>(
     app: &AppHandle<R>,
     provider: &str,
     incoming: String,
+    requested_base: &str,
+    insecure: bool,
 ) -> Result<String, String> {
     if !incoming.is_empty() {
         return Ok(incoming);
     }
-    Ok(load_llm_file(app)?
-        .and_then(|f| f.providers.get(provider).map(|p| p.api_key.clone()))
-        .unwrap_or_default())
+    let Some(saved) = load_llm_file(app)?.and_then(|f| f.providers.get(provider).cloned()) else {
+        return Ok(String::new());
+    };
+    if saved.api_key.trim().is_empty() {
+        return Ok(String::new());
+    }
+    let saved_base = effective_base_of(provider, &saved.base_url);
+    if !key_fallback_allowed(&saved_base, requested_base, insecure) {
+        return Err(
+            "enter the API key explicitly to test a different base URL or an insecure connection"
+                .into(),
+        );
+    }
+    Ok(saved.api_key)
 }
 
 // ---- Tauri commands ----
@@ -852,12 +907,16 @@ pub async fn llm_test_connection(
     } else {
         provider
     };
+    let base_url = base_url.unwrap_or_default();
+    check_base_url(&base_url)?;
+    let insecure = insecure.unwrap_or(false);
+    let requested_base = effective_base_of(&id, &base_url);
     let cfg = LlmConfig {
-        api_key: resolve_key(&app, &id, api_key)?,
+        api_key: resolve_key(&app, &id, api_key, &requested_base, insecure)?,
         provider: id,
-        base_url: base_url.unwrap_or_default(),
+        base_url,
         model: model.unwrap_or_default(),
-        insecure: insecure.unwrap_or(false),
+        insecure,
         temperature: 0.0,
         max_tokens: 32,
         agent_control: false,
@@ -900,20 +959,28 @@ pub async fn llm_complete<R: Runtime>(
 /// has no catalog endpoint, an error string when the call fails. Accepts the settings form's
 /// (possibly UNSAVED) provider / url / key / insecure so the picker can refresh BEFORE Save — mirrors
 /// `llm_test_connection`. With no provider it falls back to the saved active config; a blank key
-/// resolves to that provider's saved one (the UI holds the key write-only).
+/// resolves to that provider's saved one (the UI holds the key write-only) ONLY for the saved base
+/// URL with TLS on (`resolve_key`). Studio-only: it can carry the stored key to an ad-hoc URL.
 #[tauri::command]
 pub async fn llm_list_models<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
     app: AppHandle<R>,
     provider: Option<String>,
     base_url: Option<String>,
     api_key: Option<String>,
     insecure: Option<bool>,
 ) -> Result<Vec<LlmModel>, String> {
+    if window.label() != "studio" {
+        return Err("llm_list_models is only allowed from the studio window".into());
+    }
     let (provider, base, key, insecure) = match provider.filter(|p| !p.is_empty()) {
         Some(p) => {
-            let key = resolve_key(&app, &p, api_key.unwrap_or_default())?;
-            let base = effective_base_of(&p, &base_url.unwrap_or_default());
-            (p, base, key, insecure.unwrap_or(false))
+            let base_url = base_url.unwrap_or_default();
+            check_base_url(&base_url)?;
+            let insecure = insecure.unwrap_or(false);
+            let base = effective_base_of(&p, &base_url);
+            let key = resolve_key(&app, &p, api_key.unwrap_or_default(), &base, insecure)?;
+            (p, base, key, insecure)
         }
         None => {
             let cfg = load_llm_config(&app)?.ok_or("AI provider not configured")?;
@@ -1483,6 +1550,49 @@ mod tests {
         assert_eq!(cfg.temperature, 0.7);
         assert_eq!(cfg.max_tokens, 1024);
         assert!(cfg.api_key.is_empty());
+    }
+
+    #[test]
+    fn key_fallback_only_for_the_saved_base_with_tls_on() {
+        let saved = "https://api.openai.com/v1";
+        assert!(key_fallback_allowed(
+            saved,
+            "https://api.openai.com/v1",
+            false
+        ));
+        assert!(key_fallback_allowed(
+            saved,
+            "https://api.openai.com/v1/",
+            false
+        )); // slash-insensitive
+        assert!(!key_fallback_allowed(
+            saved,
+            "https://evil.example/v1",
+            false
+        )); // different host
+        assert!(!key_fallback_allowed(
+            saved,
+            "https://api.openai.com/v2",
+            false
+        )); // different path
+        assert!(!key_fallback_allowed(saved, saved, true)); // insecure needs an explicit key
+    }
+
+    #[test]
+    fn base_url_must_be_https_except_loopback_http() {
+        assert!(check_base_url("").is_ok()); // blank = provider default
+        assert!(check_base_url("https://api.openai.com/v1").is_ok());
+        assert!(check_base_url("http://localhost:11434").is_ok());
+        assert!(check_base_url("http://LOCALHOST:1234/v1").is_ok());
+        assert!(check_base_url("http://ollama.localhost").is_ok());
+        assert!(check_base_url("http://127.0.0.1:8080/v1").is_ok());
+        assert!(check_base_url("http://127.1.2.3/v1").is_ok());
+        assert!(check_base_url("http://[::1]:11434").is_ok());
+        assert!(check_base_url("http://192.168.1.5:1234/v1").is_err());
+        assert!(check_base_url("http://api.openai.com/v1").is_err());
+        assert!(check_base_url("http://evil.example").is_err());
+        assert!(check_base_url("ftp://x").is_err());
+        assert!(check_base_url("not a url").is_err());
     }
 
     #[test]

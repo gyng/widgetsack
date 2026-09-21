@@ -14,6 +14,7 @@
 //! into the project's own `SensorSample`/`SensorValue` at the edge, and the pure seams
 //! (`ws_url_from`, `state_to_samples`, `entity_from_state`) are unit-tested without I/O.
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -27,7 +28,7 @@ use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_tungstenite::{Connector, connect_async, connect_async_tls_with_config};
 
 use crate::log;
-use crate::sensors::{SensorSample, SensorValue, TELEMETRY_EVENT};
+use crate::sensors::{ActiveSensors, SensorSample, SensorValue, TELEMETRY_EVENT};
 
 type BoxErr = Box<dyn std::error::Error + Send + Sync>;
 
@@ -118,10 +119,171 @@ pub struct HaRegistry {
 }
 
 /// Managed state: the running WS task (None when disconnected). Guards against a second
-/// `ha_connect` spawning a duplicate socket / duplicate snapshot.
+/// `ha_connect` spawning a duplicate socket / duplicate snapshot. `latest` is the newest state
+/// object per entity (from the snapshot + every `state_changed`, demanded or not), so a window
+/// that starts binding an entity later can be primed from it (`prime_window`) instead of waiting
+/// for that entity's next change — which for a static sensor may be hours away.
 #[derive(Default)]
 pub struct HaState {
     handle: Mutex<Option<JoinHandle<()>>>,
+    latest: std::sync::Mutex<HashMap<String, Value>>,
+}
+
+impl HaState {
+    fn remember(&self, entity_id: &str, state: &Value) {
+        let mut latest = self.latest.lock().unwrap_or_else(|e| e.into_inner());
+        if state.is_null() {
+            latest.remove(entity_id);
+        } else {
+            latest.insert(entity_id.to_string(), state.clone());
+        }
+    }
+}
+
+/// The HA entity a bound sensor id refers to: `ha.<entity_id>` or `ha.<entity_id>.state`. `None`
+/// for anything else (the `ha.status` connection sensor, non-HA ids). Pure.
+fn entity_of_sensor_id(sensor_id: &str) -> Option<&str> {
+    let rest = sensor_id.strip_prefix("ha.")?;
+    let entity = rest.strip_suffix(".state").unwrap_or(rest);
+    valid_entity_id(entity).then_some(entity)
+}
+
+/// Samples priming a window that just reported demand for `ids`: the cached latest state of each
+/// referenced entity (all of them for the `*` wildcard), each entity once. Pure.
+fn prime_samples(latest: &HashMap<String, Value>, ids: &[String], ts_ms: u64) -> Vec<SensorSample> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    let mut push = |entity: &str, state: &Value| {
+        if seen.insert(entity.to_string())
+            && let Some(mut samples) = state_to_samples(entity, state, ts_ms)
+        {
+            out.append(&mut samples);
+        }
+    };
+    if ids.iter().any(|id| id == "*") {
+        for (entity, state) in latest {
+            push(entity, state);
+        }
+        return out;
+    }
+    for id in ids {
+        if let Some(entity) = entity_of_sensor_id(id)
+            && let Some(state) = latest.get(entity)
+        {
+            push(entity, state);
+        }
+    }
+    out
+}
+
+/// Send `window` the latest cached state of every HA entity among the ids it just started
+/// consuming (called from `set_active_sensors` with the ADDED ids only). Closes the demand-gate
+/// gap: the stream and snapshot only carry entities some window already wanted, so a widget bound
+/// after the fact would otherwise stay blank until its entity next changes. Emits to that window
+/// alone. A no-op when HA isn't managed / nothing is cached.
+pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[String]) {
+    if added.is_empty() {
+        return;
+    }
+    let Some(state) = window.app_handle().try_state::<HaState>() else {
+        return;
+    };
+    let batch = {
+        let latest = state.latest.lock().unwrap_or_else(|e| e.into_inner());
+        prime_samples(&latest, added, now_ms())
+    };
+    if !batch.is_empty() {
+        let _ = window.emit(TELEMETRY_EVENT, &batch);
+    }
+}
+
+/// How long `state_changed` samples are held before one coalesced telemetry emit. A busy HA
+/// instance fires dozens of state changes a second (power meters, motion, media position); each
+/// used to be its own IPC emit + JSON serialise to every webview. One emit per window is plenty
+/// for a 1 Hz-ish display.
+const EVENT_BATCH_WINDOW: Duration = Duration::from_millis(250);
+
+/// Hard cap on an `entity_picture` body. Covers are tens–hundreds of KB; anything past this is
+/// a misconfigured proxy or a hostile server, and the bytes would otherwise be read unbounded into
+/// memory and pinned in the art registry.
+const ART_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// Coalesces streamed `state_changed` samples into one emit per `window`. Pure (no I/O, no timers):
+/// the caller pushes samples with the current time, polls `deadline()` to arm its sleep, and takes
+/// the batch with `take_due()` once the deadline has passed. The window opens on the FIRST sample
+/// after an empty buffer, so a lone event is delayed by at most `window` and a burst is folded into
+/// one batch.
+struct EventBatcher {
+    window: Duration,
+    pending: Vec<SensorSample>,
+    deadline: Option<Instant>,
+}
+
+impl EventBatcher {
+    fn new(window: Duration) -> Self {
+        Self {
+            window,
+            pending: Vec::new(),
+            deadline: None,
+        }
+    }
+
+    fn push(&mut self, mut samples: Vec<SensorSample>, now: Instant) {
+        if samples.is_empty() {
+            return;
+        }
+        if self.pending.is_empty() {
+            self.deadline = Some(now + self.window);
+        }
+        self.pending.append(&mut samples);
+    }
+
+    /// When the pending batch should be emitted (`None` while nothing is pending).
+    fn deadline(&self) -> Option<Instant> {
+        self.deadline
+    }
+
+    /// The pending batch if its deadline has passed, else `None` (the batch stays pending).
+    fn take_due(&mut self, now: Instant) -> Option<Vec<SensorSample>> {
+        match self.deadline {
+            Some(deadline) if now >= deadline => Some(self.drain()),
+            _ => None,
+        }
+    }
+
+    /// Everything pending, regardless of the deadline (a connection going away flushes early).
+    fn drain(&mut self) -> Vec<SensorSample> {
+        self.deadline = None;
+        std::mem::take(&mut self.pending)
+    }
+}
+
+/// Is `sensor_id` one of the ids the frontend binds for HA entity `entity_id` — the JSON
+/// `ha.<entity_id>` catalog sample or any `ha.<entity_id>.<field>` derived scalar (`.state`)?
+fn is_entity_sensor_id(sensor_id: &str, entity_id: &str) -> bool {
+    valid_entity_id(entity_id)
+        && sensor_id
+            .strip_prefix("ha.")
+            .and_then(|rest| rest.strip_prefix(entity_id))
+            .is_some_and(|tail| tail.is_empty() || tail.starts_with('.'))
+}
+
+/// Demand gate: forward an entity only when some window has a widget bound to it (`ActiveSensors`,
+/// the same map the system sensor loop gates NVML/disk/process polling on; the studio's `*`
+/// wildcard forwards everything, and so does the pre-first-report startup window). A large HA
+/// install streams hundreds of entities nobody displays; without this every one was serialised
+/// and pushed to every overlay.
+fn entity_wanted(active: &ActiveSensors, entity_id: &str) -> bool {
+    active.wanted(|id| is_entity_sensor_id(id, entity_id))
+}
+
+/// Append one body chunk to `buf`, refusing to grow past `max` (the caller aborts the read). Pure.
+fn accept_art_chunk(buf: &mut Vec<u8>, chunk: &[u8], max: usize) -> Result<(), String> {
+    if buf.len() + chunk.len() > max {
+        return Err(format!("art body exceeds {max} bytes"));
+    }
+    buf.extend_from_slice(chunk);
+    Ok(())
 }
 
 fn now_ms() -> u64 {
@@ -445,15 +607,22 @@ fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &str) {
     let _ = app.emit(TELEMETRY_EVENT, &batch);
 }
 
-/// Prime every entity from a `get_states` snapshot so widgets render immediately.
+/// Prime every DEMANDED entity from a `get_states` snapshot so widgets render immediately (same
+/// gate as the event stream — a window only ever receives entities it binds, or all with `*`).
 fn emit_snapshot<R: Runtime>(app: &AppHandle<R>, states: &Value) {
     let Some(arr) = states.as_array() else {
         return;
     };
+    let active = app.state::<ActiveSensors>();
+    let ha = app.state::<HaState>();
     let ts = now_ms();
     let mut batch = Vec::new();
     for st in arr {
-        if let Some(eid) = st["entity_id"].as_str()
+        let Some(eid) = st["entity_id"].as_str() else {
+            continue;
+        };
+        ha.remember(eid, st); // cached for later-binding windows regardless of current demand
+        if entity_wanted(&active, eid)
             && let Some(mut samples) = state_to_samples(eid, st, ts)
         {
             batch.append(&mut samples);
@@ -629,9 +798,14 @@ async fn connect_and_stream<R: Runtime>(
     ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     ping.tick().await; // the first tick is immediate; the next is one interval out
     let mut last_frame = tokio::time::Instant::now();
+    // `state_changed` samples are coalesced into one emit per EVENT_BATCH_WINDOW (see EventBatcher).
+    let mut batcher = EventBatcher::new(EVENT_BATCH_WINDOW);
+    let active = app.state::<ActiveSensors>();
+    let ha = app.state::<HaState>();
 
     loop {
         let idle = tokio::time::sleep_until(last_frame + WS_READ_TIMEOUT);
+        let flush_at = batcher.deadline().map(tokio::time::Instant::from_std);
         let msg = tokio::select! {
             _ = idle => {
                 return Err(format!(
@@ -644,6 +818,12 @@ async fn connect_and_stream<R: Runtime>(
                 heartbeat.on_tick(Instant::now())?;
                 let id = next_id.fetch_add(1, Ordering::SeqCst);
                 ws.send(Message::Text(ping_frame(id))).await?;
+                continue;
+            }
+            _ = tokio::time::sleep_until(flush_at.unwrap_or_else(tokio::time::Instant::now)), if flush_at.is_some() => {
+                if let Some(batch) = batcher.take_due(Instant::now()) {
+                    let _ = app.emit(TELEMETRY_EVENT, &batch);
+                }
                 continue;
             }
             msg = ws.next() => msg,
@@ -676,10 +856,14 @@ async fn connect_and_stream<R: Runtime>(
                     }
                     Some("event") if v["event"]["event_type"] == "state_changed" => {
                         let data = &v["event"]["data"];
-                        if let Some(eid) = data["entity_id"].as_str()
-                            && let Some(batch) = state_to_samples(eid, &data["new_state"], now_ms())
-                        {
-                            let _ = app.emit(TELEMETRY_EVENT, &batch);
+                        if let Some(eid) = data["entity_id"].as_str() {
+                            ha.remember(eid, &data["new_state"]);
+                            if entity_wanted(&active, eid)
+                                && let Some(batch) =
+                                    state_to_samples(eid, &data["new_state"], now_ms())
+                            {
+                                batcher.push(batch, Instant::now());
+                            }
                         }
                     }
                     _ => {}
@@ -689,6 +873,11 @@ async fn connect_and_stream<R: Runtime>(
             Message::Close(_) => break,
             _ => {}
         }
+    }
+    // A clean close flushes whatever was still pending rather than dropping the last window.
+    let rest = batcher.drain();
+    if !rest.is_empty() {
+        let _ = app.emit(TELEMETRY_EVENT, &rest);
     }
     Ok(())
 }
@@ -1035,7 +1224,19 @@ pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result
         .and_then(|v| v.to_str().ok())
         .unwrap_or("image/jpeg")
         .to_string();
-    let bytes = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
+    // Bounded, streaming read: refuse an oversized declared length up front, and abort mid-body
+    // if an undeclared one grows past the cap — never buffer an unbounded response.
+    if resp
+        .content_length()
+        .is_some_and(|n| n > ART_MAX_BYTES as u64)
+    {
+        return Err(format!("art body exceeds {ART_MAX_BYTES} bytes"));
+    }
+    let mut resp = resp;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+        accept_art_chunk(&mut bytes, &chunk, ART_MAX_BYTES)?;
+    }
     let img = std::sync::Arc::new(crate::listener::ImageWrapper::new(content_type, bytes));
     let hash = img.hash;
     app.state::<crate::art::ArtState>()
@@ -1081,6 +1282,161 @@ mod tests {
     fn ping_frame_is_the_ha_ws_ping_shape() {
         let v: Value = serde_json::from_str(&ping_frame(7)).unwrap();
         assert_eq!(v, serde_json::json!({ "id": 7, "type": "ping" }));
+    }
+
+    #[test]
+    fn event_batcher_folds_a_burst_into_one_batch_due_after_the_window() {
+        let t0 = Instant::now();
+        let window = Duration::from_millis(250);
+        let mut b = EventBatcher::new(window);
+        assert_eq!(b.deadline(), None);
+        assert!(b.take_due(t0).is_none());
+
+        let first = state_to_samples("sensor.a", &json!({"state": "1"}), 1).unwrap();
+        b.push(first, t0);
+        // The window opens on the first sample…
+        assert_eq!(b.deadline(), Some(t0 + window));
+        // …and later pushes within it don't move the deadline.
+        let second = state_to_samples("sensor.b", &json!({"state": "2"}), 2).unwrap();
+        b.push(second, t0 + Duration::from_millis(100));
+        assert_eq!(b.deadline(), Some(t0 + window));
+        // Not due yet → nothing is emitted and the batch stays pending.
+        assert!(b.take_due(t0 + Duration::from_millis(249)).is_none());
+        // Due → one batch carrying both entities (4 samples: json + scalar each), in arrival order.
+        let batch = b.take_due(t0 + window).expect("due");
+        assert_eq!(
+            batch.iter().map(|s| s.sensor.as_str()).collect::<Vec<_>>(),
+            [
+                "ha.sensor.a",
+                "ha.sensor.a.state",
+                "ha.sensor.b",
+                "ha.sensor.b.state"
+            ]
+        );
+        // Emptied: the next sample opens a fresh window.
+        assert_eq!(b.deadline(), None);
+        let t1 = t0 + Duration::from_secs(1);
+        b.push(
+            state_to_samples("sensor.c", &json!({"state": "x"}), 3).unwrap(),
+            t1,
+        );
+        assert_eq!(b.deadline(), Some(t1 + window));
+        // Empty pushes never arm a window.
+        let mut empty = EventBatcher::new(window);
+        empty.push(Vec::new(), t0);
+        assert_eq!(empty.deadline(), None);
+        // drain flushes early (connection close) and disarms.
+        assert_eq!(b.drain().len(), 1);
+        assert_eq!(b.deadline(), None);
+    }
+
+    #[test]
+    fn entity_sensor_ids_match_the_json_and_derived_scalar_only() {
+        assert!(is_entity_sensor_id("ha.light.kitchen", "light.kitchen"));
+        assert!(is_entity_sensor_id(
+            "ha.light.kitchen.state",
+            "light.kitchen"
+        ));
+        // A longer entity id sharing the prefix is a different entity.
+        assert!(!is_entity_sensor_id("ha.light.kitchen2", "light.kitchen"));
+        assert!(!is_entity_sensor_id(
+            "ha.light.kitchen_lamp.state",
+            "light.kitchen"
+        ));
+        // Non-HA ids and the connection sensor never match an entity.
+        assert!(!is_entity_sensor_id("cpu.total", "light.kitchen"));
+        assert!(!is_entity_sensor_id("ha.status", "status"));
+    }
+
+    #[test]
+    fn entity_wanted_follows_window_demand_and_the_wildcard() {
+        use std::collections::{HashMap, HashSet};
+        let active = ActiveSensors::default();
+        // Startup fallback: nothing reported yet → forward everything.
+        assert!(entity_wanted(&active, "light.kitchen"));
+        let set = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<HashSet<_>>();
+        *active.0.lock().unwrap() =
+            HashMap::from([("overlay-1".to_string(), set(&["ha.light.kitchen.state"]))]);
+        active.1.store(true, Ordering::Release);
+        assert!(entity_wanted(&active, "light.kitchen"));
+        assert!(!entity_wanted(&active, "switch.fan"));
+        // The studio's wildcard wants every entity.
+        active
+            .0
+            .lock()
+            .unwrap()
+            .insert("studio".to_string(), set(&["*"]));
+        assert!(entity_wanted(&active, "switch.fan"));
+    }
+
+    #[test]
+    fn entity_of_sensor_id_maps_json_and_state_ids_only() {
+        assert_eq!(
+            entity_of_sensor_id("ha.light.kitchen"),
+            Some("light.kitchen")
+        );
+        assert_eq!(
+            entity_of_sensor_id("ha.sensor.temp.state"),
+            Some("sensor.temp")
+        );
+        assert_eq!(entity_of_sensor_id("ha.status"), None); // the connection sensor
+        assert_eq!(entity_of_sensor_id("cpu.total"), None);
+        assert_eq!(entity_of_sensor_id("ha.bad/id"), None);
+    }
+
+    #[test]
+    fn prime_samples_replays_cached_states_for_the_added_ids_once_each() {
+        let latest: HashMap<String, Value> = HashMap::from([
+            (
+                "sensor.temp".to_string(),
+                json!({"entity_id": "sensor.temp", "state": "21.5"}),
+            ),
+            (
+                "light.kitchen".to_string(),
+                json!({"entity_id": "light.kitchen", "state": "on"}),
+            ),
+        ]);
+        // Both ids of one entity + an unknown entity + a non-HA id → that entity's samples once.
+        let ids = [
+            "ha.sensor.temp".to_string(),
+            "ha.sensor.temp.state".to_string(),
+            "ha.switch.gone".to_string(),
+            "cpu.total".to_string(),
+        ];
+        let batch = prime_samples(&latest, &ids, 7);
+        assert_eq!(
+            batch.iter().map(|s| s.sensor.as_str()).collect::<Vec<_>>(),
+            ["ha.sensor.temp", "ha.sensor.temp.state"]
+        );
+        assert!(batch.iter().all(|s| s.ts_ms == 7));
+        // The wildcard (a late-opened studio) replays every cached entity.
+        let all = prime_samples(&latest, &["*".to_string()], 7);
+        assert_eq!(all.len(), 3); // temp json + temp scalar + light json
+        assert!(prime_samples(&latest, &[], 7).is_empty());
+    }
+
+    #[test]
+    fn ha_state_remembers_latest_and_forgets_removed_entities() {
+        let state = HaState::default();
+        state.remember("light.a", &json!({"state": "on"}));
+        state.remember("light.a", &json!({"state": "off"}));
+        assert_eq!(
+            state.latest.lock().unwrap()["light.a"]["state"],
+            json!("off")
+        );
+        state.remember("light.a", &Value::Null); // entity removed
+        assert!(state.latest.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn art_chunks_are_capped_at_the_max_body_size() {
+        let mut buf = Vec::new();
+        assert!(accept_art_chunk(&mut buf, &[1, 2, 3], 4).is_ok());
+        // Exactly at the cap is fine; one byte over is refused and the buffer is left as it was.
+        assert!(accept_art_chunk(&mut buf, &[4], 4).is_ok());
+        let err = accept_art_chunk(&mut buf, &[5], 4).unwrap_err();
+        assert!(err.contains("exceeds 4 bytes"), "{err}");
+        assert_eq!(buf, vec![1, 2, 3, 4]);
     }
 
     #[test]

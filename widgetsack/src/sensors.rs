@@ -713,7 +713,10 @@ fn net_link_samples(_ts: u64) -> Vec<SensorSample> {
 ///
 /// A plain `std::sync::Mutex` (locks are brief and synchronous — never held across an
 /// `.await`). Managed in `main.rs` and updated by the `set_active_sensors` command.
-pub struct ActiveSensors(pub Mutex<HashMap<String, HashSet<String>>>, AtomicBool);
+pub struct ActiveSensors(
+    pub Mutex<HashMap<String, HashSet<String>>>,
+    pub(crate) AtomicBool,
+);
 
 impl Default for ActiveSensors {
     fn default() -> Self {
@@ -724,6 +727,14 @@ impl Default for ActiveSensors {
 impl ActiveSensors {
     fn has_reported(&self) -> bool {
         self.1.load(Ordering::Acquire)
+    }
+
+    /// Does any window want a sensor matching `pred` (or hold the `*` wildcard)? Before the first
+    /// demand report the answer is `true` (the startup fallback), exactly as the sensor loop's own
+    /// gates behave — so peer sources (ha.rs) can demand-gate with the same semantics. Locks briefly.
+    pub(crate) fn wanted(&self, pred: impl Fn(&str) -> bool) -> bool {
+        let map = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        any_wanted_or_unreported(&map, self.has_reported(), pred)
     }
 }
 
@@ -747,10 +758,30 @@ pub async fn set_active_sensors<R: Runtime>(
     state: tauri::State<'_, ActiveSensors>,
     ids: Vec<String>,
 ) -> Result<(), ()> {
-    let mut map = state.0.lock().unwrap_or_else(|e| e.into_inner());
-    map.insert(window.label().to_string(), ids.into_iter().collect());
-    state.1.store(true, Ordering::Release);
+    let ids: HashSet<String> = ids.into_iter().collect();
+    let added = {
+        let mut map = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        let previous = map.insert(window.label().to_string(), ids.clone());
+        state.1.store(true, Ordering::Release);
+        newly_added(previous.as_ref(), &ids)
+    };
+    // Demand-gated peer sources only stream what some window wants; a window that just started
+    // wanting an HA entity is primed from the cached latest state (ha.rs) so it isn't blank until
+    // that entity next changes.
+    crate::ha::prime_window(&window, &added);
     Ok(())
+}
+
+/// The ids in `current` that were not in the window's `previous` report (all of them for a first
+/// report). Pure; sorted for a stable order.
+fn newly_added(previous: Option<&HashSet<String>>, current: &HashSet<String>) -> Vec<String> {
+    let mut added: Vec<String> = current
+        .iter()
+        .filter(|id| !previous.is_some_and(|p| p.contains(*id)))
+        .cloned()
+        .collect();
+    added.sort();
+    added
 }
 
 /// True if any window's active set wants a sensor matching `pred`. The caller separately decides
@@ -1650,6 +1681,39 @@ mod tests {
     #[test]
     fn gpu_wanted_true_for_star_sentinel() {
         assert!(gpu_wanted(&active(&[("studio", &["*"])]), true));
+    }
+
+    #[test]
+    fn newly_added_diffs_a_window_report_against_its_previous_one() {
+        let set = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<HashSet<_>>();
+        // A first report adds everything.
+        assert_eq!(
+            newly_added(None, &set(&["ha.light.a", "cpu.total"])),
+            ["cpu.total", "ha.light.a"]
+        );
+        // Only ids absent from the previous report count; removals are not "added".
+        assert_eq!(
+            newly_added(
+                Some(&set(&["cpu.total", "gone"])),
+                &set(&["cpu.total", "ha.light.a"])
+            ),
+            ["ha.light.a"]
+        );
+        assert!(newly_added(Some(&set(&["x"])), &set(&["x"])).is_empty());
+    }
+
+    #[test]
+    fn wanted_applies_the_unreported_fallback_then_the_demand_map() {
+        let state = ActiveSensors::default();
+        // Nothing reported yet → everything is wanted (startup fallback).
+        assert!(state.wanted(|id| id == "ha.light.kitchen"));
+        *state.0.lock().unwrap() = active(&[("overlay-1", &["ha.light.kitchen.state"])]);
+        state.1.store(true, Ordering::Release);
+        assert!(state.wanted(|id| id.starts_with("ha.light.kitchen")));
+        assert!(!state.wanted(|id| id.starts_with("ha.switch.")));
+        // The wildcard turns every gate on.
+        *state.0.lock().unwrap() = active(&[("studio", &["*"])]);
+        assert!(state.wanted(|id| id.starts_with("ha.switch.")));
     }
 
     #[test]

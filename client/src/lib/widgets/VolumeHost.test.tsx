@@ -24,6 +24,7 @@ afterEach(() => {
 	vi.runOnlyPendingTimers();
 	vi.useRealTimers();
 	vi.clearAllMocks();
+	vi.restoreAllMocks(); // the visibilityState spies
 });
 
 function pct(c: HTMLElement): string {
@@ -44,17 +45,76 @@ describe('VolumeHost', () => {
 		expect(container.querySelector('[data-muted]')).toBeNull();
 	});
 
-	it('keeps polling on the interval', async () => {
+	it('keeps polling on a relaxed 3 s interval (each poll is a Core Audio round-trip)', async () => {
 		const { container } = render(<VolumeHost />);
 		await act(async () => {
 			await Promise.resolve();
 		});
 		getAudioVolume.mockResolvedValue({ level: 0.8, muted: false });
 		await act(async () => {
-			vi.advanceTimersByTime(1000);
+			vi.advanceTimersByTime(2999);
+			await Promise.resolve();
+		});
+		expect(pct(container)).toBe('50%'); // not yet
+		await act(async () => {
+			vi.advanceTimersByTime(1);
 			await Promise.resolve();
 		});
 		expect(pct(container)).toBe('80%');
+	});
+
+	it('pauses polling while the window is hidden and refreshes immediately when visible again', async () => {
+		const visibility = vi.spyOn(document, 'visibilityState', 'get');
+		visibility.mockReturnValue('visible');
+		const { container } = render(<VolumeHost />);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(getAudioVolume).toHaveBeenCalledTimes(1);
+
+		visibility.mockReturnValue('hidden');
+		await act(async () => {
+			document.dispatchEvent(new Event('visibilitychange'));
+		});
+		await act(async () => {
+			vi.advanceTimersByTime(30_000); // ten would-be polls
+			await Promise.resolve();
+		});
+		expect(getAudioVolume).toHaveBeenCalledTimes(1); // none fired while hidden
+
+		getAudioVolume.mockResolvedValue({ level: 0.9, muted: true });
+		visibility.mockReturnValue('visible');
+		await act(async () => {
+			document.dispatchEvent(new Event('visibilitychange'));
+			await Promise.resolve();
+		});
+		expect(getAudioVolume).toHaveBeenCalledTimes(2); // immediate refresh on show…
+		expect(pct(container)).toBe('90%');
+		expect(container.querySelector('[data-muted]')).not.toBeNull();
+		await act(async () => {
+			vi.advanceTimersByTime(3000); // …and the cadence resumes
+			await Promise.resolve();
+		});
+		expect(getAudioVolume).toHaveBeenCalledTimes(3);
+		// A repeated "visible" (no hidden in between) doesn't stack a second interval.
+		await act(async () => {
+			document.dispatchEvent(new Event('visibilitychange'));
+			await Promise.resolve();
+		});
+		await act(async () => {
+			vi.advanceTimersByTime(3000);
+			await Promise.resolve();
+		});
+		expect(getAudioVolume).toHaveBeenCalledTimes(5); // the show-refresh + one interval poll
+	});
+
+	it('does not poll at mount when the window starts hidden', async () => {
+		vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+		render(<VolumeHost />);
+		await act(async () => {
+			await Promise.resolve();
+		});
+		expect(getAudioVolume).not.toHaveBeenCalled();
 	});
 
 	it('sets the volume optimistically and suppresses a poll that lands during the drag-hold', async () => {
@@ -65,7 +125,7 @@ describe('VolumeHost', () => {
 		// Advance most of the way to the next poll tick, then drag — so the tick lands inside the
 		// 400ms hold window and the (stale) backend value must NOT yank the thumb back.
 		await act(async () => {
-			vi.advanceTimersByTime(800);
+			vi.advanceTimersByTime(2800);
 			await Promise.resolve();
 		});
 		getAudioVolume.mockResolvedValue({ level: 0.5, muted: false }); // stale
@@ -81,7 +141,7 @@ describe('VolumeHost', () => {
 		expect(setAudioVolume).toHaveBeenLastCalledWith(0.35);
 		expect(pct(container)).toBe('35%');
 		await act(async () => {
-			vi.advanceTimersByTime(200); // poll tick at t=1000, hold still active
+			vi.advanceTimersByTime(200); // poll tick at t=3000, hold still active
 			await Promise.resolve();
 		});
 		expect(pct(container)).toBe('35%'); // suppressed: still the optimistic value
@@ -89,7 +149,7 @@ describe('VolumeHost', () => {
 		// After the hold releases, the next poll is accepted again.
 		getAudioVolume.mockResolvedValue({ level: 0.65, muted: false });
 		await act(async () => {
-			vi.advanceTimersByTime(1000); // release hold (t=1200) then next poll tick (t=2000)
+			vi.advanceTimersByTime(3000); // release hold (t=3200) then next poll tick (t=6000)
 			await Promise.resolve();
 		});
 		expect(pct(container)).toBe('65%');

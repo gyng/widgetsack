@@ -41,6 +41,32 @@ describe('Disks meter', () => {
 		expect(rows[1].getAttribute('data-level')).toBe('full'); // 95% ≥ 90
 	});
 
+	it('drops a volume that stopped reporting (ejected drive) instead of freezing its last reading', async () => {
+		const hub = createTelemetryHub();
+		const tick = (ts: number, letters: string[]) =>
+			hub.ingestBatch(
+				letters.flatMap((l) => [
+					{ ...s(`disk.${l}.used.pct`, 50), ts_ms: ts },
+					{ ...s(`disk.${l}.total`, 1e12), ts_ms: ts }
+				])
+			);
+		tick(1000, ['C', 'E']);
+		tick(2000, ['C', 'E']);
+		// E: is ejected; only C: keeps ticking for longer than the staleness window.
+		for (let t = 3000; t <= 7000; t += 1000) tick(t, ['C']);
+		let container!: HTMLElement;
+		await act(async () => {
+			container = render(
+				<TelemetryHubContext.Provider value={hub}>
+					<Disks />
+				</TelemetryHubContext.Provider>
+			).container;
+		});
+		const rows = container.querySelectorAll('.disk-row');
+		expect(rows).toHaveLength(1);
+		expect(rows[0].querySelector('.disk-label')?.textContent).toBe('C:');
+	});
+
 	it('shows a dash before any disk sample arrives', async () => {
 		const hub = createTelemetryHub();
 		let container!: HTMLElement;

@@ -2,9 +2,10 @@
 // via a sensors map — props-only), while the moon phase is computed from the wall clock here on a slow
 // tick (it needs no backend). So it's a hybrid like Calendar: props for the sun, a self-tick for the
 // moon. BARE DOM; styled in SunMoon.css via --np-* tokens.
-import { useEffect, useState, type CSSProperties } from 'react';
+import { type CSSProperties } from 'react';
 import type { SensorState } from '../../core/telemetry';
 import { moonInfo, moonPhase, sunTime } from '../../core/moon';
+import { useNow } from '../useNow';
 import './SunMoon.css';
 
 type Props = {
@@ -18,12 +19,8 @@ const textOf = (s?: SensorState): string | null =>
 	s?.value && s.value.kind === 'text' ? s.value.value : null;
 
 export default function SunMoon({ sensors = {}, showSun = true, showMoon = true, color }: Props) {
-	const [now, setNow] = useState(() => Date.now());
-	// The moon phase moves slowly — a minute tick keeps it current without churn.
-	useEffect(() => {
-		const t = setInterval(() => setNow(Date.now()), 60_000);
-		return () => clearInterval(t);
-	}, []);
+	// The moon phase moves slowly — the shared minute clock keeps it current without churn.
+	const now = useNow(60_000);
 
 	const rise = sunTime(textOf(sensors.rise));
 	const set = sunTime(textOf(sensors.set));

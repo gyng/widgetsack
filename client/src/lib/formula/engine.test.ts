@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import {
 	__disposeFormulaEngine,
 	evalExpr,
@@ -7,6 +7,7 @@ import {
 	onFormulaEngineReady
 } from './engine';
 import { TEMPLATE_FUNCTIONS } from '../core/templateFns';
+import * as textTemplate from '../core/textTemplate';
 
 beforeAll(async () => {
 	await initFormulaEngine();
@@ -64,6 +65,30 @@ describe('formula engine', () => {
 
 	it('caps memory — a huge single allocation throws (caught → null) instead of ballooning', () => {
 		expect(evalExpr(`'x'.repeat(1e8)`, {})).toBeNull(); // ~200 MiB string » 16 MiB cap
+	});
+
+	it('a prototype-walking sensor id cannot pollute the sandbox (dropped by buildScope)', () => {
+		const hostile = { '__proto__.polluted': 1, 'constructor.prototype.p2': 2, 'cpu.total': 3 };
+		expect(evalExpr('({}).polluted', hostile)).toBeNull(); // undefined → null
+		expect(evalExpr('Object.prototype.p2 === undefined', hostile)).toBe('true');
+		expect(evalExpr('cpu.total', hostile)).toBe(3);
+	});
+
+	it("even a raw __proto__ key in the scope is inert (the engine's own line, past buildScope)", () => {
+		// Model a regressed buildScope handing over an object with an OWN `__proto__` key: the scope is
+		// spliced in as a JSON string and parsed inside the VM onto a prototype-less object, so the key
+		// never becomes an object-literal prototype setter.
+		const spy = vi
+			.spyOn(textTemplate, 'buildScope')
+			.mockReturnValueOnce(JSON.parse('{"__proto__":{"polluted":true},"cpu":{"total":7}}'));
+		try {
+			expect(evalExpr('cpu.total + (({}).polluted ? 1000 : 0)', { 'cpu.total': 7 })).toBe(7);
+		} finally {
+			spy.mockRestore();
+		}
+		expect(evalExpr('typeof ({}).polluted', {})).toBe('undefined');
+		// a sensor id that shadows an Object.prototype name reads as the sensor, not the prototype
+		expect(evalExpr('toString', { toString: 42 })).toBe(42);
 	});
 
 	it('does not leak sensor values between evaluations', () => {

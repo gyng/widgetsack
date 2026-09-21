@@ -40,6 +40,9 @@ export function useTranscribe(cfg: TranscribeConfig): TranscribeState {
 	const [recording, setRecording] = useState(false);
 	const recorderRef = useRef<Recorder | null>(null);
 	const startingRef = useRef(false);
+	// Set on unmount: a `startRecording` (getUserMedia) or the post-stop transcribe/translate chain
+	// may still be pending, and neither must touch state — or hold the mic — once the widget is gone.
+	const unmountedRef = useRef(false);
 	const cfgRef = useRef(cfg);
 	// Keep the latest config in a ref, written in a commit effect (not during render), so the async
 	// `run` below reads the current cfg without re-creating the recorder on every config edit.
@@ -47,9 +50,11 @@ export function useTranscribe(cfg: TranscribeConfig): TranscribeState {
 		cfgRef.current = cfg;
 	});
 
-	// Release the mic if the widget unmounts mid-recording.
+	// Release the mic if the widget unmounts mid-recording (a start still pending is cancelled when it
+	// resolves — see the unmountedRef check after `startRecording`).
 	useEffect(
 		() => () => {
+			unmountedRef.current = true;
 			recorderRef.current?.cancel();
 			recorderRef.current = null;
 		},
@@ -72,6 +77,7 @@ export function useTranscribe(cfg: TranscribeConfig): TranscribeState {
 						language: cfgRef.current.sourceLang
 					})
 				).trim();
+				if (unmountedRef.current) return;
 				setSource(transcript);
 				let result = transcript;
 				if (cfgRef.current.mode === 'translate' && transcript) {
@@ -80,24 +86,32 @@ export function useTranscribe(cfg: TranscribeConfig): TranscribeState {
 							temperature: 0
 						})
 					).trim();
+					if (unmountedRef.current) return;
 				}
 				setOutput(result);
 				if (cfgRef.current.speak && result) void speakSmart(result);
 			} catch (e) {
-				setError(String(e));
+				if (!unmountedRef.current) setError(String(e));
 			} finally {
-				setBusy(false);
+				if (!unmountedRef.current) setBusy(false);
 			}
 			return;
 		}
 		if (startingRef.current) return; // a getUserMedia is pending — ignore a rapid 2nd click
 		startingRef.current = true;
 		try {
-			recorderRef.current = await startRecording(cfgRef.current.audioSource || undefined);
+			const recorder = await startRecording(cfgRef.current.audioSource || undefined);
+			if (unmountedRef.current) {
+				// The widget went away while getUserMedia was pending: the unmount cleanup found no
+				// recorder to cancel, so release the mic here instead of leaving it captured forever.
+				recorder.cancel();
+				return;
+			}
+			recorderRef.current = recorder;
 			setRecording(true);
 			setError('');
 		} catch (e) {
-			setError(String(e));
+			if (!unmountedRef.current) setError(String(e));
 		} finally {
 			startingRef.current = false;
 		}

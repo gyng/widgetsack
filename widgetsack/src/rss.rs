@@ -213,12 +213,43 @@ fn http_client() -> Result<reqwest::Client, String> {
         .map_err(|e| e.to_string())
 }
 
-async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, String> {
+/// Body cap for a polled feed (RSS / ICS): a feed is tens of KiB; a hostile or misconfigured
+/// server must not make us buffer an unbounded body into memory.
+pub(crate) const FEED_BODY_CAP: usize = 1024 * 1024;
+
+/// GET `url` and return its body as text, enforcing `cap` WHILE STREAMING (`Content-Length` is
+/// checked first, then every chunk — a chunked/lying server can't exceed it either). Shared by
+/// the RSS and Agenda pollers.
+pub(crate) async fn fetch_text_capped(
+    client: &reqwest::Client,
+    url: &str,
+    cap: usize,
+) -> Result<String, String> {
+    use futures_util::StreamExt;
     let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
-    resp.text().await.map_err(|e| e.to_string())
+    if let Some(len) = resp.content_length()
+        && len > cap as u64
+    {
+        return Err(format!("body too large ({len} bytes; cap {cap})"));
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| e.to_string())?;
+        if buf.len() + bytes.len() > cap {
+            return Err(format!("body exceeded the {cap}-byte cap"));
+        }
+        buf.extend_from_slice(&bytes);
+    }
+    // Feeds are overwhelmingly UTF-8; a lossy decode keeps a stray byte from failing the poll.
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
+async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, String> {
+    fetch_text_capped(client, url, FEED_BODY_CAP).await
 }
 
 /// Poll the configured feed on the interval, emitting `rss.*` telemetry. Demand-gated: idles (no

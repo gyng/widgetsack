@@ -43,8 +43,13 @@ vi.mock('../../overlay', () => ({
 vi.mock('../../core/plugin', () => ({
 	startAllSources: vi.fn(async () => () => undefined)
 }));
+/** Every Tauri event handler the hook registered, by event name (fire them to simulate an emit). */
+const listeners = new Map<string, (e: { payload: unknown }) => void>();
 vi.mock('@tauri-apps/api/event', () => ({
-	listen: vi.fn(async () => () => undefined)
+	listen: vi.fn(async (name: string, cb: (e: { payload: unknown }) => void) => {
+		listeners.set(name, cb);
+		return () => undefined;
+	})
 }));
 
 function makeDeps(overrides: Partial<StudioInitDeps> = {}): StudioInitDeps {
@@ -62,7 +67,8 @@ function makeDeps(overrides: Partial<StudioInitDeps> = {}): StudioInitDeps {
 		setEdit: vi.fn(),
 		setEditModeImmediate: vi.fn(),
 		setMonitorOptions: vi.fn(),
-		clearPreviewWrite: vi.fn(),
+		flushPreviewWrite: vi.fn(),
+		onForeignLayoutChange: vi.fn(),
 		reapplyPresentation: vi.fn(() => Promise.resolve()),
 		...overrides
 	};
@@ -70,6 +76,7 @@ function makeDeps(overrides: Partial<StudioInitDeps> = {}): StudioInitDeps {
 
 beforeEach(() => {
 	vi.clearAllMocks();
+	listeners.clear();
 	monitorParamValue = null;
 	onDisplayChange = null;
 	driftProbe = null;
@@ -179,5 +186,40 @@ describe('useStudioInit window-role reveal', () => {
 		expect(fillOwnMonitor).not.toHaveBeenCalled();
 		expect(fillPrimaryMonitor).not.toHaveBeenCalled();
 		expect(deps.syncPrimaryOverlays).not.toHaveBeenCalled();
+	});
+});
+
+describe('useStudioInit layout_changed routing', () => {
+	const fire = (payload: unknown) => listeners.get('layout_changed')!({ payload });
+
+	it("studio: ignores its own save's event, hands any OTHER writer's (or the watcher's) to the Canvas", async () => {
+		const deps = makeDeps({ studio: true });
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(listeners.has('layout_changed')).toBe(true));
+		vi.mocked(deps.reloadLayout).mockClear();
+		fire({ writer: 'studio' }); // its own preview write round-tripping
+		expect(deps.onForeignLayoutChange).not.toHaveBeenCalled();
+		fire({ writer: 'main' }); // an overlay's edit mode saved
+		fire(null); // the file watcher: a hand edit
+		expect(deps.onForeignLayoutChange).toHaveBeenCalledTimes(2);
+		// The studio never auto-reloads here (it used to skip EVERY event because it is always editing).
+		expect(deps.reloadLayout).not.toHaveBeenCalled();
+	});
+
+	it('overlay: reloads unless it is itself in edit mode; the primary also reconciles overlays', async () => {
+		let editing = false;
+		const deps = makeDeps({ editMode: () => editing });
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(deps.syncRects).toHaveBeenCalled());
+		vi.mocked(deps.reloadLayout).mockClear();
+		vi.mocked(deps.syncPrimaryOverlays).mockClear();
+		editing = true;
+		fire({ writer: 'studio' });
+		expect(deps.reloadLayout).not.toHaveBeenCalled();
+		editing = false;
+		fire({ writer: 'studio' });
+		await waitFor(() => expect(deps.syncPrimaryOverlays).toHaveBeenCalledTimes(1));
+		expect(deps.reloadLayout).toHaveBeenCalledTimes(1);
+		expect(deps.onForeignLayoutChange).not.toHaveBeenCalled();
 	});
 });

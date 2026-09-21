@@ -25,7 +25,9 @@ import {
 	type MonitorLayout
 } from './layoutTree';
 import { findNode, insertChild, removeNode, updateNode } from './layoutEdit';
-import { createWidget, getMeta, type WidgetMeta } from './widget';
+import { normalizeMacro } from './macro';
+import { isForbiddenKey } from './safePath';
+import { createWidget, getMeta, type ConfigField, type WidgetMeta } from './widget';
 
 // =====================================================================================
 // 1. Providers
@@ -423,6 +425,74 @@ export type ApplyResult = {
 	errors: string[];
 };
 
+/** Whether `value` is the primitive a config field of `kind` holds. */
+function fieldAccepts(field: ConfigField, value: unknown): boolean {
+	switch (field.kind) {
+		case 'number':
+			return typeof value === 'number' && Number.isFinite(value);
+		case 'toggle':
+			return typeof value === 'boolean';
+		case 'macro':
+			return Array.isArray(value);
+		default:
+			// text / color / select / expr / monitorSources all hold a string
+			return typeof value === 'string';
+	}
+}
+
+/**
+ * Validate a model-proposed `config` against the widget type's declared meta (core/widget
+ * `configFields`, falling back to the primitive `defaultConfig` keys): unknown keys are DROPPED,
+ * a wrong primitive type is REJECTED, a macro is normalised, prototype keys never pass, and an
+ * iframe may not turn its sandbox off. The model is untrusted text — this is the boundary that
+ * keeps a hallucinated or hostile key out of the layout. Pure; each drop is explained in `errors`.
+ */
+export function sanitizeAssistantConfig(
+	widgetType: string,
+	config: unknown
+): { config: Record<string, unknown>; errors: string[] } {
+	const out: Record<string, unknown> = {};
+	const errors: string[] = [];
+	if (!config || typeof config !== 'object' || Array.isArray(config))
+		return { config: out, errors };
+	const meta = getMeta(widgetType);
+	if (!meta) return { config: out, errors: [`unknown widget type "${widgetType}"`] };
+	const fields = new Map((meta.configFields ?? []).map((f) => [f.key, f]));
+	const defaults = meta.defaultConfig ?? {};
+	for (const [key, value] of Object.entries(config as Record<string, unknown>)) {
+		if (isForbiddenKey(key)) {
+			errors.push(`"${widgetType}": refused config key "${key}"`);
+			continue;
+		}
+		if (widgetType === 'iframe' && key === 'sandbox' && value !== true) {
+			errors.push('"iframe": refused sandbox: false — embedded pages stay sandboxed');
+			continue;
+		}
+		const field = fields.get(key);
+		if (field) {
+			if (!fieldAccepts(field, value)) {
+				errors.push(`"${widgetType}": config "${key}" must be a ${field.kind}`);
+				continue;
+			}
+			out[key] = field.kind === 'macro' ? normalizeMacro(value) : value;
+			continue;
+		}
+		if (Object.hasOwn(defaults, key)) {
+			const dflt = defaults[key];
+			const primitive =
+				typeof dflt === 'string' || typeof dflt === 'number' || typeof dflt === 'boolean';
+			if (primitive && typeof value === typeof dflt) {
+				out[key] = value;
+				continue;
+			}
+			errors.push(`"${widgetType}": config "${key}" must be a ${typeof dflt}`);
+			continue;
+		}
+		errors.push(`"${widgetType}": dropped unknown config key "${key}"`);
+	}
+	return { config: out, errors };
+}
+
 const SENSOR_BINDS = new Set(['scalar', 'series', 'text', 'json']);
 
 /** Apply assistant ops to a monitor, returning a NEW MonitorLayout (pure — never mutates the input).
@@ -467,7 +537,9 @@ export function applyAssistantOps(
 				else if (op.sensor)
 					errors.push(`"${op.widgetType}" is self-sourcing — ignored sensor "${op.sensor}"`);
 				if (op.config && typeof op.config === 'object') {
-					inst.config = { ...inst.config, ...op.config };
+					const safe = sanitizeAssistantConfig(op.widgetType, op.config);
+					errors.push(...safe.errors);
+					inst.config = { ...inst.config, ...safe.config };
 				}
 				root = insertChild(root, parentOr(op.parent), leaf(inst));
 				addedIds.push(id);
@@ -495,11 +567,15 @@ export function applyAssistantOps(
 					errors.push(`cannot configure "${op.id}" — not a widget`);
 					break;
 				}
+				// patchUnitExists guarantees a primitive widget leaf, so its type is safe to read here.
+				const type = ((findNode(root, op.id) as Leaf).unit as WidgetInstance).type;
+				const safe = sanitizeAssistantConfig(type, op.config);
+				errors.push(...safe.errors);
 				root = updateNode(root, op.id, (n) => {
 					// patchUnitExists above guarantees the target passed to this callback is a primitive leaf.
 					const leaf = n as Leaf;
 					const unit = leaf.unit as WidgetInstance;
-					return { ...leaf, unit: { ...unit, config: { ...unit.config, ...op.config } } };
+					return { ...leaf, unit: { ...unit, config: { ...unit.config, ...safe.config } } };
 				});
 				applied++;
 				break;

@@ -1,7 +1,9 @@
 // Stateful tick for the self-sourcing Timer widget (the documented self-sourcing exception, like Clock
-// drives its own time). Timestamp-anchored so it stays accurate despite interval drift; pure formatting
-// lives in core/timer.ts. An optional per-widget storage key keeps studio/overlay copies synchronized.
+// drives its own time). Timestamp-anchored so it stays accurate despite tick drift; the tick itself is
+// the shared 250 ms wall clock (useNow), subscribed only while running. Pure formatting lives in
+// core/timer.ts. An optional per-widget storage key keeps studio/overlay copies synchronized.
 import { useCallback, useEffect, useState } from 'react';
+import { useNow } from '../useNow';
 
 export type TimerMode = 'countdown' | 'stopwatch';
 export type TimerConfig = {
@@ -64,18 +66,18 @@ export function useTimer(cfg: TimerConfig): TimerState {
 		identity,
 		runtime: loadRuntime(cfg.storageKey, config)
 	}));
-	const [now, setNow] = useState(() => Date.now());
-
 	// A widget definition/config change starts a fresh timer instead of inheriting incompatible state.
 	if (model.identity !== identity) {
 		setModel({ identity, runtime: loadRuntime(cfg.storageKey, config) });
-		setNow(Date.now());
 	}
 
 	const runtime = model.identity === identity ? model.runtime : freshRuntime();
+	// The shared clock, ticking only while running (period 0 = unsubscribed). A shared tick can be up
+	// to one period older than a `startedAt` anchored just now, hence the clamp.
+	const now = useNow(runtime.running ? 250 : 0);
 	const elapsedMs =
 		runtime.accumulatedMs +
-		(runtime.running && runtime.startedAt != null ? now - runtime.startedAt : 0);
+		(runtime.running && runtime.startedAt != null ? Math.max(0, now - runtime.startedAt) : 0);
 	const durationMs = Math.max(0, cfg.duration * 1000);
 	const elapsedSec = elapsedMs / 1000;
 	const seconds = cfg.mode === 'countdown' ? Math.max(0, cfg.duration - elapsedSec) : elapsedSec;
@@ -93,12 +95,6 @@ export function useTimer(cfg: TimerConfig): TimerState {
 			: { running: false, accumulatedMs: durationMs, startedAt: null };
 		setModel({ identity, runtime: next });
 	}
-
-	useEffect(() => {
-		if (!runtime.running) return;
-		const id = setInterval(() => setNow(Date.now()), 250);
-		return () => clearInterval(id);
-	}, [runtime.running]);
 
 	useEffect(() => {
 		const storageKey = cfg.storageKey;
@@ -121,7 +117,6 @@ export function useTimer(cfg: TimerConfig): TimerState {
 					? current
 					: { identity, runtime: incoming }
 			);
-			setNow(Date.now());
 		};
 		const onTimer = (event: Event): void => {
 			const detail = (event as CustomEvent).detail as Partial<{
@@ -159,13 +154,11 @@ export function useTimer(cfg: TimerConfig): TimerState {
 	const start = useCallback(() => {
 		if (runtime.running) return;
 		const startedAt = Date.now();
-		setNow(startedAt);
 		setModel({ identity, runtime: { ...runtime, running: true, startedAt } });
 	}, [identity, runtime]);
 	const pause = useCallback(() => {
 		if (!runtime.running) return;
 		const pausedAt = Date.now();
-		setNow(pausedAt);
 		setModel({
 			identity,
 			runtime: {
@@ -179,7 +172,6 @@ export function useTimer(cfg: TimerConfig): TimerState {
 	}, [identity, runtime]);
 	const reset = useCallback(() => {
 		const resetAt = Date.now();
-		setNow(resetAt);
 		setModel({
 			identity,
 			runtime: {

@@ -2,7 +2,8 @@
 // or runs an auto-cycling Pomodoro rhythm — both driven by the wall clock on a 1s tick, like Clock.
 // Distinct from the manual Timer widget (which has start/pause controls). The time math is pure
 // (core/countdown.ts); this just ticks and renders. BARE DOM, styled via --np-* / --cd-* tokens.
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useState, type CSSProperties } from 'react';
+import { useNow } from '../useNow';
 import {
 	formatCountdown,
 	parseTarget,
@@ -32,16 +33,12 @@ export default function Countdown({
 	label,
 	color
 }: Props) {
-	const [now, setNow] = useState(() => Date.now());
+	// The shared 1 s wall clock (useNow), like Clock.
+	const now = useNow(1000);
 	// Pomodoro anchor: when this widget mounted. The rhythm runs from here (resets on reload — fine for
 	// a "where am I in the cycle" display; the manual Timer covers precise start/pause). Seeded from the
 	// initial `now` and held in state so it stays stable across ticks without a during-render ref read.
 	const [start] = useState(now);
-
-	useEffect(() => {
-		const timer = setInterval(() => setNow(Date.now()), 1000);
-		return () => clearInterval(timer);
-	}, []);
 
 	const vars = color ? ({ '--cd-accent': color } as CSSProperties) : undefined;
 

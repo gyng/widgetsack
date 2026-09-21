@@ -26,6 +26,7 @@ import {
 	isLeaf,
 	resolvePad
 } from './layoutTree';
+import { isSafePath } from './safePath';
 
 export type Solved = Map<string, Rect>;
 export type ResolvedGroup = { child: LayoutNode; size: { w: number; h: number } };
@@ -535,13 +536,18 @@ export function applyParams(
 }
 
 // Fail-closed dotted-path setter: writes the final segment only if every intermediate
-// already exists as an object. So a default target 'unit.config.<key>' resolves on a
+// already exists as an OWN object property. So a default target 'unit.config.<key>' resolves on a
 // Leaf-rooted child (unit + config exist) but is a NO-OP on a container-rooted child
-// (no `unit`) — never auto-vivifying a bogus `unit` object onto a container.
+// (no `unit`) — never auto-vivifying a bogus `unit` object onto a container. Specs come from
+// untrusted data (sack defs, package templates), so a path that names `__proto__` /
+// `constructor` / `prototype` anywhere is refused outright (prototype pollution), and only OWN
+// properties are descended into (an inherited `constructor` etc. is never walked).
 function setPath(root: Record<string, unknown>, path: string, value: unknown): void {
+	if (!isSafePath(path)) return;
 	const parts = path.split('.');
 	let cur: Record<string, unknown> = root;
 	for (let i = 0; i < parts.length - 1; i++) {
+		if (!Object.hasOwn(cur, parts[i])) return;
 		const next = cur[parts[i]];
 		if (typeof next !== 'object' || next === null) return;
 		cur = next as Record<string, unknown>;

@@ -76,6 +76,31 @@ describe('themeLabel', () => {
 	});
 });
 
+describe('the live CSS follows selectedTheme (undo/redo of a theme switch)', () => {
+	it('re-resolves when selectedTheme changes WITHOUT setTheme/adoptTheme (an undo), once', async () => {
+		const { result, rerender } = setup({ selectedTheme: 'builtin:nord' });
+		resolveThemeCss.mockClear();
+		// The reducer restored the previous theme (Ctrl+Z): only the prop changes.
+		rerender({ studio: true, selectedTheme: '' });
+		await waitFor(() => expect(result.current.themeCss).toBe('/*resolved*/'));
+		expect(resolveThemeCss).toHaveBeenCalledTimes(1);
+		expect(resolveThemeCss).toHaveBeenCalledWith('');
+		expect(result.current.themeRef.current).toBe('');
+	});
+
+	it('does NOT double-resolve a change setTheme already announced', async () => {
+		const { result, rerender } = setup({ selectedTheme: '' });
+		resolveThemeCss.mockClear();
+		await act(async () => {
+			const done = result.current.setTheme('builtin:nord'); // writes the ref + resolves itself
+			rerender({ studio: true, selectedTheme: 'builtin:nord' }); // its dispatch lands (same batch)
+			await done;
+		});
+		await waitFor(() => expect(result.current.themeCss).toBe('/*resolved*/'));
+		expect(resolveThemeCss).toHaveBeenCalledTimes(1);
+	});
+});
+
 describe('applyTheme / adoptTheme / setTheme (CSS swaps)', () => {
 	it('applyTheme re-resolves the CURRENT selection into themeCss', async () => {
 		resolveThemeCss.mockResolvedValue('/*current*/');

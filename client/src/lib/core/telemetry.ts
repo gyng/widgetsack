@@ -73,6 +73,16 @@ export function appendSample(
 	return { value: sample.value, history, historyTs };
 }
 
+/** Base backend sampling cadence (sensors.rs INTERVAL_MS). Self-discovering meters treat an id
+ * silent for ~3 ticks as gone (an ejected drive, a removed core) — see `sensorIds({ freshWithinMs })`. */
+export const BASE_INTERVAL_MS = 1000;
+export const STALE_AFTER_MS = 3 * BASE_INTERVAL_MS;
+
+/** Options for `TelemetryHub.sensorIds`: `freshWithinMs` keeps only ids whose newest sample is
+ * within that many ms of the hub's NEWEST sample overall (the hub's own clock, so a paused backend
+ * or clock skew never empties the list — only an id that stopped while others kept ticking ages out). */
+export type SensorIdsOptions = { freshWithinMs?: number };
+
 /** A minimal notify-based observable — consumable by Svelte stores and React alike. */
 export interface SensorObservable {
 	subscribe(cb: () => void): () => void;
@@ -83,8 +93,11 @@ export interface TelemetryHub {
 	ingest(sample: SensorSample): void;
 	ingestBatch(batch: TelemetryBatch): void;
 	sensor(id: string): SensorObservable;
-	/** Ids of sensors seen so far (i.e. that have emitted at least one sample). */
-	sensorIds(): string[];
+	/** Ids of sensors seen so far (i.e. that have emitted at least one sample); with `freshWithinMs`,
+	 * only those still ticking (see SensorIdsOptions). */
+	sensorIds(opts?: SensorIdsOptions): string[];
+	/** The `ts_ms` of the newest sample seen for `id` (any kind — text/json too), or null if none. */
+	lastSeen(id: string): number | null;
 	/** Ids that currently have ≥1 live UI subscriber (demand-gating, AGENTS.md #9). */
 	activeSensorIds(): string[];
 	/** Fire `cb` whenever the active set changes (a sensor goes 0→1 or 1→0 listeners). */
@@ -96,6 +109,10 @@ export interface TelemetryHub {
  * so each sparkline can pick a shorter window (default 1 min) and still have data to anchor. */
 export function createTelemetryHub(historyLen = 600): TelemetryHub {
 	const states = new Map<string, SensorState>();
+	// Newest ts_ms per id, for staleness checks. Kept apart from `historyTs` (numeric samples only,
+	// capped) so text/json sensors age the same way; `Math.max` so a back-dated backfill can't rewind it.
+	const lastTs = new Map<string, number>();
+	let newestTs = -Infinity;
 	const listeners = new Map<string, Set<() => void>>();
 	// Callbacks notified when the active (subscribed) set transitions, not on every sample.
 	const activeListeners = new Set<() => void>();
@@ -108,13 +125,25 @@ export function createTelemetryHub(historyLen = 600): TelemetryHub {
 
 	const ingest = (sample: SensorSample): void => {
 		states.set(sample.sensor, appendSample(stateOf(sample.sensor), sample, historyLen));
+		const ts = Math.max(sample.ts_ms, lastTs.get(sample.sensor) ?? -Infinity);
+		lastTs.set(sample.sensor, ts);
+		if (ts > newestTs) newestTs = ts;
 		listeners.get(sample.sensor)?.forEach((cb) => cb());
 	};
 
 	return {
 		ingest,
 		ingestBatch: (batch) => batch.forEach(ingest),
-		sensorIds: () => Array.from(states.keys()),
+		sensorIds: (opts) => {
+			const fresh = opts?.freshWithinMs;
+			if (fresh === undefined) return Array.from(states.keys());
+			// `lastTs` holds exactly the ids of `states` (both are written by ingest), in the same order.
+			const cutoff = newestTs - fresh;
+			return Array.from(lastTs.entries())
+				.filter(([, ts]) => ts >= cutoff)
+				.map(([id]) => id);
+		},
+		lastSeen: (id) => lastTs.get(id) ?? null,
 		activeSensorIds: () =>
 			Array.from(listeners.entries())
 				.filter(([, set]) => set.size > 0)

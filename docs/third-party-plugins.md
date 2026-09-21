@@ -18,7 +18,11 @@ in the studio's **Plugins** section under *Packages*, where each one is enabled 
 > Templates and themes are declarative data; a package cannot render its own components. The
 > only code surface is `source.js`, and it runs in a QuickJS sandbox with **zero capabilities**
 > (no network, no DOM, no Tauri — the host does the fetching against a consented allowlist; see
-> *Sandboxed sensor sources* below). The other sharp edge is **theme CSS** — see Security.
+> *Sandboxed sensor sources* below). "Declarative" is not "inert", though: a template tree can
+> place an **embedded web page** (`iframe` widget), a **remote image**, a **button macro** that
+> calls Home Assistant / media services on press, and **per-widget CSS/tokens**, and a theme is
+> CSS with full reach into the studio. All of that is scanned and named in the enable prompt — see
+> Security.
 
 ## Try the sample
 
@@ -203,10 +207,21 @@ keeps your `params` as instance params).
 - **Opt-in:** discovered packages register nothing until enabled; the toggle is a per-machine
   allowlist.
 - **Structural validation:** manifests are parsed fail-closed; trees go through the layout
-  whitelist; param paths that walk `__proto__`/`constructor`/`prototype` are rejected.
+  whitelist; param paths that walk `__proto__`/`constructor`/`prototype` are rejected (and the
+  param setter itself refuses them, so a hand-edited tree can't pollute a prototype either).
+- **Templates carry capabilities, and they are scanned.** A template tree is a stranger's layout:
+  it can embed a web page (`iframe`), load a remote image (an IP-leaking beacon the moment it
+  renders), carry a `button` whose macro fires HA / media service calls on press, and ship
+  per-widget CSS/tokens with the same reach as a theme. Every such unit is reported in the
+  first-enable prompt (*"This package's widgets contain 1 embedded web page, 1 remote image, …"*),
+  consent is stored against a fingerprint of exactly those units (a new capability in an update
+  re-prompts), and **the iframe sandbox is forced on** at parse time — a package never decides a
+  frame runs unsandboxed. Widget CSS whose braces don't balance (a `}` that would escape its
+  per-widget scope) is dropped rather than injected.
 - **Theme CSS is the trust boundary:** it runs with full access to the studio's DOM, so it is
-  scanned (remote `url()`/`@import`, viewport overlays — the same scan sack imports get) and a
-  flagged theme asks for explicit confirmation on first enable. Don't enable packages from
+  scanned (remote `url()`/`image-set()`/`@import`, viewport overlays — after decoding CSS
+  escapes and stripping comments, so `\75rl(` is seen as `url(`; the same scan sack imports get)
+  and a flagged theme asks for explicit confirmation on first enable. Don't enable packages from
   sources you don't trust.
 - **The sandbox has zero capabilities.** `source.js` runs in a QuickJS-in-WASM interpreter with
   no host bindings whatsoever — it cannot fetch, touch the DOM, call Tauri, read files, or keep
@@ -216,7 +231,11 @@ keeps your `params` as instance params).
   checks the URL's host against `source.hosts` server-side — a compromised webview can't widen
   the list. https only, GET only, **redirects disabled** (a listed host can't bounce the request
   somewhere else), 10 s timeout, 256 KiB response cap. IP literals, explicit ports, and embedded
-  credentials are rejected.
+  credentials are rejected, and so are local / LAN names (`localhost`, `*.local`, `*.internal`,
+  `*.lan`, `*.home.arpa`) — a package can't be used to probe your router, NAS, or HA instance.
+  The proxy also refuses to serve a package that isn't **enabled on disk**: enabling writes a
+  `plugins/<id>/.enabled` marker from the studio, so a window that never went through the
+  enable/consent gate has no fetch proxy.
 - **Network access is consented per hosts-list.** The first-enable confirm names every host
   (e.g. *"This package polls the network every 60s: api.open-meteo.com."* — combined with the
   theme-CSS warning when both apply, one dialog). Consent is stored against the exact hosts
@@ -256,7 +275,7 @@ manifest). Nothing is checked or fetched in the background, ever.
 
 *Remove* deletes the package folder (it works for local packages too), unregisters its templates
 and theme live, stops its source, and clears its enable flag **and** any stored theme-CSS /
-network consent — a re-installed package starts from zero trust. An *Update* that changes the
+template / network consent — a re-installed package starts from zero trust. An *Update* that changes the
 `source.hosts` list also drops the stored network consent: the new hosts stay unfetched until
 you toggle the package off and on and confirm them. Theme-CSS consent is tied to the exact reviewed
 stylesheet by a compact SHA-256 fingerprint (the CSS itself is not copied into local storage), so

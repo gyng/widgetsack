@@ -426,6 +426,19 @@ pub fn stop_spectrum<R: Runtime>(
     Ok(())
 }
 
+/// Drop a destroyed window's channel (called from the `WindowEvent::Destroyed` handler). A window
+/// that goes away never calls `stop_spectrum`, and its `Channel` doesn't error on `send` promptly
+/// enough to rely on — so the capture thread would keep the WASAPI loopback + FFT running for a
+/// consumer that no longer exists. Removing it lets the thread exit on its own once no window is
+/// left (`run_capture` checks the channel set every frame). Unknown labels are a no-op.
+pub fn forget_window(state: &SpectrumState, label: &str) {
+    if state.lock().channels.remove(label).is_some() {
+        log::debug("audio", "spectrum: forgot destroyed window")
+            .field("window", label)
+            .emit();
+    }
+}
+
 /// List the system's audio OUTPUT (render) endpoints, so the inspector can offer a device picker.
 /// An empty selection means "system default". Windows-only; elsewhere there is no loopback backend
 /// so the list is empty (the meter just shows nothing). Runs off the UI thread with a budget
@@ -1114,6 +1127,28 @@ mod tests {
             "low band should be quiet, got {}",
             frame.bands[low_band]
         );
+    }
+
+    /// A destroyed window's channel is dropped from the capture set so the loopback thread can
+    /// stop once no consumer remains; unknown labels are ignored.
+    #[test]
+    fn forget_window_removes_that_windows_channel_only() {
+        let state = SpectrumState::default();
+        {
+            let mut inner = state.lock();
+            inner
+                .channels
+                .insert("overlay-1".to_string(), Channel::new(|_| Ok(())));
+            inner
+                .channels
+                .insert("studio".to_string(), Channel::new(|_| Ok(())));
+        }
+        forget_window(&state, "nope");
+        assert_eq!(state.lock().channels.len(), 2);
+        forget_window(&state, "overlay-1");
+        let inner = state.lock();
+        assert_eq!(inner.channels.len(), 1);
+        assert!(inner.channels.contains_key("studio"));
     }
 
     #[test]

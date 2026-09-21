@@ -5,18 +5,28 @@
 //   docs/theming.md     — the theming system (token vocabulary, cascade, scoping)
 //   npm run gen:docs    — (re)write the files
 //   npm run check:docs  — exit non-zero if any committed file is stale (for CI / pre-commit)
-// Importing core/widget registers the built-in (shipped) metas. Plugin widget types register at
-// runtime in the webview (their import graph touches browser globals absent under vite-node), so the
-// studio's "Copy widget reference" button is the way to get the complete set; this documents built-ins.
+// Importing core/widget registers the built-in (shipped) metas; registerBuiltinPlugins() adds the
+// plugin-registered types (nowplaying, assistant, transcribe, weather, rss, ticker, agenda, airquality,
+// sunmoon, ha.*). Their metas are plain data inside each plugin module, and those modules import
+// cleanly under vite-node (nothing touches browser globals at module scope), so the reference covers
+// the COMPLETE registry — the same set the studio's "Copy widget reference" button produces.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { listMetas } from '../src/lib/core/widget';
+import { pluginLoadErrors, registerBuiltinPlugins } from '../src/lib/widgets/plugins/index';
 import { widgetReferenceMarkdown } from '../src/lib/core/widgetDocs';
 import { templatingReferenceMarkdown } from '../src/lib/core/templatingDocs';
 import { themingReferenceMarkdown } from '../src/lib/core/themingDocs';
 
 const check = process.argv.includes('--check');
+registerBuiltinPlugins();
+// A plugin whose registration threw would silently drop its widget types from the reference.
+const loadErrors = pluginLoadErrors();
+if (loadErrors.length) {
+	for (const e of loadErrors) console.error(`✗ plugin "${e.id}" failed to register: ${e.error}`);
+	process.exit(1);
+}
 const metas = listMetas();
 // Compare line-ending-insensitively so a CRLF checkout (git autocrlf) doesn't read as stale.
 const norm = (s: string): string => s.replace(/\r\n/g, '\n');
@@ -25,7 +35,7 @@ const docs: { rel: string; md: string; label: string }[] = [
 	{
 		rel: '../../docs/widgets.md',
 		md: widgetReferenceMarkdown(metas),
-		label: `${metas.length} built-in widgets`
+		label: `${metas.length} widgets (built-in + plugin)`
 	},
 	{
 		rel: '../../docs/templating.md',

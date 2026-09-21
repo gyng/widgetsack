@@ -337,7 +337,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 	},
 	{
 		type: 'clock',
-		description: 'Date / time clock using a date-fns format pattern (self-sourcing).',
+		description: 'Date / time clock using a moment-style token format (self-sourcing).',
 		binds: 'none',
 		label: 'Clock',
 		category: 'Clocks',
@@ -345,7 +345,9 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 160, h: 40 },
 		defaultConfig: { format: 'HH:mm:ss' },
 		configFields: [
-			text('format', 'format', { help: 'date-fns pattern, e.g. HH:mm:ss or dddd D MMMM' }),
+			text('format', 'format', {
+				help: 'moment-style tokens: YYYY MMMM MMM MM M dddd ddd DD D HH H hh h mm m ss s A a; literals in [brackets], e.g. HH:mm:ss or dddd D MMMM'
+			}),
 			{
 				key: 'locale',
 				label: 'locale',
@@ -719,7 +721,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				kind: 'select',
 				options: [],
 				catalog: 'audioOutputs',
-				help: 'which audio output to visualise (blank = system default)'
+				help: 'which audio output to visualise (blank = system default). App-wide: one capture stream per app, so the last spectrum widget to (re)start sets it for all'
 			},
 			{
 				key: 'mode',
@@ -733,7 +735,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				label: 'frequency scale',
 				kind: 'select',
 				options: ['log', 'linear'],
-				help: 'log spreads the low frequencies (musical, default); linear is even Hz/bar'
+				help: 'log spreads the low frequencies (musical, default); linear is even Hz/bar. App-wide like device: shared by every spectrum widget'
 			},
 			{
 				key: 'pips',
@@ -776,7 +778,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		},
 		configFields: [
 			text('url', 'url', {
-				help: 'bare domains get https://; http:// (LAN) is allowed; javascript:/data: are rejected'
+				help: 'bare domains get https://; only https:// loads (the CSP blocks plain http://); javascript:/data: are rejected'
 			}),
 			num('refresh', 'refresh (s)', {
 				min: 0,

@@ -50,7 +50,7 @@
     "createUpdaterArtifacts": false
   },
   "productName": "widgetsack",
-  "version": "0.0.56",
+  "version": "0.0.57",
   "identifier": "io.github.gyng",
   "plugins": {},
   "app": {
@@ -78,13 +78,14 @@
           "allow": [
             "C:/Windows/Fonts/**",
             "$LOCALDATA/Microsoft/Windows/Fonts/**",
-            "$APPCONFIG/**"
+            "$APPCONFIG/wallpapers/**",
+            "$APPCONFIG/multi/wallpapers/**"
           ],
           "requireLiteralLeadingDot": true
         },
         "enable": true
       },
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost http://art.localhost blob: data: http: https:; media-src 'self' asset: http://asset.localhost blob: data:; font-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; script-src 'self' 'wasm-unsafe-eval'; frame-src 'self' http: https:"
+      "csp": "default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; img-src 'self' asset: http://asset.localhost http://art.localhost blob: data: https:; media-src 'self' asset: http://asset.localhost blob: data:; font-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; script-src 'self' 'wasm-unsafe-eval'; frame-src 'self' https:"
     }
   }
 }

@@ -3,8 +3,9 @@
 // every colour/size is a CSS variable (config overrides) or a class the editable `css` field can
 // target. Only the per-tick hand ROTATION is inline (it's data, not style). Ticks: each is wrapped in
 // a full-face layer that rotates, so a percentage-positioned mark lands on the dial without trig.
-import { useEffect, useState, type CSSProperties } from 'react';
+import { type CSSProperties } from 'react';
 import { handAngles, updatePeriod } from './analogClockMath';
+import { useNow } from '../useNow';
 import './AnalogClock.css';
 
 type Props = {
@@ -30,11 +31,8 @@ export default function AnalogClock({
 	accent,
 	face
 }: Props) {
-	const [now, setNow] = useState(new Date());
-	useEffect(() => {
-		const timer = setInterval(() => setNow(new Date()), updatePeriod(updateMs));
-		return () => clearInterval(timer);
-	}, [updateMs]);
+	// The shared wall clock at this widget's redraw period (one timer per period per window).
+	const now = new Date(useNow(updatePeriod(updateMs)));
 
 	const a = handAngles(now);
 	// Config → CSS custom properties (only when set), so classes fall back to theme tokens otherwise.

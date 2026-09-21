@@ -66,14 +66,24 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 	// Mirrored in a commit effect (not during render); every read happens later, off-render.
 	const themeRef = useRef(selectedTheme);
 	const cssRequestRef = useRef(0);
-	useEffect(() => {
-		themeRef.current = selectedTheme;
-	});
 	const resolveLatest = useCallback(async (name: string) => {
 		const request = ++cssRequestRef.current;
 		const css = await resolveThemeCss(name);
 		if (request === cssRequestRef.current && themeRef.current === name) setThemeCss(css);
 	}, []);
+	// The live CSS must FOLLOW the model's selectedTheme, not just the picker: an undo/redo of a
+	// theme switch (the theme is part of the undo snapshot) changes selectedTheme without going
+	// through setTheme/adoptTheme, which are the only paths that swap the CSS. Declared BEFORE the
+	// mirror effect below so a change those paths didn't already announce (their ref write happens
+	// synchronously, so they read as "already current" here) is resolved exactly once.
+	useEffect(() => {
+		if (themeRef.current === selectedTheme) return;
+		themeRef.current = selectedTheme;
+		void resolveLatest(selectedTheme);
+	}, [selectedTheme, resolveLatest]);
+	useEffect(() => {
+		themeRef.current = selectedTheme;
+	});
 
 	const applyTheme = useCallback(async () => {
 		await resolveLatest(themeRef.current);

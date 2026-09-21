@@ -113,11 +113,18 @@ export function useKeyboard(deps: KeyboardDeps): {
 		const onKeyup = (event: KeyboardEvent) => {
 			if (event.code === 'Space') setSpace(false);
 		};
+		// Losing window focus while Space is held swallows the keyup (Alt+Tab, a native dialog, the
+		// tray) — without this the studio stays stuck in pan mode until Space is pressed again.
+		const onBlur = () => {
+			if (spaceDownRef.current) setSpace(false);
+		};
 		window.addEventListener('keydown', onKeydown);
 		window.addEventListener('keyup', onKeyup);
+		window.addEventListener('blur', onBlur);
 		return () => {
 			window.removeEventListener('keydown', onKeydown);
 			window.removeEventListener('keyup', onKeyup);
+			window.removeEventListener('blur', onBlur);
 		};
 	}, []);
 

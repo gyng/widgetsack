@@ -7,6 +7,8 @@
 // `mem.used`) and are exposed to the expression as NAMESPACED globals — `cpu.total` is a plain
 // member access on a `{ cpu: { total: n } }` scope, so formulas read like ordinary JS.
 
+import { isSafePath } from './safePath';
+
 export type TemplatePart = { kind: 'text'; text: string } | { kind: 'expr'; src: string };
 
 // First segments that are JS built-ins, not sensors — excluded from sensor-reference extraction so a
@@ -141,17 +143,20 @@ export function templateRefs(template: string, known?: string[]): string[] {
 }
 
 /** Turn a flat sensor map into the namespaced object the sandbox reads:
- *  `{ 'cpu.total': 37, 'net.down': 5 }` → `{ cpu: { total: 37 }, net: { down: 5 } }`. */
+ *  `{ 'cpu.total': 37, 'net.down': 5 }` → `{ cpu: { total: 37 }, net: { down: 5 } }`.
+ *  Sensor ids are untrusted (an MQTT topic or a package sensor can spell `__proto__`), so an id with
+ *  a prototype-walking segment is DROPPED and only own-property objects are descended into. */
 export function buildScope(
 	values: Record<string, number | string | null>
 ): Record<string, unknown> {
 	const root: Record<string, unknown> = {};
 	for (const [id, v] of Object.entries(values)) {
+		if (!isSafePath(id)) continue;
 		const segs = id.split('.');
 		let node = root;
 		for (let k = 0; k < segs.length - 1; k++) {
 			const s = segs[k];
-			if (typeof node[s] !== 'object' || node[s] === null) node[s] = {};
+			if (!Object.hasOwn(node, s) || typeof node[s] !== 'object' || node[s] === null) node[s] = {};
 			node = node[s] as Record<string, unknown>;
 		}
 		node[segs[segs.length - 1]] = v;

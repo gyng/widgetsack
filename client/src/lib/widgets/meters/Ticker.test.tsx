@@ -73,7 +73,7 @@ describe('Ticker', () => {
 
 	it('renders the sparkline from the series, and hides it when disabled', () => {
 		const on = render(<Ticker symbol="AAPL" showSparkline sensors={aaplSensors()} />);
-		expect(on.container.querySelector('.np-ticker-spark svg')).not.toBeNull();
+		expect(on.container.querySelector('.np-ticker-spark canvas')).not.toBeNull();
 		const off = render(<Ticker symbol="AAPL" showSparkline={false} sensors={aaplSensors()} />);
 		expect(off.container.querySelector('.np-ticker-spark')).toBeNull();
 	});
@@ -82,6 +82,6 @@ describe('Ticker', () => {
 		const { container } = render(
 			<Ticker symbol="AAPL" sensors={{ price: scalar(110, [100, 105, 110]), change: scalar(10) }} />
 		);
-		expect(container.querySelector('.np-ticker-spark svg')).not.toBeNull();
+		expect(container.querySelector('.np-ticker-spark canvas')).not.toBeNull();
 	});
 });

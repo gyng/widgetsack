@@ -5,6 +5,7 @@
 // elsewhere — the schedule math in core/schedule.ts, the prompt in core/llm.ts.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTelemetryHub } from './telemetryContext';
+import { useSensors } from './useSensors';
 import type { SensorValue, TelemetryHub } from '../core/telemetry';
 import { buildAssistantMessages } from '../core/llm';
 import { singleFlight } from '../core/singleFlight';
@@ -36,17 +37,20 @@ function readingOf(v: SensorValue | null): number | string | null {
 	return null;
 }
 
-function snapshot(hub: TelemetryHub, sensorsCsv: string): Record<string, number | string> {
+/** The sensor ids a snapshot reads: the CSV list, or AUTO_WATCH for blank / "auto". */
+function snapshotIds(sensorsCsv: string): string[] {
 	const csv = sensorsCsv.trim();
-	const ids =
-		csv && csv.toLowerCase() !== 'auto'
-			? csv
-					.split(',')
-					.map((s) => s.trim())
-					.filter(Boolean)
-			: AUTO_WATCH;
+	return csv && csv.toLowerCase() !== 'auto'
+		? csv
+				.split(',')
+				.map((s) => s.trim())
+				.filter(Boolean)
+		: AUTO_WATCH;
+}
+
+function snapshot(hub: TelemetryHub, sensorsCsv: string): Record<string, number | string> {
 	const out: Record<string, number | string> = {};
-	for (const id of ids) {
+	for (const id of snapshotIds(sensorsCsv)) {
 		const r = readingOf(hub.sensor(id).getSnapshot().value);
 		if (r !== null) out[id] = r;
 	}
@@ -77,6 +81,12 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 	useEffect(() => {
 		cfgRef.current = cfg;
 	});
+	// Hold a live subscription on every id the snapshot reads for the widget's lifetime. Nothing
+	// renders these values — the point is DEMAND: the backend only polls demand-gated sensors (gpu.*,
+	// proc.*.top, …) while some window subscribes to them, so without this the briefing's snapshot
+	// would find them absent on an overlay that shows no other widget bound to them.
+	const ids = useMemo(() => snapshotIds(cfg.sensors), [cfg.sensors]);
+	useSensors(hub, ids);
 
 	const generateOnce = useCallback(async (): Promise<void> => {
 		setBusy(true);

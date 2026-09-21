@@ -65,6 +65,9 @@ import {
 	removeNode,
 	type Drop
 } from '../core/layoutEdit';
+import { PANEL_SELECTOR } from './canvas/stageHit';
+import { decideExternalChange } from './canvas/externalChange';
+import { useMenuFocus } from './canvas/useMenuFocus';
 import WidgetHost from './WidgetHost';
 import FlowNode, { type RenderLeaf } from './FlowNode';
 import { startWindowSource } from '../windows/source';
@@ -123,7 +126,8 @@ import {
 	setSolvedForFloat,
 	editHelpers,
 	bulkPatchConfig,
-	bulkSetBasis
+	bulkSetBasis,
+	patchFloating
 } from './canvas/useEditorModel';
 import { usePersistence } from './canvas/usePersistence';
 import { applyAssistantOps } from '../core/llm';
@@ -133,7 +137,7 @@ import { useZoomFit } from './canvas/useZoomFit';
 import { useCanvasPointer } from './canvas/useCanvasPointer';
 import { useKeyboard } from './canvas/useKeyboard';
 import { useControls } from './canvas/useControls';
-import { clampMenuToViewport } from './canvas/menuPosition';
+import { clampMenuToViewport, contextMenuAnchor } from './canvas/menuPosition';
 import { buildMenuPreview } from './canvas/menuPreview';
 import { innermostContainerAt } from './canvas/containerAt';
 import { readStudioMonitor, writeStudioMonitor } from './canvas/studioMonitorPref';
@@ -193,10 +197,10 @@ const ALIGN_THRESHOLD = 6;
 // its whole box. data-seekable="true" is the now-playing seek bar; data-interactive is an opt-in.
 const INTERACTIVE_SELECTOR =
 	'button, a[href], input, select, textarea, [data-interactive], [data-seekable="true"]';
-// Docked-panel selector: a palette-widget drop over any of these is the panel's own (e.g. the
-// Outline's container drop), so the stage-level drop handler bails on it.
-const PANEL_SEL =
-	'.outline, .inspector, .studio-bar, .powerbar, .theme-editor, .ctx, .nav-rail, .rail-panel, .designer-list, .designer-empty';
+// Docked-panel selector (canvas/stageHit.PANEL_SELECTOR): a palette-widget drop / right-click over
+// any of these is the panel's own (e.g. the Outline's container drop), so the stage-level handlers
+// bail on it. Shared with the marquee's empty-canvas test so the two can't disagree.
+const PANEL_SEL = PANEL_SELECTOR;
 
 // Dispatch ONE control action: a thin lookup into the plugin action-handler registry (the
 // side-effecting Tauri calls live in the plugins' command adapters, AGENTS.md §5/§6). The
@@ -265,38 +269,6 @@ export default function Canvas({ studio = false }: Props) {
 		pendingExtras,
 		saveSeq
 	} = state;
-
-	// Hand every plugin's `studio` capability the editor surface (StudioApi) so a plugin (e.g. the
-	// AI Provider's layout assistant) can read the live monitor and apply model-proposed ops as one
-	// undo step (mirrors setSolvedForFloat). Studio role only; the result is computed PURELY from
-	// the current monitor before committing, so it never depends on the reducer running
-	// synchronously. Re-runs (after the previous cleanups) whenever the monitor changes so the api
-	// stays current; a throwing hook is logged and skipped, never fatal.
-	useEffect(() => {
-		if (!studio) return;
-		const api: StudioApi = {
-			monitor: () => monitor,
-			apply: (ops) => {
-				const r = applyAssistantOps(monitor, ops, (type) => `${type}-${editHelpers.rand()}`);
-				commitOp((s) => ({
-					monitor: r.monitor,
-					selectedId: r.addedIds.length ? r.addedIds[r.addedIds.length - 1] : s.selectedId
-				}));
-				return { applied: r.applied, addedIds: r.addedIds, errors: r.errors };
-			}
-		};
-		const cleanups: (() => void)[] = [];
-		for (const p of pluginList) {
-			if (!p.studio) continue;
-			try {
-				const cleanup = p.studio(api);
-				if (cleanup) cleanups.push(cleanup);
-			} catch (err) {
-				console.warn(`plugin "${p.id}" studio hook failed`, err);
-			}
-		}
-		return () => cleanups.forEach((c) => c());
-	}, [studio, monitor, commitOp, pluginList]);
 
 	// Theme state + actions (CSS resolution, themes/ file I/O, the editor dialog) — canvas/useThemes.
 	const {
@@ -400,7 +372,14 @@ export default function Canvas({ studio = false }: Props) {
 	}, [studio]);
 
 	const persistence = usePersistence(state, myMonitor);
-	const { persistToDisk, writeBaseline, schedulePreviewWrite, clearPreviewWrite } = persistence;
+	const {
+		persistToDisk,
+		writeBaseline,
+		schedulePreviewWrite,
+		clearPreviewWrite,
+		flushPreviewWrite,
+		previewPending
+	} = persistence;
 
 	// The work area this overlay lays its flow tree into (logical px). Set on mount + resize.
 	const [workArea, setWorkArea] = useState<Rect>({ x: 0, y: 0, w: 0, h: 0 });
@@ -494,10 +473,11 @@ export default function Canvas({ studio = false }: Props) {
 	}, [studio]);
 
 	const worldRef = useRef<HTMLDivElement | null>(null);
+	// `monitor` is deliberately NOT a dep: tree edits reach the hook as DOM mutations (see the hook).
 	const { measured: measuredDom, measuredRef } = useMeasuredRects({
 		worldRef,
 		zoom: studio ? zoom : 1,
-		deps: [monitor, workArea]
+		deps: [workArea]
 	});
 
 	// --- derived layout (CSS-native; the solver is no longer used) ---
@@ -623,7 +603,10 @@ export default function Canvas({ studio = false }: Props) {
 				themeCss: [themeCss, tokenCss].filter(Boolean).join('\n'),
 				library,
 				monitor,
-				includeDefaults: true
+				includeDefaults: true,
+				// Widget/def CSS that would escape its scope wrapper (unbalanced braces) is dropped by
+				// assembleStyles; say so, or a sack's CSS silently does nothing.
+				onRejectCss: (sel, reason) => console.warn(`[style] dropped css for ${sel}: ${reason}`)
 			}),
 		[themeCss, tokenCss, library, monitor]
 	);
@@ -909,22 +892,63 @@ export default function Canvas({ studio = false }: Props) {
 	useEffect(() => {
 		if (!studio && measuredDom.size > 0) syncRects();
 	}, [studio, measuredDom, syncRects]);
+	// The rects also go stale WITHOUT any slot moving: a theme can reveal/hide a widget's controls
+	// (display:none → the seek bar / transport buttons appear), and a now-playing session becoming
+	// seekable flips data-seekable inside the widget — neither changes the measured slot map above.
+	// Re-sync (debounced) when the applied theme CSS changes, and from a light MutationObserver on
+	// the widgets' subtrees (childList + the class / data-seekable / hidden attributes that gate the
+	// INTERACTIVE_SELECTOR matches). Passive overlays only — the studio never sends rects.
+	const rectSyncTimer = useRef<number | null>(null);
+	const scheduleSyncRects = useCallback(() => {
+		if (rectSyncTimer.current) clearTimeout(rectSyncTimer.current);
+		rectSyncTimer.current = window.setTimeout(() => {
+			rectSyncTimer.current = null;
+			syncRects();
+		}, 120);
+	}, [syncRects]);
+	useEffect(() => {
+		if (studio) return;
+		scheduleSyncRects(); // the theme (or the initial CSS) changed
+	}, [studio, themeCss, scheduleSyncRects]);
+	useEffect(() => {
+		if (studio) return;
+		const world = worldRef.current;
+		if (!world) return;
+		const mo = new MutationObserver((records) => {
+			for (const r of records) {
+				const t = r.target;
+				const el = t instanceof Element ? t : t.parentElement;
+				if (el?.closest('[data-w]')) {
+					scheduleSyncRects();
+					return;
+				}
+			}
+		});
+		mo.observe(world, {
+			childList: true,
+			subtree: true,
+			attributes: true,
+			attributeFilter: ['class', 'data-seekable', 'hidden']
+		});
+		return () => {
+			mo.disconnect();
+			if (rectSyncTimer.current) clearTimeout(rectSyncTimer.current);
+		};
+	}, [studio, scheduleSyncRects]);
 
 	// --- the save chokepoint bridge (saveLayout): the reducer bumps saveSeq on each commit; here we
-	// run the studio/overlay branch. Cross-monitor extras are queued in the reducer's pendingExtras
-	// (set by moveNodeToMonitor before the commit), so the studio preview write omits them. ---
+	// schedule the debounced preview write — the SAME path for the studio and an overlay's edit mode
+	// (an overlay used to persist synchronously per commit, which thrashed the disk on a drag and
+	// could interleave two read-merge-write passes). Cross-monitor extras are queued in the reducer's
+	// pendingExtras (set by moveNodeToMonitor before the commit), so the preview write omits them. ---
 	const firstSave = useRef(true);
 	useEffect(() => {
 		if (firstSave.current) {
 			firstSave.current = false;
 			return; // saveSeq starts at 0; don't write on mount
 		}
-		if (studio) {
-			schedulePreviewWrite();
-		} else {
-			persistToDisk([]);
-		}
-	}, [saveSeq, studio, schedulePreviewWrite, persistToDisk]);
+		schedulePreviewWrite();
+	}, [saveSeq, schedulePreviewWrite]);
 
 	// --- reloadLayout ---
 	const reloadLayout = useCallback(async () => {
@@ -943,7 +967,23 @@ export default function Canvas({ studio = false }: Props) {
 			const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
 			const saved = obj ? parseLayoutAny(obj) : null;
 			const mon = saved?.monitors[myMon];
-			if (mon) patch.monitor = mon;
+			// A file that READ fine but didn't parse — the whole document, or just this monitor's
+			// record (parseLayoutV2 drops an unparseable entry and keeps the rest) — is a parse
+			// failure, not a fresh install: back it up before anything can be saved over it, and
+			// load an EMPTY root rather than the demo seed (which the next preview write would
+			// have persisted in its place).
+			const rawMonitors = obj?.monitors;
+			const hadEntry =
+				!!rawMonitors && typeof rawMonitors === 'object' && myMon in (rawMonitors as object);
+			if (obj && (saved === null || (hadEntry && !mon))) {
+				logClient(
+					'error',
+					'layout',
+					`widgets.json is unparseable (${saved === null ? 'whole file' : `monitor "${myMon}"`}); backing it up and loading an empty layout`
+				);
+				requestLayoutBackup();
+				patch.monitor = { root: emptyRoot(), floating: [] };
+			} else if (mon) patch.monitor = mon;
 			const lib = obj?.library;
 			if (lib && typeof lib === 'object' && Array.isArray((lib as { defs?: unknown }).defs)) {
 				patch.library = lib as Library;
@@ -998,6 +1038,43 @@ export default function Canvas({ studio = false }: Props) {
 	// monitorRef is mirrored in the commit effect S3; reloadLayout also writes it imperatively during
 	// init so the first syncPrimaryOverlays sees the freshly-loaded monitor.
 	const monitorRef = useRef(monitor);
+
+	// Hand every plugin's `studio` capability the editor surface (StudioApi) so a plugin (e.g. the
+	// AI Provider's layout assistant) can read the live monitor and apply model-proposed ops as one
+	// undo step (mirrors setSolvedForFloat). Studio role only. Registered ONCE: the api reads the
+	// live monitor through monitorRef (mirrored every commit), so the hooks no longer tear down and
+	// re-register on every monitor change (each one is a plugin-side subscription). The result is
+	// computed PURELY from the current monitor before committing, so it never depends on the reducer
+	// running synchronously; a throwing hook is logged and skipped, never fatal.
+	useEffect(() => {
+		if (!studio) return;
+		const api: StudioApi = {
+			monitor: () => monitorRef.current,
+			apply: (ops) => {
+				const r = applyAssistantOps(
+					monitorRef.current,
+					ops,
+					(type) => `${type}-${editHelpers.rand()}`
+				);
+				commitOp((s) => ({
+					monitor: r.monitor,
+					selectedId: r.addedIds.length ? r.addedIds[r.addedIds.length - 1] : s.selectedId
+				}));
+				return { applied: r.applied, addedIds: r.addedIds, errors: r.errors };
+			}
+		};
+		const cleanups: (() => void)[] = [];
+		for (const p of pluginList) {
+			if (!p.studio) continue;
+			try {
+				const cleanup = p.studio(api);
+				if (cleanup) cleanups.push(cleanup);
+			} catch (err) {
+				console.warn(`plugin "${p.id}" studio hook failed`, err);
+			}
+		}
+		return () => cleanups.forEach((c) => c());
+	}, [studio, commitOp, pluginList]);
 	const syncPrimaryOverlays = useCallback(async () => {
 		await reconcileOverlays();
 		await setMainWindowVisible(monitorHasWidgets(monitorRef.current));
@@ -1054,7 +1131,8 @@ export default function Canvas({ studio = false }: Props) {
 			setEditMode(true);
 		},
 		setMonitorOptions,
-		clearPreviewWrite,
+		flushPreviewWrite: () => void flushPreviewWrite(),
+		onForeignLayoutChange: () => onForeignLayoutChangeRef.current(),
 		reapplyPresentation
 	});
 
@@ -1142,7 +1220,7 @@ export default function Canvas({ studio = false }: Props) {
 			for (const id of ids) {
 				mon = mon.floating.some((l) => l.id === id)
 					? { ...mon, floating: mon.floating.filter((l) => l.id !== id) }
-					: { ...mon, root: removeNodeFromTree(mon, id) };
+					: { ...mon, root: removeNode(mon.root, id) };
 			}
 			return { monitor: mon, selectedId: null, selectedIds: [] };
 		});
@@ -1180,7 +1258,9 @@ export default function Canvas({ studio = false }: Props) {
 			);
 			return;
 		}
-		dispatch({ type: 'patch', patch: { pendingExtras: [] } });
+		// The extras are on the other monitors' records now: clear them from the state AND from the
+		// undo history, so an undo can't re-queue one (a second Save would duplicate it there).
+		dispatch({ type: 'extrasFlushed' });
 		dispatch({ type: 'setBaseline' });
 		// Flash a transient confirmation in the powerbar (the write reached disk → the overlays reload).
 		setSavedFlash(true);
@@ -1205,6 +1285,7 @@ export default function Canvas({ studio = false }: Props) {
 			// queued cross-monitor moves) first; an explicit discard is available via "cancel edits".
 			try {
 				if (dirtyRef.current || pendingExtrasRef.current.length > 0) await commitSaveRef.current();
+				else await flushPreviewWrite(); // e.g. an undo back to baseline still debouncing
 			} catch (err) {
 				console.warn('save on studio close failed', err);
 			}
@@ -1227,7 +1308,7 @@ export default function Canvas({ studio = false }: Props) {
 			unlisten = u;
 		});
 		return () => unlisten();
-	}, [studio]);
+	}, [studio, flushPreviewWrite]);
 
 	const savedBaselineRef = useRef(savedBaseline); // mirrored in the commit effect S3
 	// Restore the editor AND the on-disk layout to the saved baseline, reverting the live preview.
@@ -1318,6 +1399,12 @@ export default function Canvas({ studio = false }: Props) {
 	const switchMonitor = useCallback(
 		async (key: string) => {
 			if (key === myMonitorRef.current) return;
+			// No preview timer may outlive this point: one that fired after the switch used to write
+			// the placeholder EMPTY tree (below) under the NEW key. A pending write for the old
+			// monitor is landed now (flushed, not dropped — an undo back to baseline still debouncing
+			// would otherwise leave the old monitor's file one edit behind); the dirty path then
+			// reverts it to the baseline on confirm, exactly as before.
+			await flushPreviewWrite();
 			if (dirtyRef.current) {
 				if (!window.confirm('Discard unsaved changes to this monitor and switch?')) return;
 				await revertDraftToDisk();
@@ -1333,7 +1420,7 @@ export default function Canvas({ studio = false }: Props) {
 			dispatch({ type: 'replaceMonitor', monitor: { root: emptyRoot(), floating: [] } });
 			await reloadLayout();
 		},
-		[studio, dispatch, revertDraftToDisk, reloadLayout]
+		[studio, dispatch, revertDraftToDisk, reloadLayout, flushPreviewWrite]
 	);
 	// A sticky choice can point at a monitor that's since been disconnected. Once the live options
 	// load, fall back to the primary ('default', always present) so the studio never edits an
@@ -1346,6 +1433,43 @@ export default function Canvas({ studio = false }: Props) {
 			void switchMonitor(DEFAULT_MONITOR);
 		}
 	}, [studio, monitorOptions, switchMonitor]);
+
+	// --- widgets.json changed under the studio by ANOTHER writer (an overlay's edit mode, a hand
+	// edit, a sync tool). Reload silently when nothing here would be lost; otherwise raise the
+	// "Layout changed on disk" banner — the studio used to ignore every change (it is always
+	// editing) and then clobber the external edit on its next preview write. ---
+	const [externalChange, setExternalChange] = useState(false);
+	const onForeignLayoutChange = useCallback(() => {
+		const verdict = decideExternalChange({
+			dirty: dirtyRef.current,
+			previewPending: previewPending(),
+			designing: stateRef.current.editingDefId != null
+		});
+		if (verdict === 'reload') void reloadLayout();
+		else setExternalChange(true);
+	}, [previewPending, reloadLayout]);
+	const reloadExternal = useCallback(() => {
+		setExternalChange(false);
+		clearPreviewWrite(); // don't let a debouncing edit overwrite what we're about to load
+		// Leave any open def edit / template preview first: the reload replaces `monitor` wholesale.
+		dispatch({
+			type: 'patch',
+			patch: {
+				editingDefId: null,
+				savedMonitor: null,
+				previewDef: null,
+				selectedId: null,
+				selectedIds: []
+			}
+		});
+		void reloadLayout();
+	}, [clearPreviewWrite, dispatch, reloadLayout]);
+	// Keep mine: the next preview write / Save reasserts this editor's state over the external edit.
+	const keepMine = useCallback(() => {
+		setExternalChange(false);
+		schedulePreviewWrite();
+	}, [schedulePreviewWrite]);
+	const onForeignLayoutChangeRef = useRef(onForeignLayoutChange); // mirrored in the commit effect S3
 
 	// --- def editor entry points (studio bar) ---
 	// The wrappers (fold-open-def + new/open/clone/preview/rename/delete) live in canvas/useDefEditor;
@@ -1626,7 +1750,7 @@ export default function Canvas({ studio = false }: Props) {
 				return {
 					monitor: {
 						...s.monitor,
-						root: removeNodeFromTree(s.monitor, id),
+						root: removeNode(s.monitor.root, id),
 						floating: [...s.monitor.floating, lf]
 					},
 					selectedId: id
@@ -1716,28 +1840,18 @@ export default function Canvas({ studio = false }: Props) {
 		);
 	}, [menu]);
 
-	// a11y (ARIA menu): tag the rendered items as menuitems, move focus to the first on open, and
-	// restore focus to wherever it was when the menu closes. A stack re-point keeps focus inside the
-	// menu. Roving Arrow/Home/End + Esc/Tab-to-close live in onMenuKeyDown.
-	const restoreFocusRef = useRef<HTMLElement | null>(null);
-	const hadMenuRef = useRef(false);
-	useEffect(() => {
-		const el = ctxRef.current;
-		if (menu && el) {
-			if (!hadMenuRef.current) restoreFocusRef.current = document.activeElement as HTMLElement;
-			hadMenuRef.current = true;
-			const items = Array.from(el.querySelectorAll<HTMLButtonElement>('button'));
-			items.forEach((b) => {
-				b.setAttribute('role', 'menuitem');
-				b.tabIndex = -1;
-			});
-			if (!el.contains(document.activeElement)) items[0]?.focus();
-		} else if (!menu && hadMenuRef.current) {
-			hadMenuRef.current = false;
-			restoreFocusRef.current?.focus?.();
-			restoreFocusRef.current = null;
-		}
-	}, [menu]);
+	// a11y (ARIA menu): tag the rendered items as menuitems, move focus to the first on open, restore
+	// focus to wherever it was when the menu closes, and rove Arrow/Home/End + Esc/Tab-to-close —
+	// canvas/useMenuFocus, shared with the header ≡ menu below. A stack re-point keeps focus inside.
+	const closeMenu = useCallback(() => setMenu(null), []);
+	const { onKeyDown: onMenuKeyDown } = useMenuFocus(ctxRef, menu !== null, closeMenu);
+	const headerMenuRef = useRef<HTMLDivElement | null>(null);
+	const closeHeaderMenu = useCallback(() => setHeaderMenuOpen(false), []);
+	const { onKeyDown: onHeaderMenuKeyDown } = useMenuFocus(
+		headerMenuRef,
+		headerMenuOpen,
+		closeHeaderMenu
+	);
 
 	const containerAt = useCallback(
 		(world: { x: number; y: number }): string =>
@@ -1855,11 +1969,14 @@ export default function Canvas({ studio = false }: Props) {
 			event.preventDefault();
 			if (consumeSuppressCtx()) return; // swallow the contextmenu trailing a right-drag free-move
 			const mon = monitorForDragRef.current;
-			const world = toWorld(event.clientX, event.clientY);
+			// A keyboard-initiated contextmenu (Menu key / Shift+F10) carries no pointer position:
+			// anchor it at the focused target's box instead of the window corner.
+			const at = contextMenuAnchor(event, (event.target as HTMLElement).getBoundingClientRect());
+			const world = toWorld(at.x, at.y);
 			const id = studio ? containerAt(world) : mon.root.id;
 			setMenu({
-				x: event.clientX,
-				y: event.clientY,
+				x: at.x,
+				y: at.y,
 				id: id === mon.root.id ? '__canvas__' : id,
 				wx: world.x,
 				wy: world.y
@@ -1892,34 +2009,6 @@ export default function Canvas({ studio = false }: Props) {
 		[studio, toWorld, handleOp]
 	);
 
-	const closeMenu = useCallback(() => setMenu(null), []);
-	// Roving keyboard navigation within the context menu (ARIA menu pattern). Esc/Tab close it; the
-	// arrows/Home/End move focus among the menuitems (tagged in the effect above).
-	const onMenuKeyDown = useCallback((e: React.KeyboardEvent) => {
-		const el = ctxRef.current;
-		if (!el) return;
-		if (e.key === 'Escape' || e.key === 'Tab') {
-			e.preventDefault();
-			setMenu(null);
-			return;
-		}
-		const items = Array.from(el.querySelectorAll<HTMLButtonElement>('button'));
-		if (!items.length) return;
-		const i = items.indexOf(document.activeElement as HTMLButtonElement);
-		if (e.key === 'ArrowDown') {
-			e.preventDefault();
-			items[(i + 1 + items.length) % items.length].focus();
-		} else if (e.key === 'ArrowUp') {
-			e.preventDefault();
-			items[(i - 1 + items.length) % items.length].focus();
-		} else if (e.key === 'Home') {
-			e.preventDefault();
-			items[0].focus();
-		} else if (e.key === 'End') {
-			e.preventDefault();
-			items[items.length - 1].focus();
-		}
-	}, []);
 	const menuAct = useCallback(
 		(op: LayoutOp) => {
 			handleOp(op);
@@ -2083,7 +2172,8 @@ export default function Canvas({ studio = false }: Props) {
 			});
 			if (!changed) return;
 			const next = { ...monitorRef.current, floating };
-			commitOp(() => ({ monitor: next }));
+			// Key-repeat (a held arrow) folds into ONE undo step per selection (recordHistory coalescing).
+			commitOp(() => ({ monitor: next }), `nudge:${ids.join(',')}`);
 		}
 	});
 	const menuRef = useRef(menu);
@@ -2123,6 +2213,7 @@ export default function Canvas({ studio = false }: Props) {
 		navSectionRef.current = navSection;
 		designingRef.current = designing;
 		menuRef.current = menu;
+		onForeignLayoutChangeRef.current = onForeignLayoutChange;
 	});
 
 	// --- canvas pointer (marquee + pan) ---
@@ -2554,6 +2645,7 @@ export default function Canvas({ studio = false }: Props) {
 										aria-label="Menu"
 										aria-haspopup="menu"
 										aria-expanded={headerMenuOpen}
+										aria-controls="studio-header-menu"
 										onClick={() => setHeaderMenuOpen((o) => !o)}
 									>
 										<span aria-hidden="true">≡</span>
@@ -2598,10 +2690,18 @@ export default function Canvas({ studio = false }: Props) {
 										onChange={switchMonitor}
 										aria-label="Monitor"
 									/>
+									{/* The studio previews every edit straight through to the desktop overlays, so
+									    "Save" is the KEEP decision (baseline + the queued cross-monitor moves) and
+									    Cancel is the way back — the cue says so instead of implying an unsaved
+									    layout isn't on the overlays yet. */}
 									<button
 										type="button"
 										className={['save', dirty ? 'hot' : 'saved'].join(' ')}
-										title="Save to disk — applies to the desktop overlays (Ctrl+S)"
+										title={
+											dirty
+												? 'Previewing live on the desktop overlays — Save keeps these changes; Cancel reverts them (Ctrl+S)'
+												: 'Saved — the overlays show this layout'
+										}
 										disabled={!dirty}
 										onClick={commitSave}
 									>
@@ -2610,7 +2710,11 @@ export default function Canvas({ studio = false }: Props) {
 									{/* Only rendered while there's something to discard — a permanently visible
 									    disabled Cancel is title-bar noise that reads as a broken control. */}
 									{dirty && (
-										<button type="button" title="Discard unsaved changes" onClick={cancelEdits}>
+										<button
+											type="button"
+											title="Revert the overlays and the editor to the last saved layout"
+											onClick={cancelEdits}
+										>
 											Cancel
 										</button>
 									)}
@@ -2664,7 +2768,17 @@ export default function Canvas({ studio = false }: Props) {
 											className="studio-menu-backdrop"
 											onClick={() => setHeaderMenuOpen(false)}
 										/>
-										<div className="studio-menu" role="menu">
+										{/* Focus moves into the menu on open (Arrow/Home/End rove, Escape closes) and
+										    returns to the ≡ button on close — useMenuFocus, same as the stage menu. */}
+										<div
+											id="studio-header-menu"
+											ref={headerMenuRef}
+											className="studio-menu"
+											role="menu"
+											aria-label="Studio menu"
+											tabIndex={-1}
+											onKeyDown={onHeaderMenuKeyDown}
+										>
 											<button
 												type="button"
 												role="menuitem"
@@ -2708,6 +2822,28 @@ export default function Canvas({ studio = false }: Props) {
 											</button>
 										</div>
 									</>
+								)}
+								{/* widgets.json was changed by another writer while this editor holds unsaved work
+								    (or is mid preview-write): let the user choose instead of silently clobbering
+								    either side (onForeignLayoutChange). */}
+								{externalChange && (
+									<div className="layout-banner" role="status">
+										<span>Layout changed on disk</span>
+										<button
+											type="button"
+											title="Discard this editor's unsaved changes and load the layout from disk"
+											onClick={reloadExternal}
+										>
+											Reload
+										</button>
+										<button
+											type="button"
+											title="Keep editing; the next preview write overwrites the change on disk"
+											onClick={keepMine}
+										>
+											Keep mine
+										</button>
+									</div>
 								)}
 								{/* Contextual subbar: canvas/stage controls (undo·redo, zoom, drop, debug). Only on
 								    the Layouts / Widget-designer stage — irrelevant on Themes / Sensors / Settings. */}
@@ -3441,24 +3577,6 @@ export default function Canvas({ studio = false }: Props) {
 
 // --- small helpers used by the Canvas closures (kept local; not part of the editor model) ---
 
-// patchFloating, used by onChange's mutateNoSave path (mirrors the model helper). Returns a patch.
-function patchFloating(
-	s: { monitor: MonitorLayout },
-	id: string,
-	patch: Partial<WidgetInstance>
-): Partial<EditorState> {
-	return {
-		monitor: {
-			...s.monitor,
-			floating: s.monitor.floating.map((l) =>
-				l.id === id && !isGroup(l.unit)
-					? { ...l, unit: { ...(l.unit as WidgetInstance), ...patch } }
-					: l
-			)
-		}
-	};
-}
-
 // patchFloatingGroupBox: a floating GROUP's position + size live in its `config` (x/y/w/h), not a
 // WidgetInstance.rect — so this is the group counterpart to patchFloating (used by GroupFrame's
 // drag/resize). Setting all four covers both move and resize. Returns a patch.
@@ -3489,9 +3607,4 @@ function patchFloatingGroupBox(
 			)
 		}
 	};
-}
-
-// Remove a node from the flow tree (used by deleteSelected + onDrop's float path).
-function removeNodeFromTree(mon: MonitorLayout, id: string): Container {
-	return removeNode(mon.root, id);
 }

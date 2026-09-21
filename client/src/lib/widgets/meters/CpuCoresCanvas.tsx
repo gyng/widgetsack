@@ -8,7 +8,7 @@
 // STYLING: colour resolves from the `color` config or the `--np-fg` token; spacing from
 // `--np-cpu-core-gap`; `lineWidth`/`fill`/`histogram` from config. (Canvas content isn't DOM, so theme
 // CSS can't target individual lines the way it could the SVG `data-part`s — that's the trade for not
-// leaking. The standalone Sparkline widget stays SVG and fully stylable.)
+// leaking. The standalone Sparkline widget draws into a canvas the same way; see Sparkline.tsx.)
 import { useCallback, useEffect, useRef } from 'react';
 import { coreCellRects } from './cpuCoresMath';
 import { sparklineBars, sparklinePoints } from './sparklineMath';

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { WidgetInstance } from './layout';
 import { container, emptyRoot, group, leaf, type Library, type MonitorLayout } from './layoutTree';
-import { assembleStyles, scopeCss } from './style';
+import { assembleStyles, cssBraceImbalance, scopeCss } from './style';
 
 const prim = (id: string, css?: string): WidgetInstance => ({
 	id,
@@ -18,6 +18,31 @@ describe('scopeCss', () => {
 	it('returns empty for blank css', () => {
 		expect(scopeCss(undefined, '[data-w="x"]')).toBe('');
 		expect(scopeCss('   ', '[data-w="x"]')).toBe('');
+	});
+
+	it('refuses css whose braces would escape the scope wrapper, reporting why', () => {
+		const reasons: string[] = [];
+		const escape = 'color: red } body { background: url(https://evil.example/x) } .x {';
+		expect(scopeCss(escape, '[data-w="x"]', (r) => reasons.push(r))).toBe('');
+		expect(reasons).toEqual(['a "}" closes more blocks than were opened']);
+		// an unclosed block is refused too (it would swallow everything after the wrapper)
+		expect(scopeCss('.a { color: red', '[data-w="x"]')).toBe('');
+		expect(cssBraceImbalance('.a { .b { color: red }')).toBe('1 unclosed "{"');
+	});
+
+	it('balances the way the browser tokenizes: comments and strings are opaque, a bare newline ends a string', () => {
+		// braces inside comments / quoted strings are not blocks
+		expect(cssBraceImbalance('.a { content: "}"; /* } */ }')).toBeNull();
+		expect(cssBraceImbalance(".a { content: '{'; }")).toBeNull();
+		// an escaped quote or an escaped newline continues the string
+		expect(cssBraceImbalance('.a { content: "a\\"}"; }')).toBeNull();
+		expect(cssBraceImbalance('.a { content: "a\\\nb}"; }')).toBeNull();
+		// an unterminated comment swallows the rest (like the browser) — the open block stays open
+		expect(cssBraceImbalance('.a { /* never closed }')).toBe('1 unclosed "{"');
+		// BUT a bare newline terminates a bad string, so the `}` after it is real and escapes
+		const badString = 'color: red; content: "\n} body { color: red } .x {';
+		expect(cssBraceImbalance(badString)).toBe('a "}" closes more blocks than were opened');
+		expect(scopeCss('.value { fill: red }', '[data-w="x"]')).toContain('fill: red');
 	});
 });
 
@@ -139,6 +164,31 @@ describe('assembleStyles', () => {
 		const css = assembleStyles({ monitor });
 		expect(css).toContain('[data-w="a"]');
 		expect(css).not.toContain('ghost');
+	});
+
+	it('drops a def / instance css block that would escape its scope, reporting the selector', () => {
+		const escape = 'color: red } body { display: none } .x {';
+		const lib: Library = {
+			version: 1,
+			defs: [{ id: 'bad', name: 'bad', size: { w: 1, h: 1 }, child: leaf(prim('x')), css: escape }]
+		};
+		const monitor: MonitorLayout = {
+			root: container('root', 'col', [leaf(prim('ok', 'color: lime'))]),
+			floating: [leaf(prim('evil', escape))]
+		};
+		const rejected: string[] = [];
+		const css = assembleStyles({
+			library: lib,
+			monitor,
+			onRejectCss: (sel, reason) => rejected.push(`${sel}: ${reason}`)
+		});
+		expect(css).toBe('[data-w="ok"] {\ncolor: lime\n}');
+		expect(rejected).toEqual([
+			'[data-def="bad"]: a "}" closes more blocks than were opened',
+			'[data-w="evil"]: a "}" closes more blocks than were opened'
+		]);
+		// without a reporter the block is still dropped, silently
+		expect(assembleStyles({ library: lib, monitor })).toBe('[data-w="ok"] {\ncolor: lime\n}');
 	});
 
 	it('prepends the DEFAULT_TOKENS :root base when includeDefaults, before the theme', () => {

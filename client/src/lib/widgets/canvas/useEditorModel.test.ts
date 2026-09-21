@@ -5,7 +5,7 @@
 // chokepoint, the def-edit mode switches, the load/theme/baseline actions, and the handleOp switch.
 import { describe, it, expect } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useEditorModel } from './useEditorModel';
+import { COALESCE_MS, useEditorModel } from './useEditorModel';
 import {
 	container,
 	isContainer,
@@ -221,6 +221,165 @@ describe('history sub-reducer (undo / redo)', () => {
 		expect(result.current.state.monitor.root.children).toHaveLength(2);
 		act(() => result.current.dispatch({ type: 'undo' }));
 		expect(result.current.state.monitor.root.children).toHaveLength(1);
+	});
+});
+
+describe('undo snapshots cover every commit-able field', () => {
+	it('undo after a cross-monitor move restores the widget AND drops the queued extra', () => {
+		const { result, ids } = modelWith(1);
+		const extra = { key: 'other', leaf: leaf(createWidget('text', 'moved')) };
+		act(() =>
+			result.current.commitOp((s) => ({
+				monitor: { ...s.monitor, root: { ...s.monitor.root, children: [] } },
+				pendingExtras: [...s.pendingExtras, extra]
+			}))
+		);
+		expect(result.current.state.pendingExtras).toEqual([extra]);
+		// Before the fix pendingExtras sat outside the snapshot: undo put the widget back on THIS
+		// monitor while the extra stayed queued, so Save then duplicated it onto the other monitor.
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(result.current.state.monitor.root.children).toHaveLength(1);
+		expect(result.current.state.monitor.root.children[0].id).toBe(ids[0]);
+		expect(result.current.state.pendingExtras).toEqual([]);
+		act(() => result.current.dispatch({ type: 'redo' }));
+		expect(result.current.state.monitor.root.children).toHaveLength(0);
+		expect(result.current.state.pendingExtras).toEqual([extra]);
+	});
+
+	it('a theme switch is its own undo step (Ctrl+Z undoes the most recent change of any kind)', () => {
+		const { result } = modelWith(1);
+		act(() => result.current.dispatch({ type: 'setTheme', name: 'builtin:nord' }));
+		act(() => result.current.commitOp(() => ({}))); // the setTheme path commits a no-op patch
+		expect(result.current.state.undoStack).toHaveLength(2);
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(result.current.state.selectedTheme).toBe('');
+		expect(result.current.state.monitor.root.children).toHaveLength(1); // the widget survives
+		act(() => result.current.dispatch({ type: 'redo' }));
+		expect(result.current.state.selectedTheme).toBe('builtin:nord');
+	});
+
+	it('token overrides and the theme lock undo/redo too', () => {
+		const { result } = modelWith(0);
+		act(() => result.current.handleOp({ op: 'setToken', key: '--np-accent', value: '#f00' }));
+		act(() => result.current.dispatch({ type: 'patch', patch: { themeLock: false } }));
+		act(() => result.current.commitOp(() => ({})));
+		expect(result.current.state.undoStack).toHaveLength(2);
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(result.current.state.themeLock).toBe(true);
+		expect(result.current.state.tokenOverrides).toEqual({ '--np-accent': '#f00' });
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(result.current.state.tokenOverrides).toEqual({});
+		act(() => result.current.dispatch({ type: 'redo' }));
+		expect(result.current.state.tokenOverrides).toEqual({ '--np-accent': '#f00' });
+		expect(result.current.state.redoStack).toHaveLength(1);
+	});
+});
+
+describe('undo coalescing (per-keystroke / key-repeat bursts)', () => {
+	type Model = { current: ReturnType<typeof useEditorModel> };
+	// Drive the commit chokepoint with an explicit clock so the COALESCE_MS window is deterministic.
+	const typeChar = (
+		result: Model,
+		id: string,
+		label: string,
+		at: number,
+		key = `patchWidget:${id}:label`
+	) =>
+		act(() =>
+			result.current.dispatch({
+				type: 'op',
+				commit: true,
+				coalesceKey: key,
+				at,
+				run: (s) => ({
+					monitor: {
+						...s.monitor,
+						root: {
+							...s.monitor.root,
+							children: s.monitor.root.children.map((n) =>
+								isLeaf(n) && n.id === id
+									? {
+											...n,
+											unit: {
+												...n.unit,
+												config: { ...(n.unit as WidgetInstance).config, label }
+											}
+										}
+									: n
+							)
+						}
+					}
+				})
+			})
+		);
+	const labelOf = (result: Model, id: string) => {
+		const n = result.current.state.monitor.root.children.find((c) => c.id === id);
+		return ((n as { unit: WidgetInstance }).unit.config as { label?: string }).label;
+	};
+
+	it('same-key commits within the window fold into ONE undo step; one Ctrl+Z reverts the word', () => {
+		const { result, ids } = modelWith(1);
+		const before = result.current.state.undoStack.length;
+		const label0 = labelOf(result, ids[0]); // the text widget's default label
+		typeChar(result, ids[0], 'h', 1000);
+		typeChar(result, ids[0], 'hi', 1100);
+		typeChar(result, ids[0], 'hi!', 1500);
+		expect(result.current.state.undoStack).toHaveLength(before + 1);
+		expect(labelOf(result, ids[0])).toBe('hi!');
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(labelOf(result, ids[0])).toBe(label0); // back to before the burst began
+		act(() => result.current.dispatch({ type: 'redo' }));
+		expect(labelOf(result, ids[0])).toBe('hi!');
+	});
+
+	it('a pause longer than COALESCE_MS, a different key, or no key starts a new undo step', () => {
+		const { result, ids } = modelWith(1);
+		const before = result.current.state.undoStack.length;
+		typeChar(result, ids[0], 'a', 1000);
+		typeChar(result, ids[0], 'ab', 1000 + COALESCE_MS); // exactly the window → NOT within it
+		expect(result.current.state.undoStack).toHaveLength(before + 2);
+		typeChar(result, ids[0], 'abc', 1000 + COALESCE_MS + 10, `patchWidget:${ids[0]}:other`);
+		expect(result.current.state.undoStack).toHaveLength(before + 3);
+		// An un-keyed commit never coalesces (and resets the key), even back-to-back.
+		act(() => result.current.commitOp((s) => ({ monitor: { ...s.monitor, floating: [] } })));
+		typeChar(result, ids[0], 'abcd', 1000 + COALESCE_MS + 20);
+		expect(result.current.state.undoStack).toHaveLength(before + 5);
+	});
+
+	it('an undo ends the burst: the next same-key edit is a fresh step, and the redo branch clears', () => {
+		const { result, ids } = modelWith(1);
+		const label0 = labelOf(result, ids[0]);
+		typeChar(result, ids[0], 'x', 1000);
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(result.current.state.redoStack).toHaveLength(1);
+		typeChar(result, ids[0], 'y', 1050); // would have coalesced without the undo reset
+		expect(result.current.state.redoStack).toEqual([]);
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(labelOf(result, ids[0])).toBe(label0);
+	});
+
+	it('handleOp patchWidget forwards the op coalesce key (Inspector text fields)', () => {
+		const { result, ids } = modelWith(1);
+		const before = result.current.state.undoStack.length;
+		const key = `patchWidget:${ids[0]}:label`;
+		act(() =>
+			result.current.handleOp({
+				op: 'patchWidget',
+				id: ids[0],
+				patch: { config: { label: 'a' } },
+				coalesce: key
+			})
+		);
+		act(() =>
+			result.current.handleOp({
+				op: 'patchWidget',
+				id: ids[0],
+				patch: { config: { label: 'ab' } },
+				coalesce: key
+			})
+		);
+		expect(result.current.state.undoStack).toHaveLength(before + 1);
+		expect(result.current.state.lastCommit?.key).toBe(key);
 	});
 });
 
@@ -488,11 +647,35 @@ describe('load / theme / monitor sub-reducer', () => {
 		expect(result.current.state.saveSeq).toBe(seq0);
 	});
 
-	it('setMonitorKey leaves the state reference untouched (a marker action)', () => {
-		const { result } = renderHook(() => useEditorModel(true, []));
-		const before = result.current.state;
-		act(() => result.current.dispatch({ type: 'setMonitorKey' }));
-		expect(result.current.state).toBe(before);
+	it('extrasFlushed clears the queued extras from the state AND every history snapshot', () => {
+		// Before any load (no lastSnap yet) it is a plain clear.
+		const fresh = renderHook(() => useEditorModel(true, []));
+		act(() => fresh.result.current.dispatch({ type: 'extrasFlushed' }));
+		expect(fresh.result.current.state.lastSnap).toBeNull();
+		expect(fresh.result.current.state.pendingExtras).toEqual([]);
+
+		const { result } = modelWith(1);
+		const extra = { key: 'other', leaf: leaf(createWidget('text', 'moved')) };
+		// A cross-monitor move: the leaf leaves this monitor and is queued for the other one.
+		act(() =>
+			result.current.commitOp((s) => ({
+				monitor: { ...s.monitor, root: { ...s.monitor.root, children: [] } },
+				pendingExtras: [...s.pendingExtras, extra]
+			}))
+		);
+		expect(result.current.state.pendingExtras).toEqual([extra]);
+		expect(result.current.state.lastSnap?.pendingExtras).toEqual([extra]);
+		// Save wrote the extra to the other monitor's record → flush it everywhere.
+		act(() => result.current.dispatch({ type: 'extrasFlushed' }));
+		expect(result.current.state.pendingExtras).toEqual([]);
+		expect(result.current.state.lastSnap?.pendingExtras).toEqual([]);
+		// Undoing the move brings the widget back here but must NOT re-queue the (already written)
+		// extra — otherwise the next Save appends it to the other monitor a second time.
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(result.current.state.monitor.root.children).toHaveLength(1);
+		expect(result.current.state.pendingExtras).toEqual([]);
+		act(() => result.current.dispatch({ type: 'redo' }));
+		expect(result.current.state.pendingExtras).toEqual([]);
 	});
 
 	it('revertToBaseline restores the saved baseline and clears pendingExtras', () => {

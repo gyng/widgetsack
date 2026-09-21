@@ -6,7 +6,10 @@ import type { Renderable } from '../../core/solve';
 
 const canvasEl = document.createElement('div');
 canvasEl.classList.add('canvas');
-const widgetEl = document.createElement('div'); // not .canvas/.world
+document.body.append(canvasEl); // isEmptyStagePress walks up to .canvas, so it must be attached
+const widgetEl = document.createElement('div'); // a stage item: never an empty-canvas press
+widgetEl.classList.add('widget');
+canvasEl.append(widgetEl);
 
 const state = { space: false };
 
@@ -128,6 +131,24 @@ describe('useCanvasPointer registry-driven gestures', () => {
 		act(() => result.current.onCanvasMouseDown(ev({ button: 0, target: widgetEl })));
 		expect(result.current.marquee).toBeNull();
 		expect(result.current.panning).toBe(false);
+	});
+
+	it('left-drag on the flow frame / root FlowNode div INSIDE the monitor still starts a marquee', () => {
+		// These cover the whole stage, so an empty point inside the monitor targets one of them —
+		// treating only .world/.canvas as "on canvas" made rubber-banding impossible inside the monitor.
+		const frame = document.createElement('div');
+		frame.className = 'flow-frame';
+		const root = document.createElement('div');
+		root.setAttribute('data-id', 'root');
+		frame.append(root);
+		canvasEl.append(frame);
+		const { result } = renderHook(() => useCanvasPointer(deps));
+		act(() => result.current.onCanvasMouseDown(ev({ button: 0, target: root })));
+		expect(result.current.marquee).not.toBeNull();
+		release();
+		act(() => result.current.onCanvasMouseDown(ev({ button: 0, target: frame })));
+		expect(result.current.marquee).not.toBeNull();
+		frame.remove();
 	});
 
 	it('a real drag updates the marquee rect on move and selects intersecting renderables on up', () => {

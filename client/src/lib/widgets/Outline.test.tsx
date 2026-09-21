@@ -89,9 +89,20 @@ describe('Outline row context menu', () => {
 			<Outline root={tree()} onOp={() => undefined} onNodeContextMenu={onMenu} />
 		);
 		const row = getAllByText('• text', { selector: '.label' })[0].closest('.row') as HTMLElement;
-		const ev = fireEvent.contextMenu(row, { clientX: 40, clientY: 60 });
+		const ev = fireEvent.contextMenu(row, { clientX: 40, clientY: 60, button: 2 });
 		expect(onMenu).toHaveBeenCalledWith({ id: 'a', x: 40, y: 60 });
 		expect(ev).toBe(false); // fireEvent returns false when preventDefault() was called
+	});
+
+	it('a keyboard-initiated contextmenu (no pointer position) anchors the menu at the row', () => {
+		const onMenu = vi.fn();
+		const { getAllByText } = render(
+			<Outline root={tree()} onOp={() => undefined} onNodeContextMenu={onMenu} />
+		);
+		const row = getAllByText('• text', { selector: '.label' })[0].closest('.row') as HTMLElement;
+		row.getBoundingClientRect = () => ({ left: 10, top: 100, width: 200, height: 24 }) as DOMRect;
+		fireEvent.contextMenu(row, { clientX: 0, clientY: 0, button: 0 });
+		expect(onMenu).toHaveBeenCalledWith({ id: 'a', x: 110, y: 112 });
 	});
 
 	it('leaves right-click native when no handler is supplied (overlay / preview)', () => {

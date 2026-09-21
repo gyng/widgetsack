@@ -37,6 +37,7 @@ pub mod llm;
 pub mod log;
 pub mod media;
 pub mod mqtt;
+pub mod navguard;
 pub mod netconn;
 pub mod ping;
 pub mod process_diag;
@@ -230,6 +231,10 @@ async fn main() -> Result<(), ()> {
                     .app_handle()
                     .state::<clickthrough::InteractiveRects>();
                 clickthrough::forget_window(&rects, window.label());
+                // And its spectrum channel: a destroyed webview never calls `stop_spectrum`, so
+                // without this the WASAPI loopback + FFT thread keeps running for a dead consumer.
+                let spectrum = window.app_handle().state::<audio::SpectrumState>();
+                audio::forget_window(&spectrum, window.label());
             }
             // Flush window geometry to disk when the studio OR an overlay goes away: the overlays'
             // saved rects are the evidence the layout-key migration uses to put a layout back on its
@@ -243,6 +248,9 @@ async fn main() -> Result<(), ()> {
             }
         })
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        // Every webview's top frame may only navigate to the app's own origin (navguard.rs) — an
+        // embedded iframe widget can never steer the overlay/studio (and its IPC bridge) elsewhere.
+        .plugin(navguard::init())
         .manage(AppState {
             sessions: Default::default(),
         })
@@ -296,6 +304,7 @@ async fn main() -> Result<(), ()> {
             command::check_plugin_package_update,
             command::remove_plugin_package,
             command::package_fetch,
+            command::set_package_enabled,
             command::list_layouts,
             command::read_layout,
             command::save_layout_as,

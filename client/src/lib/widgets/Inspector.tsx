@@ -506,14 +506,23 @@ export default function Inspector({
 		}
 	}
 
-	function patchWidget(patch: Partial<WidgetInstance>) {
+	// `coalesce`: the edit came from a per-keystroke input (onInput) — key it so the reducer folds
+	// the burst into one undo step (`patchWidget:<id>:<field>`) instead of one per character.
+	function patchWidget(patch: Partial<WidgetInstance>, coalesce?: string) {
 		/* v8 ignore else -- widget-only controls call this helper only while a widget is selected. */
-		if (widget) op({ op: 'patchWidget', id: widget.id, patch });
+		if (widget)
+			op({
+				op: 'patchWidget',
+				id: widget.id,
+				patch,
+				...(coalesce ? { coalesce: `patchWidget:${widget.id}:${coalesce}` } : {})
+			});
 	}
 
-	function setConfig(key: string, value: unknown) {
+	function setConfig(key: string, value: unknown, typed = false) {
 		/* v8 ignore else -- config fields render only while a widget is selected. */
-		if (widget) patchWidget({ config: { ...widget.config, [key]: value } });
+		if (widget)
+			patchWidget({ config: { ...widget.config, [key]: value } }, typed ? key : undefined);
 	}
 
 	// A field's reset value: its own explicit `default`, else the widget type's defaultConfig[key].
@@ -1212,7 +1221,7 @@ export default function Inspector({
 						<Select
 							value={widget.sensor ?? ''}
 							options={sensorOptions}
-							onChange={(v) => patchWidget({ sensor: v.trim() || undefined })}
+							onChange={(v) => patchWidget({ sensor: v.trim() || undefined }, 'sensor')}
 							placeholder="(none)"
 							allowCustom
 							aria-label="sensor"
@@ -1403,7 +1412,8 @@ export default function Inspector({
 											onInput={(e) =>
 												setConfig(
 													f.key,
-													e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value)
+													e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value),
+													true
 												)
 											}
 										/>
@@ -1438,14 +1448,14 @@ export default function Inspector({
 											spellCheck={false}
 											value={cfgStr(widget.config[f.key])}
 											placeholder={f.result === 'text' ? 'text + {expression}' : 'expression'}
-											onInput={(e) => setConfig(f.key, e.currentTarget.value || undefined)}
+											onInput={(e) => setConfig(f.key, e.currentTarget.value || undefined, true)}
 										/>
 									) : (
 										<input
 											type="text"
 											value={cfgStr(widget.config[f.key])}
 											placeholder={f.kind === 'color' ? 'css color' : ''}
-											onInput={(e) => setConfig(f.key, e.currentTarget.value || undefined)}
+											onInput={(e) => setConfig(f.key, e.currentTarget.value || undefined, true)}
 										/>
 									)}
 									{f.kind === 'expr' ? (

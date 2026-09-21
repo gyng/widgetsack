@@ -173,6 +173,17 @@ describe('useKeyboard registry dispatch', () => {
 		unmount();
 	});
 
+	it('Space pan mode is released when the window loses focus (the keyup never arrives)', () => {
+		const { result } = renderHook(() => useKeyboard(deps));
+		act(() => window.dispatchEvent(new Event('blur')));
+		expect(result.current.spaceDown).toBe(false); // a blur with Space up is a no-op
+		press({ key: ' ', code: 'Space' });
+		expect(result.current.spaceDown).toBe(true);
+		act(() => window.dispatchEvent(new Event('blur')));
+		expect(result.current.spaceDown).toBe(false);
+		expect(result.current.spaceDownRef.current).toBe(false);
+	});
+
 	it('Space pan mode is released on keyup', () => {
 		const { result } = renderHook(() => useKeyboard(deps));
 		press({ key: ' ', code: 'Space' });

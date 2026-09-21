@@ -5,8 +5,13 @@
 // through the useThemes seam (adoptTheme / setThemeList) so the live CSS can't drift.
 import { useCallback, useEffect, useState } from 'react';
 import type { Library } from '../../core/layoutTree';
-import { mergeLibrary, packSack, unpackSack } from '../../core/sack';
-import { scanCssThreats, threatSummary } from '../../core/cssThreats';
+import {
+	mergeLibrary,
+	packSack,
+	sackConsentMessage,
+	sanitizeSack,
+	unpackSack
+} from '../../core/sack';
 import {
 	listSacks,
 	listThemes,
@@ -125,24 +130,18 @@ export function useSacks({
 				return;
 			}
 			const raw = await readSack(name);
-			const sack = raw ? unpackSack(raw) : null;
-			if (!sack) {
+			const unpacked = raw ? unpackSack(raw) : null;
+			if (!unpacked) {
 				window.alert('Could not read that sack.');
 				return;
 			}
-			// A sack is shared content: its theme CSS is injected verbatim into the studio + overlays, so
-			// scan it for constructs that reach OUTSIDE the app (remote url()/@import that phone home) or
-			// hijack the viewport, and make the user confirm before trusting a stranger's theme.
-			if (sack.theme?.css) {
-				const threats = scanCssThreats(sack.theme.css);
-				if (threats.length) {
-					const ok = window.confirm(
-						`This sack's theme contains ${threatSummary(threats)}. Imported theme CSS runs with ` +
-							`full access to the studio. Import anyway?`
-					);
-					if (!ok) return;
-				}
-			}
+			// A sack is shared content: its theme CSS is injected verbatim into the studio + overlays, and
+			// its widget defs can carry embedded web pages, remote images, service-call buttons and
+			// per-widget CSS. ONE confirm states everything (core/sack sackConsentMessage), then the sack
+			// is hardened (iframe sandbox forced on, prototype-walking param specs dropped) before merge.
+			const consent = sackConsentMessage(unpacked);
+			if (consent && !window.confirm(consent)) return;
+			const { sack } = sanitizeSack(unpacked);
 			// Theme first: resolve a name collision so an import never clobbers an existing user theme.
 			let themeName: string | null = null;
 			if (sack.theme) {
