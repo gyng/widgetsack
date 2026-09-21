@@ -36,6 +36,18 @@ export async function listMonitorInputs(target?: string): Promise<MonitorInputs[
 	}
 }
 
+/** Set `target`'s speaker volume (VCP 0x62, 0–100). Resolves true on success, false on failure —
+ *  best-effort: a monitor that rejects it (no speakers / DDC/CI off) must not block the input switch. */
+export async function setMonitorVolume(target: string, volume: number): Promise<boolean> {
+	try {
+		await invoke(COMMANDS.setMonitorVolume, { target, volume });
+		return true;
+	} catch (err) {
+		console.warn('set_monitor_volume failed', err);
+		return false;
+	}
+}
+
 /** Switch `target` (a GDI device name) to VCP 0x60 input `value`. Resolves true on success, false on
  *  failure (DDC/CI off, monitor not found, or an unsupported value) so the host can roll back. */
 export async function setMonitorInput(target: string, value: number): Promise<boolean> {

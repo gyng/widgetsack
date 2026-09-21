@@ -1072,7 +1072,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				key: 'sources',
 				label: 'sources',
 				kind: 'monitorSources',
-				help: 'pick which inputs to show, and rename them (e.g. HDMI 2 → Switch 2); blank = show all detected'
+				help: 'pick which inputs to show, rename them (e.g. HDMI 2 → Switch 2), and optionally pair each with a monitor speaker volume (0–100) that is set just before switching to it; blank = show all detected'
 			},
 			text('label', 'label', { help: 'title override (blank = the monitor’s name)' }),
 			{

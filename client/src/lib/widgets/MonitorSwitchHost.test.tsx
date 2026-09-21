@@ -3,11 +3,12 @@ import { render, waitFor, fireEvent, cleanup, act } from '@testing-library/react
 
 // Stub the Tauri-backed DDC adapter (no backend in tests): the host must still resolve the target
 // monitor, derive its rows/title/stats, and drive the optimistic switch → reconcile flow through it.
-const { listMonitorInputs, setMonitorInput } = vi.hoisted(() => ({
+const { listMonitorInputs, setMonitorInput, setMonitorVolume } = vi.hoisted(() => ({
 	listMonitorInputs: vi.fn(),
-	setMonitorInput: vi.fn()
+	setMonitorInput: vi.fn(),
+	setMonitorVolume: vi.fn()
 }));
-vi.mock('../ddc/monitors', () => ({ listMonitorInputs, setMonitorInput }));
+vi.mock('../ddc/monitors', () => ({ listMonitorInputs, setMonitorInput, setMonitorVolume }));
 
 import MonitorSwitchHost from './MonitorSwitchHost';
 import type { MonitorInputs } from '../ddc/monitors';
@@ -28,8 +29,10 @@ const mon = (over: Partial<MonitorInputs> = {}): MonitorInputs => ({
 beforeEach(() => {
 	listMonitorInputs.mockReset();
 	setMonitorInput.mockReset();
+	setMonitorVolume.mockReset();
 	listMonitorInputs.mockResolvedValue([mon()]);
 	setMonitorInput.mockResolvedValue(true);
+	setMonitorVolume.mockResolvedValue(true);
 });
 
 describe('MonitorSwitchHost (container wiring)', () => {
@@ -140,6 +143,47 @@ describe('MonitorSwitchHost (container wiring)', () => {
 			);
 			expect(active?.textContent).toContain('DisplayPort 1');
 		});
+	});
+
+	it('sets a paired monitor volume BEFORE switching input, and only for sources that have one', async () => {
+		const { container } = render(<MonitorSwitchHost sources="0x11=HDMI, 0xf=DP@35" />);
+		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
+		const order: string[] = [];
+		setMonitorVolume.mockImplementation(async () => (order.push('volume'), true));
+		setMonitorInput.mockImplementation(async () => (order.push('input'), true));
+		const dp = [...container.querySelectorAll('.ms-row')].find((r) =>
+			r.textContent?.includes('DP')
+		);
+		fireEvent.click(dp as Element);
+		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x0f));
+		expect(setMonitorVolume).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 35);
+		// The volume goes out first: after the switch the monitor may no longer answer this cable.
+		expect(order).toEqual(['volume', 'input']);
+
+		setMonitorVolume.mockClear();
+		setMonitorInput.mockClear();
+		const hdmi = [...container.querySelectorAll('.ms-row')].find((r) =>
+			r.textContent?.includes('HDMI')
+		);
+		await waitFor(() => expect(hdmi?.hasAttribute('disabled')).toBe(false));
+		fireEvent.click(hdmi as Element);
+		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x11));
+		expect(setMonitorVolume).not.toHaveBeenCalled(); // no @volume on this source
+	});
+
+	it('still switches input when the monitor rejects the volume change', async () => {
+		setMonitorVolume.mockResolvedValue(false);
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const { container } = render(<MonitorSwitchHost sources="0xf=DP@35" />);
+		// Two rows: DP from the spec, plus the active HDMI input (always shown so it can be re-selected).
+		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
+		const dp = [...container.querySelectorAll('.ms-row')].find((r) =>
+			r.textContent?.includes('DP')
+		);
+		fireEvent.click(dp as Element);
+		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x0f));
+		expect(warn).toHaveBeenCalledWith('monitor volume change failed; switching input anyway');
+		warn.mockRestore();
 	});
 
 	it('does not reconcile an old target after the configured monitor changes mid-switch', async () => {

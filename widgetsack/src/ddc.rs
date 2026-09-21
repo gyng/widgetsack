@@ -43,6 +43,14 @@ pub struct MonitorInputs {
 
 /// MCCS VCP feature code for "Input Select" — the one code this widget reads, writes, and parses.
 const VCP_INPUT_SELECT: u8 = 0x60;
+/// MCCS VCP feature code for "Audio Speaker Volume" (0–100), set alongside an input switch when the
+/// user paired a volume with that source (`0x12=NS2@35` in the widget's `sources` spec).
+const VCP_AUDIO_VOLUME: u8 = 0x62;
+
+/// Pure seam: a requested speaker volume clamped to the MCCS 0–100 range.
+pub fn clamp_volume(volume: i64) -> u32 {
+    volume.clamp(0, 100) as u32
+}
 
 /// Pure seam: does a monitor with GDI name `gdi` and stable key `stable` (empty when unknown) match a
 /// widget's configured `target`? Either identity is accepted so a layout keyed the old way keeps
@@ -188,7 +196,7 @@ pub async fn list_monitor_inputs(target: Option<String>) -> Vec<MonitorInputs> {
 pub async fn set_monitor_input(target: String, value: u32) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
-        tokio::task::spawn_blocking(move || set_blocking(target, value))
+        tokio::task::spawn_blocking(move || set_blocking(target, VCP_INPUT_SELECT, value))
             .await
             .map_err(|e| e.to_string())?
     }
@@ -196,6 +204,25 @@ pub async fn set_monitor_input(target: String, value: u32) -> Result<(), String>
     {
         let _ = (target, value);
         Err("switching monitor input is only supported on Windows".into())
+    }
+}
+
+/// Set `target`'s speaker volume (VCP 0x62, 0–100). The widget sends this BEFORE the input switch:
+/// once the monitor has switched to another device, it may stop answering DDC/CI on this PC's cable.
+/// Errs like `set_monitor_input`. Runs on a blocking thread. Windows-only.
+#[tauri::command]
+pub async fn set_monitor_volume(target: String, volume: i64) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let value = clamp_volume(volume);
+        tokio::task::spawn_blocking(move || set_blocking(target, VCP_AUDIO_VOLUME, value))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (target, volume);
+        Err("setting monitor volume is only supported on Windows".into())
     }
 }
 
@@ -394,7 +421,7 @@ fn enumerate_blocking(target: Option<String>) -> Vec<MonitorInputs> {
 }
 
 #[cfg(target_os = "windows")]
-fn set_blocking(target: String, value: u32) -> Result<(), String> {
+fn set_blocking(target: String, code: u8, value: u32) -> Result<(), String> {
     use windows::Win32::Devices::Display::{
         DestroyPhysicalMonitors, GetNumberOfPhysicalMonitorsFromHMONITOR,
         GetPhysicalMonitorsFromHMONITOR, PHYSICAL_MONITOR, SetVCPFeature,
@@ -427,13 +454,17 @@ fn set_blocking(target: String, value: u32) -> Result<(), String> {
         }
         let mut monitors = vec![PHYSICAL_MONITOR::default(); count as usize];
         GetPhysicalMonitorsFromHMONITOR(hmon, &mut monitors).map_err(|e| e.to_string())?;
-        let rc = SetVCPFeature(monitors[0].hPhysicalMonitor, VCP_INPUT_SELECT, value);
+        let rc = SetVCPFeature(monitors[0].hPhysicalMonitor, code, value);
         let _ = DestroyPhysicalMonitors(&monitors);
         if rc == 0 {
-            return Err(
-				"the monitor rejected the input switch (DDC/CI off in the OSD, or an unsupported value)"
-					.into(),
-			);
+            let what = if code == VCP_AUDIO_VOLUME {
+                "volume change"
+            } else {
+                "input switch"
+            };
+            return Err(format!(
+                "the monitor rejected the {what} (DDC/CI off in the OSD, or an unsupported value)"
+            ));
         }
     }
     Ok(())
@@ -493,5 +524,13 @@ mod tests {
         // An unknown stable key is "unknown", not a wildcard — and an empty target selects nothing.
         assert!(!target_matches(r"\\.\DISPLAY2", "", ""));
         assert!(!target_matches(r"\\.\DISPLAY2", "", "anything"));
+    }
+    #[test]
+    fn clamp_volume_keeps_the_mccs_range() {
+        assert_eq!(clamp_volume(-5), 0);
+        assert_eq!(clamp_volume(0), 0);
+        assert_eq!(clamp_volume(35), 35);
+        assert_eq!(clamp_volume(100), 100);
+        assert_eq!(clamp_volume(250), 100);
     }
 }

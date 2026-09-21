@@ -5,6 +5,7 @@ import {
 	inputName,
 	monitorInputRows,
 	parseSourceSpec,
+	parseVolumeInput,
 	sourceEditorRows
 } from './monitorInputs';
 
@@ -115,25 +116,60 @@ describe('formatStats', () => {
 describe('sourceEditorRows', () => {
 	it('lists all detected inputs as included with default names when the spec is blank', () => {
 		expect(sourceEditorRows([0x0f, 0x11], '')).toEqual([
-			{ value: 0x0f, defaultName: 'DisplayPort 1', label: '', include: true, detected: true },
-			{ value: 0x11, defaultName: 'HDMI 1', label: '', include: true, detected: true }
+			{
+				value: 0x0f,
+				defaultName: 'DisplayPort 1',
+				label: '',
+				include: true,
+				detected: true,
+				volume: null
+			},
+			{ value: 0x11, defaultName: 'HDMI 1', label: '', include: true, detected: true, volume: null }
 		]);
 	});
 
 	it('includes only spec-listed inputs and carries custom labels', () => {
 		const rows = sourceEditorRows([0x0f, 0x11, 0x12], '0x11=Desktop, 0x12');
 		expect(rows).toEqual([
-			{ value: 0x0f, defaultName: 'DisplayPort 1', label: '', include: false, detected: true },
-			{ value: 0x11, defaultName: 'HDMI 1', label: 'Desktop', include: true, detected: true },
-			{ value: 0x12, defaultName: 'HDMI 2', label: '', include: true, detected: true }
+			{
+				value: 0x0f,
+				defaultName: 'DisplayPort 1',
+				label: '',
+				include: false,
+				detected: true,
+				volume: null
+			},
+			{
+				value: 0x11,
+				defaultName: 'HDMI 1',
+				label: 'Desktop',
+				include: true,
+				detected: true,
+				volume: null
+			},
+			{ value: 0x12, defaultName: 'HDMI 2', label: '', include: true, detected: true, volume: null }
 		]);
 	});
 
 	it('appends spec entries the monitor did not report as manual rows', () => {
 		const rows = sourceEditorRows([0x11], '0x11, 0x1b=Console');
 		expect(rows).toEqual([
-			{ value: 0x11, defaultName: 'HDMI 1', label: '', include: true, detected: true },
-			{ value: 0x1b, defaultName: 'Input 0x1B', label: 'Console', include: true, detected: false }
+			{
+				value: 0x11,
+				defaultName: 'HDMI 1',
+				label: '',
+				include: true,
+				detected: true,
+				volume: null
+			},
+			{
+				value: 0x1b,
+				defaultName: 'Input 0x1B',
+				label: 'Console',
+				include: true,
+				detected: false,
+				volume: null
+			}
 		]);
 	});
 
@@ -147,8 +183,22 @@ describe('sourceEditorRows', () => {
 		// so p.label === defaultName and the manual row's `label` stays '' (not the redundant default).
 		const rows = sourceEditorRows([0x11], '0x11, 0x1b');
 		expect(rows).toEqual([
-			{ value: 0x11, defaultName: 'HDMI 1', label: '', include: true, detected: true },
-			{ value: 0x1b, defaultName: 'Input 0x1B', label: '', include: true, detected: false }
+			{
+				value: 0x11,
+				defaultName: 'HDMI 1',
+				label: '',
+				include: true,
+				detected: true,
+				volume: null
+			},
+			{
+				value: 0x1b,
+				defaultName: 'Input 0x1B',
+				label: '',
+				include: true,
+				detected: false,
+				volume: null
+			}
 		]);
 	});
 });
@@ -171,5 +221,60 @@ describe('buildSourceSpec', () => {
 			{ value: 0x11, label: 'Desktop' },
 			{ value: 0x12, label: 'Switch 2' }
 		]);
+	});
+});
+
+describe('per-source volume (`@NN` suffix)', () => {
+	it('parses an optional monitor volume after the label or the bare code', () => {
+		expect(parseSourceSpec('0x12=NS2@35, 0x11@70, 0xf=PC')).toEqual([
+			{ value: 0x12, label: 'NS2', volume: 35 },
+			{ value: 0x11, label: 'HDMI 1', volume: 70 },
+			{ value: 0x0f, label: 'PC' }
+		]);
+	});
+
+	it('clamps to 0–100 and ignores a non-numeric or blank volume', () => {
+		expect(parseSourceSpec('0x12=NS2@250')).toEqual([{ value: 0x12, label: 'NS2', volume: 100 }]);
+		expect(parseSourceSpec('0x12=NS2@-5')).toEqual([{ value: 0x12, label: 'NS2', volume: 0 }]);
+		expect(parseSourceSpec('0x12=NS2@loud')).toEqual([{ value: 0x12, label: 'NS2' }]);
+		expect(parseSourceSpec('0x12=NS2@')).toEqual([{ value: 0x12, label: 'NS2' }]);
+	});
+
+	it('carries the volume onto meter rows and editor rows', () => {
+		const rows = monitorInputRows({ discovered: [], spec: '0x12=NS2@35, 0x11', current: 0x11 });
+		expect(rows).toEqual([
+			{ value: 0x12, label: 'NS2', active: false, volume: 35 },
+			{ value: 0x11, label: 'HDMI 1', active: true }
+		]);
+		const editor = sourceEditorRows([0x11, 0x12], '0x12=NS2@35, 0x11');
+		expect(editor.map((r) => [r.value, r.volume])).toEqual([
+			[0x11, null],
+			[0x12, 35]
+		]);
+	});
+
+	it('round-trips volumes through buildSourceSpec, and a volume alone makes the spec explicit', () => {
+		const rows = sourceEditorRows([0x11, 0x12], '');
+		const withVolume = rows.map((r) => (r.value === 0x12 ? { ...r, volume: 35 } : r));
+		const spec = buildSourceSpec(withVolume);
+		expect(spec).toBe('0x11, 0x12@35');
+		expect(parseSourceSpec(spec)).toEqual([
+			{ value: 0x11, label: 'HDMI 1' },
+			{ value: 0x12, label: 'HDMI 2', volume: 35 }
+		]);
+		expect(buildSourceSpec(sourceEditorRows([0x11, 0x12], '0x12=NS2@35, 0x11'))).toBe(
+			'0x11, 0x12=NS2@35'
+		);
+	});
+});
+
+describe('parseVolumeInput', () => {
+	it('blank or non-numeric leaves the volume alone; numbers round and clamp', () => {
+		expect(parseVolumeInput('')).toBeNull();
+		expect(parseVolumeInput('  ')).toBeNull();
+		expect(parseVolumeInput('loud')).toBeNull();
+		expect(parseVolumeInput('35.6')).toBe(36);
+		expect(parseVolumeInput('250')).toBe(100);
+		expect(parseVolumeInput('-3')).toBe(0);
 	});
 });

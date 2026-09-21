@@ -5,7 +5,12 @@
 // shaping (which rows, names, stats) lives in core/monitorInputs.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MonitorSwitch from './meters/MonitorSwitch';
-import { listMonitorInputs, setMonitorInput, type MonitorInputs } from '../ddc/monitors';
+import {
+	listMonitorInputs,
+	setMonitorInput,
+	setMonitorVolume,
+	type MonitorInputs
+} from '../ddc/monitors';
 import { formatStats, monitorInputRows } from '../core/monitorInputs';
 
 // Config fields, spread onto the host as props by WidgetHost (see widget.ts `monitorswitch` meta).
@@ -103,6 +108,13 @@ export default function MonitorSwitchHost({
 				selected: { ...current!.selected!, current_input: value }
 			})); // optimistic highlight
 			try {
+				// A paired volume (`0x12=NS2@35`) is sent FIRST: once the monitor has switched to the other
+				// device it may stop answering DDC/CI on this PC's cable. Best-effort — a rejected volume
+				// (no speakers, unsupported) must not block the switch itself.
+				const volume = rowsRef.current.find((r) => r.value === value)?.volume;
+				if (volume !== undefined && !(await setMonitorVolume(gdi, volume))) {
+					console.warn('monitor volume change failed; switching input anyway');
+				}
 				const ok = await setMonitorInput(gdi, value);
 				if (targetRef.current === target) {
 					await refresh(); // reconcile with what the monitor actually reports (snaps back on failure)
@@ -122,6 +134,10 @@ export default function MonitorSwitchHost({
 			selected ? monitorInputRows({ discovered: selected.supported, spec: sources, current }) : [],
 		[selected, sources, current]
 	);
+	// The pick callback reads the rows through a ref so a paired volume is looked up at click time
+	// without making `pick` depend on (and re-create for) every rows change.
+	const rowsRef = useRef(rows);
+	rowsRef.current = rows;
 	const title = label?.trim() || selected?.friendly || 'Monitor';
 	const stats = selected
 		? formatStats({
