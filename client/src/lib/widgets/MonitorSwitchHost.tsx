@@ -24,6 +24,7 @@ type Props = {
 	monitor?: string; // GDI device name (\\.\DISPLAYn); blank = the primary monitor
 	sources?: string; // optional `code=label[@volume]` spec choosing/ordering/renaming inputs
 	volumeTarget?: string; // 'off' (default) | 'system' | 'monitor' — what a paired @volume changes
+	volumeDevice?: string; // system target: MMDevice id of the output to set ('' = the default output)
 	label?: string; // widget title override
 	showCurrent?: boolean;
 	showStats?: boolean;
@@ -39,6 +40,7 @@ export default function MonitorSwitchHost({
 	monitor,
 	sources,
 	volumeTarget,
+	volumeDevice,
 	label,
 	showCurrent = true,
 	showStats = false,
@@ -129,7 +131,11 @@ export default function MonitorSwitchHost({
 					console.warn('monitor volume change failed; switching input anyway');
 				}
 				const ok = await setMonitorInput(gdi, value);
-				if (ok && action?.target === 'system' && !(await setAudioVolume(action.volume / 100))) {
+				if (
+					ok &&
+					action?.target === 'system' &&
+					!(await setAudioVolume(action.volume / 100, volumeDevice?.trim() || undefined))
+				) {
 					console.warn('system volume change after input switch failed');
 				}
 				if (targetRef.current === target) {
@@ -141,7 +147,7 @@ export default function MonitorSwitchHost({
 				if (mounted.current) setBusyValue(null);
 			}
 		},
-		[selected, target, refresh, volumeTarget]
+		[selected, target, refresh, volumeTarget, volumeDevice]
 	);
 
 	const current = showCurrent ? (selected?.current_input ?? null) : null;

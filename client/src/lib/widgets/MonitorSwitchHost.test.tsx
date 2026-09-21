@@ -173,7 +173,7 @@ describe('MonitorSwitchHost (container wiring)', () => {
 			r.textContent?.includes('DP')
 		);
 		fireEvent.click(dp as Element);
-		await waitFor(() => expect(setAudioVolume).toHaveBeenCalledWith(0.35)); // 35% → scalar
+		await waitFor(() => expect(setAudioVolume).toHaveBeenCalledWith(0.35, undefined)); // 35% → scalar, default output
 		expect(order).toEqual(['input', 'volume']);
 		expect(setMonitorVolume).not.toHaveBeenCalled();
 
@@ -186,6 +186,24 @@ describe('MonitorSwitchHost (container wiring)', () => {
 		fireEvent.click(hdmi as Element);
 		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x11));
 		expect(setAudioVolume).not.toHaveBeenCalled(); // no @volume on this source
+	});
+
+	it('volume target "system" with a chosen output sets THAT device, not the default', async () => {
+		const { container } = render(
+			<MonitorSwitchHost
+				sources="0xf=DP@35"
+				volumeTarget="system"
+				volumeDevice=" {0.0.0.00000000}.{abcd-1234} "
+			/>
+		);
+		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
+		const dp = [...container.querySelectorAll('.ms-row')].find((r) =>
+			r.textContent?.includes('DP')
+		);
+		fireEvent.click(dp as Element);
+		await waitFor(() =>
+			expect(setAudioVolume).toHaveBeenCalledWith(0.35, '{0.0.0.00000000}.{abcd-1234}')
+		);
 	});
 
 	it('volume target "monitor": the speaker volume goes out BEFORE the switch, best-effort', async () => {

@@ -1082,6 +1082,14 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				default: 'off',
 				help: 'what a source’s paired volume (the @NN in sources) changes when you switch: off (default — volumes are ignored), system = the Windows master volume after the switch, monitor = the monitor’s own speakers over DDC/CI just before the switch'
 			},
+			{
+				key: 'volumeDevice',
+				label: 'volume device',
+				kind: 'select',
+				options: [],
+				catalog: 'audioOutputs',
+				help: 'system target only: which Windows output’s volume to set (blank = whatever is the default output at the time)'
+			},
 			text('label', 'label', { help: 'title override (blank = the monitor’s name)' }),
 			{
 				key: 'showCurrent',

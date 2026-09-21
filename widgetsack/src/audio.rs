@@ -646,22 +646,33 @@ pub struct AudioVolume {
     pub muted: bool,
 }
 
-/// Acquire the default render endpoint's `IAudioEndpointVolume`. COM is initialised MTA on the calling
-/// (pool) thread; `RPC_E_CHANGED_MODE` if already up in another mode is harmless.
+/// Acquire a render endpoint's `IAudioEndpointVolume`: the device with MMDevice id `device` (an id
+/// from `list_audio_outputs`), or the default render endpoint when `device` is empty. COM is
+/// initialised MTA on the calling (pool) thread; `RPC_E_CHANGED_MODE` if already up in another mode
+/// is harmless.
 #[cfg(target_os = "windows")]
-fn endpoint_volume()
--> windows::core::Result<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
+fn endpoint_volume(
+    device: &str,
+) -> windows::core::Result<windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume> {
+    use std::iter::once;
     use windows::Win32::Media::Audio::{
         IMMDeviceEnumerator, MMDeviceEnumerator, eConsole, eRender,
     };
     use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
+    use windows::core::PCWSTR;
 
-    // SAFETY: standard COM create/activate; every interface is released on drop.
+    // SAFETY: standard COM create/activate; every interface is released on drop. The id is a
+    // NUL-terminated UTF-16 string that outlives the GetDevice call.
     unsafe {
         ensure_com_mta();
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-        let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
+        let device = if device.is_empty() {
+            enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?
+        } else {
+            let wide: Vec<u16> = device.encode_utf16().chain(once(0)).collect();
+            enumerator.GetDevice(PCWSTR(wide.as_ptr()))?
+        };
         device.Activate(CLSCTX_ALL, None)
     }
 }
@@ -681,7 +692,7 @@ pub async fn get_audio_volume() -> Option<AudioVolume> {
 fn read_volume() -> Option<AudioVolume> {
     // SAFETY: standard Core Audio read; all interfaces are released on drop.
     unsafe {
-        let vol = endpoint_volume().ok()?;
+        let vol = endpoint_volume("").ok()?;
         let level = vol.GetMasterVolumeLevelScalar().ok()?;
         let muted = vol.GetMute().ok()?.as_bool();
         Some(AudioVolume { level, muted })
@@ -694,14 +705,17 @@ pub async fn get_audio_volume() -> Option<AudioVolume> {
     None
 }
 
-/// Set the system master volume (scalar 0..1, clamped). No-op error off Windows.
+/// Set a render endpoint's master volume (scalar 0..1, clamped): the output with MMDevice id
+/// `device` (from `list_audio_outputs`), or the current default output when `device` is empty /
+/// omitted. No-op error off Windows.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub async fn set_audio_volume(level: f32) -> Result<(), String> {
+pub async fn set_audio_volume(level: f32, device: Option<String>) -> Result<(), String> {
+    let device = device.unwrap_or_default();
     com_call("set_audio_volume", COM_CALL_BUDGET, move || {
         // SAFETY: writes the master scalar level; eventcontext is null (no callback correlation needed).
         unsafe {
-            let vol = endpoint_volume().map_err(|e| e.to_string())?;
+            let vol = endpoint_volume(&device).map_err(|e| e.to_string())?;
             vol.SetMasterVolumeLevelScalar(level.clamp(0.0, 1.0), std::ptr::null())
                 .map_err(|e| e.to_string())
         }
@@ -711,7 +725,7 @@ pub async fn set_audio_volume(level: f32) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub async fn set_audio_volume(_level: f32) -> Result<(), String> {
+pub async fn set_audio_volume(_level: f32, _device: Option<String>) -> Result<(), String> {
     Err("setting the volume is only supported on Windows".into())
 }
 
@@ -722,7 +736,7 @@ pub async fn set_audio_mute(muted: bool) -> Result<(), String> {
     com_call("set_audio_mute", COM_CALL_BUDGET, move || {
         // SAFETY: writes the mute flag; eventcontext is null.
         unsafe {
-            let vol = endpoint_volume().map_err(|e| e.to_string())?;
+            let vol = endpoint_volume("").map_err(|e| e.to_string())?;
             vol.SetMute(muted, std::ptr::null())
                 .map_err(|e| e.to_string())
         }

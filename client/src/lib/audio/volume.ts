@@ -17,10 +17,12 @@ export async function getAudioVolume(): Promise<AudioVolume | null> {
 	}
 }
 
-/** Set the master volume (scalar 0..1). Resolves false on failure. */
-export async function setAudioVolume(level: number): Promise<boolean> {
+/** Set the master volume (scalar 0..1) of an output: the device with id `device` (from
+ *  `list_audio_outputs`), or the current default output when omitted/blank. Resolves false on
+ *  failure. */
+export async function setAudioVolume(level: number, device?: string): Promise<boolean> {
 	try {
-		await invoke(COMMANDS.setAudioVolume, { level });
+		await invoke(COMMANDS.setAudioVolume, device ? { level, device } : { level });
 		return true;
 	} catch (err) {
 		console.warn('set_audio_volume failed', err);
