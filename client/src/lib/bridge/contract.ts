@@ -107,6 +107,9 @@ export const COMMANDS = {
 	// background update check (update.rs): last result + open the release page in the browser
 	getAppUpdate: 'get_app_update',
 	openUrl: 'open_url',
+	// app prefs (update.rs prefs.json): the opt-in background update check
+	getAppPrefs: 'get_app_prefs',
+	setUpdateCheck: 'set_update_check',
 	// log file location / reveal (diag.rs) for the Diagnostics tab
 	logFilePath: 'log_file_path',
 	revealLogDir: 'reveal_log_dir',

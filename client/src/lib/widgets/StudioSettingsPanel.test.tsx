@@ -6,8 +6,17 @@ import type { OverlayPrefs } from './canvas/overlayPrefs';
 // Stub the stateless overlay helpers the panel calls directly (devtools / rescue / clipboard /
 // update check). They are the only module-level side effects in this panel — everything else is
 // owned by Canvas and arrives as props.
-const { checkAppUpdate, copyToClipboard, openDevtools, rescueWindows } = vi.hoisted(() => ({
+const {
+	checkAppUpdate,
+	copyToClipboard,
+	openDevtools,
+	rescueWindows,
+	getAppPrefs,
+	setUpdateCheck
+} = vi.hoisted(() => ({
 	checkAppUpdate: vi.fn(),
+	getAppPrefs: vi.fn(async () => ({ update_check: false })),
+	setUpdateCheck: vi.fn(async (enabled: boolean) => ({ update_check: enabled })),
 	copyToClipboard: vi.fn(() => Promise.resolve(true)),
 	openDevtools: vi.fn(() => Promise.resolve()),
 	rescueWindows: vi.fn(() => Promise.resolve())
@@ -22,7 +31,13 @@ const { openReleasePage } = vi.hoisted(() => ({
 vi.mock('../appUpdate', async () => {
 	const { createStore, useStore } = await import('../../stores/createStore');
 	const appUpdateStore = createStore<import('../core/updateNotice').AppUpdate | null>(null);
-	return { appUpdateStore, useAppUpdate: () => useStore(appUpdateStore), openReleasePage };
+	return {
+		appUpdateStore,
+		useAppUpdate: () => useStore(appUpdateStore),
+		openReleasePage,
+		getAppPrefs,
+		setUpdateCheck
+	};
 });
 
 // The two child panels are tested in isolation; stub them so this test exercises only the settings
@@ -265,6 +280,44 @@ describe('StudioSettingsPanel — About section', () => {
 	});
 
 	describe('AppUpdateCheck', () => {
+		it('the automatic check is OFF by default and the toggle writes through', async () => {
+			const props = baseProps({ tab: 'about' });
+			const { getByLabelText } = render(<StudioSettingsPanel {...props} />);
+			const box = getByLabelText(/check for updates automatically/) as HTMLInputElement;
+			await waitFor(() => expect(box.disabled).toBe(false)); // prefs loaded
+			expect(box.checked).toBe(false);
+			fireEvent.click(box);
+			await waitFor(() => expect(setUpdateCheck).toHaveBeenCalledWith(true));
+			await waitFor(() => expect(box.checked).toBe(true));
+		});
+
+		it('reverts the toggle and shows the error when the pref cannot be saved', async () => {
+			setUpdateCheck.mockRejectedValueOnce(new Error('disk full'));
+			const props = baseProps({ tab: 'about' });
+			const { getByLabelText, findByText } = render(<StudioSettingsPanel {...props} />);
+			const box = getByLabelText(/check for updates automatically/) as HTMLInputElement;
+			await waitFor(() => expect(box.disabled).toBe(false));
+			fireEvent.click(box);
+			expect(await findByText(/Update check failed: disk full/)).toBeTruthy();
+			expect(box.checked).toBe(false);
+		});
+
+		it('ignores a prefs read that resolves after the panel unmounted, and stringifies a non-Error save failure', async () => {
+			let resolvePrefs!: (p: { update_check: boolean }) => void;
+			getAppPrefs.mockImplementationOnce(() => new Promise((r) => (resolvePrefs = r)));
+			const props = baseProps({ tab: 'about' });
+			const { unmount } = render(<StudioSettingsPanel {...props} />);
+			unmount();
+			await act(async () => resolvePrefs({ update_check: true })); // no setState after unmount
+
+			setUpdateCheck.mockRejectedValueOnce('nope');
+			const { getByLabelText, findByText } = render(<StudioSettingsPanel {...props} />);
+			const box = getByLabelText(/check for updates automatically/) as HTMLInputElement;
+			await waitFor(() => expect(box.disabled).toBe(false));
+			fireEvent.click(box);
+			expect(await findByText(/Update check failed: nope/)).toBeTruthy();
+		});
+
 		it('says no check has run yet, then "up to date" once a manual check finds nothing newer', async () => {
 			checkAppUpdate.mockResolvedValue({
 				updateAvailable: false,

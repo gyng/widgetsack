@@ -110,3 +110,25 @@ describe('openReleasePage', () => {
 		expect(invoke).not.toHaveBeenCalled();
 	});
 });
+
+describe('app prefs (background update check opt-in)', () => {
+	it('reads the persisted prefs and falls back to the opt-out defaults outside Tauri', async () => {
+		const mod = await load();
+		invoke.mockResolvedValueOnce({ update_check: true });
+		expect(await mod.getAppPrefs()).toEqual({ update_check: true });
+		expect(invoke).toHaveBeenLastCalledWith('get_app_prefs');
+		invoke.mockResolvedValueOnce(null); // an older backend with no prefs command payload
+		expect(await mod.getAppPrefs()).toEqual({ update_check: false });
+		invoke.mockRejectedValueOnce(new Error('no tauri'));
+		expect(await mod.getAppPrefs()).toEqual({ update_check: false });
+	});
+
+	it('setUpdateCheck writes through and returns the saved prefs (defaults on a null reply)', async () => {
+		const mod = await load();
+		invoke.mockResolvedValueOnce({ update_check: true });
+		expect(await mod.setUpdateCheck(true)).toEqual({ update_check: true });
+		expect(invoke).toHaveBeenLastCalledWith('set_update_check', { enabled: true });
+		invoke.mockResolvedValueOnce(null);
+		expect(await mod.setUpdateCheck(false)).toEqual({ update_check: false });
+	});
+});

@@ -7,7 +7,11 @@
 //!
 //! The manual About-panel check (`command::check_app_update`) funnels through `publish` too, so
 //! the tray + studio badge reflect whichever check ran last. Pure seams (`tray_label`,
-//! `url_allowed`) hold the logic and the tests.
+//! `url_allowed`, `parse_prefs`) hold the logic and the tests.
+//!
+//! The background check is OPT-IN (off by default): it is a periodic call to a third-party API the
+//! user never asked for, so it runs only when the `update_check` preference in `<config>/prefs.json`
+//! is true (About tab → "check for updates automatically"). The manual check always works.
 
 use std::sync::Mutex;
 use std::time::Duration;
@@ -43,27 +47,108 @@ pub struct UpdateState {
     tray_item: Mutex<Option<MenuItem<Wry>>>,
 }
 
+/// App-level preferences persisted in `<config>/prefs.json`. Mirrors `AppPrefs` in
+/// client/src/lib/core/updateNotice.ts. Unknown fields are ignored; missing ones take the defaults,
+/// so an older/partial file never fails to load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct AppPrefs {
+    /// Poll GitHub for a newer release in the background (opt-in — `false` by default; the manual
+    /// check is unaffected).
+    pub update_check: bool,
+}
+
+const PREFS_FILE: &str = "prefs.json";
+
+/// Pure seam: `prefs.json` text → prefs. Garbage or a missing file → the defaults.
+pub fn parse_prefs(json: &str) -> AppPrefs {
+    serde_json::from_str(json).unwrap_or_default()
+}
+
+fn prefs_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    crate::command::config_root(app)
+        .ok()
+        .map(|d| d.join(PREFS_FILE))
+}
+
+/// The persisted preferences (defaults when the file is absent or unreadable).
+pub fn load_prefs(app: &AppHandle) -> AppPrefs {
+    prefs_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .map(|s| parse_prefs(&s))
+        .unwrap_or_default()
+}
+
+fn save_prefs(app: &AppHandle, prefs: &AppPrefs) -> Result<(), String> {
+    let path = prefs_path(app).ok_or("no config dir")?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    }
+    let json = serde_json::to_string_pretty(prefs).map_err(|e| e.to_string())?;
+    crate::command::atomic_write(&path, &json)
+}
+
+/// Studio: the current preferences.
+#[tauri::command]
+pub fn get_app_prefs(app: AppHandle) -> AppPrefs {
+    load_prefs(&app)
+}
+
+/// Studio: turn the background update check on/off. Enabling runs a check right away (so the
+/// toggle has a visible effect); disabling relabels the tray to say checks are off.
+#[tauri::command]
+pub async fn set_update_check(app: AppHandle, enabled: bool) -> Result<AppPrefs, String> {
+    let mut prefs = load_prefs(&app);
+    prefs.update_check = enabled;
+    save_prefs(&app, &prefs)?;
+    if enabled {
+        run_check(&app).await;
+    } else {
+        set_tray(&app, &tray_label_off());
+    }
+    Ok(prefs)
+}
+
+/// One background check: publish a result, or relabel the tray on failure.
+async fn run_check(app: &AppHandle) {
+    match fetch_app_update(app).await {
+        Ok(update) => publish(app, &update),
+        Err(err) => {
+            // Offline / rate-limited is routine — info, not warn, so it doesn't pollute the
+            // warn+error default view of the logs pane.
+            log::info("update", "background update check failed")
+                .field("error", &err)
+                .emit();
+            set_tray(app, &tray_label(Err(&err)));
+        }
+    }
+}
+
 /// Register the managed state and start the background poll. Called once from `setup`; the tray
-/// item is attached separately (`set_tray_item`) once main.rs has built the menu.
+/// item is attached separately (`set_tray_item`) once main.rs has built the menu. The poll is a
+/// no-op tick while the `update_check` preference is off (re-read every tick, so a toggle in the
+/// studio takes effect without a restart).
 pub fn init(app: AppHandle) {
     app.manage(UpdateState::default());
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(FIRST_CHECK_DELAY).await;
         loop {
-            match fetch_app_update(&app).await {
-                Ok(update) => publish(&app, &update),
-                Err(err) => {
-                    // Offline / rate-limited is routine — info, not warn, so it doesn't pollute the
-                    // warn+error default view of the logs pane.
-                    log::info("update", "background update check failed")
-                        .field("error", &err)
-                        .emit();
-                    set_tray(&app, &tray_label(Err(&err)));
-                }
+            if load_prefs(&app).update_check {
+                run_check(&app).await;
+            } else {
+                set_tray(&app, &tray_label_off());
             }
             tokio::time::sleep(CHECK_INTERVAL).await;
         }
     });
+}
+
+/// The tray item's label while background checks are off (the item is inert; it can't be hidden).
+pub fn tray_label_off() -> TrayLabel {
+    TrayLabel {
+        text: "Update checks off (Settings → About)".to_string(),
+        enabled: false,
+    }
 }
 
 /// Attach the tray menu item the checker relabels (built by main.rs after `init`).
@@ -201,7 +286,9 @@ fn shell_open(_url: &str) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppUpdate, TrayLabel, tray_label, url_allowed};
+    use super::{
+        AppPrefs, AppUpdate, TrayLabel, parse_prefs, tray_label, tray_label_off, url_allowed,
+    };
 
     fn update(available: bool) -> AppUpdate {
         AppUpdate {
@@ -210,6 +297,19 @@ mod tests {
             url: "https://github.com/gyng/widgetsack/releases/tag/v0.0.56".into(),
             update_available: available,
         }
+    }
+
+    #[test]
+    fn prefs_default_to_no_background_update_check() {
+        // Opt-in: an absent/empty/garbage prefs file must NOT start polling GitHub.
+        assert_eq!(parse_prefs(""), AppPrefs::default());
+        assert_eq!(parse_prefs("{}"), AppPrefs::default());
+        assert_eq!(parse_prefs("not json"), AppPrefs::default());
+        assert!(!AppPrefs::default().update_check);
+        assert!(parse_prefs(r#"{"update_check":true}"#).update_check);
+        // Unknown fields (a newer build's prefs) are ignored, not fatal.
+        assert!(parse_prefs(r#"{"update_check":true,"future":1}"#).update_check);
+        assert!(!tray_label_off().enabled);
     }
 
     #[test]

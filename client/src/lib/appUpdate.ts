@@ -9,7 +9,9 @@ import { listen } from '@tauri-apps/api/event';
 import { createStore, useStore } from '../stores/createStore';
 import {
 	appUpdateFromWire,
+	DEFAULT_APP_PREFS,
 	isProjectUrl,
+	type AppPrefs,
 	type AppUpdate,
 	type AppUpdateWire
 } from './core/updateNotice';
@@ -46,6 +48,21 @@ export function resetAppUpdateWatchForTests(): void {
 export function useAppUpdate(): AppUpdate | null {
 	ensureAppUpdateWatch();
 	return useStore(appUpdateStore);
+}
+
+/** The persisted app prefs (defaults outside Tauri / on failure). */
+export async function getAppPrefs(): Promise<AppPrefs> {
+	try {
+		return (await invoke<AppPrefs>(COMMANDS.getAppPrefs)) ?? DEFAULT_APP_PREFS;
+	} catch {
+		return DEFAULT_APP_PREFS;
+	}
+}
+
+/** Turn the background update check on/off (persisted by the backend; enabling runs a check at
+ * once, whose result arrives through the `app_update` event). Returns the saved prefs. */
+export async function setUpdateCheck(enabled: boolean): Promise<AppPrefs> {
+	return (await invoke<AppPrefs>(COMMANDS.setUpdateCheck, { enabled })) ?? DEFAULT_APP_PREFS;
 }
 
 /** Open a project release page in the default browser (backend `open_url`, ShellExecuteW). The
