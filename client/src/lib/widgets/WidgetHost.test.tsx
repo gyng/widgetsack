@@ -83,7 +83,7 @@ describe('WidgetHost binds-driven value passing', () => {
 		expect(() => getByText(/42/)).not.toThrow();
 	});
 
-	it('hands ha.* tiles the connection status: not configured (no ha.status yet) → offline → ok', () => {
+	it('hands ha.* tiles the connection status: waiting (no ha.status yet) → offline → ok', () => {
 		const hub = createTelemetryHub();
 		const instance: WidgetInstance = {
 			id: 'w-ha',
@@ -93,7 +93,15 @@ describe('WidgetHost binds-driven value passing', () => {
 			config: {}
 		};
 		const { container } = render(<WidgetHost hub={hub} instance={instance} editMode={false} />);
-		// No `ha.status` sample at all → the plugin isn't configured (haStatus === null).
+		// No `ha.status` sample in this window yet (haStatus === null) → the tile waits; it must
+		// NOT claim the plugin is unconfigured (a late-mounted window is primed with the status).
+		expect(container.querySelector('[data-tile-state]')?.getAttribute('data-tile-state')).toBe(
+			'waiting'
+		);
+		// Only the backend's explicit `unconfigured` status sends the user to the Plugins panel.
+		act(() => {
+			hub.ingest({ sensor: 'ha.status', ts_ms: 0, value: { kind: 'text', value: 'unconfigured' } });
+		});
 		expect(container.querySelector('[data-tile-state]')?.getAttribute('data-tile-state')).toBe(
 			'unconfigured'
 		);
@@ -114,12 +122,12 @@ describe('WidgetHost binds-driven value passing', () => {
 		// ok → the real tile renders (no notice).
 		expect(container.querySelector('[data-tile-state]')).toBeNull();
 		expect(container.textContent).toContain('Bar');
-		// A non-text `ha.status` (never produced by the backend) still reads as "not configured".
+		// A non-text `ha.status` (never produced by the backend) reads as "no status" → waiting.
 		act(() => {
 			hub.ingest({ sensor: 'ha.status', ts_ms: 2, value: { kind: 'scalar', value: 1 } });
 		});
 		expect(container.querySelector('[data-tile-state]')?.getAttribute('data-tile-state')).toBe(
-			'unconfigured'
+			'waiting'
 		);
 	});
 

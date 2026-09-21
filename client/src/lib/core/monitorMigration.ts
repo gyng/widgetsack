@@ -59,46 +59,52 @@ function hintMatches(
 	return byRect.length > 0 ? byRect : bySize;
 }
 
-/** Build the legacy-key → stable-key mapping for `migrateMonitorKeys`.
+/** The legacy-key → stable-key plan for `migrateMonitorKeys`: `keys` maps every legacy id to the
+ * monitor it should land on; `evidence` names the legacy ids a saved window geometry pinned there
+ * (as opposed to today's name), which `migrateMonitorKeys` lets win when two legacy ids in one file
+ * both claim the same monitor. */
+export type LegacyKeyMapping = {
+	keys: Record<string, string>;
+	evidence: ReadonlySet<string>;
+};
+
+/** Build the legacy-key → stable-key plan for `migrateMonitorKeys`.
  *
- * 1. Every non-primary monitor maps its enumeration index and (when different from the key) its GDI
- *    tag to its stable key — right whenever the names have NOT been re-numbered since the save.
- * 2. Every `overlay-<legacy>` window whose saved geometry (position + size, or size alone for older
+ * 1. Every `overlay-<legacy>` window whose saved geometry (position + size, or size alone for older
  *    entries; ±16 px for the DPI-hop frame inflation) matches exactly ONE current non-primary monitor
- *    maps `<legacy>` to that monitor instead — evidence beats today's name. A monitor claimed this way
- *    is claimed exclusively: its by-name entries from step 1 are dropped, so an unrelated layout that
- *    happens to carry today's name for it cannot be migrated onto the same key (first writer wins in
- *    migrateMonitorKeys, and the loser would silently vanish).
+ *    maps `<legacy>` to that monitor — evidence beats today's name, so a legacy id pinned this way is
+ *    never re-pointed by step 2 even when it IS some other monitor's name today.
+ * 2. Every non-primary monitor maps its enumeration index and (when different from the key) its GDI
+ *    tag to its stable key — right whenever the names have NOT been re-numbered since the save, and
+ *    the only route for a layout that was re-keyed to today's name AFTER the window state was last
+ *    written (the 2026-09-20 live file: layout 'DISPLAY2', stale hint for 'overlay-DISPLAY3').
+ * Both routes may point at one monitor; `evidence` lets `migrateMonitorKeys` prefer the pinned id when
+ * the file carries a layout under each (first writer wins there, and the loser keeps its legacy key).
  * The primary is never a target ('default' is its key), and a legacy id that already IS a current
  * stable key is left alone. */
 export function legacyKeyMapping(
 	monitors: readonly MigrationMonitor[],
 	hints: readonly WindowGeometryHint[]
-): Record<string, string> {
+): LegacyKeyMapping {
 	const secondaries = monitors.filter((m) => !m.primary);
 	const stableKeys = new Set(monitors.map((m) => m.key));
 
-	// Step 2 first, so we know which monitors are claimed by evidence before mapping by name.
-	const claims = new Map<string, string[]>(); // stable key → legacy ids whose hint fits only it
+	const keys: Record<string, string> = {};
+	const evidence = new Set<string>();
 	for (const hint of hints) {
 		if (!hint.label.startsWith(OVERLAY_LABEL)) continue;
 		const legacy = hint.label.slice(OVERLAY_LABEL.length);
 		if (!legacy || stableKeys.has(legacy)) continue;
 		const matches = hintMatches(hint, secondaries);
 		if (matches.length !== 1) continue;
-		const key = matches[0].key;
-		claims.set(key, [...(claims.get(key) ?? []), legacy]);
+		keys[legacy] = matches[0].key;
+		evidence.add(legacy);
 	}
 
-	const mapping: Record<string, string> = {};
 	for (const m of secondaries) {
-		const claimants = claims.get(m.key);
-		if (claimants) {
-			for (const legacy of claimants) mapping[legacy] = m.key; // evidence wins, exclusively
-			continue;
+		for (const legacy of [String(m.index), m.tag !== m.key ? m.tag : '']) {
+			if (legacy && !evidence.has(legacy)) keys[legacy] = m.key;
 		}
-		mapping[String(m.index)] = m.key;
-		if (m.tag && m.tag !== m.key) mapping[m.tag] = m.key;
 	}
-	return mapping;
+	return { keys, evidence };
 }

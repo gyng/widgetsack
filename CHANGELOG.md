@@ -3,7 +3,7 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
-## Unreleased
+## 0.0.60
 
 ### Changed — studio UX round
 
@@ -31,6 +31,14 @@ Notable changes per release. Older releases are described by their auto-generate
   failures are explained; Home Assistant tiles say "not configured" / "offline" / "entity unavailable";
   Weather says where to set a location; Monitor Switch explains an unsupported monitor.
 - README and docs describe the current tray menu and the Ctrl+Alt+E / Ctrl+Alt+Shift+E shortcuts.
+- **Also changed, worth knowing after upgrading:** nav rail sections are Layout / Custom / Share /
+  Presets (were Layouts / Defs / Sacks / Saved layouts) and Settings tabs are Monitor / Shortcuts;
+  the header ⋯ "Export sack…" opens the Share section; the sensor field is hidden for widgets that
+  source themselves (clock, calendar, button, cpu, battery, gpu, disks, …); Home Assistant tiles hide
+  their controls (not just the value) while offline / unconfigured / unavailable; the Outline's
+  per-row move buttons live in a hover "⋯" menu (Alt+Arrow moves rows) and containers collapse; the
+  tray items read "Re-fit overlays to monitors" and "Launch at login"; Monitor Switch volume with a
+  chosen output that has since been unplugged falls back to the default output (logged).
 
 ### Added
 
@@ -38,6 +46,16 @@ Notable changes per release. Older releases are described by their auto-generate
   = system`, a new `volume device` picker selects the output whose volume a source's `@NN` sets
   (blank = whatever is the default output at the time). The volume command now accepts an optional
   device id.
+
+### Fixed
+
+- **Upgrading from a pre-0.0.53 layout no longer strands a monitor's widgets when the saved window
+  state is stale.** The one-shot monitor-key migration used a saved overlay window's geometry as the
+  only route for that monitor, so a layout re-keyed to the monitor's *current* GDI name after Windows
+  re-numbered displays (while `.window-state.json` still named the old one) was left under its legacy
+  key and the monitor came up empty. Both routes now apply; when a file carries a layout under each,
+  the geometry-backed key wins. The log's "legacy key mapping" line marks which keys came from
+  window geometry.
 
 ## 0.0.59
 

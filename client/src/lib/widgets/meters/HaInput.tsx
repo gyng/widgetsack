@@ -20,7 +20,7 @@ type HaState = { entity_id?: string; state?: string; attributes?: Record<string,
 
 type Props = {
 	value?: unknown;
-	/** The `ha.status` sample (host-supplied): undefined = not wired, null = plugin not configured. */
+	/** The `ha.status` sample (host-supplied): undefined = not wired, null = no status heard yet. */
 	haStatus?: string | null;
 	label?: string;
 	onControl?: (e: ControlEvent) => void;

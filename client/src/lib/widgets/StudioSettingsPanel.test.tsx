@@ -482,8 +482,10 @@ describe('StudioSettingsPanel — Danger section', () => {
 		const { getByText, container } = render(<StudioSettingsPanel {...props} />);
 		fireEvent.click(getByText(/Clear this monitor/));
 		expect(props.clearMonitor).toHaveBeenCalledOnce();
+		// Matches the clearMonitor confirm: history survives switching sections; it is reset only by a
+		// def edit (widget designer) or a layout reload / revert.
 		expect(container.textContent).toContain(
-			'Undoable with Ctrl+Z until you leave the Layout section'
+			'Undoable with Ctrl+Z until you open the widget designer or reload the layout'
 		);
 		expect(container.textContent).not.toContain('There is no undo');
 	});

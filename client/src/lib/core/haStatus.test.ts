@@ -7,6 +7,7 @@ describe('haStatusBadge', () => {
 		expect(haStatusBadge('connecting')).toEqual({ label: 'Connecting…', tone: 'busy' });
 		expect(haStatusBadge('error')).toEqual({ label: 'Error', tone: 'warn' });
 		expect(haStatusBadge('disconnected')).toEqual({ label: 'Disconnected', tone: 'idle' });
+		expect(haStatusBadge('unconfigured')).toEqual({ label: 'Not configured', tone: 'idle' });
 	});
 
 	it('falls back to an idle "Not connected" badge for null/unknown', () => {

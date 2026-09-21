@@ -147,8 +147,10 @@ function WidgetHost({
 	// A sentinel id keeps the hook valid for self-sourcing widgets (no sensor).
 	const sensorState = useSensor(hub, instance.sensor ?? '__none__');
 	// Home Assistant tiles also get the connection status so they can say "not configured" /
-	// "offline" / "entity unavailable" instead of a bare dash (core/haTileState). Non-HA widgets
-	// subscribe to the sentinel and receive `undefined` (the meters' legacy render).
+	// "offline" / "entity unavailable" instead of a bare dash (core/haTileState). No text sample
+	// in this window's hub yet → `null` (the tile waits; the backend primes late windows with the
+	// last status). Non-HA widgets subscribe to the sentinel and receive `undefined` (the meters'
+	// legacy render).
 	const isHaTile = instance.type.startsWith('ha.');
 	const haStatusState = useSensor(hub, isHaTile ? 'ha.status' : '__none__');
 	const haStatus: string | null | undefined = isHaTile

@@ -146,7 +146,7 @@ export function dropWidgetInto(s: EditorState, containerId: string, widgetType: 
 		},
 		selectedId: id,
 		addTarget: containerId,
-		justAdded: id
+		justAdded: { id, pan: true }
 	};
 }
 
@@ -200,7 +200,7 @@ export function addWidget(s: EditorState, type: string): Patch {
 			monitor: { ...s.monitor, root: insertChild(s.monitor.root, target.id, leaf(inst)) },
 			selectedId: id,
 			addTarget: target.id,
-			justAdded: id
+			justAdded: { id, pan: true }
 		};
 	}
 	const at = firstFreeSpot(occupiedRects(s), inst.rect, placementBounds);
@@ -208,11 +208,13 @@ export function addWidget(s: EditorState, type: string): Patch {
 	return {
 		monitor: { ...s.monitor, floating: [...s.monitor.floating, w] },
 		selectedId: id,
-		justAdded: id
+		justAdded: { id, pan: true }
 	};
 }
 
 // Drop a palette widget onto the stage: a new FLOATING widget centered on the drop point (item 7).
+// The user placed it under the cursor, so it only flashes — panning the stage to "bring it into
+// view" would yank the canvas out from under a drop near the stage edge while zoomed in.
 export function addWidgetAt(s: EditorState, type: string, x: number, y: number): Patch {
 	const id = `${type}-${rand()}`;
 	const inst = createWidget(type, id);
@@ -221,7 +223,7 @@ export function addWidgetAt(s: EditorState, type: string, x: number, y: number):
 	return {
 		monitor: { ...s.monitor, floating: [...s.monitor.floating, w] },
 		selectedId: id,
-		justAdded: id
+		justAdded: { id, pan: false }
 	};
 }
 
@@ -735,12 +737,15 @@ export function insertWidget(s: EditorState, defId: string): Patch {
 	const g = group(grpId, def.size, clone(def.child), { def: defId, name: def.name });
 	// Dock the placed group into the selected container, else the monitor's flow ROOT — widgets join
 	// the rows/columns layout instead of the floating layer (right-click → Float to escape the flow).
-	const target = currentContainer(s)?.id ?? s.monitor.root.id;
+	// Only a REAL current container becomes the sticky add target: the root fallback must not stick,
+	// or the next palette click would dock into the root column instead of floating.
+	const cur = currentContainer(s)?.id ?? null;
+	const target = cur ?? s.monitor.root.id;
 	return {
 		monitor: { ...s.monitor, root: insertChild(s.monitor.root, target, leaf(g)) },
 		selectedId: grpId,
-		addTarget: target,
-		justAdded: grpId
+		...(cur ? { addTarget: cur } : {}),
+		justAdded: { id: grpId, pan: true }
 	};
 }
 
@@ -764,12 +769,14 @@ export function insertTemplate(
 	const g = group(grpId, t.size, freshIds(instantiateTemplate(t, options)), {
 		name: t.name
 	});
-	const target = currentContainer(s)?.id ?? s.monitor.root.id;
+	// Same sticky-target rule as insertWidget: the root fallback is the destination, never sticky.
+	const cur = currentContainer(s)?.id ?? null;
+	const target = cur ?? s.monitor.root.id;
 	return {
 		monitor: { ...s.monitor, root: insertChild(s.monitor.root, target, leaf(g)) },
 		selectedId: grpId,
-		addTarget: target,
-		justAdded: grpId
+		...(cur ? { addTarget: cur } : {}),
+		justAdded: { id: grpId, pan: true }
 	};
 }
 

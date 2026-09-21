@@ -1,5 +1,5 @@
 // Pure mapping from the `ha.status` telemetry string (emitted by ha.rs::emit_status as
-// connecting | connected | disconnected | error) to a display badge. Framework-agnostic domain
+// unconfigured | connecting | connected | disconnected | error) to a display badge. Framework-agnostic domain
 // (AGENTS.md §5): no React/Tauri — just data in, data out — so it is unit-tested directly and the
 // settings panel stays a thin container. The string is a bridge contract; keep the cases in sync
 // with ha.rs's emit_status calls.
@@ -18,6 +18,8 @@ export function haStatusBadge(raw: string | null | undefined): HaStatusBadge {
 			return { label: 'Error', tone: 'warn' };
 		case 'disconnected':
 			return { label: 'Disconnected', tone: 'idle' };
+		case 'unconfigured':
+			return { label: 'Not configured', tone: 'idle' };
 		default:
 			return { label: 'Not connected', tone: 'idle' };
 	}

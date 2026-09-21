@@ -52,6 +52,9 @@ beforeEach(() => {
 });
 afterEach(() => {
 	vi.useRealTimers();
+	// A console.warn spy a test forgot to restore would otherwise carry its call count into the next
+	// test (vi.spyOn on an already-spied method returns the same spy).
+	vi.restoreAllMocks();
 });
 
 // The parsed object handed to save_layout (the last write).
@@ -350,6 +353,43 @@ describe('persistToDisk — widgets.json assembly', () => {
 		expect(warn).toHaveBeenCalledOnce();
 	});
 
+	// Corrupt-file recovery: a widgets.json that no longer parses must never be silently overwritten
+	// BEFORE it is backed up (the on-disk bytes may be hand-recoverable) — but once Canvas has copied it
+	// aside, the rebuilt layout must be writable, or Save fails forever and recovery is a dead end.
+	it('refuses to overwrite an unparseable widgets.json while no backup has been made', async () => {
+		loadLayoutRaw = '{ not json';
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const { result } = renderHook(() =>
+			usePersistence(editorState(), 'mon-A', { layoutBackedUp: () => false })
+		);
+		let ok = true;
+		await act(async () => {
+			ok = await result.current.persistToDisk([]);
+		});
+		expect(ok).toBe(false);
+		expect(savedContents).toBeNull();
+		expect(warn).toHaveBeenCalledOnce();
+		warn.mockRestore();
+	});
+
+	it('after a successful backup, a write over an unparseable widgets.json succeeds (fresh file)', async () => {
+		loadLayoutRaw = '{ not json';
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const { result } = renderHook(() =>
+			usePersistence(editorState(), 'mon-A', { layoutBackedUp: () => true })
+		);
+		let ok = false;
+		await act(async () => {
+			ok = await result.current.persistToDisk([]);
+		});
+		expect(ok).toBe(true);
+		const out = written();
+		expect(out.version).toBe(2);
+		expect(Object.keys(out.monitors as object)).toEqual(['mon-A']);
+		expect(warn).toHaveBeenCalledOnce(); // the fallback is logged, not silent
+		warn.mockRestore();
+	});
+
 	it('names every monitor changed by a cross-monitor move in the transaction', async () => {
 		loadLayoutRaw = JSON.stringify({
 			version: 2,
@@ -577,6 +617,34 @@ describe('writeBaseline — revert path', () => {
 			ok = await result.current.writeBaseline(baseline(), 'mon-A');
 		});
 		expect(ok).toBe(false);
+		warn.mockRestore();
+	});
+
+	it('after a successful backup, a revert over an unparseable widgets.json succeeds', async () => {
+		loadLayoutRaw = '{ not json';
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const { result } = renderHook(() =>
+			usePersistence(editorState(), 'mon-A', { layoutBackedUp: () => true })
+		);
+		let ok = false;
+		await act(async () => {
+			ok = await result.current.writeBaseline(baseline(), 'mon-A');
+		});
+		expect(ok).toBe(true);
+		expect(Object.keys(written().monitors as object)).toEqual(['mon-A']);
+		warn.mockRestore();
+	});
+
+	it('refuses to revert over an unparseable widgets.json while no backup has been made', async () => {
+		loadLayoutRaw = '{ not json';
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));
+		let ok = true;
+		await act(async () => {
+			ok = await result.current.writeBaseline(baseline(), 'mon-A');
+		});
+		expect(ok).toBe(false);
+		expect(savedContents).toBeNull();
 		warn.mockRestore();
 	});
 

@@ -348,4 +348,18 @@ describe('Inspector container: properties first + "Add into this container"', ()
 		render(<Inspector onOp={vi.fn()} addTarget="c9" />);
 		expect(screen.getByText('＋ Add widget · into c9')).toBeTruthy();
 	});
+
+	it('names the SELECTED container over the sticky add target (mirrors currentContainer)', () => {
+		// A template insert with nothing selected used to leave the root as the sticky target; with a
+		// nested row then selected, the add actually lands in that row — the label must say so.
+		render(
+			<Inspector
+				container={container('r1', 'row', [])}
+				addTarget="root"
+				addTargetLabel="the layout"
+				onOp={vi.fn()}
+			/>
+		);
+		expect(screen.getByText('＋ Add widget · into this row')).toBeTruthy();
+	});
 });

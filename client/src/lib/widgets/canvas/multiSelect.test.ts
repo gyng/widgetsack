@@ -43,6 +43,32 @@ describe('commonConfigFields', () => {
 	it('shares nothing with a widget of an unregistered type (no meta → no fields)', () => {
 		expect(commonConfigFields([w('mystery'), w('clock')])).toEqual([]);
 	});
+
+	it('honours showWhen per widget: a field hidden for ANY selected widget is left out', () => {
+		// monitorswitch's `volumeDevice` only applies when volumeTarget === 'system' (single Inspector
+		// rule); the multi-select must not surface it for widgets whose config hides it.
+		const keys = (ws: WidgetInstance[]) => commonConfigFields(ws).map((f) => f.field.key);
+		expect(keys([w('monitorswitch'), w('monitorswitch')])).not.toContain('volumeDevice');
+		expect(
+			keys([
+				w('monitorswitch', { volumeTarget: 'system' }),
+				w('monitorswitch', { volumeTarget: 'monitor' })
+			])
+		).not.toContain('volumeDevice');
+		expect(
+			keys([
+				w('monitorswitch', { volumeTarget: 'system' }),
+				w('monitorswitch', { volumeTarget: 'system' })
+			])
+		).toContain('volumeDevice');
+	});
+
+	it('treats a widget with no config as an empty config for showWhen (legacy instances)', () => {
+		const legacy = { ...w('monitorswitch'), config: undefined } as unknown as WidgetInstance;
+		const keys = commonConfigFields([legacy, w('monitorswitch')]).map((f) => f.field.key);
+		expect(keys).toContain('volumeTarget');
+		expect(keys).not.toContain('volumeDevice');
+	});
 });
 
 describe('commonBasisMode', () => {
