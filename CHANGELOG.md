@@ -3,6 +3,16 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.58
+
+### Added
+
+- **Monitor Switch: per-source volume.** Each input source can carry an optional monitor speaker
+  volume (0–100) that is applied over DDC/CI (VCP 0x62) just before switching to that input, e.g.
+  `0x12=NS2@35` in the `sources` spec, or the new volume field beside each source in the studio's
+  source editor. The volume is sent first because the monitor may stop answering the PC's cable once
+  it has switched to the other device; a rejected volume change never blocks the switch.
+
 ## 0.0.57
 
 ### Security

@@ -517,7 +517,7 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `monitor` | select |  | (runtime list) — from `displayNames` | which monitor to control (blank = the primary monitor) |
-| `sources` | monitorSources |  |  | pick which inputs to show, and rename them (e.g. HDMI 2 → Switch 2); blank = show all detected |
+| `sources` | monitorSources |  |  | pick which inputs to show, rename them (e.g. HDMI 2 → Switch 2), and optionally pair each with a monitor speaker volume (0–100) that is set just before switching to it; blank = show all detected |
 | `label` | text |  |  | title override (blank = the monitor’s name) |
 | `showCurrent` | toggle | true |  | highlight the currently-selected input |
 | `showStats` | toggle | false |  | show the current resolution + refresh rate |

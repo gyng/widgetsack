@@ -328,6 +328,7 @@ async fn main() -> Result<(), ()> {
             display::list_display_names,
             ddc::list_monitor_inputs,
             ddc::set_monitor_input,
+            ddc::set_monitor_volume,
             clickthrough::set_interactive_rects,
             clickthrough::current_work_area,
             clickthrough::set_overlay_wallpaper,

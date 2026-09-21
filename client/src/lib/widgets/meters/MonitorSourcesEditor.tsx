@@ -6,7 +6,12 @@
 // when no inputs can be detected (DDC/CI off, dev mock, or a monitor that doesn't report them).
 import { useCallback, useEffect, useState } from 'react';
 import { listMonitorInputs } from '../../ddc/monitors';
-import { buildSourceSpec, sourceEditorRows, type SourceEditorRow } from '../../core/monitorInputs';
+import {
+	buildSourceSpec,
+	sourceEditorRows,
+	type SourceEditorRow,
+	parseVolumeInput
+} from '../../core/monitorInputs';
 import './MonitorSourcesEditor.css';
 
 type Props = {
@@ -67,9 +72,16 @@ export default function MonitorSourcesEditor({ value, monitor, onChange }: Props
 	const emit = (next: SourceEditorRow[]): void => onChange(buildSourceSpec(next));
 	const toggle = (i: number): void =>
 		emit(rows.map((r, j) => (j === i ? { ...r, include: !r.include } : r)));
-	// Commas/newlines are the spec's separators, so strip them from a label to keep it parseable.
+	// Commas/newlines are the spec's separators (and `@` introduces the volume suffix), so strip them
+	// from a label to keep it parseable.
 	const rename = (i: number, label: string): void =>
-		emit(rows.map((r, j) => (j === i ? { ...r, label: label.replace(/[,\n]/g, ' ') } : r)));
+		emit(rows.map((r, j) => (j === i ? { ...r, label: label.replace(/[,\n@]/g, ' ') } : r)));
+	// Optional monitor speaker volume (DDC/CI VCP 0x62) applied when this input is chosen; blank =
+	// leave the volume alone.
+	const setVolume = (i: number, raw: string): void => {
+		const volume = parseVolumeInput(raw);
+		emit(rows.map((r, j) => (j === i ? { ...r, volume } : r)));
+	};
 
 	return (
 		<div className="ms-src-editor">
@@ -110,6 +122,18 @@ export default function MonitorSourcesEditor({ value, monitor, onChange }: Props
 								placeholder={r.defaultName}
 								disabled={!r.include}
 								onChange={(e) => rename(i, e.currentTarget.value)}
+							/>
+							<input
+								type="number"
+								className="ms-src-volume"
+								min={0}
+								max={100}
+								value={r.volume ?? ''}
+								placeholder="vol"
+								aria-label={`${r.defaultName} volume`}
+								title="Monitor speaker volume (0–100) to set when switching to this input; blank = leave it"
+								disabled={!r.include}
+								onChange={(e) => setVolume(i, e.currentTarget.value)}
 							/>
 						</li>
 					))}

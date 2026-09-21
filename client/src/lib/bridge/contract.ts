@@ -90,6 +90,7 @@ export const COMMANDS = {
 	// monitor input-source switcher — DDC/CI VCP 0x60 (ddc.rs, the Monitor Switch widget)
 	listMonitorInputs: 'list_monitor_inputs',
 	setMonitorInput: 'set_monitor_input',
+	setMonitorVolume: 'set_monitor_volume',
 	// devtools / diagnostics / recovery (command.rs, process_diag.rs, log.rs)
 	openDevtools: 'open_devtools',
 	listWindowLabels: 'list_window_labels',

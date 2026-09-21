@@ -3,8 +3,31 @@
 // module names the standard MCCS input codes, parses the user's `sources` config, and merges the
 // discovered + configured + current inputs into display rows for the meter.
 
-export type MonitorInputRow = { value: number; label: string; active: boolean };
-export type SourceSpec = { value: number; label: string };
+/** `volume` (0–100) is the monitor's own speaker volume (DDC/CI VCP 0x62) to set when this input is
+ *  chosen; absent = leave the volume alone. */
+export type MonitorInputRow = { value: number; label: string; active: boolean; volume?: number };
+export type SourceSpec = { value: number; label: string; volume?: number };
+
+/** Normalise a volume as typed in the editor: blank → null (leave the volume alone), anything
+ *  non-numeric → null, else rounded and clamped to 0–100. Pure. */
+export function parseVolumeInput(raw: string): number | null {
+	const trimmed = raw.trim();
+	if (trimmed === '') return null;
+	const n = Number(trimmed);
+	if (!Number.isFinite(n)) return null;
+	return Math.max(0, Math.min(100, Math.round(n)));
+}
+
+/** Parse the optional `@NN` volume suffix off a spec entry: `('NS2@35') → ['NS2', 35]`. A missing,
+ *  blank or non-numeric suffix yields no volume; numbers clamp to 0–100. Pure. */
+export function splitVolumeSuffix(entry: string): [string, number | undefined] {
+	const at = entry.lastIndexOf('@');
+	if (at < 0) return [entry, undefined];
+	const head = entry.slice(0, at);
+	const raw = entry.slice(at + 1).trim();
+	if (!/^-?\d+$/.test(raw)) return [head, undefined];
+	return [head, Math.max(0, Math.min(100, Number(raw)))];
+}
 
 // Standard MCCS v2.x VCP 0x60 ("Input Select") values. Real monitors deviate (these codes are
 // vendor-specific in practice), so this is only a friendly FALLBACK name — discovery comes from the
@@ -52,21 +75,24 @@ function parseCode(s: string): number | null {
 	return Number.isFinite(v) && v >= 0 && v <= 255 ? v : null;
 }
 
-/** Parse the optional `sources` config: a comma/newline-separated list of `code` or `code=label`
- *  entries (code = decimal `17`, hex `0x11`, or `11h`). Blank/invalid entries are dropped; a missing
- *  label defaults to the MCCS name. Lets a user choose WHICH inputs appear (and order + rename them)
- *  without a multi-select control. Pure. */
+/** Parse the optional `sources` config: a comma/newline-separated list of `code`, `code=label`,
+ *  `code@volume` or `code=label@volume` entries (code = decimal `17`, hex `0x11`, or `11h`; volume =
+ *  0–100, the monitor speaker level to set when that input is chosen). Blank/invalid entries are
+ *  dropped; a missing label defaults to the MCCS name. Lets a user choose WHICH inputs appear (and
+ *  order + rename them, and pair each with a volume) without a multi-select control. Pure. */
 export function parseSourceSpec(spec: string | undefined): SourceSpec[] {
 	if (!spec) return [];
 	const out: SourceSpec[] = [];
 	for (const raw of spec.split(/[,\n]/)) {
-		const entry = raw.trim();
+		const [entry, volume] = splitVolumeSuffix(raw.trim());
 		if (!entry) continue;
 		const eq = entry.indexOf('=');
 		const value = parseCode(eq >= 0 ? entry.slice(0, eq) : entry);
 		if (value === null) continue;
 		const label = eq >= 0 ? entry.slice(eq + 1).trim() : '';
-		out.push({ value, label: label || inputName(value) });
+		const row: SourceSpec = { value, label: label || inputName(value) };
+		if (volume !== undefined) row.volume = volume;
+		out.push(row);
 	}
 	return out;
 }
@@ -97,7 +123,9 @@ export function monitorInputRows(opts: {
 	for (const b of base) {
 		if (seen.has(b.value)) continue;
 		seen.add(b.value);
-		rows.push({ value: b.value, label: b.label, active: b.value === current });
+		const row: MonitorInputRow = { value: b.value, label: b.label, active: b.value === current };
+		if (b.volume !== undefined) row.volume = b.volume;
+		rows.push(row);
 	}
 	return rows;
 }
@@ -123,6 +151,8 @@ export type SourceEditorRow = {
 	label: string;
 	include: boolean;
 	detected: boolean;
+	/** Monitor speaker volume (0–100) to set on switch; null = leave it alone. */
+	volume: number | null;
 };
 
 /** Build the editor rows from the monitor's detected inputs + the current `sources` spec. Detected
@@ -131,7 +161,7 @@ export type SourceEditorRow = {
 export function sourceEditorRows(detected: number[], spec: string | undefined): SourceEditorRow[] {
 	const parsed = parseSourceSpec(spec);
 	const specEmpty = parsed.length === 0;
-	const byValue = new Map(parsed.map((p) => [p.value, p.label]));
+	const byValue = new Map(parsed.map((p) => [p.value, p]));
 	const rows: SourceEditorRow[] = [];
 	const seen = new Set<number>();
 	for (const value of detected) {
@@ -142,9 +172,10 @@ export function sourceEditorRows(detected: number[], spec: string | undefined): 
 		rows.push({
 			value,
 			defaultName,
-			label: custom && custom !== defaultName ? custom : '',
+			label: custom && custom.label !== defaultName ? custom.label : '',
 			include: specEmpty || byValue.has(value),
-			detected: true
+			detected: true,
+			volume: custom?.volume ?? null
 		});
 	}
 	for (const p of parsed) {
@@ -156,23 +187,28 @@ export function sourceEditorRows(detected: number[], spec: string | undefined): 
 			defaultName,
 			label: p.label !== defaultName ? p.label : '',
 			include: true,
-			detected: false
+			detected: false,
+			volume: p.volume ?? null
 		});
 	}
 	return rows;
 }
 
 /** Build the `sources` spec string from editor rows. Included rows become `0xNN` (or `0xNN=label`
- *  when renamed). Returns '' (the clean "auto: show all detected" default) when the rows are exactly
- *  all-detected, all-included, none-renamed. Pure — inverse of `sourceEditorRows`. */
+ *  when renamed), with `@volume` appended when a volume is set. Returns '' (the clean "auto: show all
+ *  detected" default) when the rows are exactly all-detected, all-included, none-renamed, no volumes.
+ *  Pure — inverse of `sourceEditorRows`. */
 export function buildSourceSpec(rows: SourceEditorRow[]): string {
-	const isAuto = rows.length > 0 && rows.every((r) => r.detected && r.include && r.label === '');
+	const isAuto =
+		rows.length > 0 &&
+		rows.every((r) => r.detected && r.include && r.label === '' && r.volume === null);
 	if (isAuto) return '';
 	return rows
 		.filter((r) => r.include)
 		.map((r) => {
 			const code = `0x${r.value.toString(16)}`;
-			return r.label ? `${code}=${r.label}` : code;
+			const named = r.label ? `${code}=${r.label}` : code;
+			return r.volume === null ? named : `${named}@${r.volume}`;
 		})
 		.join(', ');
 }

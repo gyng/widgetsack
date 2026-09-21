@@ -61,6 +61,10 @@
 	flex: 1 1 auto;
 	min-width: 0;
 }
+.ms-src-volume {
+	flex: 0 0 4.5em;
+	width: 4.5em;
+}
 
 .ms-src-empty {
 	font-size: 0.85em;

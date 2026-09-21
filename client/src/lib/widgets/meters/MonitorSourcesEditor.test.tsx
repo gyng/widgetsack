@@ -97,6 +97,31 @@ describe('MonitorSourcesEditor (config form)', () => {
 		expect(onChange).toHaveBeenLastCalledWith('0xf=Work PC, 0x11');
 	});
 
+	it('setting a volume emits `code@volume`, clamps to 0–100, and blank clears it', async () => {
+		const onChange = vi.fn();
+		const { container } = render(
+			<MonitorSourcesEditor value="0xf=PC, 0x11=NS2@35" monitor="" onChange={onChange} />
+		);
+		await waitFor(() => expect(container.querySelectorAll('.ms-src-row')).toHaveLength(2));
+		const volumes = container.querySelectorAll<HTMLInputElement>('.ms-src-volume');
+		expect(volumes[0].value).toBe('');
+		expect(volumes[1].value).toBe('35'); // reflected from the spec
+		fireEvent.change(volumes[0], { target: { value: '250' } });
+		expect(onChange).toHaveBeenLastCalledWith('0xf=PC@100, 0x11=NS2@35');
+		fireEvent.change(volumes[1], { target: { value: '' } });
+		expect(onChange).toHaveBeenLastCalledWith('0xf=PC, 0x11=NS2');
+	});
+
+	it('strips `@` from a label so it cannot be read as a volume suffix', async () => {
+		const onChange = vi.fn();
+		const { container } = render(<MonitorSourcesEditor value="" monitor="" onChange={onChange} />);
+		await waitFor(() => expect(container.querySelectorAll('.ms-src-row')).toHaveLength(2));
+		fireEvent.change(container.querySelector<HTMLInputElement>('.ms-src-label')!, {
+			target: { value: 'PC@home' }
+		});
+		expect(onChange).toHaveBeenLastCalledWith('0xf=PC home, 0x11');
+	});
+
 	it('reflects an existing spec: only listed inputs checked, custom label shown', async () => {
 		const { container } = render(
 			<MonitorSourcesEditor value="0x11=Switch" monitor="" onChange={() => undefined} />
