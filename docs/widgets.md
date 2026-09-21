@@ -519,6 +519,7 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 | `monitor` | select |  | (runtime list) — from `displayNames` | which monitor to control (blank = the primary monitor) |
 | `sources` | monitorSources |  |  | pick which inputs to show, rename them (e.g. HDMI 2 → Switch 2), and optionally pair each with a volume (0–100, e.g. 0x12=NS2@20) applied when switching to it — only while "volume target" is not off; blank = show all detected |
 | `volumeTarget` | select | "off" | `off`, `system`, `monitor` | what a source’s paired volume (the @NN in sources) changes when you switch: off (default — volumes are ignored), system = the Windows master volume after the switch, monitor = the monitor’s own speakers over DDC/CI just before the switch |
+| `volumeDevice` | select |  | (runtime list) — from `audioOutputs` | system target only: which Windows output’s volume to set (blank = whatever is the default output at the time) |
 | `label` | text |  |  | title override (blank = the monitor’s name) |
 | `showCurrent` | toggle | true |  | highlight the currently-selected input |
 | `showStats` | toggle | false |  | show the current resolution + refresh rate |

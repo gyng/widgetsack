@@ -3,6 +3,15 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## Unreleased
+
+### Added
+
+- **Monitor Switch: choose which Windows output the system volume applies to.** With `volume target
+  = system`, a new `volume device` picker selects the output whose volume a source's `@NN` sets
+  (blank = whatever is the default output at the time). The volume command now accepts an optional
+  device id.
+
 ## 0.0.59
 
 ### Changed
