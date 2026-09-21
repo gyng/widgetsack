@@ -222,7 +222,7 @@ describe('dropWidgetInto', () => {
 		const { state, col1Id } = stateWithLayout();
 		const patch = dropWidgetInto(state, col1Id, 'gauge');
 		expect(patch.addTarget).toBe(col1Id);
-		expect(patch.justAdded).toBe(patch.selectedId);
+		expect(patch.justAdded).toEqual({ id: patch.selectedId, pan: true });
 	});
 
 	it('appends a fresh widget of the given type into the target container and selects it', () => {
@@ -403,7 +403,7 @@ describe('addWidget', () => {
 		state.selectedId = col1Id;
 		const first = addWidget(state, 'gauge');
 		expect(first.addTarget).toBe(col1Id);
-		expect(first.justAdded).toBe(first.selectedId);
+		expect(first.justAdded).toEqual({ id: first.selectedId, pan: true });
 		// The new widget is what's selected now (a leaf) — the sticky target still wins.
 		const s2 = { ...state, ...first };
 		const second = addWidget(s2, 'bar');
@@ -447,7 +447,7 @@ describe('addWidget', () => {
 			const b = { ...a, ...addWidget(a, 'gauge') }; // beside it: 24 + 110 + 8 = 142 → 144
 			const rb = (b.monitor.floating[1].unit as { rect: { x: number; y: number } }).rect;
 			expect([rb.x, rb.y]).toEqual([144, 24]);
-			expect(b.justAdded).toBe(b.monitor.floating[1].id);
+			expect(b.justAdded).toEqual({ id: b.monitor.floating[1].id, pan: true });
 		});
 
 		it('avoids the measured (solved) rects — a docked flow widget counts as occupied too', () => {
@@ -528,6 +528,12 @@ describe('addWidgetAt', () => {
 		expect(rect.x).toBe(144);
 		expect(rect.y).toBe(248);
 		expect(patch.selectedId).toBe(fl.id);
+	});
+
+	it('flags the drop as just-added WITHOUT a pan (the user placed it under the cursor)', () => {
+		const s = minimalState();
+		const patch = addWidgetAt(s, 'gauge', 200, 300);
+		expect(patch.justAdded).toEqual({ id: patch.selectedId, pan: false });
 	});
 
 	it('does not touch the flow tree', () => {

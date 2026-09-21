@@ -585,6 +585,53 @@ describe('Outline keyboard tree', () => {
 		expect(onOp).not.toHaveBeenCalled();
 	});
 
+	it('Delete removes the focused tree / floating row (the ✕ op), but not the root', () => {
+		const onOp = vi.fn();
+		const { container: c, getByText } = render(
+			<Outline root={labelledRoot()} floating={floating} onOp={onOp} />
+		);
+		const gauge = getByText('• Gauge').closest('.row') as HTMLElement;
+		expect(fireEvent.keyDown(gauge, { key: 'Delete' })).toBe(false); // claimed (preventDefault)
+		expect(onOp).toHaveBeenLastCalledWith({ op: 'remove', id: 'a-gauge' });
+		const fl = getByText('Floater').closest('.row') as HTMLElement;
+		fireEvent.keyDown(fl, { key: 'Delete' });
+		expect(onOp).toHaveBeenLastCalledWith({ op: 'remove', id: 'fl-1' });
+		onOp.mockClear();
+		// The root has no ✕: Delete passes through to the studio's own bindings.
+		expect(fireEvent.keyDown(items(c)[0], { key: 'Delete' })).toBe(true);
+		expect(onOp).not.toHaveBeenCalled();
+	});
+
+	it('the Menu key / Shift+F10 open the focused tree row’s ⋯ menu and focus its first action', () => {
+		const onOp = vi.fn();
+		const { container: c, getByText } = render(
+			<Outline root={labelledRoot()} floating={floating} onOp={onOp} />
+		);
+		const gauge = getByText('• Gauge').closest('.row') as HTMLElement; // 2nd child of rowA
+		gauge.focus();
+		expect(fireEvent.keyDown(gauge, { key: 'ContextMenu' })).toBe(false);
+		const menu = within(gauge).getByRole('menu');
+		// Move up is the first item and enabled for a 2nd child — it gets the focus.
+		expect(document.activeElement).toBe(within(menu).getByLabelText('Move up'));
+		fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'Escape' });
+		expect(within(gauge).queryByRole('menu')).toBeNull();
+		expect(document.activeElement).toBe(gauge);
+		// Shift+F10 is the other conventional binding; a bare F10 is left alone.
+		expect(fireEvent.keyDown(gauge, { key: 'F10' })).toBe(true);
+		expect(within(gauge).queryByRole('menu')).toBeNull();
+		fireEvent.keyDown(gauge, { key: 'F10', shiftKey: true });
+		expect(within(gauge).getByRole('menu')).toBeTruthy();
+		// A first child's first enabled action is Move down (Move up is disabled).
+		const text = getByText('Hello').closest('.row') as HTMLElement;
+		fireEvent.keyDown(text, { key: 'ContextMenu' });
+		expect(document.activeElement).toBe(within(text).getByLabelText('Move down'));
+		// Root and floating rows have no ⋯ menu: the key passes through (native contextmenu path).
+		expect(fireEvent.keyDown(items(c)[0], { key: 'ContextMenu' })).toBe(true);
+		const fl = getByText('Floater').closest('.row') as HTMLElement;
+		expect(fireEvent.keyDown(fl, { key: 'F10', shiftKey: true })).toBe(true);
+		expect(onOp).not.toHaveBeenCalled();
+	});
+
 	it('falls back to the root tab stop when the focused row gets hidden by a collapse', () => {
 		const { container: c, getByText } = render(<Outline root={labelledRoot()} />);
 		const gauge = getByText('• Gauge').closest('.row') as HTMLElement;

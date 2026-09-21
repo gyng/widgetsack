@@ -647,7 +647,9 @@ pub struct AudioVolume {
 }
 
 /// Acquire a render endpoint's `IAudioEndpointVolume`: the device with MMDevice id `device` (an id
-/// from `list_audio_outputs`), or the default render endpoint when `device` is empty. COM is
+/// from `list_audio_outputs`), or the default render endpoint when `device` is empty. A saved id
+/// that no longer resolves (the output was unplugged / re-enumerated) falls back to the default
+/// endpoint with a warning, so a paired volume still applies instead of silently failing. COM is
 /// initialised MTA on the calling (pool) thread; `RPC_E_CHANGED_MODE` if already up in another mode
 /// is harmless.
 #[cfg(target_os = "windows")]
@@ -667,13 +669,25 @@ fn endpoint_volume(
         ensure_com_mta();
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-        let device = if device.is_empty() {
+        let endpoint = if device.is_empty() {
             enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?
         } else {
             let wide: Vec<u16> = device.encode_utf16().chain(once(0)).collect();
-            enumerator.GetDevice(PCWSTR(wide.as_ptr()))?
+            match enumerator.GetDevice(PCWSTR(wide.as_ptr())) {
+                Ok(d) => d,
+                Err(err) => {
+                    log::warn(
+                        "audio",
+                        "output device not found; using the default endpoint",
+                    )
+                    .field("device", device)
+                    .field("error", err)
+                    .emit();
+                    enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?
+                }
+            }
         };
-        device.Activate(CLSCTX_ALL, None)
+        endpoint.Activate(CLSCTX_ALL, None)
     }
 }
 

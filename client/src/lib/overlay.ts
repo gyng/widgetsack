@@ -20,7 +20,11 @@ import { builtinCss } from './core/builtinThemes';
 import { compareMonitorOptions, monitorOptionLabel } from './monitorLabel';
 import { gdiTag, monitorByKey, monitorDeviceKey, type StableIds } from './monitorKey';
 import { migrateMonitorKeys, parseLayoutAny } from './core/migration';
-import { legacyKeyMapping, type WindowGeometryHint } from './core/monitorMigration';
+import {
+	legacyKeyMapping,
+	type LegacyKeyMapping,
+	type WindowGeometryHint
+} from './core/monitorMigration';
 import { OVERLAY_LABEL_PREFIX, planOverlays } from './core/overlayPlan';
 import { readOverlayPrefs, type OverlayLayer } from './widgets/canvas/overlayPrefs';
 import type { OverlayPresentation } from './widgets/canvas/overlayPresentation';
@@ -118,9 +122,7 @@ export { monitorDeviceKey };
  * error yields `null` — that's "we couldn't tell", NOT "the layout is empty", and callers must
  * NOT treat it as license to close every overlay (a transient IPC hiccup would otherwise tear
  * down a perfectly working desktop). */
-async function populatedMonitorKeys(
-	legacyMapping?: Record<string, string>
-): Promise<Set<string> | null> {
+async function populatedMonitorKeys(legacyMapping?: LegacyKeyMapping): Promise<Set<string> | null> {
 	const keys = new Set<string>();
 	// Assigned once load_layout resolves — so the catch can tell "file read but UNPARSEABLE" (worth
 	// backing up before anything saves over it) from "couldn't read it at all" (nothing to copy).
@@ -129,7 +131,11 @@ async function populatedMonitorKeys(
 		raw = await invoke<string | null>(COMMANDS.loadLayout);
 		const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
 		if (obj && legacyMapping && typeof obj.monitors === 'object' && obj.monitors !== null) {
-			const migrated = migrateMonitorKeys(obj.monitors as Record<string, unknown>, legacyMapping);
+			const migrated = migrateMonitorKeys(
+				obj.monitors as Record<string, unknown>,
+				legacyMapping.keys,
+				legacyMapping.evidence
+			);
 			if (migrated) {
 				obj.monitors = migrated;
 				await invoke(COMMANDS.saveLayout, { contents: JSON.stringify(obj, null, 2) });
@@ -139,7 +145,7 @@ async function populatedMonitorKeys(
 					'info',
 					'overlay',
 					'migrated legacy monitor keys → stable identity keys: ' +
-						Object.entries(legacyMapping)
+						Object.entries(legacyMapping.keys)
 							.map(([a, b]) => `${a}→${b}`)
 							.join(', ')
 				);
@@ -1193,7 +1199,7 @@ async function reconcileOverlaysOnce(): Promise<void> {
 		})),
 		hints
 	);
-	if (Object.keys(legacyMapping).length > 0) {
+	if (Object.keys(legacyMapping.keys).length > 0) {
 		// Which evidence decided each legacy key is worth a line: a wrong guess here is what puts a
 		// layout on the wrong monitor after an upgrade.
 		logClient(
@@ -1204,8 +1210,8 @@ async function reconcileOverlaysOnce(): Promise<void> {
 					.filter((h) => h.label.startsWith(OVERLAY_LABEL_PREFIX))
 					.map((h) => `${h.label} ${h.width}x${h.height}@${h.x ?? '?'},${h.y ?? '?'}`)
 					.join(', ') || 'none'
-			}) → ${Object.entries(legacyMapping)
-				.map(([a, b]) => `${a}→${b}`)
+			}) → ${Object.entries(legacyMapping.keys)
+				.map(([a, b]) => `${a}→${b}${legacyMapping.evidence.has(a) ? ' (by window geometry)' : ''}`)
 				.join(', ')}`
 		);
 	}

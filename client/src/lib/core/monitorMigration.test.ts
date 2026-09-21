@@ -27,10 +27,8 @@ const hints: WindowGeometryHint[] = [
 describe('legacyKeyMapping', () => {
 	it('maps enumeration indices and GDI tags of non-primary monitors to their stable keys', () => {
 		expect(legacyKeyMapping(today, [])).toEqual({
-			'0': STRIP,
-			DISPLAY2: STRIP,
-			'1': ABOVE,
-			DISPLAY1: ABOVE
+			keys: { '0': STRIP, DISPLAY2: STRIP, '1': ABOVE, DISPLAY1: ABOVE },
+			evidence: new Set()
 		});
 	});
 
@@ -38,15 +36,49 @@ describe('legacyKeyMapping', () => {
 		const mapping = legacyKeyMapping(today, hints);
 		// 'DISPLAY3' names the primary today, so by name it would be skipped; its window was 2560x720,
 		// which only the strip is — so the strip's layout follows the strip.
-		expect(mapping.DISPLAY3).toBe(STRIP);
-		expect(mapping['2']).toBe(STRIP);
-		// A hint-confirmed monitor is claimed exclusively: today's tag for the strip no longer maps
-		// there, or an unrelated (empty) 'DISPLAY2' layout could overwrite the strip's on migration.
-		expect(mapping.DISPLAY2).toBeUndefined();
-		expect(mapping['0']).toBeUndefined();
+		expect(mapping.keys.DISPLAY3).toBe(STRIP);
+		expect(mapping.keys['2']).toBe(STRIP);
+		// Today's names for the strip STILL map there (a layout re-keyed to 'DISPLAY2' after the
+		// re-numbering — by hand, or by a save on the renamed monitor — must not be stranded by a
+		// stale hint), but only the hint-backed keys are `evidence`: migrateMonitorKeys lets those win
+		// when both an evidence key and a by-name key carry a layout for the same monitor.
+		expect(mapping.keys.DISPLAY2).toBe(STRIP);
+		expect(mapping.keys['0']).toBe(STRIP);
+		expect([...mapping.evidence].sort()).toEqual(['2', 'DISPLAY3']);
 		// Unaffected monitors keep their by-name mapping.
-		expect(mapping.DISPLAY1).toBe(ABOVE);
-		expect(mapping['1']).toBe(ABOVE);
+		expect(mapping.keys.DISPLAY1).toBe(ABOVE);
+		expect(mapping.keys['1']).toBe(ABOVE);
+	});
+
+	it('the 2026-09-20 upgrade: a layout re-keyed to today’s tag survives a stale hint for the old tag', () => {
+		// Live 0.0.51 machine: the strip layout was renamed 'DISPLAY3' → 'DISPLAY2' by hand after the
+		// re-numbering, but .window-state.json (last written before it) still says overlay-DISPLAY3
+		// sat on the strip. The stale evidence must not drop the by-name route for 'DISPLAY2'.
+		const positioned: MigrationMonitor[] = today.map((m) =>
+			m.key === STRIP ? { ...m, x: 652, y: 2160 } : m
+		);
+		const mapping = legacyKeyMapping(positioned, [
+			{ label: 'overlay-DISPLAY3', width: 2560, height: 720, x: 652, y: 2160 },
+			{ label: 'overlay-DISPLAY2', width: 1200, height: 900, x: 114, y: 114 }
+		]);
+		expect(mapping.keys.DISPLAY2).toBe(STRIP);
+		expect(mapping.keys.DISPLAY3).toBe(STRIP);
+		expect(mapping.evidence.has('DISPLAY2')).toBe(false);
+	});
+
+	it('a legacy id the evidence pins to one monitor is never re-pointed by today’s name', () => {
+		// 'DISPLAY3' is the strip by evidence even though the ABOVE monitor is DISPLAY3 by name today.
+		const renamed: MigrationMonitor[] = [
+			{ index: 0, key: STRIP, tag: 'DISPLAY1', primary: false, w: 2560, h: 720 },
+			{ index: 1, key: ABOVE, tag: 'DISPLAY3', primary: false, w: 2560, h: 1440 },
+			{ index: 2, key: 'DEL428B-UID184577', tag: 'DISPLAY2', primary: true, w: 3840, h: 2160 }
+		];
+		const mapping = legacyKeyMapping(renamed, [
+			{ label: 'overlay-DISPLAY3', width: 2560, height: 720 }
+		]);
+		expect(mapping.keys.DISPLAY3).toBe(STRIP);
+		expect(mapping.keys['1']).toBe(ABOVE); // ABOVE keeps its other by-name route
+		expect(mapping.keys.DISPLAY1).toBe(STRIP);
 	});
 
 	it('ignores a hint whose size matches several monitors or none', () => {
@@ -60,10 +92,13 @@ describe('legacyKeyMapping', () => {
 			{ label: 'overlay-DISPLAY9', width: 1024, height: 768 } // no such monitor
 		]);
 		expect(mapping).toEqual({
-			'0': 'AAA1111-UID1',
-			DISPLAY1: 'AAA1111-UID1',
-			'1': 'AAA1111-UID2',
-			DISPLAY2: 'AAA1111-UID2'
+			keys: {
+				'0': 'AAA1111-UID1',
+				DISPLAY1: 'AAA1111-UID1',
+				'1': 'AAA1111-UID2',
+				DISPLAY2: 'AAA1111-UID2'
+			},
+			evidence: new Set()
 		});
 	});
 
@@ -103,7 +138,8 @@ describe('legacyKeyMapping', () => {
 		const mapping = legacyKeyMapping(twins, [
 			{ label: 'overlay-DISPLAY9', width: 2560, height: 1440, x: 2560, y: 0 }
 		]);
-		expect(mapping.DISPLAY9).toBe('AAA1111-UID2');
+		expect(mapping.keys.DISPLAY9).toBe('AAA1111-UID2');
+		expect(mapping.evidence.has('DISPLAY9')).toBe(true);
 	});
 
 	it('tolerates the 8 px DPI-hop inflation and a re-arranged position', () => {
@@ -112,7 +148,7 @@ describe('legacyKeyMapping', () => {
 			today.map((m) => (m.key === STRIP ? { ...m, x: 652, y: 2160 } : { ...m, x: 0, y: 0 })),
 			[{ label: 'overlay-DISPLAY3', width: 2576, height: 736, x: -8, y: 1432 }]
 		);
-		expect(mapping.DISPLAY3).toBe(STRIP);
+		expect(mapping.keys.DISPLAY3).toBe(STRIP);
 	});
 
 	it('never maps onto the primary and never remaps a key that is already stable', () => {
@@ -120,14 +156,14 @@ describe('legacyKeyMapping', () => {
 			{ label: 'overlay-DISPLAY7', width: 3840, height: 2160 }, // the primary's size
 			{ label: `overlay-${STRIP}`, width: 2560, height: 720 } // already a stable key
 		]);
-		expect(mapping.DISPLAY7).toBeUndefined();
-		expect(mapping[STRIP]).toBeUndefined();
+		expect(mapping.keys.DISPLAY7).toBeUndefined();
+		expect(mapping.keys[STRIP]).toBeUndefined();
 	});
 
 	it('leaves a monitor with no stable key on its GDI tag (nothing to migrate to)', () => {
 		const bare: MigrationMonitor[] = [
 			{ index: 0, key: 'DISPLAY2', tag: 'DISPLAY2', primary: false, w: 2560, h: 720 }
 		];
-		expect(legacyKeyMapping(bare, [])).toEqual({ '0': 'DISPLAY2' });
+		expect(legacyKeyMapping(bare, []).keys).toEqual({ '0': 'DISPLAY2' });
 	});
 });

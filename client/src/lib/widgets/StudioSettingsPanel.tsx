@@ -500,8 +500,8 @@ export default function StudioSettingsPanel({
 						<>
 							<div className="pl-title set-danger-title">Danger zone</div>
 							<div className="pl-desc">
-								Destructive actions for this monitor’s layout. Undoable with Ctrl+Z until you leave
-								the Layout section.
+								Destructive actions for this monitor’s layout. Undoable with Ctrl+Z until you open
+								the widget designer or reload the layout.
 							</div>
 							<button type="button" className="rp-danger" onClick={clearMonitor}>
 								✕ Clear this monitor

@@ -124,7 +124,10 @@ describe('sticky add target (addTarget)', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.handleOp({ op: 'addWidget', widgetType: 'gauge' }));
 		expect(result.current.state.addTarget).toBeUndefined();
-		expect(result.current.state.justAdded).toBe(result.current.state.selectedId);
+		expect(result.current.state.justAdded).toEqual({
+			id: result.current.state.selectedId,
+			pan: true
+		});
 		expect(result.current.state.monitor.floating).toHaveLength(1);
 	});
 });

@@ -5,7 +5,7 @@
 
 import type { WidgetInstance } from '../../core/layout';
 import type { Length } from '../../core/layoutTree';
-import { getMeta, type ConfigField } from '../../core/widget';
+import { fieldVisible, getMeta, type ConfigField } from '../../core/widget';
 
 const eq = (a: unknown, b: unknown): boolean =>
 	JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -16,12 +16,16 @@ export type MergedField = { field: ConfigField; value: unknown; mixed: boolean }
 
 /**
  * The config fields common to ALL `widgets` — a field is included only if every widget's TYPE meta
- * declares it with the same key + kind (so e.g. a gauge + clock still share `color`/`label`). The
- * value is the shared one, or `mixed: true` when the widgets disagree. Empty for an empty selection.
+ * declares it with the same key + kind (so e.g. a gauge + clock still share `color`/`label`) AND it
+ * is visible for every widget's own config (`showWhen`, as the single Inspector applies it — a
+ * "volume device" hidden on one monitor switch must not surface via the multi-select). The value
+ * is the shared one, or `mixed: true` when the widgets disagree. Empty for an empty selection.
  */
 export function commonConfigFields(widgets: WidgetInstance[]): MergedField[] {
 	if (widgets.length === 0) return [];
-	const fieldLists = widgets.map((w) => getMeta(w.type)?.configFields ?? []);
+	const fieldLists = widgets.map((w) =>
+		(getMeta(w.type)?.configFields ?? []).filter((f) => fieldVisible(f, w.config ?? {}))
+	);
 	const out: MergedField[] = [];
 	for (const field of fieldLists[0]) {
 		const inAll = fieldLists.every((fs) =>

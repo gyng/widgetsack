@@ -52,6 +52,32 @@ describe('migrateMonitorKeys', () => {
 		expect(out).toEqual({ 'CRXED00-UID184576': strip, DISPLAY2: stray });
 	});
 
+	it('an evidence-backed legacy key beats a by-name one for the same monitor, whatever the file order', () => {
+		// The strip's real layout is keyed 'DISPLAY3' (pinned to the strip by its saved window
+		// geometry); an unrelated 'DISPLAY2' entry merely carries the strip's name today. Without the
+		// preference the first entry in the file would win and the real layout could be stranded.
+		const strip = mon();
+		const stray = mon();
+		const out = migrateMonitorKeys(
+			{ DISPLAY2: stray, DISPLAY3: strip },
+			{ DISPLAY3: 'CRXED00-UID184576', DISPLAY2: 'CRXED00-UID184576' },
+			new Set(['DISPLAY3'])
+		);
+		expect(out).toEqual({ DISPLAY2: stray, 'CRXED00-UID184576': strip });
+	});
+
+	it('a by-name legacy key still migrates when no evidence-backed key competes for its monitor', () => {
+		// The 2026-09-20 live file: only 'DISPLAY2' (today's tag for the strip) carries a layout; the
+		// stale 'DISPLAY3' evidence names no entry in the file, so it must not block the migration.
+		const strip = mon();
+		const out = migrateMonitorKeys(
+			{ default: mon(), DISPLAY2: strip },
+			{ DISPLAY3: 'CRXED00-UID184576', DISPLAY2: 'CRXED00-UID184576' },
+			new Set(['DISPLAY3'])
+		);
+		expect(out).toEqual({ default: out?.default, 'CRXED00-UID184576': strip });
+	});
+
 	it('leaves default and any key the mapping does not name untouched', () => {
 		expect(
 			migrateMonitorKeys(

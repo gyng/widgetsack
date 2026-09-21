@@ -196,6 +196,11 @@ function SelectCombobox({
 	const selectedItem = optionFor(options, value);
 	const deferCommit = !!allowCustom && commitOn === 'blur';
 	const [inputValue, setInputValue] = useState(() => displayValue(options, value, !!allowCustom));
+	// Deferred commit only: true once the USER has typed (Downshift InputChange) and until that text is
+	// committed, replaced by a pick, or cancelled with Escape. Downshift also rewrites inputValue on its
+	// own (Escape on a closed menu empties it, blur-with-highlight fills it in) — none of that is typing,
+	// and none of it may be committed as if it were: that path silently cleared a widget's sensor.
+	const typedDirty = useRef(false);
 
 	// Re-sync the visible text when `value` changes from OUTSIDE (reset / undo / programmatic), but not
 	// on every render — that would clobber typing. lastValue tracks the value we last reflected.
@@ -203,6 +208,7 @@ function SelectCombobox({
 	useEffect(() => {
 		if (value !== lastValue.current) {
 			lastValue.current = value;
+			typedDirty.current = false;
 			setInputValue(displayValue(options, value, !!allowCustom));
 		}
 		// oxlint-disable-next-line react-hooks/exhaustive-deps -- only an external value change resets text
@@ -240,26 +246,39 @@ function SelectCombobox({
 			/* v8 ignore next -- Downshift supplies a string for input-change notifications. */
 			const next = iv ?? '';
 			setInputValue(next);
+			if (type !== useCombobox.stateChangeTypes.InputChange) return;
+			typedDirty.current = true;
 			// Free-text commits live (mirrors the old onInput sensor field); closed selects commit on pick.
 			// NB: do NOT touch lastValue here — `value` updates a render later (the commit is async), and
 			// pre-empting it makes the sync effect below "correct" the input back to the stale value,
 			// clearing each keystroke. The effect alone reconciles lastValue once `value` actually changes.
-			if (allowCustom && !deferCommit && type === useCombobox.stateChangeTypes.InputChange) {
-				onChange(next.trim());
-			}
+			if (allowCustom && !deferCommit) onChange(next.trim());
 		},
 		onSelectedItemChange: ({ selectedItem: sel }) => {
 			if (!sel) return;
+			typedDirty.current = false;
 			onChange(sel.value);
 			setInputValue(allowCustom ? sel.value : sel.label);
-		}
+		},
+		// Deferred commit: Escape CANCELS the edit — the text snaps back to the current value. Left to
+		// Downshift, a second Escape (menu already closed) empties the input, and the blur that follows
+		// would have committed '' (a widget losing its sensor binding by pressing Escape twice).
+		stateReducer: (_state, { type, changes }) =>
+			deferCommit && type === useCombobox.stateChangeTypes.InputKeyDownEscape
+				? { ...changes, inputValue: displayValue(options, value, true) }
+				: changes
 	});
 	const rect = useAnchoredRect(wrapRef, isOpen);
 
 	// Deferred free-text commit (wired only when deferCommit): the typed text becomes the value on
-	// blur / Enter (one change), unless it already equals the current value (a pick / an untouched
-	// focus-out commits nothing).
+	// blur / Enter (one change). Nothing is committed unless the user actually typed (typedDirty), the
+	// text differs from the current value, and Downshift isn't about to pick a highlighted row itself
+	// (blur with an open menu + highlight selects that row via onSelectedItemChange — committing the
+	// half-typed text first would write an invalid id AND cost a second undo step).
 	const commitTyped = (): void => {
+		if (isOpen && highlightedIndex >= 0) return;
+		if (!typedDirty.current) return;
+		typedDirty.current = false;
 		const next = inputValue.trim();
 		if (next !== value) onChange(next);
 	};
@@ -286,19 +305,27 @@ function SelectCombobox({
 					className="np-select-input"
 					placeholder={placeholder}
 					title={title}
-					{...getInputProps({ disabled, 'aria-label': ariaLabel })}
+					// onBlur goes THROUGH the prop getter so Downshift chains it before its own blur handling
+					// (close the menu / pick the highlighted row). Set after the spread it would replace that
+					// handler outright — even as `undefined` — leaving the menu open on focus-out.
+					{...getInputProps({
+						disabled,
+						'aria-label': ariaLabel,
+						onBlur: deferCommit ? commitTyped : undefined
+					})}
 					// Open the list on a plain click of the field (not just the ▾ caret) — clicking a combobox
 					// to see its options is what users expect ("I can't click to choose"). Attached after the
 					// prop-getter spread so it isn't dropped; useCombobox sets no onClick of its own to compose.
 					onClick={() => openMenu()}
 					onFocus={selectAllOnFocus ? (e) => e.currentTarget.select() : undefined}
-					onBlur={deferCommit ? commitTyped : undefined}
 					onKeyDownCapture={
 						deferCommit
 							? (e) => {
 									// Enter commits the typed text — unless an option is highlighted in the open
 									// menu, in which case Downshift picks it and onSelectedItemChange commits that.
-									if (e.key === 'Enter' && (!isOpen || highlightedIndex < 0)) commitTyped();
+									// Escape cancels: the stateReducer above restores the text, so drop the edit.
+									if (e.key === 'Enter') commitTyped();
+									else if (e.key === 'Escape') typedDirty.current = false;
 								}
 							: undefined
 					}

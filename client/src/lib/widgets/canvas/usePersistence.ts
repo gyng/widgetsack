@@ -85,7 +85,44 @@ export type PersistenceOptions = {
 	// the boolean). An overlay's edit mode has no Save button: this is how a failed live write reaches
 	// the user there, instead of the edits silently never landing on disk.
 	onPreviewWriteResult?: (ok: boolean) => void;
+	// `true` once this window has SUCCESSFULLY copied an unparseable widgets.json aside (Canvas's
+	// backupLayoutFile). Until then a write over a file that no longer parses is refused — the corrupt
+	// original must never be silently overwritten before it is backed up. Once it is, the file is
+	// treated as empty so the user can rebuild (and Save) instead of every write failing forever.
+	layoutBackedUp?: () => boolean;
 };
+
+// The persistence-relevant slice of the on-disk widgets.json: the OTHER monitors + the global
+// library/theme that a write merges around this monitor's record.
+type LayoutFile = {
+	monitors: LayoutV2['monitors'];
+	fileLib: Library | undefined;
+	fileTheme: string | undefined;
+};
+
+// Re-read widgets.json before a write. Resolves `null` (→ the write is refused) when the file can't
+// be read, or when it reads but doesn't parse and has NOT been backed up yet. With a backup in place
+// an unparseable file is read as empty: whatever was recoverable is already in widgets.json.bad-*.
+async function readLayoutFile(backedUp: boolean): Promise<LayoutFile | null> {
+	try {
+		const raw = await invoke<string | null>(COMMANDS.loadLayout);
+		let obj: Record<string, unknown> | null = null;
+		try {
+			obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
+		} catch (err) {
+			if (!backedUp) throw err;
+			console.warn('widgets.json is unparseable but backed up; writing a fresh file over it', err);
+		}
+		return {
+			monitors: (obj ? parseLayoutAny(obj) : null)?.monitors ?? {},
+			fileLib: obj?.library as Library | undefined,
+			fileTheme: typeof obj?.theme === 'string' ? (obj.theme as string) : undefined
+		};
+	} catch (err) {
+		console.warn('load_layout failed; refusing to overwrite widgets.json', err);
+		return null;
+	}
+}
 
 export function usePersistence(
 	state: EditorState,
@@ -142,19 +179,9 @@ export function usePersistence(
 		const extras = req.extras;
 		const v = view.current;
 		if (v.myMonitor !== req.key) return false; // the studio switched monitors since → stale, skip
-		let monitors: LayoutV2['monitors'] = {};
-		let fileLib: Library | undefined;
-		let fileTheme: string | undefined;
-		try {
-			const raw = await invoke<string | null>(COMMANDS.loadLayout);
-			const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
-			monitors = (obj ? parseLayoutAny(obj) : null)?.monitors ?? {};
-			fileLib = obj?.library as Library | undefined;
-			fileTheme = typeof obj?.theme === 'string' ? (obj.theme as string) : undefined;
-		} catch (err) {
-			console.warn('load_layout failed; refusing to overwrite widgets.json', err);
-			return false;
-		}
+		const file = await readLayoutFile(optionsRef.current.layoutBackedUp?.() ?? false);
+		if (!file) return false;
+		const { monitors, fileLib, fileTheme } = file;
 		// While editing a def, fold the in-progress def back into the library + persist the REAL
 		// monitor (not the scoped editing tree). (Svelte's syncEditingDef() + savedMonitor swap.)
 		let library = v.library;
@@ -232,19 +259,9 @@ export function usePersistence(
 	// sources the editor values from `b` (and the baseline is never mid-def, so no def fold).
 	const writeBaseline = useCallback(async (b: Baseline, myMonitor: string): Promise<boolean> => {
 		const v = view.current;
-		let monitors: LayoutV2['monitors'] = {};
-		let fileLib: Library | undefined;
-		let fileTheme: string | undefined;
-		try {
-			const raw = await invoke<string | null>(COMMANDS.loadLayout);
-			const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
-			monitors = (obj ? parseLayoutAny(obj) : null)?.monitors ?? {};
-			fileLib = obj?.library as Library | undefined;
-			fileTheme = typeof obj?.theme === 'string' ? (obj.theme as string) : undefined;
-		} catch (err) {
-			console.warn('load_layout failed; refusing to overwrite widgets.json', err);
-			return false;
-		}
+		const file = await readLayoutFile(optionsRef.current.layoutBackedUp?.() ?? false);
+		if (!file) return false;
+		const { monitors, fileLib, fileTheme } = file;
 		const baseNoTheme: MonitorLayout = { ...b.monitor };
 		delete baseNoTheme.theme;
 		monitors[myMonitor] = b.themeLock ? baseNoTheme : { ...baseNoTheme, theme: b.theme };

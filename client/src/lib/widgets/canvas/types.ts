@@ -85,9 +85,11 @@ export type EditorState = {
 	// Cleared automatically when the container leaves the tree. Optional so the many op-level test
 	// fixtures needn't spell it out (absent ⇒ none).
 	addTarget?: string | null;
-	// The id of the node the last add op created (widget or group), so the Canvas can scroll/flash it
-	// into view — an add that lands off-screen or under another widget otherwise reads as a no-op.
-	justAdded?: string | null;
+	// The node the last add op created (widget or group), so the Canvas can flash it — an add that
+	// lands off-screen or under another widget otherwise reads as a no-op. `pan` = also bring it into
+	// view (palette clicks / template inserts); a pointer-placed drop (addWidgetAt) sets it false so
+	// the stage never jumps out from under the cursor.
+	justAdded?: { id: string; pan: boolean } | null;
 	// Bumped on every commit (saveLayout); the persistence effect watches it to write to disk.
 	saveSeq: number;
 	// Distinguishes overlay (auto-save now) from studio (debounced preview) for the save effect.

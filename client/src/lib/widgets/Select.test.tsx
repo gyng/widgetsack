@@ -59,6 +59,15 @@ describe('Select (combobox variant: typeahead)', () => {
 		expect(onChange).toHaveBeenCalledWith('s.5');
 	});
 
+	it('closes the menu when focus leaves the input', () => {
+		render(<Select value="" options={SENSORS} onChange={vi.fn()} searchable />);
+		const input = screen.getByRole('combobox');
+		fireEvent.click(input);
+		expect(input.getAttribute('aria-expanded')).toBe('true');
+		fireEvent.blur(input, { relatedTarget: document.body });
+		expect(input.getAttribute('aria-expanded')).toBe('false');
+	});
+
 	it('accepts a typed custom value when allowCustom (commits live, like the sensor field)', () => {
 		const onChange = vi.fn();
 		render(<Select value="" options={SENSORS} onChange={onChange} allowCustom />);
@@ -244,10 +253,73 @@ describe('Select (combobox: deferred commit + select-all on focus)', () => {
 		fireEvent.keyDown(input, { key: 'Enter' }); // untouched → nothing to commit
 		expect(onChange).not.toHaveBeenCalled();
 		fireEvent.change(input, { target: { value: 'typed.id' } });
-		fireEvent.keyDown(input, { key: 'Escape' }); // close the menu the change opened
+		fireEvent.click(screen.getByLabelText('Toggle options')); // close the menu the change opened
 		fireEvent.keyDown(input, { key: 'Enter' });
 		expect(onChange).toHaveBeenCalledTimes(1);
 		expect(onChange).toHaveBeenCalledWith('typed.id');
+	});
+
+	it('commitOn="blur": Escape, Escape, blur leaves the binding alone (no silent clear)', () => {
+		// Downshift's second Escape (menu already closed) empties the input; that must not become a
+		// commit of '' on blur — the field reverts to the current value instead.
+		const onChange = vi.fn();
+		render(
+			<Select value="s.1" options={SENSORS} onChange={onChange} allowCustom commitOn="blur" />
+		);
+		const input = screen.getByRole('combobox') as HTMLInputElement;
+		fireEvent.click(input); // open
+		fireEvent.keyDown(input, { key: 'Escape' }); // close
+		fireEvent.keyDown(input, { key: 'Escape' }); // would clear the text
+		expect(input.value).toBe('s.1');
+		fireEvent.blur(input, { relatedTarget: screen.getByLabelText('Toggle options') });
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it('commitOn="blur": blurring with a highlighted row picks it — ONE commit, never the partial text', () => {
+		const onChange = vi.fn();
+		render(<Select value="" options={SENSORS} onChange={onChange} allowCustom commitOn="blur" />);
+		const input = screen.getByRole('combobox') as HTMLInputElement;
+		fireEvent.change(input, { target: { value: 'Sensor 7' } });
+		fireEvent.keyDown(input, { key: 'ArrowDown' }); // highlight the (only) match
+		fireEvent.blur(input, { relatedTarget: screen.getByLabelText('Toggle options') }); // Tab away
+		expect(onChange).toHaveBeenCalledTimes(1);
+		expect(onChange).toHaveBeenCalledWith('s.7');
+		expect(input.value).toBe('s.7');
+		expect(input.getAttribute('aria-expanded')).toBe('false'); // Downshift still saw the blur
+	});
+
+	it('commitOn="blur": Escape after typing reverts to the current value and commits nothing', () => {
+		const onChange = vi.fn();
+		render(
+			<Select value="s.1" options={SENSORS} onChange={onChange} allowCustom commitOn="blur" />
+		);
+		const input = screen.getByRole('combobox') as HTMLInputElement;
+		fireEvent.change(input, { target: { value: 'my.se' } });
+		fireEvent.keyDown(input, { key: 'Escape' }); // cancel the edit
+		expect(input.value).toBe('s.1');
+		fireEvent.blur(input);
+		fireEvent.keyDown(input, { key: 'Enter' });
+		expect(onChange).not.toHaveBeenCalled();
+	});
+
+	it('commitOn="blur": an untouched or unchanged field never commits on blur', () => {
+		const onChange = vi.fn();
+		const { rerender } = render(
+			<Select value="s.1" options={SENSORS} onChange={onChange} allowCustom commitOn="blur" />
+		);
+		const input = screen.getByRole('combobox') as HTMLInputElement;
+		fireEvent.change(input, { target: { value: 'half' } });
+		// undo / reset from outside while typing: the text re-syncs and the stale keystrokes are dropped
+		rerender(
+			<Select value="s.2" options={SENSORS} onChange={onChange} allowCustom commitOn="blur" />
+		);
+		expect(input.value).toBe('s.2');
+		fireEvent.blur(input);
+		// ending up with the current id verbatim is not a change either (no no-op write / undo step)
+		fireEvent.change(input, { target: { value: 's.2x' } });
+		fireEvent.change(input, { target: { value: 's.2' } });
+		fireEvent.blur(input);
+		expect(onChange).not.toHaveBeenCalled();
 	});
 
 	it('commitOn="blur": picking a listed option still commits immediately (and Enter picks a highlight)', () => {

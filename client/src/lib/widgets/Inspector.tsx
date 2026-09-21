@@ -357,15 +357,16 @@ export default function Inspector({
 	onClearAddTarget
 }: Props) {
 	const op = (o: LayoutOp) => onOp?.(o);
-	// Where a clicked palette widget lands: the sticky add target, else the selected container, else
-	// as a floating widget. Mirrors addWidget in useEditorModel so the button names its real
-	// destination (no hidden mode).
+	// Where a clicked palette widget lands: the selected container, else the sticky add target, else
+	// as a floating widget. Mirrors editorOps.currentContainer (selection wins over the sticky target)
+	// so the button names its real destination (no hidden mode).
 	const addTargetName = addTarget ? (addTargetLabel ?? addTarget) : null;
-	const addDest = addTargetName
-		? `into ${addTargetName}`
-		: container
-			? `into this ${KIND_LABEL[container.kind].toLowerCase()}`
-			: 'floating';
+	const addInto = container
+		? `this ${KIND_LABEL[container.kind].toLowerCase()}`
+		: addTargetName
+			? addTargetName
+			: null;
+	const addDest = addInto ? `into ${addInto}` : 'floating';
 
 	// Collapse the Add/Library palette once a node is selected, so the selected node's properties sit
 	// at the TOP of the rail (not below the palette you scroll past). Auto-set on selection change but
@@ -1014,11 +1015,9 @@ export default function Inspector({
 										{
 											label: w.label,
 											desc: getMeta(w.type)?.description,
-											hint: addTargetName
-												? `Click to add into ${addTargetName} · drag to place`
-												: container
-													? `Click to add into this ${KIND_LABEL[container.kind].toLowerCase()} · drag to place`
-													: 'Click to add · drag to place',
+											hint: addInto
+												? `Click to add into ${addInto} · drag to place`
+												: 'Click to add · drag to place',
 											type: w.type
 										},
 										e.currentTarget

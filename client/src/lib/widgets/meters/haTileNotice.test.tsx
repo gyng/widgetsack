@@ -36,9 +36,11 @@ const TILES: [string, Tile, string][] = [
 
 describe('HA tiles — no-data states', () => {
 	it.each(TILES)(
-		'%s: with no ha.status sample it says the plugin is not configured (keeps its root class)',
+		'%s: on the unconfigured status it says so (keeps its root class); no status → waits',
 		(_name, Tile, rootClass) => {
-			const { container, getByRole } = render(<Tile haStatus={null} label="Lounge" />);
+			const { container, getByRole, rerender } = render(
+				<Tile haStatus="unconfigured" label="Lounge" />
+			);
 			const notice = getByRole('status');
 			expect(notice.textContent).toBe(HA_UNCONFIGURED_MESSAGE);
 			const root = container.firstElementChild as HTMLElement;
@@ -48,6 +50,10 @@ describe('HA tiles — no-data states', () => {
 			expect(root.textContent).toContain('Lounge');
 			// Nothing interactive is offered while there's nothing to control.
 			expect(container.querySelector('button')).toBeNull();
+			// No status sample heard yet is NOT "not configured" — a late-mounted window waits.
+			rerender(<Tile haStatus={null} label="Lounge" />);
+			expect(getByRole('status').textContent).toBe('Waiting for Home Assistant…');
+			expect(root.getAttribute('data-tile-state')).toBe('waiting');
 		}
 	);
 

@@ -85,25 +85,40 @@ export function migrateV1(v1: LayoutV1): LayoutV2 {
  * device tag ('DISPLAY3' — re-numbered by Windows whenever displays re-enumerate, which on
  * 2026-09-19 put a layout on the wrong monitor). Positionally correct at migration time, stable
  * ever after. 'default' (the primary) and any key the mapping doesn't name pass through; a legacy
- * key with no current monitor (unplugged) is kept as-is so its layout isn't orphaned silently. Returns null when nothing
+ * key with no current monitor (unplugged) is kept as-is so its layout isn't orphaned silently.
+ * When two legacy keys in the file map to one stable key, only one can move there: a key in
+ * `preferred` (pinned to the monitor by saved window evidence — `LegacyKeyMapping.evidence`) beats
+ * one that merely carries the monitor's name today, and otherwise the first in file order wins;
+ * the loser keeps its legacy key rather than silently vanishing. Returns null when nothing
  * needed remapping (caller skips the save). Pure, and generic over the monitor VALUE so the
  * adapter can remap the raw on-disk JSON record without round-tripping it through the parser
  * (which would strip fields the structural whitelist doesn't know).
  */
 export function migrateMonitorKeys<T>(
 	monitors: Record<string, T>,
-	mapping: Record<string, string>
+	mapping: Record<string, string>,
+	preferred: ReadonlySet<string> = new Set()
 ): Record<string, T> | null {
+	// Any non-default key the mapping names is legacy: a pre-device-key enumeration index ('1')
+	// or a GDI device tag ('DISPLAY3') from before stable identity keys — Windows re-numbers those.
+	const target = (key: string): string | undefined => {
+		const next = key !== 'default' ? mapping[key] : undefined;
+		return next && next !== key ? next : undefined;
+	};
+	// Decide the winner per stable key up front (preferred keys first, then file order) so the
+	// output can still be built in file order. An existing (already-migrated) entry is never
+	// clobbered by a remapped legacy one.
+	const winner = new Map<string, string>(); // stable key → the legacy key that moves there
+	const legacyKeys = Object.keys(monitors).filter((k) => target(k) !== undefined);
+	for (const key of [...legacyKeys.filter((k) => preferred.has(k)), ...legacyKeys]) {
+		const next = target(key)!;
+		if (!(next in monitors) && !winner.has(next)) winner.set(next, key);
+	}
 	let changed = false;
 	const out: Record<string, T> = {};
 	for (const [key, mon] of Object.entries(monitors)) {
-		// Any non-default key the mapping names is legacy: a pre-device-key enumeration index ('1')
-		// or a GDI device tag ('DISPLAY3') from before stable identity keys — Windows re-numbers those.
-		const next = key !== 'default' ? mapping[key] : undefined;
-		// Don't clobber an existing (already-migrated) monitor entry with a remapped legacy one, nor
-		// one a legacy key earlier in this pass already migrated onto (first writer wins; the loser
-		// keeps its legacy key rather than silently vanishing).
-		if (next && next !== key && !(next in monitors) && !(next in out)) {
+		const next = target(key);
+		if (next !== undefined && winner.get(next) === key) {
 			out[next] = mon;
 			changed = true;
 		} else {

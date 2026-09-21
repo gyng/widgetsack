@@ -131,6 +131,7 @@ import {
 	patchFloating
 } from './canvas/useEditorModel';
 import { usePersistence } from './canvas/usePersistence';
+import { rebaselineOnEditToggle } from './canvas/overlayEditBaseline';
 import { applyAssistantOps } from '../core/llm';
 import { decideDesignerLeave } from './canvas/designerLeave';
 import { useStageSize } from './canvas/useStageSize';
@@ -388,7 +389,11 @@ export default function Canvas({ studio = false }: Props) {
 	// studio's Save uses — once per failure streak (the next success re-arms it), so a drag that
 	// commits many times doesn't stack alerts. The studio has its Save button for this.
 	const writeFailAlerted = useRef(false);
+	// Set once backupLayoutFile (below) has copied an unparseable widgets.json aside: from then on
+	// persistence may write a fresh file over it, so a rebuilt layout can actually be saved.
+	const layoutBackedUpRef = useRef(false);
 	const persistence = usePersistence(state, myMonitor, {
+		layoutBackedUp: () => layoutBackedUpRef.current,
 		onPreviewWriteResult: (ok) => {
 			if (ok) {
 				writeFailAlerted.current = false;
@@ -1011,19 +1016,26 @@ export default function Canvas({ studio = false }: Props) {
 	// An unparseable widgets.json is backed up ONCE per window (the backend copies it aside as
 	// widgets.json.bad-<ts>) and the outcome is shown in a banner — the studio used to log this to the
 	// client log only, so the user saw a blank stage with no idea their layout had been set aside.
-	const [layoutBackup, setLayoutBackup] = useState<{ path: string | null } | null>(null);
+	// `failed`: the copy itself errored — the corrupt file is still the only copy, so persistence
+	// keeps refusing to write over it (see layoutBackedUpRef) and the banner says edits won't save.
+	const [layoutBackup, setLayoutBackup] = useState<{
+		path: string | null;
+		failed: boolean;
+	} | null>(null);
 	const layoutBackupDone = useRef(false);
 	const backupLayoutFile = useCallback(() => {
 		if (layoutBackupDone.current) return;
 		layoutBackupDone.current = true;
 		invoke<string | null>(COMMANDS.backupLayout)
 			.then((path) => {
+				// `null` = there was no file to copy (nothing recoverable to lose) — writes may proceed too.
 				if (path) logClient('warn', 'layout', `unparseable widgets.json backed up to ${path}`);
-				setLayoutBackup({ path });
+				layoutBackedUpRef.current = true;
+				setLayoutBackup({ path, failed: false });
 			})
 			.catch((err) => {
 				logClient('error', 'layout', `layout backup failed: ${String(err)}`);
-				setLayoutBackup({ path: null });
+				setLayoutBackup({ path: null, failed: true });
 			});
 	}, []);
 	const reloadLayout = useCallback(async () => {
@@ -1227,13 +1239,25 @@ export default function Canvas({ studio = false }: Props) {
 	// --- setEdit ---
 	const setEdit = useCallback(
 		(value: boolean) => {
+			const rebaseline = rebaselineOnEditToggle({
+				studio,
+				wasEditing: editModeRef.current,
+				editing: value
+			});
 			setEditMode(value);
 			editModeRef.current = value;
+			// An overlay ENTERING edit mode anchors its baseline + undo history here, so "Revert" restores
+			// the layout as of this entry — not app start, which would discard an earlier session's
+			// auto-saved edits (see overlayEditBaseline.ts).
+			if (rebaseline) {
+				dispatch({ type: 'resetHistory' });
+				dispatch({ type: 'setBaseline' });
+			}
 			// Whole-window click-through + decorations follow `editMode` via the presentation effect below;
 			// refresh the per-widget interactive rects now using the new mode.
 			syncRects();
 		},
-		[syncRects]
+		[studio, dispatch, syncRects]
 	);
 
 	// Overlay presentation: decorations / taskbar / z-order / whole-window click-through, derived in ONE
@@ -1416,12 +1440,17 @@ export default function Canvas({ studio = false }: Props) {
 		dispatch({ type: 'resetHistory' });
 	}, [studio, dispatch, revertDraftToDisk, applyTheme]);
 	const dirtyRef = useRef(dirty); // mirrored in the commit effect S3
-	// Overlay edit mode: edits diverge from the baseline loaded at startup (the studio's `dirty` is
-	// studio-gated). "Revert" writes that baseline straight back to disk, same path as the studio's Cancel.
+	// Overlay edit mode: edits diverge from the baseline anchored when edit mode was ENTERED (setEdit
+	// re-baselines on the rising edge; the studio's `dirty` is studio-gated). "Revert" writes that
+	// baseline straight back to disk, same path as the studio's Cancel.
 	const overlayDirty = !studio && savedBaseline != null && monitor !== savedBaseline.monitor;
 	const revertOverlayEdits = useCallback(async () => {
 		if (!savedBaselineRef.current) return;
-		if (!window.confirm('Restore the last saved layout? Edits made in this session are discarded.'))
+		if (
+			!window.confirm(
+				'Restore the layout as it was when you entered edit mode? Edits made since then are discarded.'
+			)
+		)
 			return;
 		dispatch({ type: 'patch', patch: { selectedId: null, selectedIds: [] } });
 		await revertDraftToDisk();
@@ -2350,14 +2379,15 @@ export default function Canvas({ studio = false }: Props) {
 
 	// --- just-added: bring the new node into view + flash it ---
 	// An add that lands off the visible stage (zoomed in / panned away) or under another widget
-	// otherwise reads as a no-op. Pan the stage so the node is visible (studio) and flash it for 1s via
+	// otherwise reads as a no-op. Pan the stage so the node is visible (studio, and only when the op
+	// asked for it — a pointer-placed drop is already where the user put it) and flash it for 1s via
 	// a `data-just-added` attribute on its host (styled in Canvas.css). The flow tree measures a frame
 	// after the commit, so the rect lookup retries over a few frames before giving up. Declared AFTER
 	// the S3 mirror so solvedRef/panRef are fresh on the first attempt.
 	const flashTimer = useRef<number | null>(null);
 	useEffect(() => {
 		if (!justAdded) return;
-		const id = justAdded;
+		const { id, pan } = justAdded;
 		let tries = 0;
 		let raf = 0;
 		const attempt = () => {
@@ -2374,7 +2404,7 @@ export default function Canvas({ studio = false }: Props) {
 				if (flashTimer.current) clearTimeout(flashTimer.current);
 				flashTimer.current = window.setTimeout(() => el.removeAttribute('data-just-added'), 1000);
 			}
-			if (r && studio) {
+			if (r && studio && pan) {
 				const p = panRef.current;
 				const { stageW: sw, stageH: sh } = stageSizeRef.current;
 				const visible =
@@ -3120,10 +3150,9 @@ export default function Canvas({ studio = false }: Props) {
 									<div className="layout-banner" role="alert">
 										<span>
 											Couldn’t read widgets.json —{' '}
-											{layoutBackup.path
-												? `backed up to ${layoutBackup.path}; `
-												: 'the backup failed (see the log); '}
-											loaded an empty layout
+											{layoutBackup.failed
+												? 'the backup failed (see the log); loaded an empty layout. Edits will not save until widgets.json is fixed or removed'
+												: `${layoutBackup.path ? `backed up to ${layoutBackup.path}` : 'nothing to back up'}; loaded an empty layout. Rebuild here — saving writes a fresh file`}
 										</span>
 										<button type="button" onClick={() => setLayoutBackup(null)}>
 											Dismiss
@@ -3361,7 +3390,7 @@ export default function Canvas({ studio = false }: Props) {
 											<button
 												type="button"
 												className="revert"
-												title="Restore the last saved layout (discards the edits made in this session)"
+												title="Restore the layout as it was when you entered edit mode (discards the edits made since)"
 												onClick={revertOverlayEdits}
 											>
 												Revert

@@ -9,7 +9,7 @@ type HaState = { state?: string; attributes?: Record<string, unknown> };
 
 type Props = {
 	value?: unknown;
-	/** The `ha.status` sample (host-supplied): undefined = not wired, null = plugin not configured. */
+	/** The `ha.status` sample (host-supplied): undefined = not wired, null = no status heard yet. */
 	haStatus?: string | null;
 	label?: string;
 };

@@ -7,12 +7,26 @@ describe('haTileState', () => {
 		expect(haTileState(undefined, { state: 'unavailable' })).toEqual({ kind: 'ok' });
 	});
 
-	it('points at Plugins → Home Assistant when no ha.status sample exists (never configured)', () => {
+	it('waits (neutral) when no ha.status sample has reached this window yet', () => {
+		// Regression: a window mounted after the last status transition (studio opened later, a
+		// late secondary overlay, a reload) has no status sample until the backend primes it, and
+		// the main window has none until the first `connecting`. That is not "not configured" —
+		// the user must never be sent to the Plugins panel on missing evidence, and a cached
+		// entity value must not read as live data either.
 		expect(haTileState(null, null)).toEqual({
+			kind: 'waiting',
+			message: 'Waiting for Home Assistant…'
+		});
+		expect(haTileState(null, { state: 'on' }).kind).toBe('waiting');
+		expect(haTileState('', { state: 'on' }).kind).toBe('waiting');
+	});
+
+	it('points at Plugins → Home Assistant only on an explicit `unconfigured` status', () => {
+		expect(haTileState('unconfigured', null)).toEqual({
 			kind: 'unconfigured',
 			message: HA_UNCONFIGURED_MESSAGE
 		});
-		expect(haTileState('', { state: 'on' }).kind).toBe('unconfigured');
+		expect(haTileState('unconfigured', { state: 'on' }).kind).toBe('unconfigured');
 		expect(HA_UNCONFIGURED_MESSAGE).toMatch(/Plugins → Home Assistant/);
 	});
 

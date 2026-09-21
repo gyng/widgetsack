@@ -6,9 +6,11 @@
 // Keyboard: a WAI-ARIA tree with a roving tabindex — ONE tab stop (the focused row), then
 // ArrowUp/Down move between rows, Home/End jump, ArrowLeft/Right collapse/expand a container (or
 // move to its parent / first child), Enter or Space selects. Alt+Arrow runs the structural moves
-// (up/down/out/in) so they stay keyboard-reachable while the row's action glyphs are mouse-only.
+// (up/down/out/in) so they stay keyboard-reachable while the row's action glyphs are mouse-only;
+// Delete removes the focused row (the ✕) and the Menu key / Shift+F10 opens its ⋯ menu.
 import {
 	memo,
+	useEffect,
 	useMemo,
 	useRef,
 	useState,
@@ -132,6 +134,17 @@ function Outline({
 	// the resting and hovered row shows only ✕ + ⋯ and the label never gets crushed.
 	const [menuFor, setMenuFor] = useState<string | null>(null);
 	const closeMenu = () => setMenuFor(null);
+	// A keyboard-opened ⋯ menu moves focus onto its first enabled action once it has rendered (the
+	// row's buttons are tabIndex -1, so nothing else would put the keyboard inside it).
+	const focusMenuFor = useRef<string | null>(null);
+	useEffect(() => {
+		if (!menuFor || focusMenuFor.current !== menuFor) return;
+		focusMenuFor.current = null;
+		rowEls.current
+			.get(menuFor)
+			?.querySelector<HTMLButtonElement>('.row-menu button:not(:disabled)')
+			?.focus();
+	}, [menuFor]);
 
 	function onRowKeyDown(e: ReactKeyboardEvent, id: string) {
 		// Keys typed inside the ⋯ menu belong to it (Escape closes; the rest is native button handling).
@@ -190,6 +203,21 @@ function Outline({
 				case 'Enter':
 				case ' ':
 					op({ op: 'select', id });
+					break;
+				case 'Delete':
+					// The ✕ button's op, keyboard-reachable (the button itself is not a tab stop). The
+					// root has no ✕: leave the key to the studio's own bindings there.
+					if (id === root.id) handled = false;
+					else op({ op: 'remove', id });
+					break;
+				case 'ContextMenu':
+				case 'F10':
+					// Open the row's ⋯ menu (tree rows only — root and floating rows have none, so the
+					// native contextmenu event, and the Canvas menu it opens, still gets through there).
+					if (row && (e.key === 'ContextMenu' || e.shiftKey)) {
+						focusMenuFor.current = id;
+						setMenuFor(id);
+					} else handled = false;
 					break;
 				default:
 					handled = false;

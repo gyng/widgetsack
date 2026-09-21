@@ -127,6 +127,11 @@ pub struct HaRegistry {
 pub struct HaState {
     handle: Mutex<Option<JoinHandle<()>>>,
     latest: std::sync::Mutex<HashMap<String, Value>>,
+    /// The last `ha.status` string emitted (`emit_status`). Status is emitted app-wide on
+    /// transitions only, so a window that mounts afterwards (studio from the tray, a late
+    /// secondary overlay, a reload) is primed from here — otherwise its tiles never learn the
+    /// connection state.
+    status: std::sync::Mutex<Option<String>>,
 }
 
 impl HaState {
@@ -176,11 +181,31 @@ fn prime_samples(latest: &HashMap<String, Value>, ids: &[String], ts_ms: u64) ->
     out
 }
 
+/// The `ha.status` sample priming a window that just reported demand for `ids`: the last emitted
+/// status, iff the window wants the connection sensor (directly or via the `*` wildcard) and a
+/// status has been emitted at all. `None` otherwise — a window is never told a status it didn't
+/// ask for, and never a made-up one. Pure.
+fn prime_status_sample(
+    last_status: Option<&str>,
+    ids: &[String],
+    ts_ms: u64,
+) -> Option<SensorSample> {
+    let wanted = ids.iter().any(|id| id == "ha.status" || id == "*");
+    let status = last_status.filter(|_| wanted)?;
+    Some(SensorSample {
+        sensor: "ha.status".to_string(),
+        ts_ms,
+        value: SensorValue::Text(status.to_string()),
+    })
+}
+
 /// Send `window` the latest cached state of every HA entity among the ids it just started
-/// consuming (called from `set_active_sensors` with the ADDED ids only). Closes the demand-gate
-/// gap: the stream and snapshot only carry entities some window already wanted, so a widget bound
-/// after the fact would otherwise stay blank until its entity next changes. Emits to that window
-/// alone. A no-op when HA isn't managed / nothing is cached.
+/// consuming (called from `set_active_sensors` with the ADDED ids only), plus the current
+/// connection status when `ha.status` is among them. Closes the demand-gate gap: the stream and
+/// snapshot only carry entities some window already wanted, and status is only emitted on
+/// transitions, so a widget bound after the fact would otherwise stay blank until its entity next
+/// changes — and an HA tile in a late-mounted window would never learn the connection state.
+/// Emits to that window alone. A no-op when HA isn't managed / nothing is cached.
 pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[String]) {
     if added.is_empty() {
         return;
@@ -189,8 +214,12 @@ pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[Strin
         return;
     };
     let batch = {
+        let ts_ms = now_ms();
         let latest = state.latest.lock().unwrap_or_else(|e| e.into_inner());
-        prime_samples(&latest, added, now_ms())
+        let status = state.status.lock().unwrap_or_else(|e| e.into_inner());
+        let mut batch = prime_samples(&latest, added, ts_ms);
+        batch.extend(prime_status_sample(status.as_deref(), added, ts_ms));
+        batch
     };
     if !batch.is_empty() {
         let _ = window.emit(TELEMETRY_EVENT, &batch);
@@ -597,8 +626,13 @@ fn entity_reg_from(v: &Value) -> Option<HaEntityReg> {
 
 /// Surface the connection state to widgets as a `ha.status` text sample over the existing
 /// telemetry event (a Text meter bound to `ha.status` shows it). Single status transport —
-/// no separate bridge event.
+/// no separate bridge event. One of `unconfigured` | `connecting` | `connected` | `disconnected`
+/// | `error` (mirrored by core/haTileState.ts + core/haStatus.ts). Remembered in `HaState` so
+/// windows that mount later can be primed with it (`prime_window`).
 fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &str) {
+    if let Some(state) = app.try_state::<HaState>() {
+        *state.status.lock().unwrap_or_else(|e| e.into_inner()) = Some(status.to_string());
+    }
     let batch = vec![SensorSample {
         sensor: "ha.status".to_string(),
         ts_ms: now_ms(),
@@ -1028,7 +1062,13 @@ pub async fn ha_connect<R: Runtime>(
 ) -> Result<(), String> {
     let cfg = match load_ha_config(&app)? {
         Some(cfg) => cfg,
-        None => return Ok(()), // not configured: nothing to connect
+        None => {
+            // Not configured: nothing to connect. Say so explicitly — the tiles show "not
+            // configured" only on this status, never on the mere absence of one (a window that
+            // simply hasn't heard yet must not send the user to the Plugins panel).
+            emit_status(&app, "unconfigured");
+            return Ok(());
+        }
     };
     let mut guard = state.handle.lock().await;
     if guard.is_some() {
@@ -1041,11 +1081,16 @@ pub async fn ha_connect<R: Runtime>(
     Ok(())
 }
 
-/// Stop the streaming WS task (if any).
+/// Stop the streaming WS task (if any). Aborting skips the loop's own `disconnected` emit, so
+/// it is emitted here — otherwise the remembered status would stay `connected` for a dead task.
 #[tauri::command]
-pub async fn ha_disconnect(state: State<'_, HaState>) -> Result<(), String> {
+pub async fn ha_disconnect<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, HaState>,
+) -> Result<(), String> {
     if let Some(handle) = state.handle.lock().await.take() {
         handle.abort();
+        emit_status(&app, "disconnected");
     }
     Ok(())
 }
@@ -1413,6 +1458,23 @@ mod tests {
         let all = prime_samples(&latest, &["*".to_string()], 7);
         assert_eq!(all.len(), 3); // temp json + temp scalar + light json
         assert!(prime_samples(&latest, &[], 7).is_empty());
+    }
+
+    #[test]
+    fn prime_status_sample_replays_the_last_status_to_windows_that_want_it() {
+        let wants_status = ["ha.status".to_string(), "ha.light.a".to_string()];
+        let s = prime_status_sample(Some("connected"), &wants_status, 9).expect("primed");
+        assert_eq!(s.sensor, "ha.status");
+        assert_eq!(s.ts_ms, 9);
+        assert!(matches!(s.value, SensorValue::Text(ref v) if v == "connected"));
+        // A late-opened studio (wildcard) gets it too; an unconfigured HA is reported as such.
+        let star = ["*".to_string()];
+        let s = prime_status_sample(Some("unconfigured"), &star, 9).expect("primed");
+        assert!(matches!(s.value, SensorValue::Text(ref v) if v == "unconfigured"));
+        // No status ever emitted → nothing made up; a window not wanting ha.status → nothing.
+        assert!(prime_status_sample(None, &wants_status, 9).is_none());
+        let entity_only = ["ha.light.a".to_string(), "cpu.total".to_string()];
+        assert!(prime_status_sample(Some("connected"), &entity_only, 9).is_none());
     }
 
     #[test]

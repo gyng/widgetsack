@@ -5,6 +5,7 @@
 // never on internals.
 import { describe, expect, it, vi } from 'vitest';
 import {
+	addWidget,
 	cfgNum,
 	clone,
 	defInUse,
@@ -12,7 +13,9 @@ import {
 	insertTemplate,
 	insertWidget,
 	rand,
-	renameDef
+	renameDef,
+	setPlacementBounds,
+	setSolvedForFloat
 } from './editorOps';
 import {
 	container,
@@ -180,7 +183,19 @@ describe('insertWidget', () => {
 		expect(next.monitor.root.children).toHaveLength(1); // root gained nothing else
 		// The col is now the sticky add target and the group is flagged for the scroll/flash.
 		expect(next.addTarget).toBe('col1');
-		expect(next.justAdded).toBe(next.selectedId);
+		expect(next.justAdded).toEqual({ id: next.selectedId, pan: true });
+	});
+
+	it('does NOT make the root fallback sticky: a following palette add still floats', () => {
+		setSolvedForFloat(new Map());
+		setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
+		const s = state({ library: { version: 1, defs: [gaugeDef('def-1')] } });
+		const next = { ...s, ...insertWidget(s, 'def-1') };
+		expect(next.monitor.root.children).toHaveLength(1); // docked into the root as the fallback…
+		expect(next.addTarget).toBeUndefined(); // …but the root did not become the sticky target
+		const after = { ...next, ...addWidget(next, 'gauge') };
+		expect(after.monitor.floating).toHaveLength(1);
+		expect(after.monitor.root.children).toHaveLength(1); // the gauge did not join the root column
 	});
 
 	it('is a no-op (empty patch) for an unknown def id', () => {
@@ -218,9 +233,31 @@ describe('insertTemplate', () => {
 		expect(node.unit.size).toEqual(getTemplate(CLOCK)?.size);
 		expect(next.library).toBeUndefined(); // library untouched
 		expect(next.selectedId).toBe(node.id);
-		// The root (the target) sticks as the add target; the group is flagged for the scroll/flash.
-		expect(next.addTarget).toBe('root');
-		expect(next.justAdded).toBe(node.id);
+		// The root is only the FALLBACK destination — it never sticks as the add target (a following
+		// palette click must float, not dock into the root column); the group is flagged for the
+		// scroll/flash.
+		expect(next.addTarget).toBeUndefined();
+		expect(next.justAdded).toEqual({ id: node.id, pan: true });
+	});
+
+	it('with nothing selected, a following palette add floats instead of joining the root', () => {
+		setSolvedForFloat(new Map());
+		setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
+		const s = state();
+		const next = { ...s, ...insertTemplate(s, CLOCK) };
+		expect(next.addTarget).toBeUndefined();
+		const after = { ...next, ...addWidget(next, 'gauge') };
+		expect(after.monitor.floating).toHaveLength(1);
+		expect(after.monitor.root.children).toHaveLength(1); // only the template group
+	});
+
+	it('makes the SELECTED container sticky (not the root) when one is selected', () => {
+		const col = container('col1', 'col', [], { align: 'stretch' });
+		const s = state({ monitor: { root: container('root', 'col', [col]), floating: [] } });
+		s.selectedId = 'col1';
+		const next = { ...s, ...insertTemplate(s, CLOCK) };
+		expect(next.addTarget).toBe('col1');
+		expect((next.monitor.root.children[0] as Container).children).toHaveLength(1);
 	});
 
 	it('remaps template-local ids to fresh ones (two inserts never collide)', () => {
