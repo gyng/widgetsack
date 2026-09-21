@@ -4,8 +4,25 @@
 // canvas/multiSelect.ts and the bulk apply lives in the Canvas (commitOp → one undo step). A list of
 // the selected items lets you drop back to single-select to tweak one.
 import type { MergedField, BasisSummary } from './canvas/multiSelect';
+import type { AlignEdge, DistributeAxis } from '../core/align';
+import type { LayoutOp } from './ops';
 import Select from './Select';
 import './MultiInspector.css';
+
+// Align / distribute buttons (floating widgets only): each emits one op the Canvas applies as a
+// single undo step via core/align.ts (alignRects / distributeRects).
+const ALIGN_BUTTONS: { edge: AlignEdge; glyph: string; label: string }[] = [
+	{ edge: 'left', glyph: '⇤', label: 'Align left' },
+	{ edge: 'centre', glyph: '⇹', label: 'Align centres' },
+	{ edge: 'right', glyph: '⇥', label: 'Align right' },
+	{ edge: 'top', glyph: '⤒', label: 'Align top' },
+	{ edge: 'middle', glyph: '⇳', label: 'Align middles' },
+	{ edge: 'bottom', glyph: '⤓', label: 'Align bottom' }
+];
+const DISTRIBUTE_BUTTONS: { axis: DistributeAxis; glyph: string; label: string }[] = [
+	{ axis: 'horizontal', glyph: '⇔', label: 'Distribute horizontally' },
+	{ axis: 'vertical', glyph: '⇕', label: 'Distribute vertically' }
+];
 
 type Props = {
 	items: { id: string; label: string }[]; // every selected node (click to focus just it)
@@ -16,6 +33,10 @@ type Props = {
 	onSetBasis: (basis: 'fixed' | 'content' | 'grow') => void;
 	onDelete: () => void;
 	docked?: boolean;
+	// The selected FLOATING widget ids (align/distribute only apply to free-placed widgets; in-flow
+	// ones are positioned by their container). 2+ enables align, 3+ distribute. Emits via onOp.
+	floatingIds?: string[];
+	onOp?: (op: LayoutOp) => void;
 };
 
 const num = (v: unknown): number => {
@@ -32,7 +53,9 @@ export default function MultiInspector({
 	onPatchConfig,
 	onSetBasis,
 	onDelete,
-	docked = false
+	docked = false,
+	floatingIds = [],
+	onOp
 }: Props) {
 	const cls = ['inspector', 'multi'];
 	if (docked) cls.push('docked');
@@ -110,6 +133,42 @@ export default function MultiInspector({
 					<div className="multi-note">
 						No shared editable properties — click an item to edit it.
 					</div>
+				)}
+
+				{floatingIds.length >= 2 && (
+					<>
+						<span className="hd">Align floating widgets</span>
+						<div className="multi-align" role="group" aria-label="Align">
+							{ALIGN_BUTTONS.map((b) => (
+								<button
+									key={b.edge}
+									type="button"
+									title={b.label}
+									aria-label={b.label}
+									onClick={() => onOp?.({ op: 'alignSelected', ids: floatingIds, edge: b.edge })}
+								>
+									{b.glyph}
+								</button>
+							))}
+						</div>
+						{floatingIds.length >= 3 && (
+							<div className="multi-align" role="group" aria-label="Distribute">
+								{DISTRIBUTE_BUTTONS.map((b) => (
+									<button
+										key={b.axis}
+										type="button"
+										title={b.label}
+										aria-label={b.label}
+										onClick={() =>
+											onOp?.({ op: 'distributeSelected', ids: floatingIds, axis: b.axis })
+										}
+									>
+										{b.glyph} {b.axis}
+									</button>
+								))}
+							</div>
+						)}
+					</>
 				)}
 
 				{basis && (

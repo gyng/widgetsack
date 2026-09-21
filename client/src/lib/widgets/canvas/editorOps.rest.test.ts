@@ -8,7 +8,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
 	addDefParam,
+	alignFloating,
 	clearTokens,
+	distributeFloating,
 	clearWidgetTokens,
 	patchFloating,
 	patchGroup,
@@ -391,5 +393,65 @@ describe('patchFloating (group-skip branch)', () => {
 		const unit = patch.monitor!.floating[0].unit as Group;
 		expect(unit.name).toBe('keep'); // a group leaf is skipped by patchFloating
 		expect((unit as unknown as WidgetInstance).sensor).toBeUndefined();
+	});
+});
+
+// =============================================================================================
+// alignFloating / distributeFloating (multi-select align + distribute of FLOATING widgets)
+// =============================================================================================
+
+describe('alignFloating / distributeFloating', () => {
+	const at = (id: string, x: number, y: number, w = 100, h = 50): Leaf =>
+		leaf({ ...gauge(id), rect: { x, y, w, h } });
+	const rectOf = (s: EditorState, id: string) =>
+		(s.monitor.floating.find((l) => l.id === id)!.unit as WidgetInstance).rect;
+
+	it('aligns the named floating primitives + groups in one patch, ignoring non-floating ids', () => {
+		const s = minimalState();
+		const g = group('grp', { w: 60, h: 40 }, leaf(gauge('inner')), { config: { x: 300, y: 90 } });
+		s.monitor.floating = [at('a', 10, 20), at('b', 50, 70), leaf(g)];
+		s.monitor.root = container('root', 'col', [leaf(gauge('docked'))]);
+		const next = { ...s, ...alignFloating(s, ['a', 'b', 'grp', 'docked', 'ghost'], 'left') };
+		expect(rectOf(next, 'a').x).toBe(10);
+		expect(rectOf(next, 'b').x).toBe(10);
+		const moved = next.monitor.floating[2].unit as Group;
+		expect(moved.config).toMatchObject({ x: 10, y: 90 }); // the group moves via its config box
+		expect(next.monitor.root).toBe(s.monitor.root); // the docked widget is untouched
+		// Sizes preserved.
+		expect(rectOf(next, 'b')).toEqual({ x: 10, y: 70, w: 100, h: 50 });
+	});
+
+	it('a group aligns by its config box when set, else by its own size', () => {
+		const s = minimalState();
+		const g = group('grp', { w: 60, h: 40 }, leaf(gauge('inner')), { config: { x: 0, y: 0 } });
+		s.monitor.floating = [at('a', 0, 100), leaf(g)];
+		const next = { ...s, ...alignFloating(s, ['a', 'grp'], 'bottom') };
+		// bottom = max(100+50, 0+40) = 150 → the group's y = 150 - 40 = 110
+		expect((next.monitor.floating[1].unit as Group).config).toMatchObject({ x: 0, y: 110 });
+		// A resized group carries its box in config: right-align uses that width, not the size.
+		const wide = group('grp2', { w: 60, h: 40 }, leaf(gauge('inner2')), {
+			config: { x: 0, y: 0, w: 200, h: 80 }
+		});
+		s.monitor.floating = [at('a', 300, 100), leaf(wide)];
+		const right = { ...s, ...alignFloating(s, ['a', 'grp2'], 'right') };
+		// right = max(300+100, 0+200) = 400 → the group's x = 400 - 200 = 200
+		expect((right.monitor.floating[1].unit as Group).config).toMatchObject({ x: 200, y: 0 });
+	});
+
+	it('is an empty patch when nothing moves (already aligned / fewer than 2 floating)', () => {
+		const s = minimalState();
+		s.monitor.floating = [at('a', 10, 20), at('b', 10, 70)];
+		expect(alignFloating(s, ['a', 'b'], 'left')).toEqual({});
+		expect(alignFloating(s, ['a'], 'right')).toEqual({});
+	});
+
+	it('distributes three+ floating widgets evenly (outer two stay put)', () => {
+		const s = minimalState();
+		s.monitor.floating = [at('a', 0, 0), at('b', 110, 0), at('c', 400, 0)];
+		const next = { ...s, ...distributeFloating(s, ['a', 'b', 'c'], 'horizontal') };
+		expect(rectOf(next, 'a').x).toBe(0);
+		expect(rectOf(next, 'c').x).toBe(400);
+		expect(rectOf(next, 'b').x).toBe(200); // gap = (500 - 300) / 2 = 100 → 0+100+100
+		expect(distributeFloating(s, ['a', 'b'], 'vertical')).toEqual({}); // needs 3+
 	});
 });

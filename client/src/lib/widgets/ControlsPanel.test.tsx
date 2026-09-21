@@ -2,19 +2,31 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, within } from '@testing-library/react';
 import '../core/controls.defaults'; // register the built-in inventory
 import ControlsPanel from './ControlsPanel';
+import { listControls } from '../core/controls';
 
 const noop = () => undefined;
+// The save control's label as registered (the wording is owned by controls.defaults; the tests care
+// about the row, not the word).
+const SAVE_LABEL = listControls().find((c) => c.id === 'studio.save')!.label;
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('ControlsPanel', () => {
-	it('lists controls with their formatted bindings + the read-only system shortcut', () => {
-		const { getByText } = render(
+	it('lists controls with their formatted bindings + the read-only built-in global shortcuts', () => {
+		const { getByText, getAllByText, queryByText } = render(
 			<ControlsPanel overrides={{}} onRebind={noop} onReset={noop} onResetAll={noop} />
 		);
-		expect(() => getByText('Save draft')).not.toThrow();
+		expect(() => getByText(SAVE_LABEL)).not.toThrow();
 		expect(() => getByText('Ctrl+S')).not.toThrow();
-		expect(() => getByText('Ctrl+Alt+E')).not.toThrow();
+		// Desktop edit + rescue are OS-registered chords: shown, marked "built-in", never "Rebind".
+		const edit = getByText('Ctrl+Alt+E').closest('.cp-row') as HTMLElement;
+		expect(edit.textContent).toContain('Toggle desktop edit mode (global)');
+		const rescue = getByText('Ctrl+Alt+Shift+E').closest('.cp-row') as HTMLElement;
+		expect(rescue.textContent).toContain('Rescue all windows (global)');
+		expect(getAllByText('built-in').length).toBe(2);
+		expect(within(edit).queryByText('Rebind')).toBeNull();
+		expect(within(rescue).queryByText('Rebind')).toBeNull();
+		expect(queryByText('set in app')).toBeNull();
 	});
 
 	it('captures the next chord on Rebind and reports the new key trigger', () => {
@@ -22,7 +34,7 @@ describe('ControlsPanel', () => {
 		const { getByText } = render(
 			<ControlsPanel overrides={{}} onRebind={onRebind} onReset={noop} onResetAll={noop} />
 		);
-		const row = getByText('Save draft').closest('.cp-row') as HTMLElement;
+		const row = getByText(SAVE_LABEL).closest('.cp-row') as HTMLElement;
 		fireEvent.click(within(row).getByText('Rebind'));
 		act(() => {
 			window.dispatchEvent(
@@ -47,7 +59,7 @@ describe('ControlsPanel', () => {
 				onResetAll={noop}
 			/>
 		);
-		const row = getByText('Save draft').closest('.cp-row') as HTMLElement;
+		const row = getByText(SAVE_LABEL).closest('.cp-row') as HTMLElement;
 		fireEvent.click(within(row).getByTitle('Reset to default'));
 		expect(onReset).toHaveBeenCalledWith('studio.save');
 	});
@@ -78,7 +90,7 @@ describe('ControlsPanel', () => {
 		const { getByText } = render(
 			<ControlsPanel overrides={{}} onRebind={onRebind} onReset={noop} onResetAll={noop} />
 		);
-		const row = getByText('Save draft').closest('.cp-row') as HTMLElement;
+		const row = getByText(SAVE_LABEL).closest('.cp-row') as HTMLElement;
 		fireEvent.click(within(row).getByText('Rebind'));
 		// While capturing, the prompt replaces the binding text.
 		expect(() => within(row).getByText(/Press keys/)).not.toThrow();
@@ -95,7 +107,7 @@ describe('ControlsPanel', () => {
 		const { getByText } = render(
 			<ControlsPanel overrides={{}} onRebind={onRebind} onReset={noop} onResetAll={noop} />
 		);
-		const row = getByText('Save draft').closest('.cp-row') as HTMLElement;
+		const row = getByText(SAVE_LABEL).closest('.cp-row') as HTMLElement;
 		fireEvent.click(within(row).getByText('Rebind'));
 		// A bare modifier must not end capture (you'd never be able to bind Ctrl+anything otherwise).
 		act(() => {
@@ -115,7 +127,7 @@ describe('ControlsPanel', () => {
 		const { getByText } = render(
 			<ControlsPanel overrides={{}} onRebind={onRebind} onReset={noop} onResetAll={noop} />
 		);
-		const row = getByText('Save draft').closest('.cp-row') as HTMLElement;
+		const row = getByText(SAVE_LABEL).closest('.cp-row') as HTMLElement;
 		fireEvent.click(within(row).getByText('Rebind'));
 		act(() => {
 			window.dispatchEvent(
@@ -136,19 +148,19 @@ describe('ControlsPanel', () => {
 		const { getByText } = render(
 			<ControlsPanel overrides={overrides} onRebind={noop} onReset={noop} onResetAll={noop} />
 		);
-		const keys = getByText('Save draft').closest('.cp-row')!.querySelector('.cp-keys')!;
+		const keys = getByText(SAVE_LABEL).closest('.cp-row')!.querySelector('.cp-keys')!;
 		expect(keys.textContent).toContain('—');
 	});
 
 	it('flags a conflict on both colliding controls with a warning mark + aria-label', () => {
-		// Rebind Save draft onto Ctrl+Z, which collides with Undo (same studio scope) → both rows warn.
+		// Rebind Save onto Ctrl+Z, which collides with Undo (same studio scope) → both rows warn.
 		const overrides = {
 			'studio.save': { triggers: [{ type: 'key' as const, key: 'z', ctrl: true }] }
 		};
 		const { getByText } = render(
 			<ControlsPanel overrides={overrides} onRebind={noop} onReset={noop} onResetAll={noop} />
 		);
-		const saveKeys = getByText('Save draft').closest('.cp-row')!.querySelector('.cp-keys')!;
+		const saveKeys = getByText(SAVE_LABEL).closest('.cp-row')!.querySelector('.cp-keys')!;
 		const undoKeys = getByText('Undo').closest('.cp-row')!.querySelector('.cp-keys')!;
 		// Both the remapped control and the one it shadows are marked.
 		expect(saveKeys.classList.contains('cp-conflict')).toBe(true);

@@ -115,6 +115,7 @@ export const COMMANDS = {
 	// log file location / reveal (diag.rs) for the Diagnostics tab
 	logFilePath: 'log_file_path',
 	revealLogDir: 'reveal_log_dir',
+	revealSacksDir: 'reveal_sacks_dir',
 	// fonts (command.rs)
 	systemFonts: 'system_fonts',
 	// sensors / telemetry demand-gating (sensors.rs)

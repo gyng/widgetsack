@@ -2,7 +2,9 @@
 // map (binds:'none'); WidgetHost resolves it (useSensorMap) and passes the `sensors` snapshot. Shows a
 // condition icon, the temperature, the condition label, today's high/low, and optional detail
 // (feels-like / humidity / wind). BARE DOM; styled in Weather.css via --np-* tokens. Server-side poll
-// (~15 min) → very low churn. No location configured → "—".
+// (~15 min) → very low churn. No data at all → an explanatory note instead of dashes: with no
+// location set the plugin never polls, so the note points at Plugins → Weather (an optional
+// `status` sensor — weather.status — refines that into loading / error while a location IS set).
 import { useState, type CSSProperties } from 'react';
 import type { SensorState } from '../../core/telemetry';
 import { weatherInfo, labelForecast, type ForecastCell } from '../../core/weather';
@@ -20,6 +22,14 @@ const scalar = (s?: SensorState): number | null =>
 	s?.value && s.value.kind === 'scalar' ? s.value.value : null;
 const textOf = (s?: SensorState): string | null =>
 	s?.value && s.value.kind === 'text' ? s.value.value : null;
+
+// The note shown when no reading exists. No `weather.status` sample at all means the backend never
+// polled — i.e. no location is configured (the poll loop idles without one).
+function emptyMessage(status: string | null): string {
+	if (status === 'connecting') return 'Loading weather…';
+	if (status === 'error') return 'Weather unavailable — check your connection';
+	return 'Set your location in Plugins → Weather';
+}
 
 export default function Weather({
 	sensors = {},
@@ -40,6 +50,7 @@ export default function Weather({
 	const wind = scalar(sensors.wind);
 	const apparent = scalar(sensors.apparent);
 	const unit = textOf(sensors.unit) || 'C';
+	const status = textOf(sensors.status);
 
 	const info =
 		code == null ? { label: '—', icon: '❓' } : weatherInfo(code, isDay == null || isDay >= 1);
@@ -62,19 +73,28 @@ export default function Weather({
 		(d) => d.high != null || d.low != null || d.code != null
 	);
 
+	// Nothing to show yet: say why, instead of a grid of dashes.
+	const empty = temp == null && code == null ? emptyMessage(status) : null;
+
 	return (
 		<div className="weather np-weather" style={vars}>
-			<div className="wx-main">
-				<span className="wx-icon" role="img" aria-label={info.label}>
-					{info.icon}
-				</span>
-				<div className="wx-temp">
-					<span className="wx-temp-val" data-part="value">
-						{temp == null ? '—' : `${Math.round(temp)}°${unit}`}
-					</span>
-					<span className="wx-cond">{info.label}</span>
+			{empty ? (
+				<div className="wx-empty" data-part="empty" role="status">
+					{empty}
 				</div>
-			</div>
+			) : (
+				<div className="wx-main">
+					<span className="wx-icon" role="img" aria-label={info.label}>
+						{info.icon}
+					</span>
+					<div className="wx-temp">
+						<span className="wx-temp-val" data-part="value">
+							{temp == null ? '—' : `${Math.round(temp)}°${unit}`}
+						</span>
+						<span className="wx-cond">{info.label}</span>
+					</div>
+				</div>
+			)}
 			{showHiLo && (high != null || low != null) && (
 				<div className="wx-hilo" data-part="hilo">
 					<span className="wx-hi">↑ {deg(high)}</span>

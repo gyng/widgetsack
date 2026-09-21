@@ -88,7 +88,7 @@ fn build_studio_window(app: &tauri::AppHandle) {
     }
     if let Err(err) =
         tauri::WebviewWindowBuilder::new(app, "studio", tauri::WebviewUrl::App("/".into()))
-            .title("WidgetSack Studio")
+            .title("widgetsack studio")
             .inner_size(980.0, 680.0)
             .resizable(true)
             .decorations(false)
@@ -102,7 +102,7 @@ fn build_studio_window(app: &tauri::AppHandle) {
 }
 
 /// Whether this process was launched to open the designer. The Start Menu / desktop shortcuts and the
-/// installer's "Run WidgetSack" checkbox pass `--studio`, so starting the app manually shows the
+/// installer's "Run widgetsack" checkbox pass `--studio`, so starting the app manually shows the
 /// studio window instead of just the silent (and, on a fresh install, empty) overlay. Autostart at
 /// login passes no flag and stays silent.
 fn launched_with_studio_flag() -> bool {
@@ -324,6 +324,7 @@ async fn main() -> Result<(), ()> {
             update::open_url,
             diag::log_file_path,
             diag::reveal_log_dir,
+            diag::reveal_sacks_dir,
             command::system_fonts,
             display::list_display_names,
             ddc::list_monitor_inputs,
@@ -508,12 +509,12 @@ async fn main() -> Result<(), ()> {
             // Re-fit overlays to the current display layout — for when monitors are moved/added/removed
             // at runtime (no per-window scale-change event fires for that, so overlays go stale).
             let refit_item =
-                MenuItemBuilder::with_id("refit", "Re-fit overlays to displays").build(app)?;
-            // "Start at login" — a check item mirroring the Settings toggle (the durable HKCU pref). Read
+                MenuItemBuilder::with_id("refit", "Re-fit overlays to monitors").build(app)?;
+            // "Launch at login" — a check item mirroring the Settings toggle (the durable HKCU pref). Read
             // the current state for the initial check; the handler flips it via the same autostart path.
             let autostart_on =
                 autostart::get_autostart_enabled(app.handle().clone()).unwrap_or(false);
-            let autostart_item = CheckMenuItemBuilder::with_id("autostart", "Start at login")
+            let autostart_item = CheckMenuItemBuilder::with_id("autostart", "Launch at login")
                 .checked(autostart_on)
                 .build(app)?;
             // "Update available: vX.Y.Z" — disabled until the background check (update.rs) finds a

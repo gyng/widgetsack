@@ -57,25 +57,35 @@ export const registerStocksPlugin = (): void =>
 							key: 'symbol',
 							label: 'symbol',
 							kind: 'text',
+							group: 'Data',
 							help: 'e.g. AAPL, SPY, BTC-USD — must be in the Stocks plugin’s symbol list'
 						},
 						{
 							key: 'label',
 							label: 'label',
 							kind: 'text',
+							group: 'Data',
 							help: 'header text (defaults to the symbol)'
 						},
-						{ key: 'decimals', label: 'decimals', kind: 'number', help: 'price decimal places' },
+						{
+							key: 'decimals',
+							label: 'decimals',
+							kind: 'number',
+							group: 'Appearance',
+							help: 'price decimal places'
+						},
 						{
 							key: 'showSparkline',
 							label: 'sparkline',
 							kind: 'toggle',
+							group: 'Appearance',
 							help: 'show the intraday mini-chart'
 						},
 						{
 							key: 'invertColors',
 							label: 'invert up/down colours',
 							kind: 'toggle',
+							group: 'Appearance',
 							help: 'red = up, green = down (East-Asian-market convention)'
 						}
 					]

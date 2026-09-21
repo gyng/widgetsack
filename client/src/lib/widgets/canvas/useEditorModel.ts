@@ -22,7 +22,7 @@ import {
 	type MonitorLayout,
 	type WidgetDef
 } from '../../core/layoutTree';
-import { collapseContainer } from '../../core/layoutEdit';
+import { collapseContainer, findNode } from '../../core/layoutEdit';
 import { getTemplate } from '../../core/templates';
 import type { LayoutOp } from '../ops';
 import { clampTreeSpacing } from './spacingGuard';
@@ -33,6 +33,7 @@ import {
 	addDefParam,
 	addWidget,
 	addWidgetAt,
+	alignFloating,
 	bulkPatchConfig,
 	bulkSetBasis,
 	cfgNum,
@@ -42,6 +43,7 @@ import {
 	deleteDef,
 	defInUse,
 	distributeEvenly,
+	distributeFloating,
 	dock,
 	dropWidgetInto,
 	floatingLeafFrom,
@@ -72,6 +74,7 @@ import {
 	setLeafBox,
 	setNodeBases,
 	setNodeBasis,
+	setPlacementBounds,
 	setSolvedForFloat,
 	setToken,
 	setTokens,
@@ -100,6 +103,7 @@ export {
 	clearWidgetTokens,
 	lookup,
 	setSolvedForFloat,
+	setPlacementBounds,
 	patchFloating,
 	DEFAULT_MONITOR
 };
@@ -253,24 +257,39 @@ function syncPrimary(next: EditorState, patchSetSelectedIds: boolean): EditorSta
 
 // --- selection sub-reducer -------------------------------------------------------------------
 
+// The sticky add target (the container the last palette add went into) survives selecting anything
+// INSIDE it (the new widget, a sibling, a nested container) and drops as soon as the user selects
+// something outside it — a floating widget, another branch of the tree, or nothing at all.
+function clearAddTargetIfOutside(next: EditorState): EditorState {
+	if (!next.addTarget) return next;
+	const target = findNode(next.monitor.root, next.addTarget);
+	const inside = !!(next.selectedId && target && findNode(target, next.selectedId));
+	return inside ? next : { ...next, addTarget: null };
+}
+
 type SelectionAction = Extract<Action, { type: 'select' | 'selectClick' | 'setSelectedIds' }>;
 
 function reduceSelection(state: EditorState, action: SelectionAction): EditorState {
 	switch (action.type) {
 		case 'select':
 			// A bare select (Outline/Inspector/menu) sets selectedId only → collapse the marquee.
-			return syncPrimary({ ...state, selectedId: action.id }, false);
+			return clearAddTargetIfOutside(syncPrimary({ ...state, selectedId: action.id }, false));
 		case 'selectClick':
 			// A plain canvas click: set both + mark synced so syncPrimary is a no-op.
-			return { ...state, selectedId: action.id, selectedIds: [action.id], lastPrimary: action.id };
+			return clearAddTargetIfOutside({
+				...state,
+				selectedId: action.id,
+				selectedIds: [action.id],
+				lastPrimary: action.id
+			});
 		case 'setSelectedIds':
 			// Authoritative multi-select (marquee): set the set + primary, mark synced.
-			return {
+			return clearAddTargetIfOutside({
 				...state,
 				selectedIds: action.ids,
 				selectedId: action.primary,
 				lastPrimary: action.primary
-			};
+			});
 	}
 }
 
@@ -558,7 +577,18 @@ function reduceLoad(state: EditorState, action: LoadAction): EditorState {
 	}
 }
 
+// A sticky add target whose container is gone (removed, undone, the monitor switched / reloaded, a
+// def edit swapped the tree) is dropped — a later add must not resolve against a stale id.
+function normalizeAddTarget(next: EditorState): EditorState {
+	if (!next.addTarget || findNode(next.monitor.root, next.addTarget)) return next;
+	return { ...next, addTarget: null };
+}
+
 function editorReducer(state: EditorState, action: Action): EditorState {
+	return normalizeAddTarget(reduce(state, action));
+}
+
+function reduce(state: EditorState, action: Action): EditorState {
 	switch (action.type) {
 		case 'op': {
 			const patch = action.run(state);
@@ -570,7 +600,10 @@ function editorReducer(state: EditorState, action: Action): EditorState {
 		}
 		case 'patch': {
 			const setSelectedIds = 'selectedIds' in action.patch;
-			return syncPrimary({ ...state, ...action.patch }, setSelectedIds);
+			const next = syncPrimary({ ...state, ...action.patch }, setSelectedIds);
+			// A selection change by patch (clear on monitor switch / cancel / reload) is a selection
+			// change like any other for the sticky add target.
+			return 'selectedId' in action.patch ? clearAddTargetIfOutside(next) : next;
 		}
 		case 'select':
 		case 'selectClick':
@@ -806,6 +839,12 @@ export function useEditorModel(studio: boolean, seedFloating: Leaf[]): EditorMod
 					return;
 				case 'replaceNode':
 					commitOp((s) => replaceNodeOp(s, op.id, op.node));
+					return;
+				case 'alignSelected':
+					commitOp((s) => alignFloating(s, op.ids, op.edge));
+					return;
+				case 'distributeSelected':
+					commitOp((s) => distributeFloating(s, op.ids, op.axis));
 					return;
 			}
 		},

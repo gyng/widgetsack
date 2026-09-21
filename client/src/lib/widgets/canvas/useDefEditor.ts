@@ -2,7 +2,7 @@
 // designer" path folds any open def first (foldOpenDef) so the reducer's re-entry guard never
 // blocks switching widgets from the list while one is already open. The def-edit MODE itself
 // (enterDefEdit / endDefEdit / preview) lives in the editor model's reducer — this hook is just
-// the studio-bar/list-side wrappers plus the rename/delete prompts around handleOp.
+// the studio-bar/list-side wrappers plus the rename op + the delete confirm around handleOp.
 import { useCallback, useEffect, useRef } from 'react';
 import type { LayoutOp } from '../ops';
 import { defInUse, type EditorModel } from './useEditorModel';
@@ -28,7 +28,8 @@ export type DefEditor = {
 	previewTemplate: (templateId: string) => void;
 	clonePreview: () => void;
 	closePreview: () => void;
-	renameWidget: (defId: string, current: string) => void;
+	/** Rename a custom widget. The name comes from the list's inline field (no prompt); blank is a no-op. */
+	renameWidget: (defId: string, name: string) => void;
 	deleteWidget: (defId: string, name: string) => void;
 };
 
@@ -90,27 +91,26 @@ export function useDefEditor({
 	);
 	const clonePreview = useCallback(() => dispatch({ type: 'clonePreview' }), [dispatch]);
 	const closePreview = useCallback(() => dispatch({ type: 'endPreview' }), [dispatch]);
-	// Rename a library widget (prompt). Works on any def, including the one being designed — the name
-	// lives in the library, so renaming mid-edit just updates it (the banner reflects it live).
+	// Rename a custom widget (the name arrives from DesignerListPanel's inline field). Works on any
+	// def, including the one being designed — the name lives in the library, so renaming mid-edit
+	// just updates it (the banner reflects it live). Blank / whitespace is a no-op.
 	const renameWidget = useCallback(
-		(defId: string, current: string) => {
-			const name = window.prompt('Rename widget:', current);
-			if (name && name.trim()) handleOp({ op: 'renameDef', defId, name: name.trim() });
+		(defId: string, name: string) => {
+			const trimmed = name.trim();
+			if (trimmed) handleOp({ op: 'renameDef', defId, name: trimmed });
 		},
 		[handleOp]
 	);
-	// Delete a library widget from the list. A def placed on a layout can't be deleted (it would
-	// orphan instances) — tell the user instead of silently no-op'ing. If it's the one being
-	// designed, fold the def edit first so deleteDef isn't blocked.
+	// Delete a custom widget from My widgets. A def placed on a layout can't be deleted (it would
+	// orphan the copies) — tell the user instead of silently no-op'ing. If it's the one being
+	// designed, fold the def edit first so deleteDef isn't blocked. Destructive → keeps confirm().
 	const deleteWidget = useCallback(
 		(defId: string, name: string) => {
 			if (defInUse(stateRef.current, defId)) {
-				window.alert(
-					`“${name}” is placed on a layout — remove those instances before deleting it.`
-				);
+				window.alert(`“${name}” is placed on a layout — remove those copies before deleting it.`);
 				return;
 			}
-			if (!window.confirm(`Delete widget “${name}” from your library?`)) return;
+			if (!window.confirm(`Delete the custom widget “${name}” from My widgets?`)) return;
 			if (defId === editingDefIdRef.current) foldOpenDef();
 			handleOp({ op: 'deleteDef', defId });
 		},

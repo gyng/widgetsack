@@ -34,10 +34,11 @@ body {
 	--space-4: 8px;
 	--space-5: 12px;
 	--space-6: 16px;
-	/* Type ramp: panel title (xl) > section header (sm, uppercase) > body (md) */
-	--text-xs: 9px;
-	--text-sm: 10px;
-	--text-md: 11px;
+	/* Type ramp: panel title (xl) > section header (sm, uppercase) > body (md). Body is 12px — the
+	   floor for comfortable reading in a settings form on a dense monitor. */
+	--text-xs: 10px;
+	--text-sm: 11px;
+	--text-md: 12px;
 	--text-lg: 12px;
 	--text-xl: 14px;
 	/* Radii: small controls vs panels/menus */
@@ -70,7 +71,7 @@ body {
 	/* Text */
 	--ui-fg: #eee; /* primary text */
 	--ui-fg-muted: #aaa; /* secondary text */
-	--ui-fg-dim: #8a8a8a; /* tertiary text (== legacy --dim-fg) */
+	--ui-fg-dim: #9a9a9a; /* tertiary / help text (== legacy --dim-fg); lifted from #8a8a8a for contrast */
 	/* Borders */
 	--ui-border: #2a2a30;
 	--ui-border-strong: #444;

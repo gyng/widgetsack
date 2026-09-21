@@ -10,6 +10,8 @@ import type { WidgetInstance } from '../core/layout';
 // A binds:'json' widget type for the test (reuses the HA sensor meter as the renderer —
 // registerWidget is generic over the meter's props, so no cast).
 registerWidget({ type: 'test.json', binds: 'json', label: 'T' }, HaSensor);
+// An `ha.*`-typed registration so the host's Home Assistant status wiring can be exercised.
+registerWidget({ type: 'ha.testtile', binds: 'json', label: 'HA tile' }, HaSensor);
 
 // A scalar meter that shows its value + history and exposes a button that bubbles an onControl call.
 // Declared interactive in the meta (not on the instance) so the meta-fallback path is exercised.
@@ -79,6 +81,46 @@ describe('WidgetHost binds-driven value passing', () => {
 
 		expect(() => getByText('Foo')).not.toThrow();
 		expect(() => getByText(/42/)).not.toThrow();
+	});
+
+	it('hands ha.* tiles the connection status: not configured (no ha.status yet) → offline → ok', () => {
+		const hub = createTelemetryHub();
+		const instance: WidgetInstance = {
+			id: 'w-ha',
+			type: 'ha.testtile',
+			sensor: 'ha.sensor.x',
+			rect: { x: 0, y: 0, w: 150, h: 44 },
+			config: {}
+		};
+		const { container } = render(<WidgetHost hub={hub} instance={instance} editMode={false} />);
+		// No `ha.status` sample at all → the plugin isn't configured (haStatus === null).
+		expect(container.querySelector('[data-tile-state]')?.getAttribute('data-tile-state')).toBe(
+			'unconfigured'
+		);
+		act(() => {
+			hub.ingest({ sensor: 'ha.status', ts_ms: 0, value: { kind: 'text', value: 'offline' } });
+		});
+		expect(container.querySelector('[data-tile-state]')?.getAttribute('data-tile-state')).toBe(
+			'offline'
+		);
+		act(() => {
+			hub.ingest({ sensor: 'ha.status', ts_ms: 1, value: { kind: 'text', value: 'connected' } });
+			hub.ingest({
+				sensor: 'ha.sensor.x',
+				ts_ms: 1,
+				value: { kind: 'json', value: { state: '7', attributes: { friendly_name: 'Bar' } } }
+			});
+		});
+		// ok → the real tile renders (no notice).
+		expect(container.querySelector('[data-tile-state]')).toBeNull();
+		expect(container.textContent).toContain('Bar');
+		// A non-text `ha.status` (never produced by the backend) still reads as "not configured".
+		act(() => {
+			hub.ingest({ sensor: 'ha.status', ts_ms: 2, value: { kind: 'scalar', value: 1 } });
+		});
+		expect(container.querySelector('[data-tile-state]')?.getAttribute('data-tile-state')).toBe(
+			'unconfigured'
+		);
 	});
 
 	it('content-fit mode renders the box at max-content instead of the fixed rect size', () => {
@@ -742,5 +784,43 @@ describe('WidgetHost content-fit measurement (ResizeObserver)', () => {
 		const calls = onMeasure.mock.calls.length;
 		act(() => observed.forEach((cb) => cb()));
 		expect(onMeasure.mock.calls.length).toBe(calls);
+	});
+});
+
+describe('WidgetHost keyboard tab stops + zoom-independent resize handles', () => {
+	const hub = createTelemetryHub();
+	const instance: WidgetInstance = {
+		id: 'w1',
+		type: 'test.scalar',
+		rect: { x: 0, y: 0, w: 100, h: 50 },
+		config: {}
+	};
+
+	it('exposes ONE tab stop per unselected widget: the overlay; handles are tabIndex -1', () => {
+		const { container } = render(<WidgetHost hub={hub} instance={instance} editMode />);
+		const overlay = container.querySelector('.drag-overlay') as HTMLButtonElement;
+		expect(overlay.tabIndex).toBe(0);
+		const handles = [...container.querySelectorAll('.handle')] as HTMLButtonElement[];
+		expect(handles.length).toBe(8);
+		expect(handles.every((h) => h.tabIndex === -1)).toBe(true);
+	});
+
+	it('makes the resize handles reachable by Tab once the widget is selected', () => {
+		const { container } = render(<WidgetHost hub={hub} instance={instance} editMode selected />);
+		const handles = [...container.querySelectorAll('.handle')] as HTMLButtonElement[];
+		expect(handles.every((h) => h.tabIndex === 0)).toBe(true);
+	});
+
+	it('sets --hs to 8px / zoom so handles keep an 8px on-screen size (floating + flow)', () => {
+		const { container, rerender } = render(
+			<WidgetHost hub={hub} instance={instance} editMode scale={0.5} />
+		);
+		const box = container.querySelector('.widget') as HTMLElement;
+		expect(box.style.getPropertyValue('--hs')).toBe('16px');
+		rerender(<WidgetHost hub={hub} instance={instance} editMode scale={2} flow />);
+		expect(box.style.getPropertyValue('--hs')).toBe('4px');
+		// A zero/absent scale never divides by zero (falls back to 1:1).
+		rerender(<WidgetHost hub={hub} instance={instance} editMode scale={0} />);
+		expect(box.style.getPropertyValue('--hs')).toBe('8px');
 	});
 });

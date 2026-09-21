@@ -2026,7 +2026,7 @@ pub fn watch_themes(app: tauri::AppHandle) -> Result<(), String> {
 /// `reason` tags the log line with which recovery path fired (layout watcher / keepalive).
 pub(crate) fn respawn_main_hidden(app: &tauri::AppHandle, reason: &str) {
     match tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("/".into()))
-        .title("WidgetSack")
+        .title("widgetsack")
         .inner_size(300.0, 400.0)
         .transparent(true)
         .shadow(false)

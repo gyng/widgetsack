@@ -42,11 +42,16 @@ test('sensor field is keyboard-driven (type → ArrowDown → Enter)', async ({ 
 	await expect(gauge).toHaveAttribute('data-sensor', /^battery\./);
 });
 
-test('sensor field accepts a free-typed custom id (allowCustom commits live)', async ({ page }) => {
+test('sensor field accepts a free-typed custom id (allowCustom commits once, on Enter / blur)', async ({
+	page
+}) => {
 	await gotoStudio(page);
 	const gauge = await addWidget(page, 'Gauge');
 	const sensor = page.getByRole('combobox', { name: 'sensor' });
 	await sensor.fill('my.custom.metric');
+	// Typing alone holds the text (one change per id, not per keystroke); Enter commits it.
+	await expect(gauge).not.toHaveAttribute('data-sensor', 'my.custom.metric');
+	await sensor.press('Enter');
 	await expect(gauge).toHaveAttribute('data-sensor', 'my.custom.metric');
 });
 

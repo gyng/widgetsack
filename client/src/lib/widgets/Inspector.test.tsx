@@ -168,7 +168,7 @@ describe('Inspector sensor typeahead options', () => {
 	it('labels options with the friendly name (+ unit) and shows the raw id as a hint', () => {
 		render(
 			<Inspector
-				widget={flowWidget}
+				widget={{ ...flowWidget, type: 'gauge' }}
 				placement="floating"
 				sensors={['ha.sensor.temp', 'cpu.total']}
 				sensorMeta={{ 'ha.sensor.temp': { label: 'Temp', unit: '°C' } }}
@@ -230,8 +230,9 @@ describe('Inspector group + def params block', () => {
 		} = render(<Inspector groupUnit={groupUnit} def={def} placement="floating" onOp={onOp} />);
 		const lastOp = (pred: (o: LayoutOp) => boolean) => onOp.mock.calls.map((c) => c[0]).find(pred);
 
-		// The group header + name field.
-		expect(getByText('group · g1')).toBeTruthy();
+		// The group header shows the friendly name (the raw id only in the tooltip / developer mode).
+		expect(getByText('My clock')).toBeTruthy();
+		expect(getByText('My clock').getAttribute('title')).toContain('g1');
 		const name = root.querySelector('input[value="My clock"]') as HTMLInputElement;
 		fireEvent.input(name, { target: { value: 'Renamed' } });
 		expect(lastOp((o) => o.op === 'patchGroup' && !!o.patch.name)).toMatchObject({
@@ -258,8 +259,8 @@ describe('Inspector group + def params block', () => {
 		fireEvent.input(defH, { target: { value: '80' } });
 		expect(lastOp((o) => o.op === 'setDefSize' && o.h === 80)).toBeTruthy();
 
-		// Edit def…
-		fireEvent.click(getByText('Edit def…'));
+		// Edit custom widget…
+		fireEvent.click(getByText('Edit custom widget…'));
 		expect(lastOp((o) => o.op === 'editDef')).toMatchObject({ op: 'editDef', defId: 'd1' });
 
 		// A text param writes the override into group.params.
@@ -287,19 +288,19 @@ describe('Inspector group + def params block', () => {
 			target: 'unit.config.fmt'
 		});
 
-		// Unlink + Remove.
-		fireEvent.click(getByText('⛓ Unlink'));
+		// Ungroup + Remove.
+		fireEvent.click(getByText('Ungroup'));
 		expect(lastOp((o) => o.op === 'ungroup')).toMatchObject({ op: 'ungroup', id: 'g1' });
 		fireEvent.click(getByText('Remove'));
 		expect(lastOp((o) => o.op === 'remove')).toMatchObject({ op: 'remove', id: 'g1' });
 	});
 
-	it('shows the "inline group (no def)" hint when the group has no def, and flow sizing controls', () => {
+	it('shows the "inline group (not a custom widget)" hint when the group has no def, and flow sizing controls', () => {
 		const inline: Group = { ...groupUnit, def: undefined, params: undefined };
 		const { getByText, getByLabelText } = render(
 			<Inspector groupUnit={inline} placement="flow" onOp={vi.fn()} />
 		);
-		expect(getByText('inline group (no def)')).toBeTruthy();
+		expect(getByText('inline group (not a custom widget)')).toBeTruthy();
 		// flow placement shows the group's leaf sizing control (aria-label "size in parent").
 		expect(getByLabelText('size in parent')).toBeTruthy();
 	});

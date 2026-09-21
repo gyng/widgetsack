@@ -10,18 +10,28 @@ import {
 	type LightAttrs
 } from '../../core/haControls';
 import type { ControlEvent } from '../meterProps';
+import { haTileState } from '../../core/haTileState';
+import HaTileNotice from './HaTileNotice';
 import './HaLight.css';
 
 type HaState = { state?: string; attributes?: Record<string, unknown> };
 
 type Props = {
 	value?: unknown;
+	/** The `ha.status` sample (host-supplied): undefined = not wired, null = plugin not configured. */
+	haStatus?: string | null;
 	label?: string;
 	onControl?: (e: ControlEvent) => void;
 	showBrightness?: boolean;
 };
 
-export default function HaLight({ value = null, label, onControl, showBrightness = true }: Props) {
+export default function HaLight({
+	value = null,
+	haStatus,
+	label,
+	onControl,
+	showBrightness = true
+}: Props) {
 	const s = (value ?? null) as HaState | null;
 	const on = s?.state === 'on';
 	const attrs = (s?.attributes ?? {}) as LightAttrs & Record<string, unknown>;
@@ -34,6 +44,11 @@ export default function HaLight({ value = null, label, onControl, showBrightness
 		const call = lightBrightnessPct(p);
 		onControl?.({ domain: 'light', service: call.service, data: call.data });
 	};
+
+	// No live data (plugin unset / offline / entity unavailable / still waiting) → the shared notice.
+	const tile = haTileState(haStatus, value);
+	if (tile.kind !== 'ok')
+		return <HaTileNotice className="ha-light np-ha-light" label={name} tile={tile} />;
 
 	return (
 		<div className={`ha-light np-ha-light${on ? ' on' : ''}`} data-part="root">

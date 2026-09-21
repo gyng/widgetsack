@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import Inspector from './Inspector';
 import { container, group, leaf, type Group, type WidgetDef } from '../core/layoutTree';
@@ -15,11 +15,12 @@ const lastOp = (onOp: ReturnType<typeof vi.fn>, op: string): LayoutOp | undefine
 		.find((o) => o.op === op);
 
 describe('Inspector container property panel', () => {
-	it('shows the kind · id header and emits patchContainer on a kind change', () => {
+	it('shows the "<Kind> container" header (id in the tooltip) and emits patchContainer on a kind change', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		const c = container('root', 'col', [], { align: 'stretch' });
 		render(<Inspector container={c} onOp={onOp} />);
-		expect(within(panel()).getByText('col · root')).toBeTruthy();
+		const hd = within(panel()).getByText('Column container');
+		expect(hd.getAttribute('title')).toBe('Column container · root');
 		fireEvent.click(within(panel()).getByLabelText('kind'));
 		fireEvent.click(screen.getByText('row (hsplit)', { selector: '.np-select-opt-label' }));
 		expect(lastOp(onOp, 'patchContainer')).toEqual({
@@ -121,7 +122,7 @@ describe('Inspector container property panel', () => {
 	it('emits makeWidget and remove from the container actions', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector container={container('root', 'col', [])} onOp={onOp} />);
-		fireEvent.click(within(panel()).getByRole('button', { name: 'Make widget' }));
+		fireEvent.click(within(panel()).getByRole('button', { name: 'Save as custom widget' }));
 		expect(lastOp(onOp, 'makeWidget')).toEqual({ op: 'makeWidget', id: 'root' });
 		fireEvent.click(within(panel()).getByRole('button', { name: 'Remove' }));
 		expect(lastOp(onOp, 'remove')).toEqual({ op: 'remove', id: 'root' });
@@ -148,10 +149,11 @@ describe('Inspector group property panel', () => {
 			{ name: 'My Group', ...over }
 		);
 
-	it('shows the group · id header and patches the name', () => {
+	it('shows the group name as the header (id in the tooltip) and patches the name', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector groupUnit={groupUnit()} onOp={onOp} />);
-		expect(screen.getByText('group · grp1')).toBeTruthy();
+		const hd = screen.getByText('My Group', { selector: '.node-hd' });
+		expect(hd.getAttribute('title')).toBe('Group · My Group · grp1');
 		fireEvent.input(screen.getByDisplayValue('My Group'), { target: { value: 'Renamed' } });
 		expect(lastOp(onOp, 'patchGroup')).toEqual({
 			op: 'patchGroup',
@@ -160,9 +162,9 @@ describe('Inspector group property panel', () => {
 		});
 	});
 
-	it('shows "inline group (no def)" when no def backs the group', () => {
+	it('shows "inline group (not a custom widget)" when no def backs the group', () => {
 		render(<Inspector groupUnit={groupUnit()} onOp={vi.fn()} />);
-		expect(screen.getByText('inline group (no def)')).toBeTruthy();
+		expect(screen.getByText('inline group (not a custom widget)')).toBeTruthy();
 	});
 
 	it('renders def fields when a def is supplied, and renames the def', () => {
@@ -179,7 +181,7 @@ describe('Inspector group property panel', () => {
 		render(<Inspector groupUnit={groupUnit({ def: 'def1' })} def={def} onOp={onOp} />);
 		fireEvent.input(screen.getByDisplayValue('Lib Widget'), { target: { value: 'New Name' } });
 		expect(lastOp(onOp, 'renameDef')).toEqual({ op: 'renameDef', defId: 'def1', name: 'New Name' });
-		fireEvent.click(screen.getByRole('button', { name: 'Edit def…' }));
+		fireEvent.click(screen.getByRole('button', { name: 'Edit custom widget…' }));
 		expect(lastOp(onOp, 'editDef')).toEqual({ op: 'editDef', defId: 'def1' });
 	});
 
@@ -196,7 +198,7 @@ describe('Inspector group property panel', () => {
 		};
 		render(<Inspector groupUnit={groupUnit({ def: 'def1' })} def={def} onOp={onOp} />);
 		fireEvent.change(screen.getByPlaceholderText('param key'), { target: { value: 'core' } });
-		fireEvent.change(screen.getByPlaceholderText('target e.g. unit.sensor'), {
+		fireEvent.change(screen.getByPlaceholderText('path, e.g. unit.sensor'), {
 			target: { value: 'unit.sensor' }
 		});
 		fireEvent.click(screen.getByRole('button', { name: 'Add param' }));
@@ -208,10 +210,10 @@ describe('Inspector group property panel', () => {
 		});
 	});
 
-	it('emits ungroup (Unlink) and remove from the group actions', () => {
+	it('emits ungroup and remove from the group actions', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector groupUnit={groupUnit()} onOp={onOp} />);
-		fireEvent.click(screen.getByRole('button', { name: /Unlink/ }));
+		fireEvent.click(screen.getByRole('button', { name: 'Ungroup' }));
 		expect(lastOp(onOp, 'ungroup')).toEqual({ op: 'ungroup', id: 'grp1' });
 		fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
 		expect(lastOp(onOp, 'remove')).toEqual({ op: 'remove', id: 'grp1' });
@@ -265,5 +267,85 @@ describe('Inspector per-widget token overrides', () => {
 		// TokenFields' clear button is labelled by its text ("Clear 1 override"), not its title.
 		fireEvent.click(screen.getByRole('button', { name: 'Clear 1 override' }));
 		expect(lastOp(onOp, 'clearWidgetTokens')).toEqual({ op: 'clearWidgetTokens', id: 'w1' });
+	});
+});
+
+describe('Inspector headers: friendly labels, ids only in the tooltip / developer mode', () => {
+	const gauge = {
+		id: 'gauge-7',
+		type: 'gauge',
+		rect: { x: 0, y: 0, w: 1, h: 1 },
+		config: {}
+	};
+
+	afterEach(() => localStorage.removeItem('widgetsack.overlay.prefs'));
+
+	it('shows the widget type label (not the raw type/id); the id lives in the title', () => {
+		render(<Inspector widget={gauge} placement="floating" onOp={vi.fn()} />);
+		const hd = within(panel()).getByText('Gauge', { selector: '.node-hd' });
+		expect(hd.textContent).toBe('Gauge');
+		expect(hd.getAttribute('title')).toBe('Gauge (gauge) · gauge-7');
+	});
+
+	it('falls back to the raw type for an unregistered widget type', () => {
+		render(
+			<Inspector widget={{ ...gauge, type: 'mystery' }} placement="floating" onOp={vi.fn()} />
+		);
+		expect(within(panel()).getByText('mystery', { selector: '.node-hd' })).toBeTruthy();
+	});
+
+	it('appends the instance id when developer mode is on (read defensively from the prefs)', () => {
+		localStorage.setItem('widgetsack.overlay.prefs', JSON.stringify({ developerMode: true }));
+		const { unmount } = render(<Inspector widget={gauge} placement="floating" onOp={vi.fn()} />);
+		expect(within(panel()).getByText('Gauge · gauge-7', { selector: '.node-hd' })).toBeTruthy();
+		unmount();
+		render(<Inspector container={container('c1', 'row', [])} onOp={vi.fn()} />);
+		expect(within(panel()).getByText('Row container · c1', { selector: '.node-hd' })).toBeTruthy();
+	});
+
+	it('names a group by its custom widget when the group itself has no name', () => {
+		const child = leaf({ ...gauge, id: 'g-child' });
+		const g = group('g1', { w: 1, h: 1 }, child, { def: 'd1' });
+		const def: WidgetDef = { id: 'd1', name: 'Def Name', size: { w: 1, h: 1 }, child };
+		localStorage.setItem('widgetsack.overlay.prefs', JSON.stringify({ developerMode: true }));
+		render(<Inspector groupUnit={g} def={def} onOp={vi.fn()} />);
+		const hd = screen.getByText('Def Name · g1', { selector: '.node-hd' });
+		expect(hd.getAttribute('title')).toBe('Custom widget · Def Name · g1');
+	});
+});
+
+describe('Inspector container: properties first + "Add into this container"', () => {
+	it('keeps the Add palette collapsed on selecting a container; the button opens it with the target', () => {
+		const onSetAddTarget = vi.fn();
+		const c = container('c1', 'row', []);
+		render(<Inspector container={c} onOp={vi.fn()} onSetAddTarget={onSetAddTarget} />);
+		const details = screen.getByText(/＋ Add widget/).closest('details') as HTMLDetailsElement;
+		expect(details.open).toBe(false);
+		// The container's own fields render (properties first) — e.g. gap — before any palette.
+		expect(within(panel()).getByRole('spinbutton', { name: 'gap' })).toBeTruthy();
+		fireEvent.click(within(panel()).getByRole('button', { name: '＋ Add into this container' }));
+		expect(onSetAddTarget).toHaveBeenCalledWith('c1');
+		expect(details.open).toBe(true);
+	});
+
+	it('shows an "Adding into" chip in the palette header for a sticky add target, with a ✕ to clear', () => {
+		const onClearAddTarget = vi.fn();
+		render(
+			<Inspector
+				onOp={vi.fn()}
+				addTarget="c1"
+				addTargetLabel="Row container"
+				onClearAddTarget={onClearAddTarget}
+			/>
+		);
+		expect(screen.getByText('＋ Add widget · into Row container')).toBeTruthy();
+		expect(screen.getByText(/Adding into: Row container/)).toBeTruthy();
+		fireEvent.click(screen.getByRole('button', { name: 'Clear add target' }));
+		expect(onClearAddTarget).toHaveBeenCalled();
+	});
+
+	it('names the add target by id when no label is supplied', () => {
+		render(<Inspector onOp={vi.fn()} addTarget="c9" />);
+		expect(screen.getByText('＋ Add widget · into c9')).toBeTruthy();
 	});
 });

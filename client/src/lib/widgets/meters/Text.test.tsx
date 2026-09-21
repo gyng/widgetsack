@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '@testing-library/react';
-import Text from './Text';
+import Text, { isEmptyText } from './Text';
 
 const part = (c: Element, p: string) => {
 	const el = c.querySelector(`[data-part="${p}"]`);
@@ -42,5 +42,28 @@ describe('Text', () => {
 	it('null value (default) formats to the placeholder', () => {
 		const { container } = render(<Text />);
 		expect(part(container, 'value').textContent).toBe('–');
+	});
+
+	describe('empty-content placeholder (edit mode)', () => {
+		it('renders the "Text" placeholder + empty class when there is no label and no value', () => {
+			const { container } = render(<Text />);
+			expect(part(container, 'placeholder').textContent).toBe('Text');
+			expect(container.querySelector('.np-text.empty')).not.toBeNull();
+			// The passive "–" is still rendered (CSS decides which one shows).
+			expect(part(container, 'value').textContent).toBe('–');
+		});
+
+		it('a blank formula result counts as empty; a label or a value does not', () => {
+			expect(isEmptyText('   ', '')).toBe(true);
+			expect(isEmptyText(undefined, '')).toBe(true);
+			expect(isEmptyText(0, '')).toBe(false);
+			expect(isEmptyText('x', '')).toBe(false);
+			expect(isEmptyText(null, 'CPU')).toBe(false);
+			for (const props of [{ value: 0 }, { label: 'CPU' }, { value: 'hi' }]) {
+				const { container } = render(<Text {...props} />);
+				expect(container.querySelector('[data-part="placeholder"]')).toBeNull();
+				expect(container.querySelector('.np-text.empty')).toBeNull();
+			}
+		});
 	});
 });

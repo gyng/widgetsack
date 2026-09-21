@@ -41,10 +41,11 @@ docs regenerate from the code with `npm run gen:docs`.
 - **Integrations:** Home Assistant (live states + light/climate/fan/cover/lock/scene/switch/media
   controls), MQTT, stock quotes, and
   weather (Open-Meteo, keyless).
-- **Overlay:** transparent, click-through, always-on-top, one per monitor — per-widget
-  click-through still lets buttons/controls catch clicks. Single-instance, optional autostart.
+- **Overlay:** transparent, click-through, one per monitor (below windows by default, or always
+  on top / behind desktop icons) — per-widget click-through still lets buttons/controls catch
+  clicks. Single-instance, optional launch at login.
 - **Studio:** visual editor — drag/resize/snap a CSS-flow layout, browse sensors, build reusable
-  widgets, edit themes, import/export "sacks". `Ctrl+Alt+E`; live-reloaded `widgets.json`.
+  custom widgets, edit themes, save layout presets, share "sacks". Live-reloaded `widgets.json`.
 - **Templates:** one-click starter groups (clock, system, network, now-playing) recreated from
   classic Rainmeter skins.
 - **Macros:** bind a button to a sequence of actions (HA service calls, media transport).
@@ -77,11 +78,20 @@ Download the installer from the [latest release](https://github.com/gyng/widgets
 
 The overlay starts passive (click-through). To arrange widgets:
 
-1. **Enter edit mode** — the tray icon's **"Edit layout"**, or press **`Ctrl+Alt+E`**.
-2. Drag widgets to move, drag the handles to resize. Use the **palette** (bottom-left) to
-   add widgets and the **inspector** to edit a selected widget's sensor / position / config.
-3. **Exit edit mode** the same way. The layout saves to `widgets.json` (in the app config
-   dir) and reloads automatically if you hand-edit that file.
+1. **Open the studio** — left-click the tray icon, or use the Start-menu shortcut (the tray
+   menu's **Open studio** does the same). The studio's **Layout** section is the editor: drag
+   widgets to move, drag the handles to resize, use **Add** to place widgets and the
+   **inspector** to edit a selected widget's sensor / position / config.
+2. **Edit on the desktop** — press **`Ctrl+Alt+E`** to toggle desktop edit mode and arrange
+   widgets right on the overlay (`Ctrl+E` does the same inside a widgetsack window). Press it
+   again to go back to passive.
+3. The layout saves to `widgets.json` (in the app config dir) and reloads automatically if you
+   hand-edit that file. **Presets** save and restore a monitor's whole arrangement.
+
+Stuck behind a click-through window, or an overlay stopped responding? **`Ctrl+Alt+Shift+E`** is
+the rescue shortcut: it forces every widgetsack window interactive and brings it forward, even if
+its webview crashed. Settings → Diagnostics has the same button, a live **logs** pane, and
+**Copy diagnostics** for bug reports.
 
 ### Theming
 
@@ -98,9 +108,11 @@ img {
 If multiple audio sources are active, a priority list of executable names decides which to
 show (reachable in edit mode; "All media" lists the current sources).
 
-### Autostart
+### Launch at login
 
-Toggle autostart in settings, or add `widgetsack.exe` to Startup apps in Task Manager.
+Toggle **launch at login** in Settings → Startup (or the tray menu), or tick it on the installer's
+finish page. Settings → About has an optional **check for updates automatically** toggle — it's off
+by default, and nothing is ever downloaded or installed without you opening the release page.
 
 ## Plugins
 
@@ -115,9 +127,9 @@ widgetsack has two plugin layers, both managed from the studio's **Plugins** sec
   sensors you can bind to any meter or formula as `pkg.<id>.*`.
 
 Install a package by dropping its folder into the app-config `plugins/` directory, or via
-**Plugins → Packages → Install from URL…** — paste `owner/repo`, a GitHub link, or any https
-`plugin.json` URL. Update checks are manual (per-package *Check updates*); nothing is fetched in
-the background.
+**Plugins → Packages → Install a package** — type `owner/repo`, a GitHub link, or any https
+`plugin.json` URL and press Install. Update checks are manual (per-package *Check updates*);
+nothing is fetched in the background.
 
 Packages are opt-in and sandboxed by design:
 

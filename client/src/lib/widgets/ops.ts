@@ -13,6 +13,7 @@ import type {
 	Pad,
 	WidgetInstance
 } from '../core/layoutTree';
+import type { AlignEdge, DistributeAxis } from '../core/align';
 
 export type LayoutOp =
 	| { op: 'select'; id: string }
@@ -85,4 +86,10 @@ export type LayoutOp =
 	| { op: 'reparent'; id: string; containerId: string } // move a node into a container
 	// Replace a node wholesale from the Inspector's Data tab (edited JSON). `id` keeps the slot; the
 	// supplied node carries the new content (its id is coerced to `id` by the Inspector).
-	| { op: 'replaceNode'; id: string; node: LayoutNode };
+	| { op: 'replaceNode'; id: string; node: LayoutNode }
+	// Multi-select align / distribute for FLOATING widgets (the MultiInspector's buttons + the
+	// multi-select context menu). `ids` are the selected floating widget ids; the Canvas looks up
+	// their rects, runs core/align.ts alignRects / distributeRects, and patches the moved rects in
+	// ONE commit (one undo step). Ids that aren't floating widgets are ignored.
+	| { op: 'alignSelected'; ids: string[]; edge: AlignEdge }
+	| { op: 'distributeSelected'; ids: string[]; axis: DistributeAxis };

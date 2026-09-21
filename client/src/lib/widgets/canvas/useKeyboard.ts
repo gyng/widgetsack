@@ -38,7 +38,7 @@ export type KeyboardDeps = {
 	overrides: () => ControlOverrides; // live remaps (empty until Phase 4)
 	handlers: Record<string, () => void>; // control id → action (closeMenu, toggleEdit, save, undo, redo, delete)
 	nudge: (dx: number, dy: number) => void; // serviced locally: needs the arrow key + Shift step
-	gotoSection?: (index: number) => void; // serviced locally: needs the pressed digit (Ctrl+1..8)
+	gotoSection?: (index: number) => void; // serviced locally: needs the pressed digit (Ctrl+1..9)
 };
 
 export function useKeyboard(deps: KeyboardDeps): {
@@ -100,11 +100,11 @@ export function useKeyboard(deps: KeyboardDeps): {
 				return;
 			}
 
-			// Section jump (Ctrl+1..8) derives the index from the digit (like nudge), so it's serviced
-			// locally rather than as a fixed id→handler entry.
+			// Section jump (Ctrl+1..9; 9 = Settings, the foot item) derives the index from the digit
+			// (like nudge), so it's serviced locally rather than as a fixed id→handler entry.
 			if (hit.id === 'studio.section') {
 				const n = Number(chord.key);
-				if (Number.isInteger(n) && n >= 1 && n <= 8) dep.gotoSection?.(n - 1);
+				if (Number.isInteger(n) && n >= 1 && n <= 9) dep.gotoSection?.(n - 1);
 				return;
 			}
 

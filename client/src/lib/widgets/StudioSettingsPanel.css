@@ -1,0 +1,81 @@
+/* Settings pages: every tab is one ≤640px form. Rows put the label on the LEFT and the control right
+   beside it (not pushed to the far edge of a wide pane), so a label and its checkbox / picker read
+   as one unit. The list+detail shell (.plugins-panel / .settings-panel) lives in NavRail.css; this
+   file only adds the form vocabulary (.set-form / .set-row / .set-check / .set-actions / .set-error). */
+.canvas .settings-panel .set-form {
+	max-width: 640px;
+}
+
+/* label | control — the label column is fixed so controls line up down the form. */
+.canvas .settings-panel .set-row {
+	display: grid;
+	grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+	align-items: center;
+	column-gap: var(--space-5);
+	row-gap: var(--space-1);
+	padding: var(--space-2) 0;
+	color: var(--ui-fg-muted);
+	line-height: 1.5;
+}
+
+.canvas .settings-panel .set-row .set-label {
+	color: var(--ui-fg-muted);
+	white-space: nowrap;
+}
+
+.canvas .settings-panel .set-row .dim {
+	color: var(--ui-fg-dim);
+}
+
+/* A checkbox row: the box sits immediately left of its words (control-adjacent), cursor: pointer on
+   the whole label. Keeps `.rp-row` in the markup for the e2e locators but overrides its
+   space-between spread. */
+.canvas .settings-panel label.set-check {
+	display: flex;
+	justify-content: flex-start;
+	align-items: center;
+	gap: var(--space-3);
+	padding: var(--space-2) 0;
+	cursor: pointer;
+	white-space: normal;
+}
+
+.canvas .settings-panel label.set-check input[type='checkbox'] {
+	flex: 0 0 auto;
+	margin: 0;
+}
+
+/* Action buttons in a row (Diagnostics devtools/rescue, About release/copy). */
+.canvas .settings-panel .set-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-2);
+}
+
+.canvas .settings-panel .set-actions > button {
+	margin-top: 0;
+}
+
+/* A failure reason under the control that caused it ("Couldn’t change launch at login: …"). */
+.canvas .settings-panel .set-error {
+	color: var(--ui-danger-fg);
+}
+
+/* "Current layer: Below windows · <last apply result>" — the strong bit is the pref, the dim tail
+   is the live overlay's report. */
+.canvas .settings-panel .set-status strong {
+	color: var(--ui-fg);
+	font-weight: 600;
+}
+
+/* Help text under a control reads at the body size, wrapped to the form width. */
+.canvas .settings-panel .pl-desc {
+	max-width: 100%;
+}
+
+/* Diagnostics: the "level ≥ [select]" filter label must stay on one line even when the filter
+   toolbar wraps (DiagnosticsPanel renders it inside our .pl-detail). */
+.canvas .settings-panel .diag-toggle {
+	white-space: nowrap;
+}

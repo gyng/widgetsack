@@ -4,24 +4,35 @@ import type { Rect } from '../core/layout';
 import type { OverlayPrefs } from './canvas/overlayPrefs';
 
 // Stub the stateless overlay helpers the panel calls directly (devtools / rescue / clipboard /
-// update check). They are the only module-level side effects in this panel — everything else is
-// owned by Canvas and arrives as props.
+// update check / launch at login). They are the only module-level side effects in this panel —
+// everything else is owned by Canvas and arrives as props.
 const {
 	checkAppUpdate,
 	copyToClipboard,
 	openDevtools,
 	rescueWindows,
 	getAppPrefs,
-	setUpdateCheck
+	setUpdateCheck,
+	isAutostartEnabled,
+	setAutostart
 } = vi.hoisted(() => ({
 	checkAppUpdate: vi.fn(),
 	getAppPrefs: vi.fn(async () => ({ update_check: false })),
 	setUpdateCheck: vi.fn(async (enabled: boolean) => ({ update_check: enabled })),
 	copyToClipboard: vi.fn(() => Promise.resolve(true)),
 	openDevtools: vi.fn(() => Promise.resolve()),
-	rescueWindows: vi.fn(() => Promise.resolve())
+	rescueWindows: vi.fn(() => Promise.resolve()),
+	isAutostartEnabled: vi.fn(async () => ({ enabled: false, error: null as string | null })),
+	setAutostart: vi.fn(async (enabled: boolean) => ({ enabled, error: null as string | null }))
 }));
-vi.mock('../overlay', () => ({ checkAppUpdate, copyToClipboard, openDevtools, rescueWindows }));
+vi.mock('../overlay', () => ({
+	checkAppUpdate,
+	copyToClipboard,
+	openDevtools,
+	rescueWindows,
+	isAutostartEnabled,
+	setAutostart
+}));
 
 // The background update-check mirror (lib/appUpdate.ts): a REAL external store (so the About tab
 // re-renders when a result lands) with the Tauri watch + browser open stubbed out.
@@ -82,12 +93,12 @@ const baseProps = (over: Partial<Parameters<typeof StudioSettingsPanel>[0]> = {}
 			prefs: {
 				respectWorkArea: true,
 				overlayLayer: 'bottom',
-				debugWindowed: false
+				debugWindowed: false,
+				developerMode: false
 			} as OverlayPrefs,
 			setPrefs: vi.fn(),
-			layerStatus: 'always on top'
+			layerStatus: 'main: bottom — ok (applied)'
 		},
-		startup: { autostart: false, toggleAutostart: vi.fn() },
 		controls: { overrides: {}, onRebind: vi.fn(), onReset: vi.fn(), onResetAll: vi.fn() },
 		appVersion: '1.2.3',
 		clearMonitor: vi.fn(),
@@ -103,13 +114,18 @@ beforeEach(() => {
 	openDevtools.mockReset().mockResolvedValue(undefined);
 	rescueWindows.mockReset().mockResolvedValue(undefined);
 	openReleasePage.mockReset().mockResolvedValue(true);
+	isAutostartEnabled.mockReset().mockResolvedValue({ enabled: false, error: null });
+	setAutostart.mockReset().mockImplementation(async (enabled: boolean) => ({
+		enabled,
+		error: null
+	}));
 	appUpdateStore.set(null);
 });
 
 afterEach(() => vi.restoreAllMocks());
 
 describe('StudioSettingsPanel — tab list', () => {
-	// Tab labels collide with the section titles ("Display", "Overlay", …), so scope queries to the
+	// Tab labels collide with the section titles ("Monitor", "Overlay", …), so scope queries to the
 	// side list (.pl-list) to hit the buttons specifically.
 	const tabBtn = (container: HTMLElement, label: string): HTMLButtonElement => {
 		const list = within(container.querySelector('.pl-list') as HTMLElement);
@@ -120,6 +136,8 @@ describe('StudioSettingsPanel — tab list', () => {
 		const { container } = render(<StudioSettingsPanel {...baseProps()} />);
 		for (const t of SETTINGS_TABS) expect(() => tabBtn(container, t.label)).not.toThrow();
 		expect(tabBtn(container, 'Danger zone').className).toContain('set-danger');
+		// The remap tab is called "Shortcuts" (shared vocabulary) but keeps its stable 'controls' id.
+		expect(SETTINGS_TABS.find((t) => t.id === 'controls')?.label).toBe('Shortcuts');
 	});
 
 	it('marks the active tab and calls onTab when a tab is clicked', () => {
@@ -131,7 +149,7 @@ describe('StudioSettingsPanel — tab list', () => {
 	});
 });
 
-describe('StudioSettingsPanel — Display section', () => {
+describe('StudioSettingsPanel — Monitor section', () => {
 	it('shows the monitor name/size + rounded work area, and a single-monitor view has no move hint', () => {
 		const { getByText, queryByText, container } = render(<StudioSettingsPanel {...baseProps()} />);
 		expect(() => getByText('DELL U2720Q · 3840×2160')).not.toThrow();
@@ -139,7 +157,7 @@ describe('StudioSettingsPanel — Display section', () => {
 		expect(container.textContent).toContain('1920×1040');
 		expect(queryByText(/Move a widget to another monitor/)).toBeNull();
 		// Fit button shows the zoom percentage.
-		expect(() => getByText('⤢ Fit to screen (50%)')).not.toThrow();
+		expect(() => getByText('⤢ Fit to window (50%)')).not.toThrow();
 	});
 
 	it('falls back to an em-dash for an unnamed monitor and shows the multi-monitor move hint', () => {
@@ -154,7 +172,7 @@ describe('StudioSettingsPanel — Display section', () => {
 	it('Fit to screen calls the supplied fit handler', () => {
 		const props = baseProps();
 		const { getByText } = render(<StudioSettingsPanel {...props} />);
-		fireEvent.click(getByText(/Fit to screen/));
+		fireEvent.click(getByText(/Fit to window/));
 		expect(props.display.fit).toHaveBeenCalledOnce();
 	});
 
@@ -169,9 +187,10 @@ describe('StudioSettingsPanel — Display section', () => {
 		expect(lockBox.checked).toBe(true);
 		fireEvent.click(lockBox);
 		expect(props.theme.setLock).toHaveBeenCalledWith(false);
-		// The picker is labelled for all monitors when locked.
-		const select = getByLabelText('Theme for all monitors') as HTMLSelectElement;
-		fireEvent.change(select, { target: { value: 'neon' } });
+		// The picker is the shared <Select> (a Downshift listbox), labelled for all monitors when locked:
+		// open it, pick.
+		fireEvent.click(getByLabelText('Theme for all monitors'));
+		fireEvent.click(getByText('Neon'));
 		expect(props.theme.setTheme).toHaveBeenCalledWith('neon');
 	});
 
@@ -200,45 +219,99 @@ describe('StudioSettingsPanel — Overlay section', () => {
 		return props;
 	};
 
-	it('toggles respect-work-area, the layer select, and windowed mode through setPrefs', () => {
+	it('toggles keep-clear-of-taskbar, the layer picker, and windowed mode through setPrefs', () => {
 		const props = overlayProps();
-		const { getByText, container } = render(<StudioSettingsPanel {...props} />);
-		const [work, windowed] = container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
-		fireEvent.click(work);
+		const { getByLabelText, getByText } = render(<StudioSettingsPanel {...props} />);
+		fireEvent.click(getByLabelText(/keep clear of the taskbar/));
 		expect(props.overlay.setPrefs).toHaveBeenCalledWith({ respectWorkArea: false });
 
-		const select = container.querySelector('select') as HTMLSelectElement;
-		fireEvent.change(select, { target: { value: 'wallpaper' } });
+		// The layer picker is the shared <Select>, in the shared vocabulary (never "WorkerW").
+		fireEvent.click(getByLabelText('Window layer'));
+		fireEvent.click(getByText('Behind desktop icons (experimental)'));
 		expect(props.overlay.setPrefs).toHaveBeenCalledWith({ overlayLayer: 'wallpaper' });
 
-		fireEvent.click(windowed);
+		fireEvent.click(getByLabelText(/windowed mode/));
 		expect(props.overlay.setPrefs).toHaveBeenCalledWith({ debugWindowed: true });
-
-		// The layer status line is shown verbatim.
-		expect(() => getByText('always on top')).not.toThrow();
 	});
 
-	it('shows the waiting placeholder when no layer status has been reported', () => {
+	it('states the current layer from the pref, with the overlay’s last apply result as a dim tail', () => {
+		const props = overlayProps({ overlayLayer: 'top' });
+		const { container } = render(<StudioSettingsPanel {...props} />);
+		const status = container.querySelector('.set-status') as HTMLElement;
+		expect(status.textContent).toContain('Current layer: Always on top');
+		expect(status.textContent).toContain('· main: bottom — ok (applied)');
+		expect(status.querySelector('.set-error')).toBeNull();
+	});
+
+	it('shows just the current layer while no overlay has reported yet, and flags a FAILED apply', () => {
 		const props = overlayProps();
 		props.overlay.layerStatus = '';
-		const { getByText } = render(<StudioSettingsPanel {...props} />);
-		expect(() => getByText(/waiting for the overlay to apply a layer/)).not.toThrow();
+		const { container, rerender } = render(<StudioSettingsPanel {...props} />);
+		const status = container.querySelector('.set-status') as HTMLElement;
+		expect(status.textContent).toBe('Current layer: Below windows');
+		expect(status.textContent).not.toMatch(/waiting/);
+		props.overlay.layerStatus = 'main: wallpaper — FAILED (no desktop host window)';
+		rerender(<StudioSettingsPanel {...props} />);
+		expect(status.querySelector('.set-error')?.textContent).toContain('FAILED');
+	});
+
+	it('never says WorkerW / wallpaper layer in the layer picker', () => {
+		const { getByLabelText, container } = render(<StudioSettingsPanel {...overlayProps()} />);
+		fireEvent.click(getByLabelText('Window layer'));
+		expect(document.body.textContent).not.toMatch(/WorkerW|Wallpaper layer/);
+		expect(container.textContent).toContain('Below windows');
 	});
 });
 
 describe('StudioSettingsPanel — Startup section', () => {
-	it('reflects the autostart pref and toggles it', () => {
-		const props = baseProps({ tab: 'startup' });
-		const { container } = render(<StudioSettingsPanel {...props} />);
-		const box = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
-		expect(box.checked).toBe(false);
+	it('reads the launch-at-login state on mount and writes through the toggle', async () => {
+		isAutostartEnabled.mockResolvedValue({ enabled: true, error: null });
+		const { getByLabelText } = render(<StudioSettingsPanel {...baseProps({ tab: 'startup' })} />);
+		const box = getByLabelText(/launch at login/) as HTMLInputElement;
+		await waitFor(() => expect(box.disabled).toBe(false));
+		expect(box.checked).toBe(true);
 		fireEvent.click(box);
-		expect(props.startup.toggleAutostart).toHaveBeenCalledWith(true);
+		await waitFor(() => expect(setAutostart).toHaveBeenCalledWith(false));
+		await waitFor(() => expect(box.checked).toBe(false));
+	});
+
+	it('shows the reason and reflects the re-read state when the change fails', async () => {
+		setAutostart.mockResolvedValue({ enabled: false, error: 'Access is denied (HKCU Run key)' });
+		const { getByLabelText, findByRole } = render(
+			<StudioSettingsPanel {...baseProps({ tab: 'startup' })} />
+		);
+		const box = getByLabelText(/launch at login/) as HTMLInputElement;
+		await waitFor(() => expect(box.disabled).toBe(false));
+		fireEvent.click(box); // optimistic tick…
+		const alert = await findByRole('alert');
+		expect(alert.textContent).toBe(
+			'Couldn’t change launch at login: Access is denied (HKCU Run key)'
+		);
+		expect(box.checked).toBe(false); // …reverted to what the OS actually says
+	});
+
+	it('surfaces a failed initial read too, and ignores a read that lands after unmount', async () => {
+		let resolveRead!: (r: { enabled: boolean; error: string | null }) => void;
+		isAutostartEnabled.mockImplementationOnce(() => new Promise((r) => (resolveRead = r)));
+		const { unmount } = render(<StudioSettingsPanel {...baseProps({ tab: 'startup' })} />);
+		unmount();
+		await act(async () => resolveRead({ enabled: true, error: null })); // no setState after unmount
+
+		isAutostartEnabled.mockResolvedValueOnce({ enabled: false, error: 'plugin unavailable' });
+		const { findByRole } = render(<StudioSettingsPanel {...baseProps({ tab: 'startup' })} />);
+		expect((await findByRole('alert')).textContent).toContain('plugin unavailable');
+	});
+
+	it('explains the desktop edit and rescue chords', () => {
+		const { container } = render(<StudioSettingsPanel {...baseProps({ tab: 'startup' })} />);
+		expect(container.textContent).toContain('Ctrl+Alt+E');
+		expect(container.textContent).toContain('Ctrl+Alt+Shift+E');
+		expect(container.textContent).toMatch(/Rescue/);
 	});
 });
 
-describe('StudioSettingsPanel — Controls section', () => {
-	it('mounts ControlsPanel with the pass-through handlers', () => {
+describe('StudioSettingsPanel — Shortcuts section', () => {
+	it('mounts ControlsPanel with the pass-through handlers under the "Shortcuts" title', () => {
 		const props = baseProps({ tab: 'controls' });
 		const { getByTestId } = render(<StudioSettingsPanel {...props} />);
 		const panel = getByTestId('controls-panel');
@@ -247,14 +320,26 @@ describe('StudioSettingsPanel — Controls section', () => {
 });
 
 describe('StudioSettingsPanel — Diagnostics section', () => {
-	it('mounts DiagnosticsPanel and wires the devtools + rescue buttons', () => {
+	it('mounts DiagnosticsPanel, wires the rescue button, and hides devtools until developer mode is on', () => {
 		const props = baseProps({ tab: 'diagnostics' });
-		const { getByText, getByTestId } = render(<StudioSettingsPanel {...props} />);
+		const { getByText, getByTestId, queryByText, getByLabelText } = render(
+			<StudioSettingsPanel {...props} />
+		);
 		expect(getByTestId('diagnostics-panel')).toBeTruthy();
-		fireEvent.click(getByText(/Inspect this window/));
-		expect(openDevtools).toHaveBeenCalledOnce();
 		fireEvent.click(getByText(/Rescue all windows/));
 		expect(rescueWindows).toHaveBeenCalledOnce();
+		// Developer mode is off by default → no devtools item; the toggle writes the pref.
+		expect(queryByText(/Inspect this window/)).toBeNull();
+		fireEvent.click(getByLabelText(/Developer mode/));
+		expect(props.overlay.setPrefs).toHaveBeenCalledWith({ developerMode: true });
+	});
+
+	it('shows the devtools item in developer mode', () => {
+		const props = baseProps({ tab: 'diagnostics' });
+		props.overlay.prefs = { ...props.overlay.prefs, developerMode: true };
+		const { getByText } = render(<StudioSettingsPanel {...props} />);
+		fireEvent.click(getByText(/Inspect this window/));
+		expect(openDevtools).toHaveBeenCalledOnce();
 	});
 });
 
@@ -264,7 +349,7 @@ describe('StudioSettingsPanel — About section', () => {
 		const { getByText, container } = render(<StudioSettingsPanel {...props} />);
 		expect(container.textContent).toContain('1.2.3');
 		expect(() => getByText('MIT OR Apache-2.0')).not.toThrow();
-		const repoRow = getByText('github.com/gyng/widgetsack').closest('.rp-row') as HTMLElement;
+		const repoRow = getByText('github.com/gyng/widgetsack').closest('.set-row') as HTMLElement;
 		fireEvent.click(within(repoRow).getByText('copy'));
 		expect(copyToClipboard).toHaveBeenCalledWith('https://github.com/gyng/widgetsack');
 		await flush();
@@ -273,7 +358,7 @@ describe('StudioSettingsPanel — About section', () => {
 	it('shows an ellipsis placeholder when the app version is null', () => {
 		const props = baseProps({ tab: 'about', appVersion: null });
 		const { container } = render(<StudioSettingsPanel {...props} />);
-		const versionRow = [...container.querySelectorAll('.rp-row')].find((r) =>
+		const versionRow = [...container.querySelectorAll('.set-row')].find((r) =>
 			r.textContent?.startsWith('version')
 		) as HTMLElement;
 		expect(versionRow.querySelector('.dim')?.textContent).toBe('…');
@@ -392,10 +477,14 @@ describe('StudioSettingsPanel — About section', () => {
 });
 
 describe('StudioSettingsPanel — Danger section', () => {
-	it('clears this monitor when the danger button is pressed', () => {
+	it('clears this monitor when the danger button is pressed, and says how to undo', () => {
 		const props = baseProps({ tab: 'danger' });
-		const { getByText } = render(<StudioSettingsPanel {...props} />);
+		const { getByText, container } = render(<StudioSettingsPanel {...props} />);
 		fireEvent.click(getByText(/Clear this monitor/));
 		expect(props.clearMonitor).toHaveBeenCalledOnce();
+		expect(container.textContent).toContain(
+			'Undoable with Ctrl+Z until you leave the Layout section'
+		);
+		expect(container.textContent).not.toContain('There is no undo');
 	});
 });

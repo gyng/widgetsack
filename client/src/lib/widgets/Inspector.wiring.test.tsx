@@ -86,7 +86,9 @@ const configPatch = (onOp: ReturnType<typeof vi.fn>): Record<string, unknown> | 
 // ---------------------------------------------------------------------------------------------------
 describe('Inspector manual-save dirty tracking (computeDirty)', () => {
 	it('flags a widget field that differs from its saved baseline, and leaves matching ones clean', () => {
+		// A gauge (sensor-bound) so the sensor row renders — self-sourcing types hide it.
 		const widget = w({
+			type: 'gauge',
 			sensor: 'cpu.total',
 			rect: { x: 1, y: 2, w: 3, h: 4 },
 			config: { a: 1 },
@@ -111,11 +113,11 @@ describe('Inspector manual-save dirty tracking (computeDirty)', () => {
 	});
 
 	it('does not flag any widget field when the baseline is identical', () => {
-		const widget = w({ sensor: 'cpu.total', config: { a: 1 } });
+		const widget = w({ type: 'gauge', sensor: 'cpu.total', config: { a: 1 } });
 		render(
 			<Inspector
 				widget={widget}
-				baseWidget={w({ sensor: 'cpu.total', config: { a: 1 } })}
+				baseWidget={w({ type: 'gauge', sensor: 'cpu.total', config: { a: 1 } })}
 				placement="floating"
 				node={leaf(widget)}
 				onOp={vi.fn()}
@@ -125,11 +127,11 @@ describe('Inspector manual-save dirty tracking (computeDirty)', () => {
 	});
 
 	it('treats every field of a brand-new node as dirty (nodeIsNew ignores the baseline)', () => {
-		const widget = w({ sensor: 'cpu.total' });
+		const widget = w({ type: 'gauge', sensor: 'cpu.total' });
 		render(
 			<Inspector
 				widget={widget}
-				baseWidget={w({ sensor: 'cpu.total' })}
+				baseWidget={w({ type: 'gauge', sensor: 'cpu.total' })}
 				nodeIsNew
 				placement="floating"
 				node={leaf(widget)}
@@ -229,7 +231,25 @@ describe('Inspector add-palette hover preview (debounced popover)', () => {
 		);
 		fireEvent.mouseEnter(within(palette()).getByRole('button', { name: /^Gauge/ }));
 		act(() => vi.advanceTimersByTime(300));
-		expect(screen.getByText(/Click to add into the col/, { selector: '.pp-hint' })).toBeTruthy();
+		expect(
+			screen.getByText(/Click to add into this column/, { selector: '.pp-hint' })
+		).toBeTruthy();
+	});
+
+	it('names the sticky add target in the hint when one is set', () => {
+		render(
+			<Inspector
+				widgetTypes={gaugeType}
+				addTarget="c1"
+				addTargetLabel="Row container"
+				onOp={vi.fn()}
+			/>
+		);
+		fireEvent.mouseEnter(within(palette()).getByRole('button', { name: /^Gauge/ }));
+		act(() => vi.advanceTimersByTime(300));
+		expect(
+			screen.getByText(/Click to add into Row container/, { selector: '.pp-hint' })
+		).toBeTruthy();
 	});
 
 	it('previews a library def with no description (hint only)', () => {
@@ -322,9 +342,9 @@ describe('Inspector widget actions + rect + sensor', () => {
 	it('emits dock / make widget / reset / remove from a floating widget', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector widget={w()} placement="floating" onOp={onOp} />);
-		fireEvent.click(within(panel()).getByRole('button', { name: 'Dock →flow' }));
+		fireEvent.click(within(panel()).getByRole('button', { name: 'Snap into layout' }));
 		expect(lastOp(onOp, 'dock')).toEqual({ op: 'dock', id: 'w1' });
-		fireEvent.click(within(panel()).getByRole('button', { name: 'Make widget' }));
+		fireEvent.click(within(panel()).getByRole('button', { name: 'Save as custom widget' }));
 		expect(lastOp(onOp, 'makeWidget')).toEqual({ op: 'makeWidget', id: 'w1' });
 		fireEvent.click(within(panel()).getByRole('button', { name: 'Reset' }));
 		expect(lastOp(onOp, 'resetWidget')).toEqual({ op: 'resetWidget', id: 'w1' });
@@ -357,20 +377,88 @@ describe('Inspector widget actions + rect + sensor', () => {
 		expect(lastOp(onOp, 'patchWidget')).toMatchObject({ patch: { rect: { w: 80 } } });
 	});
 
-	it('sets and clears the sensor through the typeahead', () => {
+	it('sets and clears the sensor through the typeahead — ONE commit per blur, not per keystroke', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
-		render(<Inspector widget={w()} placement="floating" sensors={['gpu.util']} onOp={onOp} />);
+		const { rerender } = render(
+			<Inspector
+				widget={w({ type: 'gauge' })}
+				placement="floating"
+				sensors={['gpu.util']}
+				onOp={onOp}
+			/>
+		);
 		const input = screen.getByRole('combobox', { name: 'sensor' });
+		fireEvent.change(input, { target: { value: 'gpu.u' } });
 		fireEvent.change(input, { target: { value: 'gpu.util' } });
-		expect(lastOp(onOp, 'patchWidget')).toMatchObject({ patch: { sensor: 'gpu.util' } });
+		expect(onOp).not.toHaveBeenCalled(); // intermediate keystrokes are not committed
+		fireEvent.blur(input);
+		expect(onOp).toHaveBeenCalledTimes(1);
+		// A single undo step: no per-keystroke coalesce key needed (nor present).
+		expect(lastOp(onOp, 'patchWidget')).toEqual({
+			op: 'patchWidget',
+			id: 'w1',
+			patch: { sensor: 'gpu.util' }
+		});
+		// The commit lands (the parent re-renders with the new sensor); clearing then commits undefined.
+		rerender(
+			<Inspector
+				widget={w({ type: 'gauge', sensor: 'gpu.util' })}
+				placement="floating"
+				sensors={['gpu.util']}
+				onOp={onOp}
+			/>
+		);
 		fireEvent.change(input, { target: { value: '' } });
+		fireEvent.blur(input);
 		expect(lastOp(onOp, 'patchWidget')).toMatchObject({ patch: { sensor: undefined } });
+	});
+
+	it('hides the sensor row for a self-sourcing (binds: none) widget', () => {
+		render(<Inspector widget={w({ type: 'clock' })} placement="floating" onOp={vi.fn()} />);
+		expect(screen.queryByRole('combobox', { name: 'sensor' })).toBeNull();
+		expect(within(panel()).queryByText('sensor')).toBeNull();
+	});
+
+	it('warns inline when the bound sensor id is not in the catalogue (but still allows it)', () => {
+		const { rerender } = render(
+			<Inspector
+				widget={w({ type: 'gauge', sensor: 'nope.sensor' })}
+				placement="floating"
+				sensors={['gpu.util']}
+				onOp={vi.fn()}
+			/>
+		);
+		expect(within(panel()).getByRole('status').textContent).toBe(
+			'unknown sensor — the widget will show –'
+		);
+		expect((screen.getByRole('combobox', { name: 'sensor' }) as HTMLInputElement).value).toBe(
+			'nope.sensor'
+		);
+		// A known id — or an empty catalogue (nothing to check against) — shows no warning.
+		rerender(
+			<Inspector
+				widget={w({ type: 'gauge', sensor: 'gpu.util' })}
+				placement="floating"
+				sensors={['gpu.util']}
+				onOp={vi.fn()}
+			/>
+		);
+		expect(within(panel()).queryByRole('status')).toBeNull();
+		rerender(
+			<Inspector
+				widget={w({ type: 'gauge', sensor: 'nope.sensor' })}
+				placement="floating"
+				sensors={[]}
+				onOp={vi.fn()}
+			/>
+		);
+		expect(within(panel()).queryByRole('status')).toBeNull();
 	});
 
 	it('labels a sensor option by name only when it carries no unit', () => {
 		render(
 			<Inspector
-				widget={w()}
+				widget={w({ type: 'gauge' })}
 				placement="floating"
 				sensors={['ha.x']}
 				sensorMeta={{ 'ha.x': { label: 'Kitchen' } }}
@@ -650,7 +738,7 @@ describe('Inspector CSS editors', () => {
 		fireEvent.change(groupCss, { target: { value: '.g {}' } });
 		fireEvent.blur(groupCss);
 		expect(lastOp(onOp, 'patchGroup')).toMatchObject({ patch: { css: '.g {}' } });
-		const defCss = screen.getByLabelText('def css');
+		const defCss = screen.getByLabelText('custom widget css');
 		fireEvent.change(defCss, { target: { value: '.d {}' } });
 		fireEvent.blur(defCss);
 		expect(lastOp(onOp, 'setDefCss')).toEqual({ op: 'setDefCss', defId: 'd1', css: '.d {}' });
@@ -689,7 +777,8 @@ describe('Inspector group def params + floating group', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		const g = group('g1', { w: 30, h: 20 }, leaf(w({ id: 'c', type: 'clock' })), { config: {} });
 		render(<Inspector groupUnit={g} placement="floating" onOp={onOp} />);
-		const [x, y, wIn, hIn] = within(screen.getByText('group · g1').closest('.fields')!)
+		// No name and no def → the header falls back to "Group" (id only in the tooltip).
+		const [x, y, wIn, hIn] = within(screen.getByText('Group').closest('.fields')!)
 			.getAllByRole('spinbutton')
 			.slice(0, 4) as HTMLInputElement[];
 		// x/y default to 0 (no config), w/h fall back to the group size.

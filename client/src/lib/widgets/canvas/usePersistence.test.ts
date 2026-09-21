@@ -612,6 +612,26 @@ describe('debounced preview write', () => {
 		expect(Object.keys(monitors)).toEqual(['mon-A']);
 	});
 
+	it('reports the outcome of each preview write to onPreviewWriteResult (true, then false on a reject)', async () => {
+		vi.useFakeTimers();
+		const onPreviewWriteResult = vi.fn();
+		const { result } = renderHook(() =>
+			usePersistence(editorState(), 'mon-A', { onPreviewWriteResult })
+		);
+		act(() => result.current.schedulePreviewWrite());
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(160);
+		});
+		expect(onPreviewWriteResult).toHaveBeenLastCalledWith(true);
+		saveRejects = true;
+		act(() => result.current.schedulePreviewWrite());
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(160);
+		});
+		expect(onPreviewWriteResult).toHaveBeenLastCalledWith(false);
+		expect(onPreviewWriteResult).toHaveBeenCalledTimes(2);
+	});
+
 	it('clearPreviewWrite cancels a pending write', async () => {
 		vi.useFakeTimers();
 		const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));

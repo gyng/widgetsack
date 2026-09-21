@@ -67,7 +67,15 @@ export const registerHomeAssistantPlugin = (): void =>
 					category: 'Home Assistant',
 					defaultSize: { w: 150, h: 44 },
 					defaultConfig: {},
-					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+					configFields: [
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						}
+					]
 				},
 				component: asMeter(HaSensor)
 			},
@@ -79,7 +87,15 @@ export const registerHomeAssistantPlugin = (): void =>
 					category: 'Home Assistant',
 					defaultSize: { w: 150, h: 44 },
 					defaultConfig: {},
-					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+					configFields: [
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						}
+					]
 				},
 				component: asMeter(HaBinarySensor)
 			},
@@ -93,8 +109,20 @@ export const registerHomeAssistantPlugin = (): void =>
 					defaultSize: { w: 120, h: 48 },
 					defaultConfig: { showBrightness: true },
 					configFields: [
-						{ key: 'label', label: 'label', kind: 'text' },
-						{ key: 'showBrightness', label: 'brightness slider', kind: 'toggle' }
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						},
+						{
+							key: 'showBrightness',
+							label: 'brightness slider',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show a brightness slider under the on/off toggle'
+						}
 					]
 				},
 				component: asMeter(HaLight)
@@ -108,7 +136,15 @@ export const registerHomeAssistantPlugin = (): void =>
 					interactive: true,
 					defaultSize: { w: 120, h: 48 },
 					defaultConfig: {},
-					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+					configFields: [
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						}
+					]
 				},
 				component: asMeter(HaSwitch)
 			},
@@ -122,9 +158,27 @@ export const registerHomeAssistantPlugin = (): void =>
 					defaultSize: { w: 150, h: 56 },
 					defaultConfig: { showSpeed: true, showOscillate: true },
 					configFields: [
-						{ key: 'label', label: 'label', kind: 'text' },
-						{ key: 'showSpeed', label: 'speed slider', kind: 'toggle' },
-						{ key: 'showOscillate', label: 'oscillate toggle', kind: 'toggle' }
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						},
+						{
+							key: 'showSpeed',
+							label: 'speed slider',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show a fan-speed slider'
+						},
+						{
+							key: 'showOscillate',
+							label: 'oscillate toggle',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show an oscillation on/off control'
+						}
 					]
 				},
 				component: asMeter(HaFan)
@@ -139,10 +193,34 @@ export const registerHomeAssistantPlugin = (): void =>
 					defaultSize: { w: 170, h: 92 },
 					defaultConfig: { showMode: true, showTemp: true, showFan: true },
 					configFields: [
-						{ key: 'label', label: 'label', kind: 'text' },
-						{ key: 'showMode', label: 'mode toggle', kind: 'toggle' },
-						{ key: 'showTemp', label: 'temp buttons', kind: 'toggle' },
-						{ key: 'showFan', label: 'fan-mode select', kind: 'toggle' }
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						},
+						{
+							key: 'showMode',
+							label: 'mode toggle',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show the HVAC mode control (heat / cool / off …)'
+						},
+						{
+							key: 'showTemp',
+							label: 'temp buttons',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show the target-temperature − / + buttons'
+						},
+						{
+							key: 'showFan',
+							label: 'fan-mode select',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show the fan-mode picker'
+						}
 					]
 				},
 				component: asMeter(HaClimate)
@@ -157,9 +235,27 @@ export const registerHomeAssistantPlugin = (): void =>
 					defaultSize: { w: 150, h: 76 },
 					defaultConfig: { showButtons: true, showPosition: true },
 					configFields: [
-						{ key: 'label', label: 'label', kind: 'text' },
-						{ key: 'showButtons', label: 'open / close buttons', kind: 'toggle' },
-						{ key: 'showPosition', label: 'position slider', kind: 'toggle' }
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						},
+						{
+							key: 'showButtons',
+							label: 'open / close buttons',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show open / stop / close buttons'
+						},
+						{
+							key: 'showPosition',
+							label: 'position slider',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show a 0–100 % position slider'
+						}
 					]
 				},
 				component: asMeter(HaCover)
@@ -173,7 +269,15 @@ export const registerHomeAssistantPlugin = (): void =>
 					interactive: true,
 					defaultSize: { w: 120, h: 48 },
 					defaultConfig: {},
-					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+					configFields: [
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						}
+					]
 				},
 				component: asMeter(HaLock)
 			},
@@ -186,7 +290,15 @@ export const registerHomeAssistantPlugin = (): void =>
 					interactive: true,
 					defaultSize: { w: 130, h: 40 },
 					defaultConfig: {},
-					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+					configFields: [
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						}
+					]
 				},
 				component: asMeter(HaScene)
 			},
@@ -199,7 +311,15 @@ export const registerHomeAssistantPlugin = (): void =>
 					interactive: true,
 					defaultSize: { w: 160, h: 48 },
 					defaultConfig: {},
-					configFields: [{ key: 'label', label: 'label', kind: 'text' }]
+					configFields: [
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						}
+					]
 				},
 				component: asMeter(HaInput)
 			},
@@ -213,9 +333,27 @@ export const registerHomeAssistantPlugin = (): void =>
 					defaultSize: { w: 180, h: 92 },
 					defaultConfig: { showTransport: true, showVolume: true },
 					configFields: [
-						{ key: 'label', label: 'label', kind: 'text' },
-						{ key: 'showTransport', label: 'transport buttons', kind: 'toggle' },
-						{ key: 'showVolume', label: 'volume slider', kind: 'toggle' }
+						{
+							key: 'label',
+							label: 'label',
+							kind: 'text',
+							group: 'Data',
+							help: 'caption (blank = the entity’s friendly name)'
+						},
+						{
+							key: 'showTransport',
+							label: 'transport buttons',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show previous / play-pause / next buttons'
+						},
+						{
+							key: 'showVolume',
+							label: 'volume slider',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'show a volume slider'
+						}
 					]
 				},
 				component: asMeter(HaMediaPlayerHost)

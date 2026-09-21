@@ -8,6 +8,7 @@ import {
 	useMemo,
 	useRef,
 	useState,
+	type CSSProperties,
 	type KeyboardEvent as ReactKeyboardEvent,
 	type MouseEvent as ReactMouseEvent,
 	type PointerEvent as ReactPointerEvent
@@ -145,6 +146,17 @@ function WidgetHost({
 
 	// A sentinel id keeps the hook valid for self-sourcing widgets (no sensor).
 	const sensorState = useSensor(hub, instance.sensor ?? '__none__');
+	// Home Assistant tiles also get the connection status so they can say "not configured" /
+	// "offline" / "entity unavailable" instead of a bare dash (core/haTileState). Non-HA widgets
+	// subscribe to the sentinel and receive `undefined` (the meters' legacy render).
+	const isHaTile = instance.type.startsWith('ha.');
+	const haStatusState = useSensor(hub, isHaTile ? 'ha.status' : '__none__');
+	const haStatus: string | null | undefined = isHaTile
+		? haStatusState.value?.kind === 'text'
+			? haStatusState.value.value
+			: null
+		: undefined;
+	const haStatusProps = isHaTile ? { haStatus } : undefined;
 	// Config-driven multi-sensor binding (WidgetMeta.sensors): resolve the named id map from the
 	// instance config and subscribe to each — the meter receives a `sensors` prop (name →
 	// SensorState) and stays props-only (AGENTS.md §6). Undefined for single/no-sensor types.
@@ -231,9 +243,10 @@ function WidgetHost({
 		onContextMenu?.({ id: selectId, x: at.x, y: at.y });
 	};
 
-	// Keyboard access to the edit overlay: it is a real button (Tab reaches it), so Enter/Space
-	// select the widget the way a click does. (Move/resize stay pointer-only; Arrow nudges are the
-	// Canvas's global keyboard control once selected.)
+	// Keyboard access to the edit overlay: it is a real button — the widget's ONE tab stop — so
+	// Enter/Space select the widget the way a click does. (Move/resize stay pointer-only; Arrow nudges
+	// are the Canvas's global keyboard control once selected; the resize handles are tab stops only
+	// while the widget is selected, so tabbing across the stage is one stop per widget.)
 	const handleOverlayKey = (e: ReactKeyboardEvent) => {
 		if (e.key !== 'Enter' && e.key !== ' ') return;
 		e.preventDefault();
@@ -370,6 +383,10 @@ function WidgetHost({
 	if (!editMode && interactive) cls.push('catch');
 	if (action === 'flow') cls.push('dragging');
 
+	// Resize handles stay ≥ 8px ON SCREEN regardless of stage zoom: the world layer scales everything
+	// by `scale`, so the handle size in world units is 8 / scale (the same inverse the splitters use).
+	const handleSize = { '--hs': `${8 / (scale || 1)}px` } as CSSProperties;
+
 	return (
 		<div
 			ref={boxRef}
@@ -378,8 +395,14 @@ function WidgetHost({
 				flow
 					? // Slot mode (CSS layout): fill the FlowNode slot that owns position/size; only the
 						// live drag ghost is applied here.
-						{ width: '100%', height: '100%', transform: `translate(${ghost.dx}px, ${ghost.dy}px)` }
+						{
+							...handleSize,
+							width: '100%',
+							height: '100%',
+							transform: `translate(${ghost.dx}px, ${ghost.dy}px)`
+						}
 					: {
+							...handleSize,
 							left: `${rect.x}px`,
 							top: `${rect.y}px`,
 							// Content-fit: let the box shrink-wrap its content (and report that size); otherwise
@@ -405,6 +428,7 @@ function WidgetHost({
 							{...meterConfig}
 							{...formulaOverrides}
 							{...multiSensorProps}
+							{...haStatusProps}
 							widgetId={instance.id}
 							editMode={editMode}
 							onControl={handleControl}
@@ -415,6 +439,7 @@ function WidgetHost({
 							{...meterConfig}
 							{...formulaOverrides}
 							{...multiSensorProps}
+							{...haStatusProps}
 							onControl={handleControl}
 						/>
 					) : (
@@ -452,6 +477,7 @@ function WidgetHost({
 								type="button"
 								className={`handle ${handle}`}
 								aria-label={`Resize ${handle}`}
+								tabIndex={selected ? 0 : -1}
 								onPointerDown={(e) => begin(handle, e)}
 								onPointerMove={move}
 								onPointerUp={end}

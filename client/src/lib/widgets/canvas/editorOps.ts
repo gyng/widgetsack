@@ -41,6 +41,14 @@ import {
 import { intrinsicSize, type Solved } from '../../core/solve';
 import { freshIds, getTemplate, instantiateTemplate } from '../../core/templates';
 import { dropPlacement } from './dropPlacement';
+import { firstFreeSpot } from '../../core/placement';
+import {
+	alignRects,
+	distributeRects,
+	type AlignEdge,
+	type DistributeAxis,
+	type Placed
+} from '../../core/align';
 import type { EditorState } from './types';
 
 export const rand = (): string => Math.random().toString(36).slice(2, 8);
@@ -58,11 +66,53 @@ export function lookup(id: string, m: MonitorLayout): LayoutNode | null {
 	return findNode(m.root, id) ?? m.floating.find((l) => l.id === id) ?? null;
 }
 
-// The selected container (incl. root) in the live tree — used by addWidget/addContainer/insert.
+// The container a palette add lands in: the selected container (incl. root), else the sticky add
+// target (the container the last add went into — see EditorState.addTarget), if it still exists.
+// Used by addWidget/addContainer/insert.
 export function currentContainer(s: EditorState): Container | null {
-	if (!s.selectedId) return null;
-	const node = lookup(s.selectedId, s.monitor);
-	return node && isContainer(node) ? node : null;
+	if (s.selectedId) {
+		const node = lookup(s.selectedId, s.monitor);
+		if (node && isContainer(node)) return node;
+	}
+	if (s.addTarget) {
+		const node = findNode(s.monitor.root, s.addTarget);
+		if (node && isContainer(node)) return node;
+	}
+	return null;
+}
+
+// --- floating placement (first free spot) ----------------------------------------------------
+// A palette click with no container target drops a FLOATING widget; it lands on the first free spot
+// of the stage (core/placement) rather than the default (24,24) corner every time. The stage bounds
+// and the measured rects live in the Canvas, which injects them via module refs (like setSolvedForFloat).
+let placementBounds: Rect = { x: 0, y: 0, w: 1920, h: 1080 };
+export function setPlacementBounds(b: Rect): void {
+	placementBounds = b;
+}
+// Every rect already on the monitor: the live solved map (measured flow + floating — what the user
+// sees), plus any floating leaf the map hasn't measured yet (its stored rect / group box).
+function occupiedRects(s: EditorState): Rect[] {
+	// The solved map also carries every CONTAINER's box (the root spans the whole stage) — only
+	// widget / group boxes count as occupied, or nothing would ever be free.
+	const out: Rect[] = [];
+	for (const [id, r] of solvedRef) {
+		const node = findNode(s.monitor.root, id);
+		if (node && isContainer(node)) continue;
+		out.push(r);
+	}
+	for (const lf of s.monitor.floating) {
+		if (solvedRef.has(lf.id)) continue;
+		if (isGroup(lf.unit)) {
+			const g = lf.unit;
+			out.push({
+				x: cfgNum(g.config, 'x'),
+				y: cfgNum(g.config, 'y'),
+				w: typeof g.config?.w === 'number' ? g.config.w : g.size.w,
+				h: typeof g.config?.h === 'number' ? g.config.h : g.size.h
+			});
+		} else out.push({ ...(lf.unit as WidgetInstance).rect });
+	}
+	return out;
 }
 
 // The ids of the current selection (the marquee set, else the single primary). Shared by the bulk
@@ -94,7 +144,9 @@ export function dropWidgetInto(s: EditorState, containerId: string, widgetType: 
 			...s.monitor,
 			root: insertChild(s.monitor.root, containerId, leaf(createWidget(widgetType, id)))
 		},
-		selectedId: id
+		selectedId: id,
+		addTarget: containerId,
+		justAdded: id
 	};
 }
 
@@ -138,13 +190,26 @@ export function replaceNodeOp(s: EditorState, id: string, node: LayoutNode): Pat
 }
 
 export function addWidget(s: EditorState, type: string): Patch {
-	const selectedContainer = currentContainer(s);
+	const target = currentContainer(s);
 	const id = `${type}-${rand()}`;
-	const w = leaf(createWidget(type, id));
-	const monitor = selectedContainer
-		? { ...s.monitor, root: insertChild(s.monitor.root, selectedContainer.id, w) }
-		: { ...s.monitor, floating: [...s.monitor.floating, w] };
-	return { monitor, selectedId: id };
+	const inst = createWidget(type, id);
+	if (target) {
+		// Into the container — and make it sticky, so the next palette click lands there too even
+		// though the new widget (not the container) is now selected.
+		return {
+			monitor: { ...s.monitor, root: insertChild(s.monitor.root, target.id, leaf(inst)) },
+			selectedId: id,
+			addTarget: target.id,
+			justAdded: id
+		};
+	}
+	const at = firstFreeSpot(occupiedRects(s), inst.rect, placementBounds);
+	const w = leaf({ ...inst, rect: { ...inst.rect, x: at.x, y: at.y } });
+	return {
+		monitor: { ...s.monitor, floating: [...s.monitor.floating, w] },
+		selectedId: id,
+		justAdded: id
+	};
 }
 
 // Drop a palette widget onto the stage: a new FLOATING widget centered on the drop point (item 7).
@@ -155,7 +220,8 @@ export function addWidgetAt(s: EditorState, type: string, x: number, y: number):
 	const w = leaf({ ...inst, rect: { ...inst.rect, x: at.x, y: at.y } });
 	return {
 		monitor: { ...s.monitor, floating: [...s.monitor.floating, w] },
-		selectedId: id
+		selectedId: id,
+		justAdded: id
 	};
 }
 
@@ -519,6 +585,57 @@ export function dock(s: EditorState, id: string): Patch {
 	};
 }
 
+// --- align / distribute the selected FLOATING widgets (multi-select) ------------------------------
+// A floating primitive's box is its unit rect; a floating group's is its config x/y/w/h (falling
+// back to the group size). Ids that aren't floating leaves are ignored. One commit (one undo step).
+function floatingBoxes(s: EditorState, ids: string[]): Placed[] {
+	const want = new Set(ids);
+	const out: Placed[] = [];
+	for (const lf of s.monitor.floating) {
+		if (!want.has(lf.id)) continue;
+		if (isGroup(lf.unit)) {
+			const g = lf.unit;
+			out.push({
+				id: lf.id,
+				rect: {
+					x: cfgNum(g.config, 'x'),
+					y: cfgNum(g.config, 'y'),
+					w: typeof g.config?.w === 'number' ? g.config.w : g.size.w,
+					h: typeof g.config?.h === 'number' ? g.config.h : g.size.h
+				}
+			});
+		} else out.push({ id: lf.id, rect: (lf.unit as WidgetInstance).rect });
+	}
+	return out;
+}
+
+function applyMovedBoxes(s: EditorState, moved: Placed[]): Patch {
+	if (!moved.length) return {};
+	const at = new Map(moved.map((m) => [m.id, m.rect]));
+	return {
+		monitor: {
+			...s.monitor,
+			floating: s.monitor.floating.map((l) => {
+				const r = at.get(l.id);
+				if (!r) return l;
+				if (isGroup(l.unit)) {
+					return leaf({ ...l.unit, config: { ...l.unit.config, x: r.x, y: r.y } });
+				}
+				const u = l.unit as WidgetInstance;
+				return leaf({ ...u, rect: { ...u.rect, x: r.x, y: r.y } });
+			})
+		}
+	};
+}
+
+export function alignFloating(s: EditorState, ids: string[], edge: AlignEdge): Patch {
+	return applyMovedBoxes(s, alignRects(floatingBoxes(s, ids), edge));
+}
+
+export function distributeFloating(s: EditorState, ids: string[], axis: DistributeAxis): Patch {
+	return applyMovedBoxes(s, distributeRects(floatingBoxes(s, ids), axis));
+}
+
 // floatNode needs `solved` at call time; the Canvas drag paths pass the solved map in, but the
 // handleOp `float` case (from Inspector/Outline/menu) has no point arg. Mirror the Svelte version:
 // it reads the live `solved` (a Canvas reactive). Here we recompute from monitor+workArea would be
@@ -621,7 +738,9 @@ export function insertWidget(s: EditorState, defId: string): Patch {
 	const target = currentContainer(s)?.id ?? s.monitor.root.id;
 	return {
 		monitor: { ...s.monitor, root: insertChild(s.monitor.root, target, leaf(g)) },
-		selectedId: grpId
+		selectedId: grpId,
+		addTarget: target,
+		justAdded: grpId
 	};
 }
 
@@ -648,7 +767,9 @@ export function insertTemplate(
 	const target = currentContainer(s)?.id ?? s.monitor.root.id;
 	return {
 		monitor: { ...s.monitor, root: insertChild(s.monitor.root, target, leaf(g)) },
-		selectedId: grpId
+		selectedId: grpId,
+		addTarget: target,
+		justAdded: grpId
 	};
 }
 

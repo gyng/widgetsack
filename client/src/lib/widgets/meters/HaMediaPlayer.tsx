@@ -6,12 +6,16 @@
 // is resolved by the sibling HaMediaPlayerHost (entity_picture → ha_media_art → art-scheme URL).
 import { mediaVolumeSet } from '../../core/haControls';
 import type { ControlEvent } from '../meterProps';
+import { haTileState } from '../../core/haTileState';
+import HaTileNotice from './HaTileNotice';
 import './HaControls.css';
 
 type HaState = { state?: string; attributes?: Record<string, unknown> };
 
 type Props = {
 	value?: unknown;
+	/** The `ha.status` sample (host-supplied): undefined = not wired, null = plugin not configured. */
+	haStatus?: string | null;
 	label?: string;
 	onControl?: (e: ControlEvent) => void;
 	showTransport?: boolean;
@@ -21,6 +25,7 @@ type Props = {
 
 export default function HaMediaPlayer({
 	value = null,
+	haStatus,
 	label,
 	onControl,
 	showTransport = true,
@@ -47,6 +52,11 @@ export default function HaMediaPlayer({
 		const c = mediaVolumeSet(pct);
 		call(c.service, c.data);
 	};
+
+	// No live data (plugin unset / offline / entity unavailable / still waiting) → the shared notice.
+	const tile = haTileState(haStatus, value);
+	if (tile.kind !== 'ok')
+		return <HaTileNotice className="ha-media np-ha-media" label={name} tile={tile} />;
 
 	return (
 		<div className="ha-media np-ha-media" data-part="root">

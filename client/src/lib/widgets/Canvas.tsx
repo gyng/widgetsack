@@ -66,6 +66,9 @@ import {
 	type Drop
 } from '../core/layoutEdit';
 import { PANEL_SELECTOR } from './canvas/stageHit';
+import ErrorBoundary from './ErrorBoundary';
+import { dismissFirstRun, isFirstRun } from './canvas/firstRun';
+import { useFocusTrap } from './canvas/useFocusTrap';
 import { decideExternalChange } from './canvas/externalChange';
 import { useMenuFocus } from './canvas/useMenuFocus';
 import WidgetHost from './WidgetHost';
@@ -99,8 +102,6 @@ import CssEditor from './CssEditor';
 import {
 	copyToClipboard,
 	ensureFont,
-	isAutostartEnabled,
-	setAutostart,
 	monitorParam,
 	monitorWorkArea,
 	openDevtools,
@@ -112,7 +113,6 @@ import {
 	mainWindowExists,
 	reconcileOverlays,
 	recreateMain,
-	requestLayoutBackup,
 	setMainWindowVisible,
 	syncInteractiveRects,
 	applyOverlayPresentation
@@ -124,6 +124,7 @@ import {
 	useEditorModel,
 	lookup,
 	setSolvedForFloat,
+	setPlacementBounds,
 	editHelpers,
 	bulkPatchConfig,
 	bulkSetBasis,
@@ -133,7 +134,7 @@ import { usePersistence } from './canvas/usePersistence';
 import { applyAssistantOps } from '../core/llm';
 import { decideDesignerLeave } from './canvas/designerLeave';
 import { useStageSize } from './canvas/useStageSize';
-import { useZoomFit } from './canvas/useZoomFit';
+import { boundingBox, useZoomFit } from './canvas/useZoomFit';
 import { useCanvasPointer } from './canvas/useCanvasPointer';
 import { useKeyboard } from './canvas/useKeyboard';
 import { useControls } from './canvas/useControls';
@@ -186,6 +187,7 @@ const StudioSettingsPanel = lazy(() => import('./StudioSettingsPanel'));
 const BackgroundPanel = lazy(() => import('./BackgroundPanel'));
 const PluginsPanel = lazy(() => import('./PluginsPanel'));
 const DesignerListPanel = lazy(() => import('./DesignerListPanel'));
+const SavedLayoutsPanel = lazy(() => import('./SavedLayoutsPanel'));
 const MultiInspector = lazy(() => import('./MultiInspector'));
 
 type Props = { studio?: boolean };
@@ -267,7 +269,9 @@ export default function Canvas({ studio = false }: Props) {
 		undoStack,
 		redoStack,
 		pendingExtras,
-		saveSeq
+		saveSeq,
+		addTarget,
+		justAdded
 	} = state;
 
 	// Theme state + actions (CSS resolution, themes/ file I/O, the editor dialog) — canvas/useThemes.
@@ -288,11 +292,20 @@ export default function Canvas({ studio = false }: Props) {
 		themeDraftName,
 		setThemeDraftName,
 		themeNameRef,
+		themeEditorDirty,
 		openThemeEditor,
 		saveThemeEditor,
 		duplicateTheme,
 		deleteTheme
 	} = useThemes({ studio, selectedTheme, dispatch, commitOp });
+	// Every dismiss path of the theme editor (Escape / Cancel / ✕) asks before dropping edits.
+	const closeThemeEditor = useCallback(() => {
+		if (themeEditorDirty && !window.confirm('Discard theme edits?')) return;
+		setThemeEditorOpen(false);
+	}, [themeEditorDirty, setThemeEditorOpen]);
+	// Tab / Shift+Tab stay inside the dialog while it is open (a modal over the rails).
+	const themeEditorRef = useRef<HTMLDivElement | null>(null);
+	const { onKeyDown: onThemeEditorTrapKey } = useFocusTrap(themeEditorRef, themeEditorOpen);
 
 	// Theme lock (studio Settings): true = one theme across all monitors (default), false = per-monitor.
 	// Theme-only change → commit (a history no-op that triggers the disk write), mirroring setTheme.
@@ -371,7 +384,24 @@ export default function Canvas({ studio = false }: Props) {
 			.catch(() => undefined);
 	}, [studio]);
 
-	const persistence = usePersistence(state, myMonitor);
+	// A failed live (preview) write surfaces on the OVERLAY's edit mode through the same alert the
+	// studio's Save uses — once per failure streak (the next success re-arms it), so a drag that
+	// commits many times doesn't stack alerts. The studio has its Save button for this.
+	const writeFailAlerted = useRef(false);
+	const persistence = usePersistence(state, myMonitor, {
+		onPreviewWriteResult: (ok) => {
+			if (ok) {
+				writeFailAlerted.current = false;
+				return;
+			}
+			if (studio || writeFailAlerted.current) return;
+			writeFailAlerted.current = true;
+			window.alert(
+				'Could not save the layout to disk — your changes are NOT saved. ' +
+					'Check that widgets.json is writable, then try again.'
+			);
+		}
+	});
 	const {
 		persistToDisk,
 		writeBaseline,
@@ -437,7 +467,7 @@ export default function Canvas({ studio = false }: Props) {
 	const controls = useControls();
 	const { overrides, overridesRef, reloadControls } = controls;
 
-	const { panX, panY, zoom, setPan, fit } = useZoomFit({
+	const { panX, panY, zoom, setPan, fit, fitRect } = useZoomFit({
 		studio,
 		// Re-fit when entering/leaving design mode (the key folds in the design context + size).
 		myMonitor: designing ? `def:${editingDefId}` : myMonitor,
@@ -509,6 +539,39 @@ export default function Canvas({ studio = false }: Props) {
 	}, [measuredDom, monitor.floating, floatingGroupBox]);
 	// floatNode (via handleOp) reads the live map; keep the module ref current.
 	setSolvedForFloat(combinedSolved);
+	// A palette click with no container target places the new FLOATING widget on the first free
+	// spot of the work area (core/placement, via the same module-ref pattern as the solved map).
+	useEffect(() => {
+		if (workArea.w > 0 && workArea.h > 0) setPlacementBounds(workArea);
+	}, [workArea]);
+	// The sticky add target (the container the last palette add went into): its node, for the chip in
+	// the stage subbar ("Adding into ▦ row · ✕") and for the Inspector's palette heading.
+	const addTargetNode = useMemo(
+		() => (addTarget ? findNode(monitor.root, addTarget) : null),
+		[addTarget, monitor.root]
+	);
+	const addTargetContainer = addTargetNode && isContainer(addTargetNode) ? addTargetNode : null;
+	// Friendly name for the Inspector's palette heading / chip ("Adding into: row").
+	const addTargetLabel = addTargetContainer
+		? addTargetContainer.id === monitor.root.id
+			? 'the layout'
+			: addTargetContainer.kind === 'col'
+				? 'column'
+				: addTargetContainer.kind
+		: undefined;
+	const clearAddTarget = useCallback(
+		() => dispatch({ type: 'patch', patch: { addTarget: null } }),
+		[dispatch]
+	);
+	const setAddTarget = useCallback(
+		(id: string) => dispatch({ type: 'patch', patch: { addTarget: id } }),
+		[dispatch]
+	);
+	// The selected FLOATING widgets (multi-select align / distribute act on these only).
+	const floatingSelectedIds = useMemo(
+		() => selectedIds.filter((id) => monitor.floating.some((l) => l.id === id)),
+		[selectedIds, monitor.floating]
+	);
 	const renderables = useMemo(
 		() => collectRenderables(monitor, combinedSolved, library),
 		[monitor, combinedSolved, library]
@@ -539,6 +602,8 @@ export default function Canvas({ studio = false }: Props) {
 	// Overlay rendering prefs (taskbar awareness + z-order layer). Set from studio Settings, read on
 	// the overlay (synced cross-window via the 'storage' event).
 	const [overlayPrefs, setOverlayPrefs] = useOverlayPrefs();
+	// Instance ids (`gauge-3f2a…`) in labels are a developer affordance (Settings → Developer mode).
+	const showIds = overlayPrefs.developerMode ?? false;
 	// Freshest prefs for the stable syncRects callback (which reads them without re-subscribing).
 	// Mirrored in the commit effect S1 below (not during render).
 	const overlayPrefsRef = useRef(overlayPrefs);
@@ -579,17 +644,6 @@ export default function Canvas({ studio = false }: Props) {
 			un.then((f) => f()).catch(() => undefined);
 		};
 	}, [studio]);
-	// "Launch at login" (tauri-plugin-autostart). Read the OS state once in the studio; toggling
-	// optimistically updates then reconciles with the actual post-write state (a denied write reverts).
-	const [autostart, setAutostartState] = useState(false);
-	useEffect(() => {
-		if (studio) isAutostartEnabled().then(setAutostartState);
-	}, [studio]);
-	const toggleAutostart = useCallback((enabled: boolean) => {
-		setAutostartState(enabled);
-		setAutostart(enabled).then(setAutostartState);
-	}, []);
-
 	const tokenCss = useMemo(
 		() => (Object.keys(tokenOverrides).length ? tokensToCss(tokenOverrides) : ''),
 		[tokenOverrides]
@@ -777,15 +831,18 @@ export default function Canvas({ studio = false }: Props) {
 	);
 	const multiItems = useMemo(
 		() =>
-			multiNodes.map((n) => ({
-				id: n.id,
-				label: isContainer(n)
-					? `▦ ${n.kind} · ${n.id}`
-					: isGroup(n.unit)
-						? `group ${n.unit.name ?? n.id}`
-						: `${(n.unit as WidgetInstance).type} · ${n.id}`
-			})),
-		[multiNodes]
+			disambiguate(
+				multiNodes.map((n) => ({
+					id: n.id,
+					label: isContainer(n)
+						? `▦ ${n.kind}`
+						: isGroup(n.unit)
+							? `group ${n.unit.name ?? ''}`.trim()
+							: (n.unit as WidgetInstance).type
+				})),
+				showIds
+			),
+		[multiNodes, showIds]
 	);
 	const multiWidgets = useMemo(
 		() =>
@@ -951,6 +1008,24 @@ export default function Canvas({ studio = false }: Props) {
 	}, [saveSeq, schedulePreviewWrite]);
 
 	// --- reloadLayout ---
+	// An unparseable widgets.json is backed up ONCE per window (the backend copies it aside as
+	// widgets.json.bad-<ts>) and the outcome is shown in a banner — the studio used to log this to the
+	// client log only, so the user saw a blank stage with no idea their layout had been set aside.
+	const [layoutBackup, setLayoutBackup] = useState<{ path: string | null } | null>(null);
+	const layoutBackupDone = useRef(false);
+	const backupLayoutFile = useCallback(() => {
+		if (layoutBackupDone.current) return;
+		layoutBackupDone.current = true;
+		invoke<string | null>(COMMANDS.backupLayout)
+			.then((path) => {
+				if (path) logClient('warn', 'layout', `unparseable widgets.json backed up to ${path}`);
+				setLayoutBackup({ path });
+			})
+			.catch((err) => {
+				logClient('error', 'layout', `layout backup failed: ${String(err)}`);
+				setLayoutBackup({ path: null });
+			});
+	}, []);
 	const reloadLayout = useCallback(async () => {
 		const myMon = myMonitorRef.current;
 		// historyReady=false up front (before the awaits) so neither the load nor any interim commit
@@ -981,7 +1056,7 @@ export default function Canvas({ studio = false }: Props) {
 					'layout',
 					`widgets.json is unparseable (${saved === null ? 'whole file' : `monitor "${myMon}"`}); backing it up and loading an empty layout`
 				);
-				requestLayoutBackup();
+				backupLayoutFile();
 				patch.monitor = { root: emptyRoot(), floating: [] };
 			} else if (mon) patch.monitor = mon;
 			const lib = obj?.library;
@@ -1004,7 +1079,12 @@ export default function Canvas({ studio = false }: Props) {
 				tk && typeof tk === 'object' && !Array.isArray(tk) ? (tk as Record<string, string>) : {};
 		} catch (err) {
 			logClient('error', 'layout', `load_layout failed; using default layout: ${String(err)}`);
-			if (raw !== null) requestLayoutBackup();
+			// The file READ but is not JSON at all: same as the unparseable case above — back it up and
+			// load an EMPTY layout (not the demo seed, which the next preview write would persist over it).
+			if (raw !== null) {
+				backupLayoutFile();
+				patch.monitor = { root: emptyRoot(), floating: [] };
+			}
 		}
 		// historyReady=false during the load + interim awaits; clear pendingExtras; reset history;
 		// set baseline — all folded into one dispatch so the loaded layout is the committed baseline.
@@ -1018,7 +1098,7 @@ export default function Canvas({ studio = false }: Props) {
 		dispatch({ type: 'resetHistory' });
 		dispatch({ type: 'setBaseline' });
 		// oxlint-disable-next-line react-hooks/exhaustive-deps
-	}, [dispatch, adoptTheme]);
+	}, [dispatch, adoptTheme, backupLayoutFile]);
 	// myMonitor latest, for reloadLayout/persist reading inside listeners. Mirrored in the commit
 	// effect S3 near the end of the component (not during render).
 	const myMonitorRef = useRef(myMonitor);
@@ -1098,6 +1178,7 @@ export default function Canvas({ studio = false }: Props) {
 			import('./BackgroundPanel'),
 			import('./PluginsPanel'),
 			import('./DesignerListPanel'),
+			import('./SavedLayoutsPanel'),
 			import('./MultiInspector')
 		]).catch(() => undefined);
 	}, [studio]);
@@ -1335,9 +1416,29 @@ export default function Canvas({ studio = false }: Props) {
 		dispatch({ type: 'resetHistory' });
 	}, [studio, dispatch, revertDraftToDisk, applyTheme]);
 	const dirtyRef = useRef(dirty); // mirrored in the commit effect S3
+	// Overlay edit mode: edits diverge from the baseline loaded at startup (the studio's `dirty` is
+	// studio-gated). "Revert" writes that baseline straight back to disk, same path as the studio's Cancel.
+	const overlayDirty = !studio && savedBaseline != null && monitor !== savedBaseline.monitor;
+	const revertOverlayEdits = useCallback(async () => {
+		if (!savedBaselineRef.current) return;
+		if (!window.confirm('Restore the last saved layout? Edits made in this session are discarded.'))
+			return;
+		dispatch({ type: 'patch', patch: { selectedId: null, selectedIds: [] } });
+		await revertDraftToDisk();
+		dispatch({ type: 'resetHistory' });
+	}, [dispatch, revertDraftToDisk]);
 
 	// --- sacks (item 10): export the studio's shareable state, import + merge one back ---
-	const { sackInfos, exportSack, importSack } = useSacks({
+	const {
+		sackInfos,
+		exportName,
+		setExportName,
+		exportNameError,
+		exportSack,
+		importSack,
+		notice: sackNotice,
+		revealSacksDir
+	} = useSacks({
 		studio,
 		navSection,
 		editingDefId,
@@ -1349,7 +1450,13 @@ export default function Canvas({ studio = false }: Props) {
 	});
 
 	// --- saved layouts: name the current monitor's arrangement, load it back, delete (named slots) ---
-	const { layoutNames, saveCurrentLayout, loadSavedLayout, deleteSavedLayout } = useSavedLayouts({
+	const {
+		layoutNames,
+		status: presetStatus,
+		saveCurrentLayout,
+		loadSavedLayout,
+		deleteSavedLayout
+	} = useSavedLayouts({
 		studio,
 		navSection,
 		editingDefId,
@@ -1817,6 +1924,15 @@ export default function Canvas({ studio = false }: Props) {
 	// right/bottom edges. We render at the cursor first, then measure the box and shift it back in a
 	// layout effect (runs before paint → no visible jump).
 	const ctxRef = useRef<HTMLDivElement | null>(null);
+	// The menu element as STATE too (via a callback ref): the menu sits under the edit-chrome
+	// <Suspense>, so right after boot (or on an overlay's first Ctrl+E) it can mount a commit LATER
+	// than `menu` was set — a `[menu]`-keyed effect alone then measured nothing and never clamped,
+	// leaving a bottom-of-screen menu's last items below the viewport edge.
+	const [ctxEl, setCtxEl] = useState<HTMLDivElement | null>(null);
+	const ctxRefCb = useCallback((el: HTMLDivElement | null) => {
+		ctxRef.current = el;
+		setCtxEl(el);
+	}, []);
 	const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
 	// When the menu CLOSES, revert the hover preview and clear the clamped position. Done during render
 	// (store-previous pattern) — these were two menu-keyed effects whose synchronous setState on close
@@ -1832,13 +1948,29 @@ export default function Canvas({ studio = false }: Props) {
 	}
 	useLayoutEffect(() => {
 		if (!menu) return; // closing is handled during render (above)
-		const el = ctxRef.current;
+		const el = ctxEl;
 		if (!el) return;
-		const r = el.getBoundingClientRect();
-		setMenuPos(
-			clampMenuToViewport(menu.x, menu.y, r.width, r.height, window.innerWidth, window.innerHeight)
-		);
-	}, [menu]);
+		const clamp = () => {
+			const r = el.getBoundingClientRect();
+			setMenuPos(
+				clampMenuToViewport(
+					menu.x,
+					menu.y,
+					r.width,
+					r.height,
+					window.innerWidth,
+					window.innerHeight
+				)
+			);
+		};
+		clamp();
+		// The menu can grow after the first paint (lazy panel chunks / fonts settling / the hover preview
+		// re-rendering its items): re-clamp on any size change so the bottom items never end up below
+		// the viewport edge.
+		const ro = new ResizeObserver(clamp);
+		ro.observe(el);
+		return () => ro.disconnect();
+	}, [menu, ctxEl]);
 
 	// a11y (ARIA menu): tag the rendered items as menuitems, move focus to the first on open, restore
 	// focus to wherever it was when the menu closes, and rove Arrow/Home/End + Esc/Tab-to-close —
@@ -1902,7 +2034,7 @@ export default function Canvas({ studio = false }: Props) {
 			if (wx < b.x || wx >= b.x + b.w || wy < b.y || wy >= b.y + b.h) continue;
 			if (seen.has(r.selectId)) continue;
 			seen.add(r.selectId);
-			widgets.push({ id: r.selectId, label: `${r.instance.type} · ${r.selectId}` });
+			widgets.push({ id: r.selectId, label: r.instance.type });
 		}
 		const rootId = monitor.root.id;
 		const containers = containerRects
@@ -1915,9 +2047,9 @@ export default function Canvas({ studio = false }: Props) {
 					wy < c.rect.y + c.rect.h
 			)
 			.sort((a, b) => a.rect.w * a.rect.h - b.rect.w * b.rect.h)
-			.map((c) => ({ id: c.id, label: `▦ ${c.kind} · ${c.id}` }));
-		return [...widgets, ...containers];
-	}, [menu, studio, renderables, containerRects, monitor]);
+			.map((c) => ({ id: c.id, label: `▦ ${c.kind}` }));
+		return disambiguate([...widgets, ...containers], showIds);
+	}, [menu, studio, renderables, containerRects, monitor, showIds]);
 
 	// A right-button free-move (WidgetHost) arms this so the contextmenu that trails the drag is
 	// swallowed exactly once — by whichever entry point it lands on (the widget's handleContextMenu
@@ -2216,6 +2348,79 @@ export default function Canvas({ studio = false }: Props) {
 		onForeignLayoutChangeRef.current = onForeignLayoutChange;
 	});
 
+	// --- just-added: bring the new node into view + flash it ---
+	// An add that lands off the visible stage (zoomed in / panned away) or under another widget
+	// otherwise reads as a no-op. Pan the stage so the node is visible (studio) and flash it for 1s via
+	// a `data-just-added` attribute on its host (styled in Canvas.css). The flow tree measures a frame
+	// after the commit, so the rect lookup retries over a few frames before giving up. Declared AFTER
+	// the S3 mirror so solvedRef/panRef are fresh on the first attempt.
+	const flashTimer = useRef<number | null>(null);
+	useEffect(() => {
+		if (!justAdded) return;
+		const id = justAdded;
+		let tries = 0;
+		let raf = 0;
+		const attempt = () => {
+			const el = worldRef.current?.querySelector<HTMLElement>(
+				`[data-w="${id}"], [data-id="${id}"]`
+			);
+			const r = solvedRef.current.get(id);
+			if ((!el || !r) && tries++ < 12) {
+				raf = requestAnimationFrame(attempt);
+				return;
+			}
+			if (el) {
+				el.setAttribute('data-just-added', '');
+				if (flashTimer.current) clearTimeout(flashTimer.current);
+				flashTimer.current = window.setTimeout(() => el.removeAttribute('data-just-added'), 1000);
+			}
+			if (r && studio) {
+				const p = panRef.current;
+				const { stageW: sw, stageH: sh } = stageSizeRef.current;
+				const visible =
+					r.x * p.zoom + p.panX >= 0 &&
+					r.y * p.zoom + p.panY >= 0 &&
+					(r.x + r.w) * p.zoom + p.panX <= sw &&
+					(r.y + r.h) * p.zoom + p.panY <= sh;
+				if (!visible && sw > 0 && sh > 0) {
+					setPan((cur) => ({
+						...cur,
+						panX: sw / 2 - (r.x + r.w / 2) * cur.zoom,
+						panY: sh / 2 - (r.y + r.h / 2) * cur.zoom
+					}));
+				}
+			}
+		};
+		attempt();
+		return () => cancelAnimationFrame(raf);
+	}, [justAdded, studio, setPan]);
+	const stageSizeRef = useRef({ stageW, stageH }); // mirrored below (read only in the effect above)
+	useEffect(() => {
+		stageSizeRef.current = { stageW, stageH };
+	});
+	useEffect(
+		() => () => {
+			if (flashTimer.current) clearTimeout(flashTimer.current);
+		},
+		[]
+	);
+
+	// --- zoom to content / selection: fit the bounding box of the selected nodes (or, with nothing
+	// selected, of everything on the monitor) into the stage. ---
+	const zoomToContent = useCallback(() => {
+		const sol = solvedRef.current;
+		const selIds = selectedIdsRef.current.length
+			? selectedIdsRef.current
+			: selectedIdRef.current
+				? [selectedIdRef.current]
+				: [];
+		const fromSel = selIds.map((id) => sol.get(id)).filter((r): r is Rect => !!r);
+		const rects = fromSel.length ? fromSel : renderablesRef.current.map((r) => r.rect);
+		const box = boundingBox(rects);
+		if (box) fitRect(box);
+		else fit();
+	}, [fitRect, fit]);
+
 	// --- canvas pointer (marquee + pan) ---
 	const { marquee, panning, onCanvasMouseDown } = useCanvasPointer({
 		editMode,
@@ -2283,6 +2488,28 @@ export default function Canvas({ studio = false }: Props) {
 		selectedId,
 		library
 	]);
+
+	// Developer items (instance ids in labels, "Copy debug JSON", "Inspect (devtools)") show only
+	// with the Settings → Developer mode pref on; everyone else gets the plain vocabulary.
+	const developerMode = overlayPrefs.developerMode ?? false;
+	// First-boot onboarding strip (dismissible once, persisted) — studio only.
+	const [firstRun, setFirstRun] = useState(() => studio && isFirstRun());
+	const dismissStrip = useCallback(() => {
+		dismissFirstRun();
+		setFirstRun(false);
+	}, []);
+	// The Layouts stage with nothing on this monitor: a centred "what now" card instead of a blank.
+	const stageEmpty =
+		studio && navSection === 'layouts' && !designing && !monitorHasWidgets(monitor);
+	// Open (expand) the Inspector's Add palette and put focus on its filter box — the context menu's
+	// "Add widget…" and the empty-state card both route here. The palette is a <details>; expanding it
+	// + focusing the filter is a DOM nudge, not state, so it stays independent of the Inspector's own
+	// open/closed bookkeeping.
+	const focusAddPalette = useCallback(() => {
+		const panel = document.querySelector<HTMLDetailsElement>('.inspector .add-panel');
+		if (panel) panel.open = true;
+		document.querySelector<HTMLInputElement>('.inspector .palette-filter')?.focus();
+	}, []);
 
 	// =========================================================================================
 	// Render.
@@ -2359,7 +2586,7 @@ export default function Canvas({ studio = false }: Props) {
 
 	// A floating GROUP's descendant: laid out in CSS (FlowNode inside the group's box) and DISPLAY-ONLY
 	// in the editor — the enclosing GroupFrame owns selection / move / resize for the whole group, so a
-	// descendant isn't individually selectable (Unlink to edit one). `onControl` is still wired so an
+	// descendant isn't individually selectable (Ungroup to edit one). `onControl` is still wired so an
 	// interactive descendant (e.g. an HA light) actuates on the passive overlay, where the frame has no
 	// edit overlay covering it.
 	const renderFloatingLeaf: RenderLeaf = (lf, id) => {
@@ -2390,218 +2617,251 @@ export default function Canvas({ studio = false }: Props) {
 				onDrop={onCanvasDrop}
 			>
 				<StyleLayer css={styleCss} />
-				<div ref={worldRef} className={studio ? 'world scaled' : 'world'} style={worldStyle}>
-					{/* The full-monitor wallpaper layer, behind every widget. Inside .world so it scales/pans
+				{/* The stage: one boundary around the whole world so a render fault in the layout tree
+				    degrades to a fallback (with Reload / Copy error) instead of a blank window; per-widget
+				    faults are caught closer, by WidgetHost's own boundary. */}
+				<ErrorBoundary label="Stage" resetKey={myMonitor} onCopy={copyToClipboard}>
+					<div ref={worldRef} className={studio ? 'world scaled' : 'world'} style={worldStyle}>
+						{/* The full-monitor wallpaper layer, behind every widget. Inside .world so it scales/pans
 					    with the monitor view in the studio and fills the screen 1:1 on an overlay. */}
-					<BackgroundLayer spec={showBackground ? bg : undefined} resolveSrc={resolveWallpaper} />
-					{studio && (
-						<>
-							<div
-								className="monitor-frame"
-								style={{ left: workArea.x, top: workArea.y, width: workArea.w, height: workArea.h }}
-							/>
-							{containerRects.map((c) =>
-								c.id !== monitor.root.id ? (
-									<div
-										key={c.id}
-										className={['cbound', c.id === selectedId && 'csel', c.id === hoverId && 'chl']
-											.filter(Boolean)
-											.join(' ')}
-										style={{ left: c.rect.x, top: c.rect.y, width: c.rect.w, height: c.rect.h }}
-									>
-										<button
-											type="button"
-											className="ctag"
-											title={`Select this ${c.kind}`}
-											onClick={() => dispatch({ type: 'select', id: c.id })}
-											onMouseEnter={() => setHoverId(c.id)}
-											onMouseLeave={() => setHoverId(null)}
-										>
-											{c.kind}
-										</button>
-									</div>
-								) : null
-							)}
-							{gridPlaceholders.map((cell) => (
-								<button
-									type="button"
-									key={`${cell.gridId}:${cell.index}`}
-									className="grid-cell"
+						<BackgroundLayer spec={showBackground ? bg : undefined} resolveSrc={resolveWallpaper} />
+						{studio && (
+							<>
+								<div
+									className="monitor-frame"
 									style={{
-										left: cell.rect.x,
-										top: cell.rect.y,
-										width: cell.rect.w,
-										height: cell.rect.h
-									}}
-									title="Empty grid cell — click to select the grid; right-click to add a row / column / grid inside"
-									onClick={() => dispatch({ type: 'select', id: cell.gridId })}
-									onContextMenu={(e) => {
-										e.preventDefault();
-										e.stopPropagation();
-										const w = toWorld(e.clientX, e.clientY);
-										setMenu({
-											x: e.clientX,
-											y: e.clientY,
-											id: cell.gridId === monitor.root.id ? '__canvas__' : cell.gridId,
-											cellIndex: cell.index,
-											wx: w.x,
-											wy: w.y
-										});
+										left: workArea.x,
+										top: workArea.y,
+										width: workArea.w,
+										height: workArea.h
 									}}
 								/>
-							))}
-							{splitters.map((sp) => {
-								// Keep the grab area a constant ~8px ON SCREEN regardless of zoom: expand the
-								// cross-axis thickness in world coords by 1/zoom around the boundary midpoint, so
-								// zooming out to see the whole monitor doesn't shrink the splitter below the
-								// reliable-pointing floor. The visual line stays thin via the ::after tick.
-								const z = (studio ? zoom : 1) || 1;
-								const vertical = sp.axis === 'row';
-								const pad = (vertical ? sp.rect.w : sp.rect.h) / z;
-								const cx = sp.rect.x + sp.rect.w / 2;
-								const cy = sp.rect.y + sp.rect.h / 2;
-								const style = vertical
-									? { left: cx - pad / 2, top: sp.rect.y, width: pad, height: sp.rect.h }
-									: { left: sp.rect.x, top: cy - pad / 2, width: sp.rect.w, height: pad };
-								return (
-									<div
-										key={`${sp.aId}|${sp.bId}`}
-										className={`splitter ${vertical ? 'v' : 'h'}`}
-										role="separator"
-										aria-orientation={vertical ? 'vertical' : 'horizontal'}
-										aria-label="Resize panes (arrow keys; Shift for a larger step)"
-										tabIndex={0}
-										style={style}
-										title="Drag to resize (snaps to ¼ ⅓ ½ ⅔ ¾) · double-click to even · arrow keys to nudge"
-										onPointerDown={(e) => onSplitDown(e, sp)}
-										onPointerMove={onSplitMove}
-										onPointerUp={onSplitUp}
-										onDoubleClick={() => onSplitReset(sp)}
-										onKeyDown={(e) => onSplitKey(e, sp)}
+								{containerRects.map((c) =>
+									c.id !== monitor.root.id ? (
+										<div
+											key={c.id}
+											className={[
+												'cbound',
+												c.id === selectedId && 'csel',
+												c.id === hoverId && 'chl'
+											]
+												.filter(Boolean)
+												.join(' ')}
+											style={{ left: c.rect.x, top: c.rect.y, width: c.rect.w, height: c.rect.h }}
+										>
+											<button
+												type="button"
+												className="ctag"
+												title={`Select this ${c.kind}`}
+												onClick={() => dispatch({ type: 'select', id: c.id })}
+												onMouseEnter={() => setHoverId(c.id)}
+												onMouseLeave={() => setHoverId(null)}
+											>
+												{c.kind}
+											</button>
+										</div>
+									) : null
+								)}
+								{gridPlaceholders.map((cell) => (
+									<button
+										type="button"
+										key={`${cell.gridId}:${cell.index}`}
+										className="grid-cell"
+										style={{
+											left: cell.rect.x,
+											top: cell.rect.y,
+											width: cell.rect.w,
+											height: cell.rect.h
+										}}
+										title="Empty grid cell — click to select the grid; right-click to add a row / column / grid inside"
+										onClick={() => dispatch({ type: 'select', id: cell.gridId })}
+										onContextMenu={(e) => {
+											e.preventDefault();
+											e.stopPropagation();
+											const w = toWorld(e.clientX, e.clientY);
+											setMenu({
+												x: e.clientX,
+												y: e.clientY,
+												id: cell.gridId === monitor.root.id ? '__canvas__' : cell.gridId,
+												cellIndex: cell.index,
+												wx: w.x,
+												wy: w.y
+											});
+										}}
 									/>
-								);
-							})}
-							{/* Context-menu hover preview: ghost rects for the item under the pointer/focus,
+								))}
+								{splitters.map((sp) => {
+									// Keep the grab area a constant ~8px ON SCREEN regardless of zoom: expand the
+									// cross-axis thickness in world coords by 1/zoom around the boundary midpoint, so
+									// zooming out to see the whole monitor doesn't shrink the splitter below the
+									// reliable-pointing floor. The visual line stays thin via the ::after tick.
+									const z = (studio ? zoom : 1) || 1;
+									const vertical = sp.axis === 'row';
+									const pad = (vertical ? sp.rect.w : sp.rect.h) / z;
+									const cx = sp.rect.x + sp.rect.w / 2;
+									const cy = sp.rect.y + sp.rect.h / 2;
+									const style = vertical
+										? { left: cx - pad / 2, top: sp.rect.y, width: pad, height: sp.rect.h }
+										: { left: sp.rect.x, top: cy - pad / 2, width: sp.rect.w, height: pad };
+									return (
+										<div
+											key={`${sp.aId}|${sp.bId}`}
+											className={`splitter ${vertical ? 'v' : 'h'}`}
+											role="separator"
+											aria-orientation={vertical ? 'vertical' : 'horizontal'}
+											aria-label="Resize panes (arrow keys; Shift for a larger step)"
+											tabIndex={0}
+											style={style}
+											title="Drag to resize (snaps to ¼ ⅓ ½ ⅔ ¾) · double-click to even · arrow keys to nudge"
+											onPointerDown={(e) => onSplitDown(e, sp)}
+											onPointerMove={onSplitMove}
+											onPointerUp={onSplitUp}
+											onDoubleClick={() => onSplitReset(sp)}
+											onKeyDown={(e) => onSplitKey(e, sp)}
+										/>
+									);
+								})}
+								{/* Context-menu hover preview: ghost rects for the item under the pointer/focus,
 							    drawn on top of the existing overlays. pointer-events:none (CSS) so they never
 							    steal the menu hover or stage clicks; in .world so they inherit pan/zoom. */}
-							{previewShapes.map((s, i) =>
-								s.kind === 'bar' ? (
-									<div
-										key={`pv${i}`}
-										className="ctx-preview-bar"
-										style={{ left: s.rect.x, top: s.rect.y, width: s.rect.w, height: s.rect.h }}
-									/>
-								) : (
-									<div
-										key={`pv${i}`}
-										className={s.kind === 'zone' ? 'ctx-preview-zone' : 'ctx-preview-cell'}
-										style={{ left: s.rect.x, top: s.rect.y, width: s.rect.w, height: s.rect.h }}
-									/>
-								)
-							)}
-						</>
-					)}
-					{/* The flow tree, laid out natively by the browser (FlowNode). The frame insets it to
+								{previewShapes.map((s, i) =>
+									s.kind === 'bar' ? (
+										<div
+											key={`pv${i}`}
+											className="ctx-preview-bar"
+											style={{ left: s.rect.x, top: s.rect.y, width: s.rect.w, height: s.rect.h }}
+										/>
+									) : (
+										<div
+											key={`pv${i}`}
+											className={s.kind === 'zone' ? 'ctx-preview-zone' : 'ctx-preview-cell'}
+											style={{ left: s.rect.x, top: s.rect.y, width: s.rect.w, height: s.rect.h }}
+										/>
+									)
+								)}
+							</>
+						)}
+						{/* The flow tree, laid out natively by the browser (FlowNode). The frame insets it to
 					    the WORK AREA — the full stage in the studio, taskbar-excluded on the overlay
 					    (unless the "respect taskbar" pref is off). .world stays window/stage-filling so
 					    measured rects rebase to a stable origin (monitor-local for click-through). */}
-					<div
-						className="flow-frame"
-						style={
-							studio || overlayPrefs.respectWorkArea
-								? {
-										position: 'absolute',
-										left: `${workArea.x}px`,
-										top: `${workArea.y}px`,
-										width: `${workArea.w}px`,
-										height: `${workArea.h}px`
-									}
-								: { position: 'absolute', inset: 0 }
-						}
-					>
-						<FlowNode
-							node={monitor.root}
-							parentKind="col"
-							renderLeaf={renderFlowLeaf}
-							library={library}
-							fill
-							hiddenIds={hiddenIds}
-						/>
-					</div>
-					{/* Floating layer: GROUPS lay out in CSS (FlowNode inside an absolute box at their
+						<div
+							className="flow-frame"
+							style={
+								studio || overlayPrefs.respectWorkArea
+									? {
+											position: 'absolute',
+											left: `${workArea.x}px`,
+											top: `${workArea.y}px`,
+											width: `${workArea.w}px`,
+											height: `${workArea.h}px`
+										}
+									: { position: 'absolute', inset: 0 }
+							}
+						>
+							<FlowNode
+								node={monitor.root}
+								parentKind="col"
+								renderLeaf={renderFlowLeaf}
+								library={library}
+								fill
+								hiddenIds={hiddenIds}
+							/>
+						</div>
+						{/* Floating layer: GROUPS lay out in CSS (FlowNode inside an absolute box at their
 					    anchor + size); PRIMITIVES sit absolutely at their own stored rect. */}
-					{monitor.floating.map((lf) => {
-						if (isGroup(lf.unit)) {
-							// One interactive frame for the whole group: select / free-move / resize as a
-							// single unit (the descendants render display-only inside it). The frame's id is
-							// the group leaf id, so selection + multi-drag treat it as one widget.
-							const box = floatingGroupBox(lf);
-							const child = resolveGroup(lf.unit, library).child;
-							return (
-								<GroupFrame
-									key={lf.id}
-									id={lf.id}
-									rect={box}
-									name={(lf.unit as Group).name}
-									editMode={editMode && !previewing}
-									selected={lf.id === selectedId || selectedSet.has(lf.id)}
-									multi={multiSelected && (lf.id === selectedId || selectedSet.has(lf.id))}
-									highlighted={hoverId !== null && lf.id === hoverId}
-									grid={GRID}
-									scale={studio ? zoom : 1}
-									onChange={onChange}
-									onCommit={onCommit}
-									onSelect={onSelect}
-									onContextMenu={onWidgetContextMenu}
-									onHover={editMode ? setHoverId : undefined}
-									onSuppressContextMenu={armSuppressCtx}
-									suppressContextMenu={consumeSuppressCtx}
-								>
-									{child && (
-										<FlowNode
-											node={child}
-											parentKind="col"
-											prefix={`${lf.id}/`}
-											renderLeaf={renderFloatingLeaf}
-											library={library}
-											fill
-											hiddenIds={hiddenIds}
-										/>
-									)}
-								</GroupFrame>
-							);
-						}
-						const r = renderablesById.get(lf.id);
-						return r ? renderHost(r, false) : null;
-					})}
-					{editMode && (
-						<>
-							{guideXs.map((gx) => (
-								<div key={`v${gx}`} className="guide v" style={{ left: gx }} />
-							))}
-							{guideYs.map((gy) => (
-								<div key={`h${gy}`} className="guide h" style={{ top: gy }} />
-							))}
-							{dropBar && (
-								<div
-									className="dropbar"
-									style={{ left: dropBar.x, top: dropBar.y, width: dropBar.w, height: dropBar.h }}
-								/>
-							)}
-							{dropZone && (
-								<div
-									className="dropzone"
-									style={{
-										left: dropZone.x,
-										top: dropZone.y,
-										width: dropZone.w,
-										height: dropZone.h
-									}}
-								/>
-							)}
-						</>
-					)}
-				</div>
+						{monitor.floating.map((lf) => {
+							if (isGroup(lf.unit)) {
+								// One interactive frame for the whole group: select / free-move / resize as a
+								// single unit (the descendants render display-only inside it). The frame's id is
+								// the group leaf id, so selection + multi-drag treat it as one widget.
+								const box = floatingGroupBox(lf);
+								const child = resolveGroup(lf.unit, library).child;
+								return (
+									<GroupFrame
+										key={lf.id}
+										id={lf.id}
+										rect={box}
+										name={(lf.unit as Group).name}
+										editMode={editMode && !previewing}
+										selected={lf.id === selectedId || selectedSet.has(lf.id)}
+										multi={multiSelected && (lf.id === selectedId || selectedSet.has(lf.id))}
+										highlighted={hoverId !== null && lf.id === hoverId}
+										grid={GRID}
+										scale={studio ? zoom : 1}
+										onChange={onChange}
+										onCommit={onCommit}
+										onSelect={onSelect}
+										onContextMenu={onWidgetContextMenu}
+										onHover={editMode ? setHoverId : undefined}
+										onSuppressContextMenu={armSuppressCtx}
+										suppressContextMenu={consumeSuppressCtx}
+									>
+										{child && (
+											<FlowNode
+												node={child}
+												parentKind="col"
+												prefix={`${lf.id}/`}
+												renderLeaf={renderFloatingLeaf}
+												library={library}
+												fill
+												hiddenIds={hiddenIds}
+											/>
+										)}
+									</GroupFrame>
+								);
+							}
+							const r = renderablesById.get(lf.id);
+							return r ? renderHost(r, false) : null;
+						})}
+						{editMode && (
+							<>
+								{guideXs.map((gx) => (
+									<div key={`v${gx}`} className="guide v" style={{ left: gx }} />
+								))}
+								{guideYs.map((gy) => (
+									<div key={`h${gy}`} className="guide h" style={{ top: gy }} />
+								))}
+								{dropBar && (
+									<div
+										className="dropbar"
+										style={{ left: dropBar.x, top: dropBar.y, width: dropBar.w, height: dropBar.h }}
+									/>
+								)}
+								{dropZone && (
+									<div
+										className="dropzone"
+										style={{
+											left: dropZone.x,
+											top: dropZone.y,
+											width: dropZone.w,
+											height: dropZone.h
+										}}
+									/>
+								)}
+							</>
+						)}
+					</div>
+				</ErrorBoundary>
+				{/* Empty stage (Layouts, nothing on this monitor): a centred "what now" card. Outside the
+				    scaled world so it stays readable at any zoom; pointer-events only on its button. */}
+				{stageEmpty && (
+					<div className="stage-empty" role="note">
+						<div className="se-title">Nothing on this monitor yet</div>
+						<ol className="se-steps">
+							<li>
+								Pick a widget from <b>Add</b> (right)
+							</li>
+							<li>Drag it into place</li>
+							<li>
+								<b>Save</b>
+							</li>
+						</ol>
+						<button type="button" onClick={focusAddPalette}>
+							＋ Add a widget
+						</button>
+					</div>
+				)}
 
 				{marquee && (
 					<div
@@ -2699,8 +2959,8 @@ export default function Canvas({ studio = false }: Props) {
 										className={['save', dirty ? 'hot' : 'saved'].join(' ')}
 										title={
 											dirty
-												? 'Previewing live on the desktop overlays — Save keeps these changes; Cancel reverts them (Ctrl+S)'
-												: 'Saved — the overlays show this layout'
+												? 'Changes are live on your desktop — Save keeps them; Cancel reverts them (Ctrl+S)'
+												: 'Saved — your desktop shows this layout'
 										}
 										disabled={!dirty}
 										onClick={commitSave}
@@ -2712,11 +2972,18 @@ export default function Canvas({ studio = false }: Props) {
 									{dirty && (
 										<button
 											type="button"
-											title="Revert the overlays and the editor to the last saved layout"
+											title="Revert your desktop and the editor to the last saved layout"
 											onClick={cancelEdits}
 										>
 											Cancel
 										</button>
+									)}
+									{/* The studio previews every edit straight to the desktop: while dirty, say so in one
+									    persistent line next to the Save decision (the tooltip alone was easy to miss). */}
+									{dirty && (
+										<span className="save-hint" role="status">
+											Changes are live on your desktop · Save to keep · Cancel to revert
+										</span>
 									)}
 									{/* Dev/extra-instance badge (main.rs is_dev_instance): a --multi or debug build run
 									    alongside the installed release shows this so the two are distinguishable. */}
@@ -2784,7 +3051,7 @@ export default function Canvas({ studio = false }: Props) {
 												role="menuitem"
 												onClick={() => {
 													setHeaderMenuOpen(false);
-													exportSack();
+													navToSection('sacks');
 												}}
 											>
 												Export sack…
@@ -2810,16 +3077,18 @@ export default function Canvas({ studio = false }: Props) {
 											>
 												Keyboard shortcuts
 											</button>
-											<button
-												type="button"
-												role="menuitem"
-												onClick={() => {
-													setHeaderMenuOpen(false);
-													openDevtools();
-												}}
-											>
-												Open DevTools
-											</button>
+											{developerMode && (
+												<button
+													type="button"
+													role="menuitem"
+													onClick={() => {
+														setHeaderMenuOpen(false);
+														openDevtools();
+													}}
+												>
+													Open DevTools
+												</button>
+											)}
 										</div>
 									</>
 								)}
@@ -2842,6 +3111,45 @@ export default function Canvas({ studio = false }: Props) {
 											onClick={keepMine}
 										>
 											Keep mine
+										</button>
+									</div>
+								)}
+								{/* widgets.json couldn't be parsed: it was copied aside (path from the backend) and an
+								    EMPTY layout loaded in its place — say so, or the blank stage reads as data loss. */}
+								{layoutBackup && (
+									<div className="layout-banner" role="alert">
+										<span>
+											Couldn’t read widgets.json —{' '}
+											{layoutBackup.path
+												? `backed up to ${layoutBackup.path}; `
+												: 'the backup failed (see the log); '}
+											loaded an empty layout
+										</span>
+										<button type="button" onClick={() => setLayoutBackup(null)}>
+											Dismiss
+										</button>
+									</div>
+								)}
+								{/* First-boot strip (dismissed once, persisted): the three steps in the order they
+								    happen. Sits above the stage, under the bars; never covers the rails. */}
+								{firstRun && (
+									<div className="first-run-strip" role="note">
+										<span className="frs-step">
+											<b>1</b> Pick a widget from <b>Add</b> (right)
+										</span>
+										<span className="frs-step">
+											<b>2</b> Drag it into place
+										</span>
+										<span className="frs-step">
+											<b>3</b> <b>Save</b> to keep it on your desktop
+										</span>
+										<button
+											type="button"
+											aria-label="Dismiss"
+											title="Got it"
+											onClick={dismissStrip}
+										>
+											✕
 										</button>
 									</div>
 								)}
@@ -2880,18 +3188,29 @@ export default function Canvas({ studio = false }: Props) {
 											into cells
 										</label>
 										<span className="lbl">Zoom</span>
-										<button type="button" onClick={fit}>
+										<button type="button" title="Fit the whole monitor in the stage" onClick={fit}>
 											Fit
 										</button>
-										<span className="zlevel">{Math.round(zoom * 100)}%</span>
-										<span className="lbl">Debug</span>
 										<button
 											type="button"
-											title="Copy a debug snapshot (tree + solved boxes + flagged issues) to the clipboard"
-											onClick={copyDebug}
+											title="Zoom to the selection — or, with nothing selected, to everything on this monitor"
+											onClick={zoomToContent}
 										>
-											⧉ Copy debug
+											Zoom to content
 										</button>
+										<span className="zlevel">{Math.round(zoom * 100)}%</span>
+										{developerMode && (
+											<>
+												<span className="lbl">Debug</span>
+												<button
+													type="button"
+													title="Copy a debug snapshot (tree + solved boxes + flagged issues) to the clipboard"
+													onClick={copyDebug}
+												>
+													⧉ Copy debug
+												</button>
+											</>
+										)}
 									</div>
 								)}
 								<div className="monitor-badge">▦ {monName}</div>
@@ -2943,6 +3262,7 @@ export default function Canvas({ studio = false }: Props) {
 						)}
 						{themeEditorOpen && (
 							<div
+								ref={themeEditorRef}
 								className="theme-editor"
 								role="dialog"
 								aria-modal="true"
@@ -2950,8 +3270,10 @@ export default function Canvas({ studio = false }: Props) {
 								onKeyDown={(e) => {
 									if (e.key === 'Escape') {
 										e.preventDefault();
-										setThemeEditorOpen(false);
+										closeThemeEditor();
+										return;
 									}
+									onThemeEditorTrapKey(e); // Tab / Shift+Tab stay inside the dialog
 								}}
 							>
 								<div className="te-hd">
@@ -2960,7 +3282,7 @@ export default function Canvas({ studio = false }: Props) {
 										type="button"
 										className="te-close"
 										aria-label="Close theme editor"
-										onClick={() => setThemeEditorOpen(false)}
+										onClick={closeThemeEditor}
 									>
 										✕
 									</button>
@@ -2982,11 +3304,7 @@ export default function Canvas({ studio = false }: Props) {
 									ariaLabel="theme css"
 								/>
 								<div className="te-actions">
-									<button
-										type="button"
-										className="te-cancel"
-										onClick={() => setThemeEditorOpen(false)}
-									>
+									<button type="button" className="te-cancel" onClick={closeThemeEditor}>
 										Cancel
 									</button>
 									<button type="button" onClick={saveThemeEditor}>
@@ -3013,252 +3331,324 @@ export default function Canvas({ studio = false }: Props) {
 								</div>
 							) : (
 								<div className="def-banner">
-									Designing widget: {editingDefName} · {stageSize.w}×{stageSize.h}
+									Designing custom widget: {editingDefName} · {stageSize.w}×{stageSize.h}
 									<button type="button" onClick={() => handleOp({ op: 'endDefEdit' })}>
 										Done
 									</button>
 								</div>
 							))}
-						{!studio && <div className="edit-badge">EDIT — Ctrl+E to exit</div>}
+						{!studio && (
+							<>
+								{/* Overlay edit mode parity with the studio: which monitor this is, the three keys
+								    that matter, and a way back to the last saved layout. */}
+								<div className="monitor-badge">▦ {monName || myMonitor}</div>
+								<div className="edit-badge">EDIT — Ctrl+Alt+E to exit</div>
+								<div className="powerbar overlay-powerbar" aria-label="Edit mode shortcuts">
+									<span className="seg">
+										<kbd>Ctrl+Z</kbd>
+										<span className="lbl">undo</span>
+									</span>
+									<span className="seg">
+										<kbd>Del</kbd>
+										<span className="lbl">remove</span>
+									</span>
+									<span className="seg">
+										<kbd>Ctrl+Alt+E</kbd>
+										<span className="lbl">exit</span>
+									</span>
+									{overlayDirty && (
+										<span className="seg">
+											<button
+												type="button"
+												className="revert"
+												title="Restore the last saved layout (discards the edits made in this session)"
+												onClick={revertOverlayEdits}
+											>
+												Revert
+											</button>
+										</span>
+									)}
+								</div>
+							</>
+						)}
 						{studio ? (
 							<>
 								<NavRail active={navSection} onSelect={navToSection} />
 								{(navSection === 'layouts' || designing) && !previewing && (
-									<Outline
-										root={monitor.root}
-										floating={monitor.floating}
-										selectedId={selectedId}
-										hoverId={hoverId}
-										onHover={setHoverId}
-										docked
-										scopeLabel={designing ? editingDefName : undefined}
-										onOp={handleOp}
-										onNodeContextMenu={previewing ? undefined : onOutlineContextMenu}
-									/>
+									<ErrorBoundary label="Layout tree" resetKey={navSection} onCopy={copyToClipboard}>
+										<Outline
+											root={monitor.root}
+											floating={monitor.floating}
+											selectedId={selectedId}
+											hoverId={hoverId}
+											onHover={setHoverId}
+											docked
+											scopeLabel={designing ? editingDefName : undefined}
+											onOp={handleOp}
+											onNodeContextMenu={previewing ? undefined : onOutlineContextMenu}
+										/>
+									</ErrorBoundary>
 								)}
 								{navSection === 'widget-designer' && (
-									<DesignerListPanel
-										library={library}
-										editingDefId={editingDefId}
-										previewName={previewDef?.name ?? null}
-										designing={designing}
-										actions={{
-											startNewWidget,
-											openExistingDef,
-											renameWidget,
-											cloneDefToEdit,
-											deleteWidget,
-											previewTemplate,
-											newFromTemplate
-										}}
-									/>
+									<ErrorBoundary
+										label="Widget designer"
+										resetKey={navSection}
+										onCopy={copyToClipboard}
+									>
+										<DesignerListPanel
+											library={library}
+											editingDefId={editingDefId}
+											previewName={previewDef?.name ?? null}
+											designing={designing}
+											actions={{
+												startNewWidget,
+												openExistingDef,
+												renameWidget,
+												cloneDefToEdit,
+												deleteWidget,
+												previewTemplate,
+												newFromTemplate
+											}}
+										/>
+									</ErrorBoundary>
 								)}
 								{navSection === 'sensors' && !designing && (
-									<div className="rail-panel">
-										<div className="rp-hd">Sensors &amp; live values</div>
-										<SensorList
-											hub={hub}
-											ids={sensorCatalog([...hub.sensorIds(), ...sourceCatalogIds()])}
-											filter
-											groupFor={(id) => pluginSensorNameMap.get(id) ?? SYSTEM_GROUP}
-											activityFor={sensorActivityFor}
-										/>
-									</div>
+									<ErrorBoundary label="Sensors" resetKey={navSection} onCopy={copyToClipboard}>
+										<div className="rail-panel">
+											<div className="rp-hd">Sensors &amp; live values</div>
+											<SensorList
+												hub={hub}
+												ids={sensorCatalog([...hub.sensorIds(), ...sourceCatalogIds()])}
+												filter
+												groupFor={(id) => pluginSensorNameMap.get(id) ?? SYSTEM_GROUP}
+												activityFor={sensorActivityFor}
+											/>
+										</div>
+									</ErrorBoundary>
 								)}
 								{navSection === 'plugins' && !designing && (
-									<PluginsPanel
-										hub={hub}
-										plugins={pluginList}
-										selectedId={selectedPluginId}
-										onSelect={setSelectedPluginId}
-									/>
+									<ErrorBoundary label="Plugins" resetKey={navSection} onCopy={copyToClipboard}>
+										<PluginsPanel
+											hub={hub}
+											plugins={pluginList}
+											selectedId={selectedPluginId}
+											onSelect={setSelectedPluginId}
+										/>
+									</ErrorBoundary>
 								)}
 								{navSection === 'themes' && !designing && (
-									<div className="rail-panel">
-										<div className="rp-hd">Theme</div>
-										{/* Built-in presets (grouped Classic / Light / Dark / Fun) are immutable — they offer
+									<ErrorBoundary label="Themes" resetKey={navSection} onCopy={copyToClipboard}>
+										<div className="rail-panel">
+											<div className="rp-hd">Theme</div>
+											{/* Built-in presets (grouped Classic / Light / Dark / Fun) are immutable — they offer
 										    "duplicate to edit" (⎘) only. Your own themes get raw-CSS edit (✎), duplicate (⎘),
 										    and delete (✕); "(default)" stays a plain reset. */}
-										<ThemeList
-											groups={builtinGroups().map((g) => ({
-												key: g.group,
-												label: g.group[0].toUpperCase() + g.group.slice(1),
-												items: g.themes.map((t) => ({
-													value: builtinName(t.id),
-													label: t.name,
-													swatch: t.swatch
-												}))
-											}))}
-											userThemes={themeList.map((n) => ({
-												value: n,
-												label: n,
-												swatch: userThemeSwatches[n]
-											}))}
-											active={selectedTheme}
-											onPick={setTheme}
-											onEdit={openThemeEditor}
-											onDuplicate={duplicateTheme}
-											onDelete={deleteTheme}
-										/>
-										<button type="button" onClick={() => openThemeEditor()}>
-											{selectedTheme
-												? `Edit theme CSS (${themeLabel(selectedTheme)})…`
-												: '＋ New theme CSS…'}
-										</button>
-										{/* Live preview: representative meters under the same global token CSS the overlay
+											<ThemeList
+												groups={builtinGroups().map((g) => ({
+													key: g.group,
+													label: g.group[0].toUpperCase() + g.group.slice(1),
+													items: g.themes.map((t) => ({
+														value: builtinName(t.id),
+														label: t.name,
+														swatch: t.swatch
+													}))
+												}))}
+												userThemes={themeList.map((n) => ({
+													value: n,
+													label: n,
+													swatch: userThemeSwatches[n]
+												}))}
+												active={selectedTheme}
+												onPick={setTheme}
+												onEdit={openThemeEditor}
+												onDuplicate={duplicateTheme}
+												onDelete={deleteTheme}
+											/>
+											<button type="button" onClick={() => openThemeEditor()}>
+												{selectedTheme
+													? `Edit theme CSS (${themeLabel(selectedTheme)})…`
+													: '＋ New theme CSS…'}
+											</button>
+											{/* Live preview: representative meters under the same global token CSS the overlay
 										    gets, so the theme + the overrides below restyle them as you edit. */}
-										<div className="rp-hd">Preview</div>
-										<ThemePreview />
-										{/* The friendly token overrides, colocated with the theme picker (they also appear in
+											<div className="rp-hd">Preview</div>
+											<ThemePreview />
+											{/* The friendly token overrides, colocated with the theme picker (they also appear in
 										    the Inspector for per-widget tweaks). These override on top of the selected theme,
 										    persist across theme switches, and win until cleared. */}
-										<div className="rp-hd">Tokens (override this theme)</div>
-										{/* Auto theme from the wallpaper (issue #15): fills these overrides with a readable
+											<div className="rp-hd">Tokens (override this theme)</div>
+											{/* Auto theme from the wallpaper (issue #15): fills these overrides with a readable
 										    palette derived from the current image wallpaper. Same action as the Background
 										    panel's button; shown here because it WRITES these token overrides. */}
-										{autoTheme.canAuto ? (
-											<div className="theme-auto">
-												<button
-													type="button"
-													onClick={() => void autoTheme.run()}
-													disabled={autoTheme.busy}
-													aria-busy={autoTheme.busy}
-													title="Derive a readable accent + text colours from your wallpaper"
-												>
-													{autoTheme.busy ? 'Reading…' : '🎨 From wallpaper'}
-												</button>
-												{autoTheme.status === 'done' && <span className="rp-id">applied ✓</span>}
-												{autoTheme.status === 'fail' && (
-													<span className="rp-id">couldn’t read the image</span>
-												)}
-											</div>
-										) : (
-											<div className="rp-stub">
-												Tip: set an <strong>image</strong> Background to auto-derive colours from
-												your wallpaper.
-											</div>
-										)}
-										<TokenFields
-											values={tokenOverrides}
-											onSet={(key, value) => handleOp({ op: 'setToken', key, value })}
-											onClear={() => handleOp({ op: 'clearTokens' })}
-											clearTitle="Remove every token override and fall back to the selected theme"
-										/>
-									</div>
+											{autoTheme.canAuto ? (
+												<div className="theme-auto">
+													<button
+														type="button"
+														onClick={() => void autoTheme.run()}
+														disabled={autoTheme.busy}
+														aria-busy={autoTheme.busy}
+														title="Derive a readable accent + text colours from your wallpaper"
+													>
+														{autoTheme.busy ? 'Reading…' : '🎨 From wallpaper'}
+													</button>
+													{autoTheme.status === 'done' && <span className="rp-id">applied ✓</span>}
+													{autoTheme.status === 'fail' && (
+														<span className="rp-id">couldn’t read the image</span>
+													)}
+												</div>
+											) : (
+												<div className="rp-stub">
+													Tip: set an <strong>image</strong> Background to auto-derive colours from
+													your wallpaper.
+												</div>
+											)}
+											<TokenFields
+												values={tokenOverrides}
+												onSet={(key, value) => handleOp({ op: 'setToken', key, value })}
+												onClear={() => handleOp({ op: 'clearTokens' })}
+												clearTitle="Remove every token override and fall back to the selected theme"
+											/>
+										</div>
+									</ErrorBoundary>
 								)}
 								{navSection === 'background' && !designing && (
-									<BackgroundPanel
-										bg={bg}
-										wallpaperFiles={wallpaperFiles}
-										refreshWallpapers={refreshWallpapers}
-										patchBg={patchBg}
-										setBgKind={setBgKind}
-										clearBg={clearBg}
-										autoTheme={autoTheme}
-										onClearTokens={() => handleOp({ op: 'clearTokens' })}
-									/>
+									<ErrorBoundary label="Background" resetKey={navSection} onCopy={copyToClipboard}>
+										<BackgroundPanel
+											bg={bg}
+											wallpaperFiles={wallpaperFiles}
+											refreshWallpapers={refreshWallpapers}
+											patchBg={patchBg}
+											setBgKind={setBgKind}
+											clearBg={clearBg}
+											autoTheme={autoTheme}
+											onClearTokens={() => handleOp({ op: 'clearTokens' })}
+										/>
+									</ErrorBoundary>
 								)}
 								{navSection === 'sacks' && !designing && (
-									<div className="rail-panel">
-										<div className="rp-hd">Sacks</div>
-										<div className="rp-stub">
-											A sack bundles your reusable widgets, the active theme’s CSS, and your token
-											overrides into one shareable file — <code>sacks/&lt;name&gt;.sack.json</code>{' '}
-											in the app config folder. Send the file to share your setup; importing merges
-											(it never overwrites your own widgets or themes).
-										</div>
-										<button type="button" onClick={exportSack}>
-											⤓ Export current…
-										</button>
-										<div className="rp-hd">Import</div>
-										{sackInfos.length ? (
-											<div className="rp-list">
-												{sackInfos.map((s) => (
-													<button
-														key={s.name}
-														type="button"
-														className="sack-item"
-														title="Merge this sack's widgets + theme into the studio"
-														onClick={() => importSack(s.name)}
-													>
-														<span className="sack-name">⤒ {s.name}</span>
-														<span className="sack-sub">{sackSummary(s)}</span>
-													</button>
-												))}
+									<ErrorBoundary label="Sacks" resetKey={navSection} onCopy={copyToClipboard}>
+										<div className="rail-panel">
+											<div className="rp-hd">Sacks</div>
+											<div className="rp-stub">
+												A sack bundles your custom widgets, the active theme’s CSS, and your token
+												overrides into one shareable file —{' '}
+												<code>sacks/&lt;name&gt;.sack.json</code> in the app config folder. Send the
+												file to share your setup; importing merges (it never overwrites your own
+												widgets or themes).
 											</div>
-										) : (
-											<div className="rp-stub">No sacks yet — export one above.</div>
-										)}
-									</div>
+											{/* Inline name + Export (no prompt()): validated live against the backend's
+										    filename rule; the outcome line (path / failure) renders right under it. */}
+											<form
+												className="sack-export"
+												onSubmit={(e) => {
+													e.preventDefault();
+													void exportSack();
+												}}
+											>
+												<input
+													type="text"
+													value={exportName}
+													placeholder="Sack name"
+													aria-label="Sack name"
+													aria-invalid={exportNameError !== null}
+													spellCheck={false}
+													onChange={(e) => setExportName(e.currentTarget.value)}
+												/>
+												<button type="submit" disabled={exportNameError !== null}>
+													⤓ Export
+												</button>
+											</form>
+											{exportNameError && exportName.trim() !== '' && (
+												<div className="rp-stub sack-status sack-status--err" role="alert">
+													{exportNameError} (letters, numbers, spaces, _ -)
+												</div>
+											)}
+											{sackNotice && (
+												<div
+													className={
+														sackNotice.tone === 'error'
+															? 'rp-stub sack-status sack-status--err'
+															: 'rp-stub sack-status'
+													}
+													role={sackNotice.tone === 'error' ? 'alert' : 'status'}
+												>
+													{sackNotice.text}
+													{sackNotice.path && (
+														<>
+															{' · '}
+															<code>{sackNotice.path}</code>{' '}
+															<button type="button" onClick={() => void revealSacksDir()}>
+																Open sacks folder
+															</button>
+														</>
+													)}
+												</div>
+											)}
+											<div className="rp-hd">Import</div>
+											{sackInfos.length ? (
+												<div className="rp-list">
+													{sackInfos.map((s) => (
+														<button
+															key={s.name}
+															type="button"
+															className="sack-item"
+															title="Merge this sack's widgets + theme into the studio"
+															onClick={() => importSack(s.name)}
+														>
+															<span className="sack-name">⤒ {s.name}</span>
+															<span className="sack-sub">{sackSummary(s)}</span>
+														</button>
+													))}
+												</div>
+											) : (
+												<div className="rp-stub">No sacks yet — export one above.</div>
+											)}
+										</div>
+									</ErrorBoundary>
 								)}
 								{navSection === 'saved-layouts' && !designing && (
-									<div className="rail-panel">
-										<div className="rp-hd">Saved layouts</div>
-										<div className="rp-stub">
-											Save this monitor’s arrangement as a named profile, then load it back later.
-										</div>
-										<button type="button" onClick={saveCurrentLayout}>
-											⤓ Save current as…
-										</button>
-										<div className="rp-hd">Load</div>
-										{layoutNames.length ? (
-											<div className="rp-list">
-												{layoutNames.map((n) => (
-													<div className="rp-list-row" key={n}>
-														<button
-															type="button"
-															title="Replace this monitor’s layout with this saved one"
-															onClick={() => loadSavedLayout(n)}
-														>
-															⤒ {n}
-														</button>
-														<button
-															type="button"
-															className="rp-danger"
-															title="Delete this saved layout"
-															aria-label={`Delete saved layout ${n}`}
-															onClick={() => deleteSavedLayout(n)}
-														>
-															✕
-														</button>
-													</div>
-												))}
-											</div>
-										) : (
-											<div className="rp-stub">No saved layouts yet — save one above.</div>
-										)}
-									</div>
+									<ErrorBoundary label="Presets" resetKey={navSection} onCopy={copyToClipboard}>
+										<SavedLayoutsPanel
+											layoutNames={layoutNames ?? []}
+											status={presetStatus}
+											onSave={(n) => void saveCurrentLayout(n)}
+											onLoad={(n) => void loadSavedLayout(n)}
+											onDelete={(n) => void deleteSavedLayout(n)}
+										/>
+									</ErrorBoundary>
 								)}
 								{navSection === 'settings' && !designing && (
-									<StudioSettingsPanel
-										tab={settingsTab}
-										onTab={setSettingsTab}
-										display={{
-											monName,
-											monSize,
-											workArea,
-											multiMonitor: monitorOptions.length > 1,
-											zoom,
-											fit
-										}}
-										theme={{
-											options: themeOptions,
-											selected: selectedTheme,
-											setTheme,
-											lock: themeLock,
-											setLock: setThemeLock
-										}}
-										overlay={{ prefs: overlayPrefs, setPrefs: setOverlayPrefs, layerStatus }}
-										startup={{ autostart, toggleAutostart }}
-										controls={{
-											overrides,
-											onRebind: (id, trigger) => controls.setOverride(id, { triggers: [trigger] }),
-											onReset: controls.resetOverride,
-											onResetAll: controls.resetAll
-										}}
-										appVersion={appVersion}
-										clearMonitor={clearMonitor}
-									/>
+									<ErrorBoundary label="Settings" resetKey={navSection} onCopy={copyToClipboard}>
+										<StudioSettingsPanel
+											tab={settingsTab}
+											onTab={setSettingsTab}
+											display={{
+												monName,
+												monSize,
+												workArea,
+												multiMonitor: monitorOptions.length > 1,
+												zoom,
+												fit
+											}}
+											theme={{
+												options: themeOptions,
+												selected: selectedTheme,
+												setTheme,
+												lock: themeLock,
+												setLock: setThemeLock
+											}}
+											overlay={{ prefs: overlayPrefs, setPrefs: setOverlayPrefs, layerStatus }}
+											controls={{
+												overrides,
+												onRebind: (id, trigger) =>
+													controls.setOverride(id, { triggers: [trigger] }),
+												onReset: controls.resetOverride,
+												onResetAll: controls.resetAll
+											}}
+											appVersion={appVersion}
+											clearMonitor={clearMonitor}
+										/>
+									</ErrorBoundary>
 								)}
 							</>
 						) : (
@@ -3272,53 +3662,61 @@ export default function Canvas({ studio = false }: Props) {
 								onNodeContextMenu={previewing ? undefined : onOutlineContextMenu}
 							/>
 						)}
-						{(!studio || navSection === 'layouts' || designing) &&
-							!previewing &&
-							(multiSelected ? (
-								<MultiInspector
-									items={multiItems}
-									fields={multiFields}
-									basis={multiBasis}
-									onFocus={focusOne}
-									onPatchConfig={patchSelectedConfig}
-									onSetBasis={setSelectedBasisAll}
-									onDelete={deleteSelected}
-									docked={studio}
-								/>
-							) : (
-								<Inspector
-									widget={selectedWidget}
-									container={selectedContainer}
-									groupUnit={selectedGroup}
-									def={selectedDef}
-									defs={library?.defs ?? []}
-									tokens={tokenOverrides}
-									baseWidget={baseWidget}
-									baseContainer={baseContainer}
-									baseGroup={baseGroup}
-									baseTokens={savedBaseline?.tokens ?? null}
-									nodeIsNew={nodeIsNew}
-									isGridCell={isGridCell}
-									containerBox={selectedContainerBox}
-									placement={placement}
-									widgetBasis={selectedLeafBasis}
-									widgetHalign={selectedLeafHalign}
-									widgetValign={selectedLeafValign}
-									widgetTypes={widgetTypes}
-									configFields={configFields}
-									sensors={sensors}
-									sensorMeta={sensorMeta}
-									audioOutputs={audioOutputs}
-									microphones={microphones}
-									displayNames={displayNames}
-									docked={studio}
-									onOp={handleOp}
-									onDeleteDef={studio ? deleteWidget : undefined}
-									onPreviewTemplate={studio ? previewTemplate : undefined}
-									node={selectedNode}
-									onCopy={(t) => copyToClipboard(t)}
-								/>
-							))}
+						{(!studio || navSection === 'layouts' || designing) && !previewing && (
+							<ErrorBoundary label="Details" resetKey={selectedId} onCopy={copyToClipboard}>
+								{multiSelected ? (
+									<MultiInspector
+										items={multiItems}
+										fields={multiFields}
+										basis={multiBasis}
+										onFocus={focusOne}
+										onPatchConfig={patchSelectedConfig}
+										onSetBasis={setSelectedBasisAll}
+										onDelete={deleteSelected}
+										docked={studio}
+										floatingIds={floatingSelectedIds}
+										onOp={handleOp}
+									/>
+								) : (
+									<Inspector
+										widget={selectedWidget}
+										container={selectedContainer}
+										groupUnit={selectedGroup}
+										def={selectedDef}
+										defs={library?.defs ?? []}
+										tokens={tokenOverrides}
+										baseWidget={baseWidget}
+										baseContainer={baseContainer}
+										baseGroup={baseGroup}
+										baseTokens={savedBaseline?.tokens ?? null}
+										nodeIsNew={nodeIsNew}
+										isGridCell={isGridCell}
+										containerBox={selectedContainerBox}
+										placement={placement}
+										widgetBasis={selectedLeafBasis}
+										widgetHalign={selectedLeafHalign}
+										widgetValign={selectedLeafValign}
+										widgetTypes={widgetTypes}
+										configFields={configFields}
+										sensors={sensors}
+										sensorMeta={sensorMeta}
+										audioOutputs={audioOutputs}
+										microphones={microphones}
+										displayNames={displayNames}
+										docked={studio}
+										onOp={handleOp}
+										onDeleteDef={studio ? deleteWidget : undefined}
+										onPreviewTemplate={studio ? previewTemplate : undefined}
+										node={selectedNode}
+										onCopy={(t) => copyToClipboard(t)}
+										addTarget={addTargetContainer?.id ?? null}
+										addTargetLabel={addTargetLabel}
+										onSetAddTarget={setAddTarget}
+										onClearAddTarget={clearAddTarget}
+									/>
+								)}
+							</ErrorBoundary>
+						)}
 						{menu && menuNode && (
 							<>
 								<button
@@ -3328,7 +3726,7 @@ export default function Canvas({ studio = false }: Props) {
 									onClick={closeMenu}
 								/>
 								<div
-									ref={ctxRef}
+									ref={ctxRefCb}
 									className="ctx"
 									role="menu"
 									aria-label="Widget actions"
@@ -3352,11 +3750,25 @@ export default function Canvas({ studio = false }: Props) {
 											<div className="ctx-sep" />
 										</>
 									)}
+									{menuId === '__canvas__' && (
+										<>
+											<button
+												type="button"
+												onClick={() => {
+													setMenu(null);
+													focusAddPalette();
+												}}
+											>
+												＋ Add widget…
+											</button>
+											<div className="ctx-sep" />
+										</>
+									)}
 									{menuGroup ? (
 										<>
 											{menuGroup.def && (
 												<button type="button" onClick={mEditDef}>
-													Edit def…
+													Edit custom widget…
 												</button>
 											)}
 											<button
@@ -3377,16 +3789,18 @@ export default function Canvas({ studio = false }: Props) {
 										<>
 											<button
 												type="button"
+												title="Keep this widget as a reusable custom widget in My widgets"
 												onClick={() => menu && menuAct({ op: 'makeWidget', id: menu.id })}
 											>
-												Make widget
+												Save as custom widget
 											</button>
 											{menuFloating ? (
 												<button
 													type="button"
+													title="Move this floating widget into the layout (rows / columns)"
 													onClick={() => menu && menuAct({ op: 'dock', id: menu.id })}
 												>
-													Dock →flow
+													Snap into layout
 												</button>
 											) : (
 												<button
@@ -3538,6 +3952,65 @@ export default function Canvas({ studio = false }: Props) {
 											)}
 										</>
 									)}
+									{/* Multi-select (the right-clicked node is one of 2+ selected floating widgets):
+									    align / distribute the whole selection from here as well as the Inspector. */}
+									{menuId !== null &&
+										floatingSelectedIds.length >= 2 &&
+										floatingSelectedIds.includes(menuId) && (
+											<>
+												<div className="ctx-sep" />
+												<span className="ctx-hd">Align ({floatingSelectedIds.length})</span>
+												{(
+													[
+														['left', 'Align left'],
+														['centre', 'Align centres'],
+														['right', 'Align right'],
+														['top', 'Align top'],
+														['middle', 'Align middles'],
+														['bottom', 'Align bottom']
+													] as const
+												).map(([edge, label]) => (
+													<button
+														key={edge}
+														type="button"
+														onClick={() =>
+															menuAct({ op: 'alignSelected', ids: floatingSelectedIds, edge })
+														}
+													>
+														{label}
+													</button>
+												))}
+												{floatingSelectedIds.length >= 3 && (
+													<>
+														<span className="ctx-hd">Distribute</span>
+														<button
+															type="button"
+															onClick={() =>
+																menuAct({
+																	op: 'distributeSelected',
+																	ids: floatingSelectedIds,
+																	axis: 'horizontal'
+																})
+															}
+														>
+															Distribute horizontally
+														</button>
+														<button
+															type="button"
+															onClick={() =>
+																menuAct({
+																	op: 'distributeSelected',
+																	ids: floatingSelectedIds,
+																	axis: 'vertical'
+																})
+															}
+														>
+															Distribute vertically
+														</button>
+													</>
+												)}
+											</>
+										)}
 									{studio && menuLeaf && !designing && monitorOptions.length > 1 && (
 										<>
 											<div className="ctx-sep" />
@@ -3551,20 +4024,24 @@ export default function Canvas({ studio = false }: Props) {
 												))}
 										</>
 									)}
-									<div className="ctx-sep" />
-									<button type="button" onClick={mCopyDebug}>
-										Copy debug JSON
-									</button>
-									<button
-										type="button"
-										title="Open the webview inspector for CSS development"
-										onClick={() => {
-											openDevtools();
-											setMenu(null);
-										}}
-									>
-										⌗ Inspect (devtools)
-									</button>
+									{developerMode && (
+										<>
+											<div className="ctx-sep" />
+											<button type="button" onClick={mCopyDebug}>
+												Copy debug JSON
+											</button>
+											<button
+												type="button"
+												title="Open the webview inspector for CSS development"
+												onClick={() => {
+													openDevtools();
+													setMenu(null);
+												}}
+											>
+												⌗ Inspect (devtools)
+											</button>
+										</>
+									)}
 								</div>
 							</>
 						)}
@@ -3576,6 +4053,21 @@ export default function Canvas({ studio = false }: Props) {
 }
 
 // --- small helpers used by the Canvas closures (kept local; not part of the editor model) ---
+
+// Label a list of nodes for a picker: with developer mode on, append the instance id; otherwise keep
+// the plain type/kind and number repeats ("gauge", "gauge (2)") so two look-alikes stay tellable.
+function disambiguate(
+	items: { id: string; label: string }[],
+	withIds: boolean
+): { id: string; label: string }[] {
+	if (withIds) return items.map((i) => ({ id: i.id, label: `${i.label} · ${i.id}` }));
+	const seen = new Map<string, number>();
+	return items.map((i) => {
+		const n = (seen.get(i.label) ?? 0) + 1;
+		seen.set(i.label, n);
+		return n > 1 ? { id: i.id, label: `${i.label} (${n})` } : i;
+	});
+}
 
 // patchFloatingGroupBox: a floating GROUP's position + size live in its `config` (x/y/w/h), not a
 // WidgetInstance.rect — so this is the group counterpart to patchFloating (used by GroupFrame's

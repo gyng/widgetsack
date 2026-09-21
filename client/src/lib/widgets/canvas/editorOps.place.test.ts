@@ -15,12 +15,15 @@ import {
 	lookup,
 	reparentNode,
 	replaceNodeOp,
+	setPlacementBounds,
+	setSolvedForFloat,
 	wrapLeafWith
 } from './editorOps';
 import { createWidget } from '../../core/widget';
 import {
 	container,
 	emptyMonitorLayout,
+	group,
 	isContainer,
 	isLeaf,
 	leaf,
@@ -146,6 +149,22 @@ describe('currentContainer', () => {
 		state.selectedId = 'ghost';
 		expect(currentContainer(state)).toBeNull();
 	});
+
+	it('falls back to the sticky add target when the selection is a leaf or nothing', () => {
+		const { state, col1Id } = stateWithLayout();
+		state.addTarget = col1Id;
+		state.selectedId = 'w1';
+		expect(currentContainer(state)?.id).toBe(col1Id);
+		state.selectedId = null;
+		expect(currentContainer(state)?.id).toBe(col1Id);
+	});
+
+	it('ignores a sticky add target that points at a leaf (not a container)', () => {
+		const { state } = stateWithLayout();
+		state.selectedId = null;
+		state.addTarget = 'w1';
+		expect(currentContainer(state)).toBeNull();
+	});
 });
 
 // =============================================================================================
@@ -199,6 +218,13 @@ describe('wrapLeafWith', () => {
 // =============================================================================================
 
 describe('dropWidgetInto', () => {
+	it('makes the target container the sticky add target and flags the new widget as just added', () => {
+		const { state, col1Id } = stateWithLayout();
+		const patch = dropWidgetInto(state, col1Id, 'gauge');
+		expect(patch.addTarget).toBe(col1Id);
+		expect(patch.justAdded).toBe(patch.selectedId);
+	});
+
 	it('appends a fresh widget of the given type into the target container and selects it', () => {
 		const { state, col1Id } = stateWithLayout();
 		const patch = dropWidgetInto(state, col1Id, 'text');
@@ -370,6 +396,116 @@ describe('addWidget', () => {
 		state.selectedId = 'w1';
 		const next = { ...state, ...addWidget(state, 'gauge') };
 		expect(next.monitor.floating).toHaveLength(1);
+	});
+
+	it('makes the container a sticky add target, and a later add with a LEAF selected still lands there', () => {
+		const { state, col1Id } = stateWithLayout();
+		state.selectedId = col1Id;
+		const first = addWidget(state, 'gauge');
+		expect(first.addTarget).toBe(col1Id);
+		expect(first.justAdded).toBe(first.selectedId);
+		// The new widget is what's selected now (a leaf) — the sticky target still wins.
+		const s2 = { ...state, ...first };
+		const second = addWidget(s2, 'bar');
+		expect(second.addTarget).toBe(col1Id);
+		const col1 = lookup(col1Id, { ...s2, ...second }.monitor) as Container;
+		expect(col1.children.map((c) => c.id)).toEqual([
+			'w1',
+			'w2',
+			first.selectedId,
+			second.selectedId
+		]);
+	});
+
+	it('a selected container beats the sticky target', () => {
+		const { state, col1Id, containerId } = stateWithLayout();
+		state.selectedId = containerId;
+		state.addTarget = col1Id;
+		const patch = addWidget(state, 'gauge');
+		expect(patch.addTarget).toBe(containerId);
+		const row = lookup(containerId, { ...state, ...patch }.monitor) as Container;
+		expect(row.children[row.children.length - 1].id).toBe(patch.selectedId);
+	});
+
+	it('ignores a sticky target that is no longer a container in the tree (floats instead)', () => {
+		const { state } = stateWithLayout();
+		state.selectedId = null;
+		state.addTarget = 'gone';
+		const patch = addWidget(state, 'gauge');
+		expect({ ...state, ...patch }.monitor.floating).toHaveLength(1);
+		expect(patch.addTarget).toBeUndefined(); // (the reducer drops the stale id itself)
+	});
+
+	describe('floating placement (first free spot)', () => {
+		it('a floating add lands on the first free spot of the stage, not the default corner', () => {
+			setSolvedForFloat(new Map());
+			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
+			const s = minimalState();
+			const a = { ...s, ...addWidget(s, 'gauge') }; // gauge 110×110 → (24,24)
+			const ra = (a.monitor.floating[0].unit as { rect: { x: number; y: number } }).rect;
+			expect([ra.x, ra.y]).toEqual([24, 24]);
+			const b = { ...a, ...addWidget(a, 'gauge') }; // beside it: 24 + 110 + 8 = 142 → 144
+			const rb = (b.monitor.floating[1].unit as { rect: { x: number; y: number } }).rect;
+			expect([rb.x, rb.y]).toEqual([144, 24]);
+			expect(b.justAdded).toBe(b.monitor.floating[1].id);
+		});
+
+		it('avoids the measured (solved) rects — a docked flow widget counts as occupied too', () => {
+			setSolvedForFloat(new Map([['flow-w', { x: 24, y: 24, w: 400, h: 100 }]]));
+			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
+			const s = minimalState();
+			const next = { ...s, ...addWidget(s, 'gauge') };
+			const r = (next.monitor.floating[0].unit as { rect: { x: number; y: number } }).rect;
+			expect([r.x, r.y]).toEqual([432, 24]); // 24 + 400 + 8
+			setSolvedForFloat(new Map());
+		});
+
+		it('ignores CONTAINER boxes in the solved map (the root spans the whole stage)', () => {
+			const { state } = stateWithLayout();
+			state.selectedId = null;
+			setSolvedForFloat(
+				new Map([
+					['root', { x: 0, y: 0, w: 1920, h: 1080 }],
+					['container1', { x: 16, y: 16, w: 1888, h: 1048 }],
+					['w1', { x: 24, y: 24, w: 300, h: 100 }]
+				])
+			);
+			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
+			const next = { ...state, ...addWidget(state, 'gauge') };
+			const r = (next.monitor.floating[0].unit as { rect: { x: number; y: number } }).rect;
+			expect([r.x, r.y]).toEqual([336, 24]); // beside w1 (24+300+8=332 → 336), not a cascade
+			setSolvedForFloat(new Map());
+		});
+
+		it('a floating leaf the solved map already measured is not counted twice (measured box wins)', () => {
+			const s = minimalState();
+			const inst = gauge('measured');
+			s.monitor.floating = [leaf({ ...inst, rect: { x: 900, y: 900, w: 110, h: 110 } })];
+			// The measured box says it is really at the origin — the stored rect is stale mid-drag.
+			setSolvedForFloat(new Map([['measured', { x: 24, y: 24, w: 110, h: 110 }]]));
+			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
+			const next = { ...s, ...addWidget(s, 'gauge') };
+			const r = (next.monitor.floating[1].unit as { rect: { x: number; y: number } }).rect;
+			expect([r.x, r.y]).toEqual([144, 24]); // beside the measured box, not the stale one
+			setSolvedForFloat(new Map());
+		});
+
+		it('an unmeasured floating GROUP occupies its config box (falling back to its size)', () => {
+			setSolvedForFloat(new Map());
+			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
+			const s = minimalState();
+			const sized = group('g-sized', { w: 300, h: 60 }, leaf(gauge('gw')), {
+				config: { x: 24, y: 24, w: 500, h: 80 }
+			});
+			const bare = group('g-bare', { w: 200, h: 40 }, leaf(gauge('gw2')), {
+				config: { x: 24, y: 112 }
+			});
+			s.monitor.floating = [leaf(sized), leaf(bare)];
+			const next = { ...s, ...addWidget(s, 'gauge') };
+			const r = (next.monitor.floating[2].unit as { rect: { x: number; y: number } }).rect;
+			// Row 1 is taken by the 500-wide config box → beside it; the bare group sits below.
+			expect([r.x, r.y]).toEqual([536, 24]); // 24 + 500 + 8 = 532 → 536
+		});
 	});
 });
 

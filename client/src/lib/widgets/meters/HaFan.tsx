@@ -4,12 +4,16 @@
 // built by the pure core/haControls helper. Prop-only (AGENTS.md §6).
 import { fanSetPercentage, type FanAttrs } from '../../core/haControls';
 import type { ControlEvent } from '../meterProps';
+import { haTileState } from '../../core/haTileState';
+import HaTileNotice from './HaTileNotice';
 import './HaControls.css';
 
 type HaState = { state?: string; attributes?: Record<string, unknown> };
 
 type Props = {
 	value?: unknown;
+	/** The `ha.status` sample (host-supplied): undefined = not wired, null = plugin not configured. */
+	haStatus?: string | null;
 	label?: string;
 	onControl?: (e: ControlEvent) => void;
 	showSpeed?: boolean;
@@ -18,6 +22,7 @@ type Props = {
 
 export default function HaFan({
 	value = null,
+	haStatus,
 	label,
 	onControl,
 	showSpeed = true,
@@ -38,6 +43,11 @@ export default function HaFan({
 	};
 	const oscillate = () =>
 		onControl?.({ domain: 'fan', service: 'oscillate', data: { oscillating: !attrs.oscillating } });
+
+	// No live data (plugin unset / offline / entity unavailable / still waiting) → the shared notice.
+	const tile = haTileState(haStatus, value);
+	if (tile.kind !== 'ok')
+		return <HaTileNotice className="ha-fan np-ha-fan" label={name} tile={tile} />;
 
 	return (
 		<div className={`ha-fan np-ha-fan${on ? ' on' : ''}`} data-part="root">

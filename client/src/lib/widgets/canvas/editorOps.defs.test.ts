@@ -178,6 +178,9 @@ describe('insertWidget', () => {
 		expect(target.id).toBe('col1');
 		expect(target.children).toHaveLength(1); // landed inside the selected col, not the root
 		expect(next.monitor.root.children).toHaveLength(1); // root gained nothing else
+		// The col is now the sticky add target and the group is flagged for the scroll/flash.
+		expect(next.addTarget).toBe('col1');
+		expect(next.justAdded).toBe(next.selectedId);
 	});
 
 	it('is a no-op (empty patch) for an unknown def id', () => {
@@ -215,6 +218,9 @@ describe('insertTemplate', () => {
 		expect(node.unit.size).toEqual(getTemplate(CLOCK)?.size);
 		expect(next.library).toBeUndefined(); // library untouched
 		expect(next.selectedId).toBe(node.id);
+		// The root (the target) sticks as the add target; the group is flagged for the scroll/flash.
+		expect(next.addTarget).toBe('root');
+		expect(next.justAdded).toBe(node.id);
 	});
 
 	it('remaps template-local ids to fresh ones (two inserts never collide)', () => {

@@ -29,7 +29,13 @@ export const registerRssPlugin = (): void =>
 					defaultSize: { w: 260, h: 150 },
 					defaultConfig: { title: '', maxRows: 8 },
 					configFields: [
-						{ key: 'title', label: 'header', kind: 'text', help: 'optional title above the list' },
+						{
+							key: 'title',
+							label: 'header',
+							kind: 'text',
+							group: 'Data',
+							help: 'optional title above the list'
+						},
 						{
 							key: 'maxRows',
 							label: 'headlines',
@@ -37,9 +43,16 @@ export const registerRssPlugin = (): void =>
 							min: 1,
 							max: 30,
 							step: 1,
+							group: 'Data',
 							help: 'how many headlines to show'
 						},
-						{ key: 'color', label: 'accent', kind: 'color' }
+						{
+							key: 'color',
+							label: 'accent',
+							kind: 'color',
+							group: 'Appearance',
+							help: 'header / bullet colour (blank = theme accent)'
+						}
 					]
 				},
 				component: asMeter(Rss)

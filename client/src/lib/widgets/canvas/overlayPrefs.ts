@@ -29,12 +29,16 @@ export type OverlayPrefs = {
 	// borderless click-through overlay otherwise hides all of that. Persisted so it survives the
 	// reload you use to reproduce a crash.
 	debugWindowed: boolean;
+	// Developer mode (Settings → Diagnostics): shows node/widget ids in the studio and the devtools
+	// items (inspect this window, …) that are noise for everyone else. Off by default.
+	developerMode: boolean;
 };
 
 export const OVERLAY_PREF_DEFAULTS: OverlayPrefs = {
 	respectWorkArea: true,
 	overlayLayer: 'bottom',
-	debugWindowed: false
+	debugWindowed: false,
+	developerMode: false
 };
 
 export function readOverlayPrefs(): OverlayPrefs {

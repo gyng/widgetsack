@@ -1079,3 +1079,167 @@
 	border-radius: var(--radius-control);
 	pointer-events: none;
 }
+
+/* ---- UX round 1 additions ------------------------------------------------------------------- */
+
+/* Subbar checkboxes ("into grids" / "into cells"): a 16×16 hit box, matching the Inspector's. */
+.canvas .studio-bar .chk input[type='checkbox'] {
+	width: 16px;
+	height: 16px;
+	min-width: 16px;
+	min-height: 16px;
+	margin: 0;
+	vertical-align: middle;
+}
+
+/* The live-preview reminder next to Save while dirty: one quiet line, never wraps. */
+.canvas .studio-bar .save-hint {
+	margin-left: var(--space-2);
+	font-family: system-ui, sans-serif;
+	font-size: var(--text-sm);
+	color: var(--ui-fg-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	pointer-events: none;
+}
+
+/* First-boot strip: three steps in a row above the stage (under the bars), dismissible once. */
+.canvas .first-run-strip {
+	position: absolute;
+	top: var(--space-2);
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	align-items: center;
+	gap: var(--space-5);
+	max-width: calc(100% - 200px);
+	padding: var(--space-2) var(--space-4);
+	font-family: system-ui, sans-serif;
+	font-size: var(--text-md);
+	color: var(--ui-fg);
+	background: var(--ui-surface);
+	border: 1px solid rgba(var(--ui-accent-rgb), 0.5);
+	border-radius: var(--radius-control);
+	box-shadow: 0 4px 14px var(--ui-scrim);
+	pointer-events: auto;
+	z-index: 6;
+	white-space: nowrap;
+}
+
+.canvas .first-run-strip .frs-step b:first-child {
+	display: inline-block;
+	min-width: 1.4em;
+	margin-right: var(--space-1);
+	text-align: center;
+	color: var(--ui-bg);
+	background: rgb(var(--ui-accent-rgb));
+	border-radius: 999px;
+}
+
+.canvas .first-run-strip button {
+	margin-left: var(--space-2);
+	padding: 0 var(--space-2);
+	border: none;
+	background: transparent;
+	color: var(--ui-fg-muted);
+	cursor: pointer;
+}
+
+/* Empty-stage card (Layouts, nothing on this monitor): centred over the stage, unscaled. */
+.canvas .stage-empty {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	max-width: 340px;
+	padding: var(--space-5) var(--space-6);
+	font-family: system-ui, sans-serif;
+	font-size: var(--text-md);
+	color: var(--ui-fg);
+	background: var(--ui-surface);
+	border: 1px dashed rgba(var(--ui-accent-rgb), 0.6);
+	border-radius: var(--radius-control);
+	text-align: center;
+	pointer-events: none;
+	z-index: 4;
+}
+
+.canvas .stage-empty .se-title {
+	margin-bottom: var(--space-3);
+	font-size: var(--text-lg);
+	color: rgb(var(--ui-accent-rgb));
+}
+
+.canvas .stage-empty .se-steps {
+	margin: 0 0 var(--space-4);
+	padding-left: 1.4em;
+	text-align: left;
+	color: var(--ui-fg-muted);
+}
+
+.canvas .stage-empty button {
+	padding: var(--space-2) var(--space-4);
+	border: 1px solid rgba(var(--ui-accent-rgb), 0.6);
+	border-radius: var(--radius-control);
+	background: rgba(var(--ui-accent-rgb), 0.15);
+	color: var(--ui-fg);
+	font: inherit;
+	cursor: pointer;
+	pointer-events: auto;
+}
+
+/* Just-added flash: a 1s accent pulse on the new widget / group host so an add is unmissable. */
+@keyframes just-added-pulse {
+	0% {
+		box-shadow: 0 0 0 3px rgba(var(--ui-accent-rgb), 0.9);
+	}
+	100% {
+		box-shadow: 0 0 0 12px rgba(var(--ui-accent-rgb), 0);
+	}
+}
+
+.canvas [data-just-added] {
+	animation: just-added-pulse 1s ease-out;
+}
+
+/* Sacks: the inline export field + outcome line. */
+.canvas .sack-export {
+	display: flex;
+	gap: var(--space-2);
+	margin: var(--space-2) 0;
+}
+
+.canvas .sack-export input {
+	flex: 1;
+	min-width: 0;
+}
+
+.canvas .sack-export input[aria-invalid='true'] {
+	border-color: var(--ui-warn-fg);
+}
+
+.canvas .sack-status code {
+	overflow-wrap: anywhere;
+}
+
+.canvas .sack-status--err {
+	color: var(--ui-warn-fg);
+}
+
+/* Overlay edit mode: the compact shortcut bar + Revert. The overlay canvas is the whole window, so
+   the fixed powerbar sits on its bottom edge like the studio's does. */
+.canvas:not(.studio) .overlay-powerbar {
+	--bar-b: 24px;
+	background: rgba(0, 0, 0, 0.7);
+}
+
+.canvas .overlay-powerbar .seg button.revert {
+	padding: 0 var(--space-2);
+	border: 1px solid rgba(var(--ui-accent-rgb), 0.7);
+	border-radius: var(--radius-control);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}

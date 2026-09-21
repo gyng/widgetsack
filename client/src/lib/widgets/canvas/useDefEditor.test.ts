@@ -1,7 +1,8 @@
 // useDefEditor is the studio-bar/list-side wrapper around the def-edit reducer: every "open a
 // widget in the designer" path FOLDS any open def first (so the reducer's re-entry guard never
-// blocks switching), then dispatches the mode action; rename/delete wrap handleOp with the
-// window prompt/confirm/alert dialogs. The reducer itself is tested in useEditorModel.test.ts —
+// blocks switching), then dispatches the mode action; rename wraps handleOp (the name comes from
+// the list's inline field), delete wraps it with the confirm/alert dialogs. The reducer itself is
+// tested in useEditorModel.test.ts —
 // here we assert this hook's orchestration (which action fires, in what order, with what guards)
 // by spying on the injected dispatch / handleOp and stubbing the window dialogs.
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
@@ -67,12 +68,10 @@ function setup(init: Partial<Deps> = {}) {
 	return { ...r, dispatch, handleOp, stateRef, base };
 }
 
-let prompt: MockInstance<typeof window.prompt>;
 let confirm: MockInstance<typeof window.confirm>;
 let alert: MockInstance<typeof window.alert>;
 
 beforeEach(() => {
-	prompt = vi.spyOn(window, 'prompt').mockReturnValue(null);
 	confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
 	alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 });
@@ -182,26 +181,18 @@ describe('preview banner buttons (no fold)', () => {
 	});
 });
 
-describe('renameWidget (prompt)', () => {
-	it('renames via handleOp with the trimmed prompt value', () => {
-		prompt.mockReturnValue('  Fresh Name  ');
+describe('renameWidget (inline name, no prompt)', () => {
+	it('renames via handleOp with the trimmed name', () => {
+		const promptSpy = vi.spyOn(window, 'prompt');
 		const { result, handleOp } = setup();
-		act(() => result.current.renameWidget('d1', 'Old'));
-		expect(prompt).toHaveBeenCalledWith('Rename widget:', 'Old');
+		act(() => result.current.renameWidget('d1', '  Fresh Name  '));
 		expect(handleOp).toHaveBeenCalledWith({ op: 'renameDef', defId: 'd1', name: 'Fresh Name' });
-	});
-
-	it('is a no-op when the prompt is cancelled (null)', () => {
-		prompt.mockReturnValue(null);
-		const { result, handleOp } = setup();
-		act(() => result.current.renameWidget('d1', 'Old'));
-		expect(handleOp).not.toHaveBeenCalled();
+		expect(promptSpy).not.toHaveBeenCalled();
 	});
 
 	it('is a no-op for a blank / whitespace-only name', () => {
-		prompt.mockReturnValue('   ');
 		const { result, handleOp } = setup();
-		act(() => result.current.renameWidget('d1', 'Old'));
+		act(() => result.current.renameWidget('d1', '   '));
 		expect(handleOp).not.toHaveBeenCalled();
 	});
 });
@@ -221,6 +212,7 @@ describe('deleteWidget (in-use guard + confirm)', () => {
 		const { result, handleOp } = setup(); // empty monitor → not in use
 		act(() => result.current.deleteWidget('free', 'Spare'));
 		expect(confirm).toHaveBeenCalledTimes(1);
+		expect(confirm.mock.calls[0][0]).toBe('Delete the custom widget “Spare” from My widgets?');
 		expect(handleOp).not.toHaveBeenCalled();
 	});
 

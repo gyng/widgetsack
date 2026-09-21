@@ -71,10 +71,15 @@ function PackageItem({ row, enabled }: { row: PackageRow; enabled: boolean }) {
 		if (!r.ok) setUpdate({ kind: 'error', message: r.error ?? 'update failed' });
 		else setUpdate({ kind: 'idle' });
 	};
+	// Destructive → still a confirm(); the failure reason shows inline on the row, not in an alert.
 	const onRemove = async () => {
-		if (!window.confirm(`Remove package “${row.name}”? Its folder is deleted from disk.`)) return;
+		if (!window.confirm(`Remove the package “${row.name}”? Its folder is deleted from disk.`)) {
+			return;
+		}
+		setUpdate({ kind: 'busy', label: 'removing…' });
 		const r = await removePackage(row.id);
-		if (!r.ok) window.alert(`Remove failed: ${r.error}`);
+		if (!r.ok) setUpdate({ kind: 'error', message: `Remove failed: ${r.error}` });
+		else setUpdate({ kind: 'idle' });
 	};
 
 	return (
@@ -136,16 +141,69 @@ function PackageItem({ row, enabled }: { row: PackageRow; enabled: boolean }) {
 	);
 }
 
-// The window.prompt → install → window.alert(reason) flow for the "Install from URL…" button.
-// Blocking primitives on purpose (consistent with the package CSS-consent confirm above).
-async function promptInstall(): Promise<void> {
-	const source = window.prompt(
-		'Install a plugin package from:\n· owner/repo (GitHub, default branch)\n' +
-			'· a github.com repo URL (optionally /tree/<branch>)\n· an https link to a plugin.json'
+// The inline "install a package" form: a source field (owner/repo, a github.com repo URL, or an
+// https link to a plugin.json) + Install. The outcome shows right under the field — the failure
+// reason, or a success line naming the package that just landed (found by diffing the discovered
+// rows around the install; a re-install of an existing id falls back to the typed source).
+type InstallState =
+	| { kind: 'idle' }
+	| { kind: 'busy' }
+	| { kind: 'ok'; name: string }
+	| { kind: 'error'; message: string };
+
+function InstallPackageForm() {
+	const [source, setSource] = useState('');
+	const [state, setState] = useState<InstallState>({ kind: 'idle' });
+	const busy = state.kind === 'busy';
+	const onSubmit = async () => {
+		const src = source.trim();
+		if (!src) return; // Enter in an empty field
+		setState({ kind: 'busy' });
+		const before = new Set(packagesStore.getSnapshot().map((r) => r.id));
+		const r = await installPackage(src);
+		if (!r.ok) {
+			setState({ kind: 'error', message: r.error ?? 'install failed' });
+			return;
+		}
+		const added = packagesStore.getSnapshot().find((row) => !before.has(row.id));
+		setState({ kind: 'ok', name: added?.name ?? src });
+		setSource('');
+	};
+	return (
+		<form
+			className="pkg-install"
+			onSubmit={(e) => {
+				e.preventDefault();
+				void onSubmit();
+			}}
+		>
+			<label className="pkg-install-field">
+				<span>Install a package</span>
+				<input
+					type="text"
+					value={source}
+					placeholder="owner/repo or https://…manifest.json"
+					aria-label="Package source"
+					spellCheck={false}
+					disabled={busy}
+					onChange={(e) => setSource(e.currentTarget.value)}
+				/>
+			</label>
+			<button type="submit" disabled={busy || !source.trim()}>
+				{busy ? 'Installing…' : 'Install'}
+			</button>
+			{state.kind === 'error' && (
+				<div className="pkg-status pkg-status--err" role="alert" title={state.message}>
+					Install failed: {state.message}
+				</div>
+			)}
+			{state.kind === 'ok' && (
+				<div className="pkg-status" role="status">
+					Installed “{state.name}” — enable it below to use its templates.
+				</div>
+			)}
+		</form>
 	);
-	if (!source?.trim()) return;
-	const r = await installPackage(source.trim());
-	if (!r.ok) window.alert(`Install failed: ${r.error}`);
 }
 
 // One Plugins-list status dot: subscribes to the plugin's declared status sensor (the same
@@ -200,17 +258,16 @@ export default function PluginsPanel({ hub, plugins, selectedId, onSelect }: Pro
 				{/* Third-party packages: declarative template/theme bundles dropped into the app-config
 				    plugins/ dir. Opt-in — discovered packages start disabled. */}
 				<div className="rp-hd">Packages</div>
-				<button type="button" className="pkg-install" onClick={() => void promptInstall()}>
-					Install from URL…
-				</button>
+				<InstallPackageForm />
 				{packageRows.length ? (
 					packageRows.map((r) => (
 						<PackageItem key={r.id} row={r} enabled={enabledIds.includes(r.id)} />
 					))
 				) : (
 					<div className="rp-stub">
-						No packages installed — drop a folder at <code>plugins\&lt;id&gt;\plugin.json</code> in
-						the app config dir. See docs/third-party-plugins.md.
+						No packages installed — install one above, or drop a folder at{' '}
+						<code>plugins\&lt;id&gt;\plugin.json</code> in the app config dir. See
+						docs/third-party-plugins.md.
 					</div>
 				)}
 			</div>

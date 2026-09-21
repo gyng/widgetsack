@@ -18,7 +18,7 @@ test('the stage context menu does not open in off-stage sections (no irrelevant 
 	await expect(page.locator('.ctx')).toHaveCount(0);
 });
 
-test('canvas context menu opens with Split/Add items; Copy debug JSON sits just above Inspect', async ({
+test('canvas context menu opens with Add widget… + Split/Add items; developer items stay hidden by default', async ({
 	page
 }) => {
 	await gotoStudio(page);
@@ -27,7 +27,30 @@ test('canvas context menu opens with Split/Add items; Copy debug JSON sits just 
 	const ctx = page.locator('.ctx');
 	await expect(ctx).toBeVisible();
 	await expect(ctx.getByText('Into 2×2 grid')).toBeVisible();
+	// The empty-canvas menu leads with the primary action.
+	await expect(ctx.locator('button').first()).toHaveText(/Add widget…/);
 
+	// "Copy debug JSON" / "Inspect (devtools)" are developer affordances (Settings → Developer mode).
+	const items = await ctx.locator('button').allTextContents();
+	expect(items.some((t) => /Inspect \(devtools\)/.test(t))).toBe(false);
+	expect(items.some((t) => /Copy debug JSON/.test(t))).toBe(false);
+
+	// "Add widget…" opens the Add palette and focuses its filter box.
+	await ctx.locator('button', { hasText: 'Add widget…' }).click();
+	await expect(page.locator('.inspector .add-panel[open]')).toHaveCount(1);
+	await expect(page.locator('.inspector .palette-filter')).toBeFocused();
+});
+
+test('with Developer mode on, Copy debug JSON sits just above Inspect (devtools)', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		localStorage.setItem('widgetsack.overlay.prefs', JSON.stringify({ developerMode: true }));
+	});
+	await gotoStudio(page);
+	await rightClickEmptyCanvas(page);
+	const ctx = page.locator('.ctx');
+	await expect(ctx).toBeVisible();
 	const items = await ctx.locator('button').allTextContents();
 	const inspectIdx = items.findIndex((t) => /Inspect \(devtools\)/.test(t));
 	expect(inspectIdx, 'Inspect item present').toBeGreaterThan(0);
@@ -54,7 +77,7 @@ test('clicking a widget selects it and fills the Inspector', async ({ page }) =>
 	await gotoStudio(page);
 	await page.locator('.widget[data-type="button"] button.drag-overlay').click();
 	await expect(page.locator('.widget.selected')).toHaveCount(1);
-	await expect(page.locator('.inspector .fields .hd').first()).toContainText('button');
+	await expect(page.locator('.inspector .fields .hd').first()).toContainText(/button/i);
 });
 
 test('removing a widget via the context menu drops it; Undo restores it', async ({ page }) => {

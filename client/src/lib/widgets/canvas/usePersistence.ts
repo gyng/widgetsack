@@ -80,7 +80,23 @@ export type Persistence = {
 	previewPending: () => boolean;
 };
 
-export function usePersistence(state: EditorState, myMonitor: string): Persistence {
+export type PersistenceOptions = {
+	// Told the outcome of every DEBOUNCED preview write (not Save / revert, whose callers already get
+	// the boolean). An overlay's edit mode has no Save button: this is how a failed live write reaches
+	// the user there, instead of the edits silently never landing on disk.
+	onPreviewWriteResult?: (ok: boolean) => void;
+};
+
+export function usePersistence(
+	state: EditorState,
+	myMonitor: string,
+	options: PersistenceOptions = {}
+): Persistence {
+	// Latest callback without re-creating the (stable) scheduler; read when the timer fires.
+	const optionsRef = useRef(options);
+	useEffect(() => {
+		optionsRef.current = options;
+	});
 	// Mirror the live state into a ref each render so the debounced writer + Save read the latest.
 	const view = useRef<PersistView>({
 		myMonitor,
@@ -274,7 +290,7 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 		previewTimer.current = setTimeout(() => {
 			previewTimer.current = undefined;
 			request.current = { extras: [], key };
-			void flight.current!();
+			void flight.current!().then((ok) => optionsRef.current.onPreviewWriteResult?.(ok));
 		}, 150);
 	}, []);
 	const flushPreviewWrite = useCallback((): Promise<boolean> => {

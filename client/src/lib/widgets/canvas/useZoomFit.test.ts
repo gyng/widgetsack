@@ -6,7 +6,7 @@
 // studio.zoom gate resolves). See useCanvasPointer.test.ts for the native-listener-on-a-ref pattern.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useZoomFit } from './useZoomFit';
+import { boundingBox, useZoomFit } from './useZoomFit';
 import type { ControlOverrides } from '../../core/controls';
 
 type Opts = Parameters<typeof useZoomFit>[0];
@@ -95,6 +95,46 @@ describe('fit() — scale + center math', () => {
 		);
 		act(() => result.current.fit());
 		expect(result.current).toMatchObject({ zoom: 1, panX: 0, panY: 0 });
+	});
+});
+
+describe('fitRect() — zoom to content / selection', () => {
+	it('zooms so the box fills the stage minus padding and centres it', () => {
+		const { result } = renderHook(() => useZoomFit(baseOpts({ studio: false })));
+		// stage 800×600, box 400×100 at (100,200): zoom = min(4, 752/400, 552/100) = 1.88
+		act(() => result.current.fitRect({ x: 100, y: 200, w: 400, h: 100 }));
+		expect(result.current.zoom).toBeCloseTo(1.88, 10);
+		expect(result.current.panX).toBeCloseTo(400 - 300 * 1.88, 10);
+		expect(result.current.panY).toBeCloseTo(300 - 250 * 1.88, 10);
+	});
+
+	it('caps the zoom at 4× for a tiny box', () => {
+		const { result } = renderHook(() => useZoomFit(baseOpts({ studio: false })));
+		act(() => result.current.fitRect({ x: 0, y: 0, w: 10, h: 10 }));
+		expect(result.current.zoom).toBe(4);
+	});
+
+	it('is a no-op for an empty box or an unmeasured stage', () => {
+		const { result } = renderHook(() => useZoomFit(baseOpts({ studio: false })));
+		act(() => result.current.fitRect({ x: 0, y: 0, w: 0, h: 50 }));
+		expect(result.current).toMatchObject({ zoom: 1, panX: 0, panY: 0 });
+		const unmeasured = renderHook(() =>
+			useZoomFit(baseOpts({ studio: false, stageW: 0, stageH: 0 }))
+		);
+		act(() => unmeasured.result.current.fitRect({ x: 0, y: 0, w: 50, h: 50 }));
+		expect(unmeasured.result.current).toMatchObject({ zoom: 1, panX: 0, panY: 0 });
+	});
+});
+
+describe('boundingBox', () => {
+	it('is the union of the rects, null for none', () => {
+		expect(boundingBox([])).toBeNull();
+		expect(
+			boundingBox([
+				{ x: 10, y: 20, w: 30, h: 40 },
+				{ x: 0, y: 50, w: 5, h: 5 }
+			])
+		).toEqual({ x: 0, y: 20, w: 40, h: 40 });
 	});
 });
 

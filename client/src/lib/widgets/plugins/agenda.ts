@@ -29,7 +29,13 @@ export const registerAgendaPlugin = (): void =>
 					defaultSize: { w: 240, h: 150 },
 					defaultConfig: { title: '', maxRows: 6 },
 					configFields: [
-						{ key: 'title', label: 'header', kind: 'text', help: 'optional title above the list' },
+						{
+							key: 'title',
+							label: 'header',
+							kind: 'text',
+							group: 'Data',
+							help: 'optional title above the list'
+						},
 						{
 							key: 'maxRows',
 							label: 'events',
@@ -37,9 +43,16 @@ export const registerAgendaPlugin = (): void =>
 							min: 1,
 							max: 20,
 							step: 1,
+							group: 'Data',
 							help: 'how many upcoming events to show'
 						},
-						{ key: 'color', label: 'accent', kind: 'color' }
+						{
+							key: 'color',
+							label: 'accent',
+							kind: 'color',
+							group: 'Appearance',
+							help: 'header / bullet colour (blank = theme accent)'
+						}
 					]
 				},
 				component: asMeter(Agenda)

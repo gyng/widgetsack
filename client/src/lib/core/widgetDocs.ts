@@ -34,7 +34,8 @@ function configTable(meta: WidgetMeta): string {
 	if (!fields.length) return '_No configurable fields._\n';
 	const rows = fields.map((f) => {
 		const def = fmtDefault(f.default !== undefined ? f.default : meta.defaultConfig?.[f.key]);
-		const help = 'help' in f && f.help ? f.help : '';
+		// The inline help, then the longer `details` (the Inspector's "?" tooltip) in the same cell.
+		const help = [f.help, f.details].filter(Boolean).join(' — ');
 		return `| \`${f.key}\` | ${f.kind} | ${cell(def)} | ${cell(fieldExtra(f))} | ${cell(help)} |`;
 	});
 	return [

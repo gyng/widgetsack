@@ -14,7 +14,21 @@ import { procWatchSensors } from './procWatch';
 // one-line description surfaced in the inspector; `default` is the field's own reset value (falls
 // back to the widget type's defaultConfig[key] when omitted) — together these make the config UI
 // fully self-describing from the widget meta (item: "config should be ui driven").
-type FieldMeta = { help?: string; default?: unknown };
+//   • `details` — optional longer explanation, shown behind a "?" affordance (hover / click) so the
+//     inline `help` can stay one short sentence.
+//   • `group` — which Inspector sub-heading the field sits under. Ungrouped fields fall under the
+//     first group that appears (see fieldGroups).
+//   • `showWhen` — a pure predicate over the instance config; a field whose predicate returns false
+//     is hidden (e.g. a "volume device" that only matters while the volume target is 'system').
+export type FieldGroup = 'Data' | 'Appearance' | 'Behaviour';
+export const FIELD_GROUP_ORDER: FieldGroup[] = ['Data', 'Appearance', 'Behaviour'];
+type FieldMeta = {
+	help?: string;
+	details?: string;
+	default?: unknown;
+	group?: FieldGroup;
+	showWhen?: (config: Record<string, unknown>) => boolean;
+};
 export type ConfigField =
 	| ({
 			key: string;
@@ -193,8 +207,14 @@ const expr = (
 	extra: { target?: string } & FieldMeta = {}
 ): ConfigField => ({ key, label, kind: 'expr', result, ...extra }) as ConfigField;
 
+// Inspector sub-heading shorthands for the field tables below (see FieldGroup).
+const DATA: FieldGroup = 'Data';
+const LOOK: FieldGroup = 'Appearance';
+const DO: FieldGroup = 'Behaviour';
+
 // The built-in meters as data (reproduces the old createWidget switch exactly, so the
-// default look/behaviour is unchanged). Components are attached in registry.ts.
+// default look/behaviour is unchanged). Components are attached in registry.ts. Every field
+// carries a `group` + `help` (the docs check lints for missing help).
 export const BUILTIN_METAS: WidgetMeta[] = [
 	{
 		type: 'gauge',
@@ -207,18 +227,36 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 110, h: 110 },
 		defaultConfig: { label: 'CPU', unit: '%', min: 0, max: 100 },
 		configFields: [
-			text('label', 'label'),
-			text('unit', 'unit', { help: 'suffix after the value, e.g. % or °C' }),
-			num('min', 'min', { help: 'value mapped to an empty gauge' }),
-			num('max', 'max', { help: 'value mapped to a full gauge' }),
-			color('color', 'color'),
-			color('track', 'track', { help: 'color of the unfilled arc' }),
+			text('label', 'label', { group: DATA, help: 'caption shown with the value' }),
+			text('unit', 'unit', { group: DATA, help: 'suffix after the value, e.g. % or °C' }),
+			num('min', 'min', { group: DATA, help: 'value mapped to an empty gauge' }),
+			num('max', 'max', { group: DATA, help: 'value mapped to a full gauge' }),
+			expr('value', 'value (formula)', 'number', {
+				group: DATA,
+				help: 'overrides the sensor, e.g. round(mem.used, 0) or cpu.total / 2'
+			}),
+			expr('minExpr', 'min (formula)', 'number', {
+				group: DATA,
+				target: 'min',
+				help: 'a formula for the empty-gauge value (overrides min)'
+			}),
+			expr('maxExpr', 'max (formula)', 'number', {
+				group: DATA,
+				target: 'max',
+				help: 'a formula for the full-gauge value (overrides max)'
+			}),
+			color('color', 'colour', {
+				group: LOOK,
+				help: 'fill colour of the arc (blank = theme accent)'
+			}),
+			color('track', 'track', { group: LOOK, help: 'colour of the unfilled arc' }),
 			{
 				key: 'style',
 				label: 'style',
 				kind: 'select',
 				options: ['arc', 'circle', 'linear', 'pips', 'needle'],
 				default: 'arc',
+				group: LOOK,
 				help: 'arc ring (default), closed circle, linear bar, discrete pips, or analog needle dial'
 			},
 			{
@@ -227,6 +265,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				kind: 'select',
 				options: ['arc', 'ltr', 'rtl', 'btt', 'ttb'],
 				default: 'arc',
+				group: LOOK,
 				help: 'pips + linear styles only: arc keeps pips on the ring; ltr/rtl/btt/ttb lay the bar or pip row along an axis'
 			},
 			num('pips', 'pips', {
@@ -234,6 +273,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				max: 40,
 				step: 1,
 				default: 10,
+				group: LOOK,
 				help: 'pips style only: number of segments'
 			}),
 			num('sweep', 'sweep (°)', {
@@ -241,13 +281,9 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				max: 360,
 				step: 15,
 				default: 270,
+				group: LOOK,
 				help: 'arc/pips/needle styles: arc span in degrees (180 = semicircle); the gap stays centred at the bottom'
-			}),
-			expr('value', 'value (formula)', 'number', {
-				help: 'overrides the sensor, e.g. round(mem.used, 0) or cpu.total / 2'
-			}),
-			expr('minExpr', 'min (formula)', 'number', { target: 'min' }),
-			expr('maxExpr', 'max (formula)', 'number', { target: 'max' })
+			})
 		]
 	},
 	{
@@ -260,23 +296,33 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 140, h: 16 },
 		defaultConfig: { min: 0, max: 100, label: 'MEM' },
 		configFields: [
-			text('label', 'label'),
-			num('min', 'min', { help: 'value mapped to an empty bar' }),
-			num('max', 'max', { help: 'value mapped to a full bar' }),
+			text('label', 'label', { group: DATA, help: 'caption shown beside the bar' }),
+			num('min', 'min', { group: DATA, help: 'value mapped to an empty bar' }),
+			num('max', 'max', { group: DATA, help: 'value mapped to a full bar' }),
+			expr('value', 'value (formula)', 'number', {
+				group: DATA,
+				help: 'overrides the sensor, e.g. clamp(cpu.total, 0, 100)'
+			}),
+			expr('minExpr', 'min (formula)', 'number', {
+				group: DATA,
+				target: 'min',
+				help: 'a formula for the empty-bar value (overrides min)'
+			}),
+			expr('maxExpr', 'max (formula)', 'number', {
+				group: DATA,
+				target: 'max',
+				help: 'a formula for the full-bar value (overrides max)'
+			}),
 			{
 				key: 'orientation',
 				label: 'orientation',
 				kind: 'select',
 				options: ['horizontal', 'vertical'],
+				group: LOOK,
 				help: 'fill direction'
 			},
-			color('color', 'color'),
-			color('track', 'track', { help: 'color of the unfilled track' }),
-			expr('value', 'value (formula)', 'number', {
-				help: 'overrides the sensor, e.g. clamp(cpu.total, 0, 100)'
-			}),
-			expr('minExpr', 'min (formula)', 'number', { target: 'min' }),
-			expr('maxExpr', 'max (formula)', 'number', { target: 'max' })
+			color('color', 'colour', { group: LOOK, help: 'fill colour (blank = theme accent)' }),
+			color('track', 'track', { group: LOOK, help: 'colour of the unfilled track' })
 		]
 	},
 	{
@@ -289,28 +335,47 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 140, h: 30 },
 		defaultConfig: { seconds: 60, barGap: 0.2, axis: true },
 		configFields: [
-			color('color', 'color'),
-			{ key: 'fill', label: 'fill', kind: 'toggle', help: 'fill the area under the line' },
+			num('seconds', 'history (s)', {
+				min: 5,
+				step: 5,
+				group: DATA,
+				help: 'seconds of history to show'
+			}),
+			color('color', 'colour', { group: LOOK, help: 'line / bar colour (blank = theme accent)' }),
+			{
+				key: 'fill',
+				label: 'fill',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'fill the area under the line'
+			},
 			{
 				key: 'histogram',
 				label: 'histogram (bars)',
 				kind: 'toggle',
+				group: LOOK,
 				help: 'draw bars instead of a line'
 			},
 			{
 				key: 'axis',
 				label: 'baseline axis',
 				kind: 'toggle',
+				group: LOOK,
 				help: 'show a baseline axis line under the bars (histogram mode)'
 			},
 			num('barGap', 'bar gap', {
 				min: 0,
 				max: 0.9,
 				step: 0.05,
+				group: LOOK,
 				help: 'gap between histogram bars, 0–0.9 of a slot (0 = touching)'
 			}),
-			num('seconds', 'history (s)', { min: 5, step: 5, help: 'seconds of history to show' }),
-			num('lineWidth', 'line width', { min: 0.5, step: 0.5, help: 'stroke thickness (line mode)' })
+			num('lineWidth', 'line width', {
+				min: 0.5,
+				step: 0.5,
+				group: LOOK,
+				help: 'stroke thickness (line mode)'
+			})
 		]
 	},
 	{
@@ -325,14 +390,16 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 100, h: 18 },
 		defaultConfig: { format: 'rate', label: '↓' },
 		configFields: [
-			text('label', 'label'),
+			text('label', 'label', { group: DATA, help: 'prefix shown before the value' }),
 			text('format', 'format', {
+				group: DATA,
 				help: 'percent | rate (bytes/s) | bytes (e.g. 16.0 GiB) | duration (uptime) | integer; else raw'
 			}),
-			color('color', 'color'),
 			expr('value', 'value (formula)', 'text', {
+				group: DATA,
 				help: 'template: text + {expressions}, e.g. CPU {round(cpu.total)}% · {bytes(mem.used.bytes)}'
-			})
+			}),
+			color('color', 'colour', { group: LOOK, help: 'text colour (blank = theme)' })
 		]
 	},
 	{
@@ -346,6 +413,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultConfig: { format: 'HH:mm:ss' },
 		configFields: [
 			text('format', 'format', {
+				group: DATA,
 				help: 'moment-style tokens: YYYY MMMM MMM MM M dddd ddd DD D HH H hh h mm m ss s A a; literals in [brackets], e.g. HH:mm:ss or dddd D MMMM'
 			}),
 			{
@@ -353,10 +421,11 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				label: 'locale',
 				kind: 'select',
 				options: ['en', 'ja', 'zh'],
+				group: DATA,
 				help: 'month/day names'
 			},
-			text('label', 'label'),
-			color('color', 'color')
+			text('label', 'label', { group: DATA, help: 'caption shown before the time' }),
+			color('color', 'colour', { group: LOOK, help: 'text colour (blank = theme)' })
 		]
 	},
 	{
@@ -383,25 +452,50 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				key: 'firstDay',
 				label: 'first day of week',
 				kind: 'select',
-				options: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+				options: ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+				group: DATA,
+				help: 'which weekday starts each row'
 			},
-			{ key: 'weekdayHeader', label: 'weekday header', kind: 'toggle' },
-			{
-				key: 'continuous',
-				label: 'continuous',
-				kind: 'toggle',
-				help: 'spill dimmed days through the end of next month'
-			},
-			{ key: 'highlightToday', label: 'highlight today', kind: 'toggle' },
-			{ key: 'showTitle', label: 'month title', kind: 'toggle' },
 			{
 				key: 'locale',
 				label: 'locale',
 				kind: 'select',
 				options: ['en', 'ja', 'zh'],
+				group: DATA,
 				help: 'weekday / month names'
 			},
-			color('color', 'accent')
+			{
+				key: 'weekdayHeader',
+				label: 'weekday header',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'show the row of weekday names above the grid'
+			},
+			{
+				key: 'continuous',
+				label: 'continuous',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'spill dimmed days through the end of next month'
+			},
+			{
+				key: 'highlightToday',
+				label: 'highlight today',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'mark the current day with the accent colour'
+			},
+			{
+				key: 'showTitle',
+				label: 'month title',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'show the month + year heading'
+			},
+			color('color', 'accent', {
+				group: LOOK,
+				help: 'today highlight colour (blank = theme accent)'
+			})
 		]
 	},
 	{
@@ -421,18 +515,43 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 			updateMs: 1000
 		},
 		configFields: [
-			{ key: 'showSeconds', label: 'second hand', kind: 'toggle' },
-			{ key: 'showTicks', label: 'tick marks', kind: 'toggle' },
-			{ key: 'showNumbers', label: 'hour numbers', kind: 'toggle' },
-			{ key: 'showCap', label: 'centre cap', kind: 'toggle' },
+			{
+				key: 'showSeconds',
+				label: 'second hand',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'show the sweeping second hand'
+			},
+			{
+				key: 'showTicks',
+				label: 'tick marks',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'show minute / hour tick marks around the ring'
+			},
+			{
+				key: 'showNumbers',
+				label: 'hour numbers',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'show the 12 hour numerals'
+			},
+			{
+				key: 'showCap',
+				label: 'centre cap',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'show a small disc where the hands meet'
+			},
+			color('color', 'hands/ticks', { group: LOOK, help: 'hour + minute hands, ticks, ring' }),
+			color('accent', 'second hand', { group: LOOK, help: 'second hand colour' }),
+			color('face', 'face', { group: LOOK, help: 'face fill (default transparent)' }),
 			num('updateMs', 'update (ms)', {
 				min: 16,
 				step: 50,
+				group: DO,
 				help: 'redraw interval; lower = smoother second hand, higher = lighter'
-			}),
-			color('color', 'hands/ticks', { help: 'hour + minute hands, ticks, ring' }),
-			color('accent', 'second hand'),
-			color('face', 'face', { help: 'face fill (default transparent)' })
+			})
 		]
 	},
 	{
@@ -450,11 +569,12 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultConfig: { label: 'tap', actions: [] },
 		interactive: true,
 		configFields: [
-			text('label', 'label'),
+			text('label', 'label', { group: DATA, help: 'text on the button' }),
 			{
 				key: 'actions',
 				label: 'actions (macro)',
 				kind: 'macro',
+				group: DO,
 				help: 'run these calls in order on press — domain/service like Home Assistant (put entity_id in data), or domain "media" for now-playing transport (playpause/next/previous)'
 			}
 		]
@@ -475,26 +595,35 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				label: 'mode',
 				kind: 'select',
 				options: ['cores', 'combined'],
+				group: DATA,
 				help: 'per-core sparkline grid vs one combined gauge'
 			},
+			num('seconds', 'history (s)', {
+				min: 5,
+				step: 5,
+				group: DATA,
+				help: 'seconds of history to show'
+			}),
+			text('label', 'label (combined)', { group: DATA, help: 'caption for the combined gauge' }),
 			num('cols', 'cols (per-core grid)', {
 				min: 1,
+				group: LOOK,
 				help: 'columns in the per-core grid (blank = 8; clamped to the core count)'
 			}),
-			num('seconds', 'history (s)', { min: 5, step: 5, help: 'seconds of history to show' }),
 			{
 				key: 'histogram',
 				label: 'histogram (bars)',
 				kind: 'toggle',
+				group: LOOK,
 				help: 'draw bars instead of lines'
 			},
 			num('lineWidth', 'core line width', {
 				min: 0.5,
 				step: 0.5,
+				group: LOOK,
 				help: 'per-core stroke thickness'
 			}),
-			text('label', 'label (combined)'),
-			color('color', 'color')
+			color('color', 'colour', { group: LOOK, help: 'line / gauge colour (blank = theme accent)' })
 		]
 	},
 	{
@@ -515,9 +644,13 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				key: 'showStatus',
 				label: 'status line',
 				kind: 'toggle',
+				group: LOOK,
 				help: 'show charging / time-remaining under the percent'
 			},
-			color('color', 'fill colour')
+			color('color', 'fill colour', {
+				group: LOOK,
+				help: 'battery icon fill (blank = theme accent)'
+			})
 		]
 	},
 	{
@@ -543,9 +676,15 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 200, h: 96 },
 		defaultConfig: { showName: true },
 		configFields: [
-			{ key: 'showName', label: 'card name', kind: 'toggle', help: 'show the GPU model header' },
-			text('label', 'name override', { help: 'replace the detected card name' }),
-			color('color', 'accent')
+			text('label', 'name override', { group: DATA, help: 'replace the detected card name' }),
+			{
+				key: 'showName',
+				label: 'card name',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'show the GPU model header'
+			},
+			color('color', 'accent', { group: LOOK, help: 'utilisation colour (blank = theme accent)' })
 		]
 	},
 	{
@@ -566,9 +705,10 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				key: 'showBytes',
 				label: 'show used / total',
 				kind: 'toggle',
+				group: LOOK,
 				help: 'append used/total bytes after the percent'
 			},
-			color('color', 'accent')
+			color('color', 'accent', { group: LOOK, help: 'usage bar colour (blank = theme accent)' })
 		]
 	},
 	{
@@ -591,10 +731,11 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				label: 'rank by',
 				kind: 'select',
 				options: ['cpu', 'mem', 'disk', 'gpu'],
+				group: DATA,
 				help: 'CPU %, RAM, disk I/O, or GPU VRAM (GPU needs NVIDIA/NVML)'
 			},
-			text('label', 'label', { help: 'header (defaults to "Top CPU" etc.)' }),
-			color('color', 'accent')
+			text('label', 'label', { group: DATA, help: 'header (defaults to "Top CPU" etc.)' }),
+			color('color', 'accent', { group: LOOK, help: 'value colour (blank = theme accent)' })
 		]
 	},
 	{
@@ -611,9 +752,15 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 200, h: 44 },
 		defaultConfig: { name: 'chrome.exe' },
 		configFields: [
-			text('name', 'process', { help: 'executable name, e.g. chrome.exe, obs64.exe, Spotify.exe' }),
-			text('label', 'label', { help: 'override the shown name (defaults to the process)' }),
-			color('color', 'accent')
+			text('name', 'process', {
+				group: DATA,
+				help: 'executable name, e.g. chrome.exe, obs64.exe, Spotify.exe'
+			}),
+			text('label', 'label', {
+				group: DATA,
+				help: 'override the shown name (defaults to the process)'
+			}),
+			color('color', 'accent', { group: LOOK, help: 'running-state colour (blank = theme accent)' })
 		]
 	},
 	{
@@ -634,15 +781,20 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				key: 'showListening',
 				label: 'show listeners',
 				kind: 'toggle',
+				group: DATA,
 				help: 'include processes that are only LISTENing (accepting inbound), not just active talkers'
 			},
 			num('maxRows', 'max rows', {
 				min: 1,
 				max: 20,
 				step: 1,
+				group: DATA,
 				help: 'how many processes to list (busiest — most public — first)'
 			}),
-			color('color', 'accent')
+			color('color', 'accent', {
+				group: LOOK,
+				help: 'header / count colour (blank = theme accent)'
+			})
 		]
 	},
 	{
@@ -660,14 +812,21 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 150, h: 24 },
 		defaultConfig: { host: '1.1.1.1', slowMs: 150 },
 		configFields: [
-			text('host', 'host', { help: 'IP or hostname to ping, e.g. 1.1.1.1 or cloudflare.com' }),
-			text('label', 'label', { help: 'override the shown name (defaults to the host)' }),
+			text('host', 'host', {
+				group: DATA,
+				help: 'IP or hostname to ping, e.g. 1.1.1.1 or cloudflare.com'
+			}),
+			text('label', 'label', {
+				group: DATA,
+				help: 'override the shown name (defaults to the host)'
+			}),
+			color('color', 'accent', { group: LOOK, help: 'up-state colour (blank = theme accent)' }),
 			num('slowMs', 'slow threshold (ms)', {
 				min: 1,
 				step: 10,
+				group: DO,
 				help: 'latency at/above this is shown as "slow" (amber)'
-			}),
-			color('color', 'accent')
+			})
 		]
 	},
 	{
@@ -697,9 +856,10 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				key: 'showDetail',
 				label: 'detail line',
 				kind: 'toggle',
+				group: LOOK,
 				help: 'show band / channel / generation / RSSI / link rate under the SSID'
 			},
-			color('color', 'accent')
+			color('color', 'accent', { group: LOOK, help: 'signal bars colour (blank = theme accent)' })
 		]
 	},
 	{
@@ -721,36 +881,50 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				kind: 'select',
 				options: [],
 				catalog: 'audioOutputs',
-				help: 'which audio output to visualise (blank = system default). App-wide: one capture stream per app, so the last spectrum widget to (re)start sets it for all'
-			},
-			{
-				key: 'mode',
-				label: 'mode',
-				kind: 'select',
-				options: ['bars', 'spectrogram'],
-				help: 'frequency bars vs a scrolling spectrogram heatmap'
+				group: DATA,
+				help: 'which audio output to visualise (blank = system default)',
+				details:
+					'App-wide: one capture stream per app, so the last spectrum widget to (re)start sets the device for all spectrum widgets.'
 			},
 			{
 				key: 'scale',
 				label: 'frequency scale',
 				kind: 'select',
 				options: ['log', 'linear'],
-				help: 'log spreads the low frequencies (musical, default); linear is even Hz/bar. App-wide like device: shared by every spectrum widget'
+				group: DATA,
+				help: 'log spreads the low frequencies (musical, default); linear is even Hz/bar',
+				details: 'App-wide like the device: shared by every spectrum widget.'
+			},
+			{
+				key: 'mode',
+				label: 'mode',
+				kind: 'select',
+				options: ['bars', 'spectrogram'],
+				group: LOOK,
+				help: 'frequency bars vs a scrolling spectrogram heatmap'
 			},
 			{
 				key: 'pips',
 				label: 'frequency pips',
 				kind: 'toggle',
+				group: LOOK,
 				help: 'gridline markers at 100 Hz / 1 kHz / 10 kHz'
 			},
 			num('bars', 'bars', {
 				min: 8,
 				max: 128,
 				step: 1,
+				group: LOOK,
 				help: 'number of frequency bars (bars mode)'
 			}),
-			num('gap', 'bar gap', { min: 0, max: 0.9, step: 0.05, help: 'spacing between bars (0..1)' }),
-			color('color', 'color', { help: 'bars mode; defaults to the theme accent' })
+			num('gap', 'bar gap', {
+				min: 0,
+				max: 0.9,
+				step: 0.05,
+				group: LOOK,
+				help: 'spacing between bars (0..1)'
+			}),
+			color('color', 'colour', { group: LOOK, help: 'bars mode; defaults to the theme accent' })
 		]
 	},
 	{
@@ -778,44 +952,56 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		},
 		configFields: [
 			text('url', 'url', {
+				group: DATA,
 				help: 'bare domains get https://; only https:// loads (the CSP blocks plain http://); javascript:/data: are rejected'
+			}),
+			text('title', 'title', {
+				group: DATA,
+				help: 'accessible label for the frame (screen readers / tooltip)'
 			}),
 			num('refresh', 'refresh (s)', {
 				min: 0,
 				max: 3600,
 				step: 5,
+				group: DO,
 				help: 'auto-reload interval in seconds (0 = never); reloads cost CPU/network'
 			}),
 			{
 				key: 'scroll',
 				label: 'scroll',
 				kind: 'toggle',
+				group: DO,
 				help: 'allow scrolling inside the frame'
 			},
 			{
 				key: 'interact',
 				label: 'interactive',
 				kind: 'toggle',
+				group: DO,
 				help: 'off: clicks pass through to the desktop; on: the frame catches clicks (passive overlay only — dragging always works in edit mode)'
 			},
 			{
 				key: 'sandbox',
 				label: 'sandbox',
 				kind: 'toggle',
-				help: 'recommended: isolates the page (scripts only, no parent/popups/top-nav). Turn off only for a trusted page needing same-origin features (e.g. a Home Assistant login)'
+				group: DO,
+				help: 'recommended: isolates the page (scripts only, no parent/popups/top-nav)',
+				details:
+					'Turn off only for a trusted page needing same-origin features (e.g. a Home Assistant login).'
 			},
 			{
 				key: 'referrerPolicy',
 				label: 'referrer',
 				kind: 'select',
 				options: ['no-referrer', 'origin', 'same-origin'],
+				group: DO,
 				help: 'what Referer the embedded page sees (no-referrer leaks nothing)'
 			},
-			text('title', 'title', { help: 'accessible label for the frame (screen readers / tooltip)' }),
 			num('timeoutMs', 'blocked timeout (ms)', {
 				min: 1000,
 				max: 30000,
 				step: 500,
+				group: DO,
 				help: "how long to wait for a load before showing a 'blocked or unreachable' hint"
 			})
 		]
@@ -835,12 +1021,17 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultConfig: { matchExe: '', matchClass: '', matchTitle: '' },
 		configFields: [
 			text('matchExe', 'match: exe', {
+				group: DO,
 				help: 'auto-arrange: snap a window of this exe here, e.g. Spotify.exe (blank = drag-only)'
 			}),
 			text('matchClass', 'match: class', {
+				group: DO,
 				help: 'optional window-class glob refiner, e.g. Chrome_WidgetWin_1'
 			}),
-			text('matchTitle', 'match: title', { help: 'optional title glob refiner, e.g. *Gmail*' })
+			text('matchTitle', 'match: title', {
+				group: DO,
+				help: 'optional title glob refiner, e.g. *Gmail*'
+			})
 		]
 	},
 	{
@@ -856,7 +1047,9 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		category: 'Utility',
 		defaultSize: { w: 200, h: 120 },
 		defaultConfig: {},
-		configFields: [color('color', 'accent')]
+		configFields: [
+			color('color', 'accent', { group: LOOK, help: 'active-device colour (blank = theme accent)' })
+		]
 	},
 	{
 		// Recycle Bin (binds:'none', multi-sensor): item count + total size, with a "full" cue. The
@@ -872,12 +1065,13 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 150, h: 48 },
 		defaultConfig: { warnGb: 0 },
 		configFields: [
+			color('color', 'accent', { group: LOOK, help: 'icon colour (blank = theme accent)' }),
 			num('warnGb', 'warn at (GB)', {
 				min: 0,
 				step: 1,
+				group: DO,
 				help: 'highlight when the bin reaches this many GB (0 = never)'
-			}),
-			color('color', 'accent')
+			})
 		]
 	},
 	{
@@ -893,7 +1087,9 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		category: 'Utility',
 		defaultSize: { w: 190, h: 36 },
 		defaultConfig: {},
-		configFields: [color('color', 'accent')]
+		configFields: [
+			color('color', 'accent', { group: LOOK, help: 'slider colour (blank = theme accent)' })
+		]
 	},
 	{
 		// Image (binds:'none'): a static picture from a URL or the wallpapers/ folder. Bespoke wiring
@@ -908,16 +1104,18 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultConfig: { src: '', fit: 'contain', alt: '' },
 		configFields: [
 			text('src', 'source', {
+				group: DATA,
 				help: 'an image URL (https:// or data:), or a filename in your wallpapers folder'
 			}),
+			text('alt', 'alt text', { group: DATA, help: 'accessible description (screen readers)' }),
 			{
 				key: 'fit',
 				label: 'fit',
 				kind: 'select',
 				options: ['contain', 'cover', 'fill', 'none'],
+				group: LOOK,
 				help: 'how the image fills the box (contain = whole image, cover = fill + crop)'
-			},
-			text('alt', 'alt text', { help: 'accessible description (screen readers)' })
+			}
 		]
 	},
 	{
@@ -934,8 +1132,8 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 200, h: 140 },
 		defaultConfig: { placeholder: 'Notes…' },
 		configFields: [
-			text('placeholder', 'placeholder', { help: 'shown when the note is empty' }),
-			color('color', 'accent', { help: 'the note’s left edge accent' })
+			text('placeholder', 'placeholder', { group: DATA, help: 'shown when the note is empty' }),
+			color('color', 'accent', { group: LOOK, help: 'the note’s left edge accent' })
 		]
 	},
 	{
@@ -976,28 +1174,37 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				label: 'mode',
 				kind: 'select',
 				options: ['event', 'pomodoro'],
+				group: DATA,
 				help: 'count down to a date, or run a repeating work/break rhythm'
 			},
 			text('target', 'target date', {
+				group: DATA,
 				help: 'event mode: a date/time, e.g. 2026-12-31 or 2026-12-31T18:00'
 			}),
+			num('workMin', 'work (min)', { min: 1, step: 1, group: DATA, help: 'pomodoro work length' }),
+			num('breakMin', 'break (min)', {
+				min: 1,
+				step: 1,
+				group: DATA,
+				help: 'pomodoro break length'
+			}),
+			text('label', 'label', { group: DATA, help: 'caption above the remaining time' }),
 			{
 				key: 'format',
 				label: 'format',
 				kind: 'select',
 				options: ['auto', 'dhms', 'hms', 'ms'],
+				group: LOOK,
 				help: 'event display: auto trims units; dhms/hms/ms are fixed'
 			},
+			color('color', 'colour', { group: LOOK, help: 'text colour (blank = theme)' }),
 			{
 				key: 'countUp',
 				label: 'count up after',
 				kind: 'toggle',
+				group: DO,
 				help: 'event mode: once the target passes, count the time elapsed since (instead of stopping at 0)'
-			},
-			num('workMin', 'work (min)', { min: 1, step: 1, help: 'pomodoro work length' }),
-			num('breakMin', 'break (min)', { min: 1, step: 1, help: 'pomodoro break length' }),
-			text('label', 'label'),
-			color('color', 'color')
+			}
 		]
 	},
 	{
@@ -1025,24 +1232,27 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				label: 'mode',
 				kind: 'select',
 				options: ['countdown', 'stopwatch'],
+				group: DATA,
 				help: 'count down from a duration, or up from zero'
 			},
-			num('duration', 'duration (s)', { min: 0, help: 'countdown length in seconds' }),
+			num('duration', 'duration (s)', { min: 0, group: DATA, help: 'countdown length in seconds' }),
+			text('label', 'label', { group: DATA, help: 'header text' }),
 			{
 				key: 'format',
 				label: 'format',
 				kind: 'select',
 				options: ['auto', 'mm:ss', 'hh:mm:ss', 'ss'],
+				group: LOOK,
 				help: 'time display format'
 			},
+			color('color', 'colour', { group: LOOK, help: 'text colour (blank = theme)' }),
 			{
 				key: 'loop',
 				label: 'loop',
 				kind: 'toggle',
+				group: DO,
 				help: 'restart automatically when a countdown reaches zero'
-			},
-			text('label', 'label', { help: 'header text' }),
-			color('color', 'color', { help: 'text colour (blank = theme)' })
+			}
 		]
 	},
 	{
@@ -1066,21 +1276,54 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				kind: 'select',
 				options: [],
 				catalog: 'displayNames',
+				group: DATA,
 				help: 'which monitor to control (blank = the primary monitor)'
 			},
 			{
 				key: 'sources',
 				label: 'sources',
 				kind: 'monitorSources',
-				help: 'pick which inputs to show, rename them (e.g. HDMI 2 → Switch 2), and optionally pair each with a volume (0–100, e.g. 0x12=NS2@20) applied when switching to it — only while "volume target" is not off; blank = show all detected'
+				group: DATA,
+				help: 'pick which inputs to show and rename them (blank = show all detected)',
+				details:
+					'Each source can also carry a volume (0–100, e.g. 0x12=NS2@20) applied when switching to it — only while "volume target" is not off.'
 			},
+			text('label', 'label', { group: DATA, help: 'title override (blank = the monitor’s name)' }),
+			{
+				key: 'showCurrent',
+				label: 'show current',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'highlight the currently-selected input'
+			},
+			{
+				key: 'showStats',
+				label: 'show stats',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'show the current resolution + refresh rate'
+			},
+			{
+				key: 'compact',
+				label: 'compact list',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'show a compact list instead of large touch buttons'
+			},
+			color('color', 'accent', {
+				group: LOOK,
+				help: 'active-source colour (blank = theme accent)'
+			}),
 			{
 				key: 'volumeTarget',
 				label: 'volume target',
 				kind: 'select',
 				options: ['off', 'system', 'monitor'],
 				default: 'off',
-				help: 'what a source’s paired volume (the @NN in sources) changes when you switch: off (default — volumes are ignored), system = the Windows master volume after the switch, monitor = the monitor’s own speakers over DDC/CI just before the switch'
+				group: DO,
+				help: 'what a source’s paired volume changes when you switch (off = volumes are ignored)',
+				details:
+					'The paired volume is the @NN in sources. system = the Windows master volume, set after the switch; monitor = the monitor’s own speakers over DDC/CI, set just before the switch.'
 			},
 			{
 				key: 'volumeDevice',
@@ -1088,28 +1331,10 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				kind: 'select',
 				options: [],
 				catalog: 'audioOutputs',
-				help: 'system target only: which Windows output’s volume to set (blank = whatever is the default output at the time)'
-			},
-			text('label', 'label', { help: 'title override (blank = the monitor’s name)' }),
-			{
-				key: 'showCurrent',
-				label: 'show current',
-				kind: 'toggle',
-				help: 'highlight the currently-selected input'
-			},
-			{
-				key: 'showStats',
-				label: 'show stats',
-				kind: 'toggle',
-				help: 'show the current resolution + refresh rate'
-			},
-			{
-				key: 'compact',
-				label: 'compact list',
-				kind: 'toggle',
-				help: 'show a compact list instead of large touch buttons'
-			},
-			color('color', 'accent')
+				group: DO,
+				showWhen: (config) => config.volumeTarget === 'system',
+				help: 'which Windows output’s volume to set (blank = whatever is the default output at the time)'
+			}
 		]
 	}
 ];
@@ -1120,6 +1345,48 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 export function configCompleteness(meta: WidgetMeta): string[] {
 	const have = new Set((meta.configFields ?? []).map((f) => f.key));
 	return Object.keys(meta.defaultConfig ?? {}).filter((k) => !have.has(k));
+}
+
+/** Whether a field applies to this config (its `showWhen`, defaulting to visible). Pure. */
+export function fieldVisible(f: ConfigField, config: Record<string, unknown>): boolean {
+	return f.showWhen ? f.showWhen(config) : true;
+}
+
+/**
+ * The visible fields bucketed under their Inspector sub-headings, in the canonical Data →
+ * Appearance → Behaviour order (empty groups dropped). Fields with no `group` join the FIRST group
+ * that any field declares — so a schema that doesn't opt into grouping still renders as one plain
+ * run under a single heading — and an all-ungrouped schema lands under 'Data'. Pure.
+ */
+export function fieldGroups(
+	fields: ConfigField[],
+	config: Record<string, unknown> = {}
+): { group: FieldGroup; fields: ConfigField[] }[] {
+	const visible = fields.filter((f) => fieldVisible(f, config));
+	const first = visible.find((f) => f.group)?.group ?? 'Data';
+	const buckets = new Map<FieldGroup, ConfigField[]>();
+	for (const f of visible) {
+		const g = f.group ?? first;
+		const list = buckets.get(g);
+		if (list) list.push(f);
+		else buckets.set(g, [f]);
+	}
+	return FIELD_GROUP_ORDER.filter((g) => buckets.has(g)).map((g) => ({
+		group: g,
+		fields: buckets.get(g)!
+	}));
+}
+
+/**
+ * Every `type.key` whose config field has no `help` text — the docs-check lint: a field without
+ * help renders with no explanation in the Inspector and an empty description in docs/widgets.md.
+ * Pure (asserts [] for the whole registry in the docs check).
+ */
+export function fieldsMissingHelp(metaList: WidgetMeta[]): string[] {
+	const out: string[] = [];
+	for (const m of metaList)
+		for (const f of m.configFields ?? []) if (!f.help?.trim()) out.push(`${m.type}.${f.key}`);
+	return out;
 }
 
 const metas = new Map<string, WidgetMeta>();

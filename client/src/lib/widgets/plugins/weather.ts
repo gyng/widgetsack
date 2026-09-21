@@ -30,6 +30,7 @@ export const registerWeatherPlugin = (): void =>
 					sensors: (config) => {
 						// The forecast strip subscribes weather.day.N.* for the configured days (backend ≤7).
 						const map: Record<string, string> = {
+							status: 'weather.status', // loading / error vs. "no location" in the empty state
 							temp: 'weather.temp',
 							apparent: 'weather.apparent',
 							humidity: 'weather.humidity',
@@ -52,11 +53,19 @@ export const registerWeatherPlugin = (): void =>
 					defaultSize: { w: 220, h: 160 },
 					defaultConfig: { showHiLo: true, showDetail: true, forecastDays: 5 },
 					configFields: [
-						{ key: 'showHiLo', label: 'today high / low', kind: 'toggle' },
+						{
+							key: 'showHiLo',
+							label: 'today high / low',
+							kind: 'toggle',
+							group: 'Appearance',
+							help: 'show today’s high / low beside the temperature (location is set in Plugins → Weather)'
+						},
 						{
 							key: 'showDetail',
 							label: 'feels-like / humidity / wind',
-							kind: 'toggle'
+							kind: 'toggle',
+							group: 'Appearance',
+							help: 'show the feels-like temperature, humidity and wind line'
 						},
 						{
 							key: 'forecastDays',
@@ -65,9 +74,16 @@ export const registerWeatherPlugin = (): void =>
 							min: 0,
 							max: 7,
 							step: 1,
+							group: 'Data',
 							help: 'how many days of forecast to show below (0 = off; up to 7)'
 						},
-						{ key: 'color', label: 'accent', kind: 'color' }
+						{
+							key: 'color',
+							label: 'accent',
+							kind: 'color',
+							group: 'Appearance',
+							help: 'temperature / icon colour (blank = theme accent)'
+						}
 					]
 				},
 				component: asMeter(Weather)
@@ -85,9 +101,27 @@ export const registerWeatherPlugin = (): void =>
 					defaultSize: { w: 210, h: 64 },
 					defaultConfig: { showSun: true, showMoon: true },
 					configFields: [
-						{ key: 'showSun', label: 'sunrise / sunset', kind: 'toggle' },
-						{ key: 'showMoon', label: 'moon phase', kind: 'toggle' },
-						{ key: 'color', label: 'accent', kind: 'color' }
+						{
+							key: 'showSun',
+							label: 'sunrise / sunset',
+							kind: 'toggle',
+							group: 'Appearance',
+							help: 'show today’s sunrise + sunset times (location is set in Plugins → Weather)'
+						},
+						{
+							key: 'showMoon',
+							label: 'moon phase',
+							kind: 'toggle',
+							group: 'Appearance',
+							help: 'show the current moon phase + illumination'
+						},
+						{
+							key: 'color',
+							label: 'accent',
+							kind: 'color',
+							group: 'Appearance',
+							help: 'sun / moon icon colour (blank = theme accent)'
+						}
 					]
 				},
 				component: asMeter(SunMoon)
@@ -105,9 +139,27 @@ export const registerWeatherPlugin = (): void =>
 					defaultSize: { w: 190, h: 86 },
 					defaultConfig: { showPm: true, showUv: true },
 					configFields: [
-						{ key: 'showPm', label: 'PM2.5', kind: 'toggle' },
-						{ key: 'showUv', label: 'UV index', kind: 'toggle' },
-						{ key: 'color', label: 'accent', kind: 'color' }
+						{
+							key: 'showPm',
+							label: 'PM2.5',
+							kind: 'toggle',
+							group: 'Appearance',
+							help: 'show the PM2.5 reading (location is set in Plugins → Weather)'
+						},
+						{
+							key: 'showUv',
+							label: 'UV index',
+							kind: 'toggle',
+							group: 'Appearance',
+							help: 'show the UV index'
+						},
+						{
+							key: 'color',
+							label: 'accent',
+							kind: 'color',
+							group: 'Appearance',
+							help: 'AQI band colour override (blank = colour-coded by band)'
+						}
 					]
 				},
 				component: asMeter(AirQuality)

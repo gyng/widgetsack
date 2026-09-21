@@ -67,16 +67,123 @@ describe('Inspector config-field rendering (per ConfigField kind)', () => {
 		expect(lastConfigPatch(onOp)).toEqual({ max: undefined });
 	});
 
-	it('renders a color field as a text input with a "css color" placeholder', () => {
+	it('renders a colour field as the swatch + text ColorField, committing on blur, with a clear', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
-		const fields: ConfigField[] = [{ key: 'color', label: 'color', kind: 'color' }];
+		const fields: ConfigField[] = [{ key: 'color', label: 'colour', kind: 'color' }];
+		render(
+			<Inspector
+				widget={gaugeWidget({ color: '#f00' })}
+				placement="floating"
+				configFields={fields}
+				onOp={onOp}
+			/>
+		);
+		const text = within(panel()).getByRole('textbox', { name: 'colour' }) as HTMLInputElement;
+		expect(text.value).toBe('#f00');
+		// The same swatch control the token editor uses (a native colour input) sits beside it.
+		const swatch = within(panel()).getByLabelText('colour swatch') as HTMLInputElement;
+		expect(swatch.type).toBe('color');
+		expect(swatch.value).toBe('#ff0000');
+		// Free-text CSS colours still round-trip (committed on blur, not per keystroke).
+		fireEvent.change(text, { target: { value: 'rgba(0, 255, 0, 0.5)' } });
+		expect(onOp).not.toHaveBeenCalled();
+		fireEvent.blur(text);
+		expect(lastConfigPatch(onOp)).toEqual({ color: 'rgba(0, 255, 0, 0.5)' });
+		// Picking from the swatch writes a hex value immediately.
+		fireEvent.change(swatch, { target: { value: '#0000ff' } });
+		expect(lastConfigPatch(onOp)).toEqual({ color: '#0000ff' });
+		// The ✕ clears the key (back to the default / theme).
+		fireEvent.click(within(panel()).getByRole('button', { name: 'clear' }));
+		expect(lastConfigPatch(onOp)).toEqual({ color: undefined });
+	});
+
+	it('shows a select’s effective default as "<option> (default)" while the key is unset', () => {
+		const onOp = vi.fn<(op: LayoutOp) => void>();
+		const fields: ConfigField[] = [
+			{
+				key: 'volumeTarget',
+				label: 'volume target',
+				kind: 'select',
+				options: ['off', 'system', 'monitor'],
+				default: 'off'
+			}
+		];
 		render(
 			<Inspector widget={gaugeWidget()} placement="floating" configFields={fields} onOp={onOp} />
 		);
-		const input = within(panel()).getByRole('textbox', { name: 'color' }) as HTMLInputElement;
-		expect(input.placeholder).toBe('css color');
-		fireEvent.input(input, { target: { value: '#0f0' } });
-		expect(lastConfigPatch(onOp)).toEqual({ color: '#0f0' });
+		const trigger = within(panel()).getByLabelText('volume target');
+		expect(trigger).toHaveTextContent('off (default)');
+		fireEvent.click(trigger);
+		fireEvent.click(screen.getByText('system', { selector: '.np-select-opt-label' }));
+		expect(lastConfigPatch(onOp)).toEqual({ volumeTarget: 'system' }); // the plain option
+	});
+
+	it('honours showWhen: a field hidden by the current config is not rendered', () => {
+		const fields: ConfigField[] = [
+			{ key: 'volumeTarget', label: 'volume target', kind: 'select', options: ['off', 'system'] },
+			{
+				key: 'volumeDevice',
+				label: 'volume device',
+				kind: 'select',
+				options: [],
+				catalog: 'audioOutputs',
+				showWhen: (cfg) => cfg.volumeTarget === 'system'
+			}
+		];
+		const { rerender } = render(
+			<Inspector widget={gaugeWidget()} placement="floating" configFields={fields} onOp={vi.fn()} />
+		);
+		expect(within(panel()).queryByLabelText('volume device')).toBeNull();
+		rerender(
+			<Inspector
+				widget={gaugeWidget({ volumeTarget: 'system' })}
+				placement="floating"
+				configFields={fields}
+				onOp={vi.fn()}
+			/>
+		);
+		expect(within(panel()).getByLabelText('volume device')).toBeTruthy();
+	});
+
+	it('renders Data / Appearance / Behaviour sub-headings, ungrouped fields under the first group', () => {
+		const fields: ConfigField[] = [
+			{ key: 'label', label: 'label', kind: 'text', group: 'Data' },
+			{ key: 'unit', label: 'unit', kind: 'text' }, // ungrouped → Data
+			{ key: 'color', label: 'colour', kind: 'color', group: 'Appearance' },
+			{ key: 'loop', label: 'loop', kind: 'toggle', group: 'Behaviour' }
+		];
+		render(
+			<Inspector widget={gaugeWidget()} placement="floating" configFields={fields} onOp={vi.fn()} />
+		);
+		const heads = [...panel().querySelectorAll('.cfg-group-hd')].map((h) => h.textContent);
+		expect(heads).toEqual(['Data', 'Appearance', 'Behaviour']);
+		const data = panel().querySelector('.cfg-group')!;
+		expect(within(data as HTMLElement).getByRole('textbox', { name: 'unit' })).toBeTruthy();
+	});
+
+	it('shows the short help inline and the long details behind a "?" (tooltip + click to expand)', () => {
+		const fields: ConfigField[] = [
+			{
+				key: 'sandbox',
+				label: 'sandbox',
+				kind: 'toggle',
+				help: 'isolates the page',
+				details: 'Turn off only for a trusted page needing same-origin features.'
+			}
+		];
+		render(
+			<Inspector widget={gaugeWidget()} placement="floating" configFields={fields} onOp={vi.fn()} />
+		);
+		expect(within(panel()).getByText(/isolates the page/)).toBeTruthy();
+		const more = within(panel()).getByRole('button', { name: 'More about this field' });
+		expect(more.getAttribute('title')).toBe(
+			'Turn off only for a trusted page needing same-origin features.'
+		);
+		expect(more.getAttribute('aria-expanded')).toBe('false');
+		expect(panel().querySelector('.field-details-text')).toBeNull();
+		fireEvent.click(more);
+		expect(more.getAttribute('aria-expanded')).toBe('true');
+		expect(panel().querySelector('.field-details-text')?.textContent).toContain('trusted page');
 	});
 
 	it('renders a select field as a Select and emits the picked option', () => {

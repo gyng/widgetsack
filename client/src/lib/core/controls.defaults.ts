@@ -50,7 +50,7 @@ const CONTROLS: Control[] = [
 		id: 'studio.save',
 		scope: 'studio',
 		group: 'file',
-		label: 'Save draft',
+		label: 'Save',
 		triggers: [{ type: 'key', key: 's', ctrl: true }],
 		when: (c) => c.studio && c.dirty,
 		allowInInput: true,
@@ -96,8 +96,8 @@ const CONTROLS: Control[] = [
 		id: 'studio.section',
 		scope: 'studio',
 		group: 'navigation',
-		label: 'Go to section 1–8',
-		triggers: Array.from({ length: 8 }, (_, i) => ({
+		label: 'Go to section 1–9',
+		triggers: Array.from({ length: 9 }, (_, i) => ({
 			type: 'key',
 			key: String(i + 1),
 			ctrl: true

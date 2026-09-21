@@ -48,11 +48,16 @@ export type Themes = {
 	themeDraftName: string;
 	setThemeDraftName: (name: string) => void;
 	themeNameRef: React.RefObject<HTMLInputElement | null>;
+	/** The draft (name or CSS) differs from what the editor opened with — the close paths confirm. */
+	themeEditorDirty: boolean;
 	openThemeEditor: (name?: string) => Promise<void>;
 	saveThemeEditor: () => Promise<void>;
 	duplicateTheme: (name: string) => Promise<void>;
 	deleteTheme: (name: string) => Promise<void>;
 };
+
+// The scaffold a brand-new theme opens with (no active theme to seed from).
+const STARTER_THEME_CSS = ':root {\n\t--np-accent: #77c4d3;\n\t--np-fg: #ffffff;\n}\n';
 
 export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): Themes {
 	// Theme css + list (the CSS is a side-effect of selectedTheme; held in component state).
@@ -127,6 +132,13 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 	// The theme whose CSS we opened in the editor ('' = a brand-new theme). Used to tell an in-place
 	// save (no surprise) from a save that would clobber a DIFFERENT existing theme (confirm first).
 	const [themeOpenedName, setThemeOpenedName] = useState('');
+	// What the editor opened with (name + CSS), so a close can tell edits from a no-change dismiss.
+	const [themeOpened, setThemeOpened] = useState<{ name: string; css: string }>({
+		name: '',
+		css: ''
+	});
+	const themeEditorDirty =
+		themeEditorOpen && (themeDraftName !== themeOpened.name || themeDraft !== themeOpened.css);
 	const themeNameRef = useRef<HTMLInputElement | null>(null);
 	const themeTriggerRef = useRef<HTMLElement | null>(null);
 	const themeOpenPrev = useRef(false);
@@ -142,22 +154,26 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 			themeTriggerRef.current = document.activeElement as HTMLElement;
 			const target = name ?? selectedTheme;
 			const builtinId = builtinIdOf(target);
+			let opened: { name: string; css: string };
 			if (builtinId) {
 				// Built-ins are immutable: opening one in the editor FORKS it into a new user theme. Seed
 				// the draft from the preset's CSS under its name, and treat it as brand-new (no in-place
 				// save).
 				setThemeOpenedName('');
-				setThemeDraftName(builtinById(builtinId)?.name ?? builtinId);
-				setThemeDraft(await resolveThemeCss(target));
+				opened = {
+					name: builtinById(builtinId)?.name ?? builtinId,
+					css: await resolveThemeCss(target)
+				};
 			} else {
 				setThemeOpenedName(target || '');
-				setThemeDraftName(target || 'custom');
-				setThemeDraft(
-					target
-						? await loadThemeCss(target)
-						: ':root {\n\t--np-accent: #77c4d3;\n\t--np-fg: #ffffff;\n}\n'
-				);
+				opened = {
+					name: target || 'custom',
+					css: target ? await loadThemeCss(target) : STARTER_THEME_CSS
+				};
 			}
+			setThemeDraftName(opened.name);
+			setThemeDraft(opened.css);
+			setThemeOpened(opened);
 			setThemeEditorOpen(true);
 		},
 		[selectedTheme]
@@ -259,6 +275,7 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 		themeDraftName,
 		setThemeDraftName,
 		themeNameRef,
+		themeEditorDirty,
 		openThemeEditor,
 		saveThemeEditor,
 		duplicateTheme,

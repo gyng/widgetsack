@@ -68,25 +68,40 @@ export const registerLlmPlugin = (): void =>
 					configFields: [
 						{
 							key: 'prompt',
+							group: 'Data',
 							label: 'prompt',
 							kind: 'text',
 							help: 'what to ask the AI (your live sensors are included automatically)'
 						},
 						{
 							key: 'schedule',
+							group: 'Behaviour',
 							label: 'schedule',
 							kind: 'text',
 							help: 'how often to refresh: an interval (30s, 5m, 2h), a cron expr (e.g. 0 9 * * *), or "manual"'
 						},
 						{
 							key: 'sensors',
+							group: 'Data',
 							label: 'sensors',
 							kind: 'text',
 							help: 'comma-separated sensor ids to feed the prompt, or "auto"'
 						},
-						{ key: 'speak', label: 'read aloud', kind: 'toggle', help: 'speak each update (TTS)' },
-						{ key: 'label', label: 'label', kind: 'text', help: 'header text' },
-						{ key: 'color', label: 'color', kind: 'color', help: 'text colour (blank = theme)' }
+						{
+							key: 'speak',
+							label: 'read aloud',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'speak each update (TTS)'
+						},
+						{ key: 'label', label: 'label', kind: 'text', group: 'Data', help: 'header text' },
+						{
+							key: 'color',
+							label: 'colour',
+							kind: 'color',
+							group: 'Appearance',
+							help: 'text colour (blank = theme)'
+						}
 					]
 				},
 				component: asMeter(AssistantHost)
@@ -115,6 +130,7 @@ export const registerLlmPlugin = (): void =>
 					configFields: [
 						{
 							key: 'mode',
+							group: 'Data',
 							label: 'mode',
 							kind: 'select',
 							options: ['transcribe', 'translate'],
@@ -122,18 +138,21 @@ export const registerLlmPlugin = (): void =>
 						},
 						{
 							key: 'targetLang',
+							group: 'Data',
 							label: 'translate to',
 							kind: 'text',
 							help: 'target language for translate mode (e.g. English, Spanish, 日本語)'
 						},
 						{
 							key: 'sourceLang',
+							group: 'Data',
 							label: 'spoken language',
 							kind: 'text',
 							help: 'a hint for accuracy, or "auto" to detect (e.g. auto, en, ja, es)'
 						},
 						{
 							key: 'audioSource',
+							group: 'Data',
 							label: 'microphone',
 							kind: 'select',
 							options: [],
@@ -142,13 +161,26 @@ export const registerLlmPlugin = (): void =>
 						},
 						{
 							key: 'model',
+							group: 'Data',
 							label: 'transcription model',
 							kind: 'text',
 							help: 'blank = provider default (whisper-1); e.g. gpt-4o-transcribe, gpt-4o-mini-transcribe'
 						},
-						{ key: 'speak', label: 'read aloud', kind: 'toggle', help: 'speak the result (TTS)' },
-						{ key: 'label', label: 'label', kind: 'text', help: 'header text' },
-						{ key: 'color', label: 'color', kind: 'color', help: 'text colour (blank = theme)' }
+						{
+							key: 'speak',
+							label: 'read aloud',
+							kind: 'toggle',
+							group: 'Behaviour',
+							help: 'speak the result (TTS)'
+						},
+						{ key: 'label', label: 'label', kind: 'text', group: 'Data', help: 'header text' },
+						{
+							key: 'color',
+							label: 'colour',
+							kind: 'color',
+							group: 'Appearance',
+							help: 'text colour (blank = theme)'
+						}
 					]
 				},
 				component: asMeter(Transcribe)
