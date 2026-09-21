@@ -76,6 +76,9 @@ export async function createPackageSandbox(script: string): Promise<CreateSandbo
 				return { ok: false, error: 'returned malformed JSON' };
 			}
 		} catch (err) {
+			/* v8 ignore next 2 -- host-side throw: quickjs-emscripten reports a deadline interrupt either
+			   as an error RESULT (the arm above) or, timing-dependent, as a thrown error — the runaway
+			   test reaches this arm only sometimes, which flaked the 100% coverage gate in CI. */
 			return { ok: false, error: String(err) };
 		} finally {
 			/* v8 ignore next -- reset handlers are installed for later calls, not invoked by this call. */
