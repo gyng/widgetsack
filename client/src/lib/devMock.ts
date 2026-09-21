@@ -93,6 +93,9 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 				};
 			case COMMANDS.getAppUpdate:
 				return null;
+			case COMMANDS.getAppPrefs:
+			case COMMANDS.setUpdateCheck:
+				return { update_check: false };
 			case COMMANDS.openUrl:
 			case COMMANDS.revealLogDir:
 				return undefined;

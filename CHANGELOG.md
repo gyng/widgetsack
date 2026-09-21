@@ -52,9 +52,11 @@ Notable changes per release. Older releases are described by their auto-generate
 
 ### Added
 
-- **Update notification.** The app now checks GitHub for a newer release shortly after start and every
-  six hours, shows it in the tray ("Update available: vX"), as a badge on the studio's Settings entry,
-  and on the About tab with an "Open release page" button. No automatic download or install.
+- **Update notification (opt-in, off by default).** Settings → About → "check for updates
+  automatically" makes the app ask GitHub for a newer release shortly after start and every six hours,
+  and show it in the tray ("Update available: vX"), as a badge on the studio's Settings entry, and on
+  the About tab with an "Open release page" button. Nothing is downloaded or installed automatically,
+  and nothing is polled unless you turn it on; the manual "Check for updates" button always works.
 - **Diagnostics: logs pane, copy diagnostics, log folder.** The Diagnostics tab shows the app log
   (level and target filters, quick chips for the watchdog, display changes, and overlay refits), a
   "Copy diagnostics" button that composes a report (version, monitors with stable keys, process

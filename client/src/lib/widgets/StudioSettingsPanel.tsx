@@ -3,12 +3,18 @@
 // the prefs/handlers it surfaces stay owned by Canvas and arrive as grouped props; the only module
 // calls it makes itself are the stateless overlay helpers (devtools / rescue / clipboard). Lazy-
 // loaded like the other studio panels (Canvas's lazy() block), so the overlay never fetches it.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { Rect } from '../core/layout';
 import type { ControlOverrides, Trigger } from '../core/controls';
 import type { OverlayLayer, OverlayPrefs } from './canvas/overlayPrefs';
 import { checkAppUpdate, copyToClipboard, openDevtools, rescueWindows } from '../overlay';
-import { appUpdateStore, openReleasePage, useAppUpdate } from '../appUpdate';
+import {
+	appUpdateStore,
+	getAppPrefs,
+	openReleasePage,
+	setUpdateCheck,
+	useAppUpdate
+} from '../appUpdate';
 import { updateStatusLine } from '../core/updateNotice';
 import ControlsPanel from './ControlsPanel';
 import DiagnosticsPanel from './DiagnosticsPanel';
@@ -24,6 +30,28 @@ type AppUpdateState = { kind: 'idle' } | { kind: 'busy' } | { kind: 'error'; mes
 function AppUpdateCheck() {
 	const known = useAppUpdate();
 	const [state, setState] = useState<AppUpdateState>({ kind: 'idle' });
+	// The background check is opt-in (off by default): a periodic call to GitHub the user never
+	// asked for. Read the persisted pref on mount; the toggle writes through and, when enabling,
+	// the backend runs a check immediately.
+	const [autoCheck, setAutoCheck] = useState<boolean | null>(null);
+	useEffect(() => {
+		let alive = true;
+		getAppPrefs().then((p) => {
+			if (alive) setAutoCheck(p.update_check);
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
+	const onToggleAuto = async (enabled: boolean) => {
+		setAutoCheck(enabled); // optimistic
+		try {
+			setAutoCheck((await setUpdateCheck(enabled)).update_check);
+		} catch (err) {
+			setAutoCheck(!enabled);
+			setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
+		}
+	};
 	const onCheck = async () => {
 		setState({ kind: 'busy' });
 		try {
@@ -36,6 +64,16 @@ function AppUpdateCheck() {
 	return (
 		<>
 			<div className="rp-hd">Updates</div>
+			<label className="rp-row" style={{ cursor: 'pointer' }}>
+				<span>check for updates automatically</span>
+				<input
+					type="checkbox"
+					checked={autoCheck ?? false}
+					disabled={autoCheck === null}
+					onChange={(e) => void onToggleAuto(e.currentTarget.checked)}
+					title="Off by default. When on, the app asks GitHub for the latest release every 6 hours and shows it in the tray and here. Nothing is downloaded or installed automatically."
+				/>
+			</label>
 			<div className="pl-desc">{updateStatusLine(known)}</div>
 			{known?.updateAvailable && (
 				<div className="rp-row">

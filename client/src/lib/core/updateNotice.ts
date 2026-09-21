@@ -12,6 +12,12 @@ export type AppUpdate = {
 };
 
 /** The serde shape on the wire (`check_app_update` / `get_app_update` / the `app_update` event). */
+/** App-level preferences. Mirrors `AppPrefs` in widgetsack/src/update.rs (prefs.json). */
+export type AppPrefs = { update_check: boolean };
+
+/** Defaults when the backend can't be reached (outside Tauri): the background check is OPT-IN. */
+export const DEFAULT_APP_PREFS: AppPrefs = { update_check: false };
+
 export type AppUpdateWire = {
 	current: string;
 	latest: string;

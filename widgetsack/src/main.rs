@@ -310,6 +310,8 @@ async fn main() -> Result<(), ()> {
             command::log_client,
             command::check_app_update,
             update::get_app_update,
+            update::get_app_prefs,
+            update::set_update_check,
             update::open_url,
             diag::log_file_path,
             diag::reveal_log_dir,
@@ -506,10 +508,12 @@ async fn main() -> Result<(), ()> {
                 .build(app)?;
             // "Update available: vX.Y.Z" — disabled until the background check (update.rs) finds a
             // newer release; clicking opens that release's GitHub page. There is no auto-installer.
-            let update_item =
-                MenuItemBuilder::with_id(update::TRAY_ITEM_ID, "Checking for updates…")
-                    .enabled(false)
-                    .build(app)?;
+            let update_item = MenuItemBuilder::with_id(
+                update::TRAY_ITEM_ID,
+                "Update checks off (Settings → About)",
+            )
+            .enabled(false)
+            .build(app)?;
             update::set_tray_item(app.handle(), update_item.clone());
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
             let tray_menu = MenuBuilder::new(app)
