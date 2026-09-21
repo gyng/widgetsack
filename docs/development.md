@@ -40,10 +40,11 @@ $ (cd client && npm run lint)        # Prettier + ESLint
 ## Release
 
 The installer is attached to the release **before** it goes public: the build workflow
-([build.yml](../.github/workflows/build.yml)) triggers on `release: created`, which fires for
-**draft** releases, so create the release as a draft, wait for the build, then publish. The app's
-own background update check (`update.rs`, GitHub "latest release") only sees published releases,
-so nobody is pointed at an asset-less release.
+([build.yml](../.github/workflows/build.yml)) triggers on a pushed `v*` **tag** (GitHub does not run
+`release` workflows for draft releases) and uploads to the draft release of the same tag, so create
+the draft, push the tag, wait for the build, then publish. The app's own background update check
+(`update.rs`, GitHub "latest release") only sees published releases, so nobody is pointed at an
+asset-less release.
 
 1. Bump the version in [widgetsack/tauri.conf.json](../widgetsack/tauri.conf.json),
    [widgetsack/Cargo.toml](../widgetsack/Cargo.toml) and [client/package.json](../client/package.json)
@@ -58,10 +59,11 @@ so nobody is pointed at an asset-less release.
    ```
 
    (or just `--notes-file release-notes.md` with the section pasted out of the CHANGELOG).
-4. Wait for the "Build release" workflow the draft triggered to finish — it builds, uploads the
-   installer with retries, and attests provenance:
+4. Push the tag (a draft creates no git tag by itself) — this triggers the "Build release"
+   workflow, which builds, uploads the installer to the draft with retries, and attests provenance:
 
    ```sh
+   $ git tag v0.0.56 && git push origin v0.0.56
    $ gh run watch --workflow "Build release"
    $ gh release view v0.0.56   # the *-setup.exe asset should be listed
    ```
