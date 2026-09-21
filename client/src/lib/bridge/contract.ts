@@ -27,6 +27,8 @@ export const EVENTS = {
 	// foreign-window drag watcher (windowmgr.rs)
 	winDragStart: 'win_drag_start',
 	winDragEnd: 'win_drag_end',
+	// background app-update check result (update.rs → lib/appUpdate.ts)
+	appUpdate: 'app_update',
 	// client↔client only (never emitted by Rust; centralized for the same one-source reason)
 	overlayLayerStatus: 'overlay_layer_status',
 	diagRequest: 'diag:request',
@@ -47,6 +49,8 @@ export const COMMANDS = {
 	saveLayout: 'save_layout',
 	backupLayout: 'backup_layout',
 	windowStateHints: 'window_state_hints',
+	// main → keepalive: why `main` is destroying itself (empty everywhere vs. secondaries populated)
+	mainReclaimed: 'main_reclaimed',
 	listLayouts: 'list_layouts',
 	readLayout: 'read_layout',
 	saveLayoutAs: 'save_layout_as',
@@ -100,6 +104,12 @@ export const COMMANDS = {
 	getLogs: 'get_logs',
 	// app update check — GitHub latest release vs the running version (command.rs)
 	checkAppUpdate: 'check_app_update',
+	// background update check (update.rs): last result + open the release page in the browser
+	getAppUpdate: 'get_app_update',
+	openUrl: 'open_url',
+	// log file location / reveal (diag.rs) for the Diagnostics tab
+	logFilePath: 'log_file_path',
+	revealLogDir: 'reveal_log_dir',
 	// fonts (command.rs)
 	systemFonts: 'system_fonts',
 	// sensors / telemetry demand-gating (sensors.rs)

@@ -47,6 +47,7 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.listWallpapers:
 			case COMMANDS.getLogs:
 			case COMMANDS.systemFonts:
+			case COMMANDS.mainReclaimed:
 			case COMMANDS.windowStateHints:
 			case COMMANDS.listDisplayNames:
 				// 'list_display_names' (Windows-only friendly monitor names) has no real displays under the
@@ -81,7 +82,8 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.isDevInstance:
 				return false;
 
-			// --- app update check: pretend we're current ---
+			// --- app update check: pretend we're current; no background result yet; opening a URL and
+			// revealing the log dir are no-ops; the log path is a fixed fake. ---
 			case COMMANDS.checkAppUpdate:
 				return {
 					current: '0.0.0',
@@ -89,6 +91,13 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 					url: 'https://github.com/gyng/widgetsack/releases',
 					update_available: false
 				};
+			case COMMANDS.getAppUpdate:
+				return null;
+			case COMMANDS.openUrl:
+			case COMMANDS.revealLogDir:
+				return undefined;
+			case COMMANDS.logFilePath:
+				return 'C:/mock/logs/widgetsack.log';
 
 			// --- Home Assistant proxy: not configured, no entities. Catalogs MUST be [] (not null) —
 			// ha-source caches the result and later .map()s it; a null would throw on the next read. ---

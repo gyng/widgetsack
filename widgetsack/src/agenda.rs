@@ -348,8 +348,13 @@ pub async fn save_agenda_config(
 }
 
 #[tauri::command]
-pub fn agenda_config_status<R: Runtime>(app: AppHandle<R>) -> Result<AgendaStatus, String> {
-    match load_agenda_config(&app)? {
+pub async fn agenda_config_status<R: Runtime>(app: AppHandle<R>) -> Result<AgendaStatus, String> {
+    // The file read + DPAPI decrypt run on the blocking pool: a sync command would do them on
+    // the UI thread, and this is polled by every window's settings/status probe.
+    let cfg = tokio::task::spawn_blocking(move || load_agenda_config(&app))
+        .await
+        .map_err(|e| e.to_string())??;
+    match cfg {
         Some(cfg) => Ok(AgendaStatus {
             configured: has_feed(&cfg),
             url: cfg.url,

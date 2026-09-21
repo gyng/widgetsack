@@ -131,6 +131,61 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
+// ---- liveness budgets ----
+// A half-open socket (HA host suspended, Wi-Fi drop, a NAT that forgot the flow) delivers no
+// frames AND no error: `ws.next()` would wait forever and the client would report "connected"
+// while streaming nothing. Every network wait below is bounded, and the stream is actively probed.
+
+/// TCP + TLS + WebSocket upgrade (and each handshake frame) must complete within this.
+const WS_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// `{"type":"ping"}` cadence on the streaming socket (HA answers with a `pong` of the same id).
+const WS_PING_INTERVAL: Duration = Duration::from_secs(30);
+/// No frame at all — or a ping unanswered — for this long is a dead socket: error → reconnect.
+const WS_READ_TIMEOUT: Duration = Duration::from_secs(90);
+/// Budget for the short REST calls (`/api/states`, a service call) and every connect.
+const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Pure seam for the application-level ping/pong: tracks the OLDEST unanswered ping so a socket
+/// that keeps accepting our pings but never answers is declared dead after `timeout`.
+struct Heartbeat {
+    timeout: Duration,
+    unanswered_since: Option<Instant>,
+}
+
+impl Heartbeat {
+    fn new(timeout: Duration) -> Self {
+        Heartbeat {
+            timeout,
+            unanswered_since: None,
+        }
+    }
+
+    /// Called on each ping tick BEFORE the next ping is sent. `Err` once the oldest unanswered ping
+    /// is `timeout` old; otherwise records this ping as outstanding (if none already is).
+    fn on_tick(&mut self, now: Instant) -> Result<(), String> {
+        if let Some(since) = self.unanswered_since
+            && now.duration_since(since) >= self.timeout
+        {
+            return Err(format!(
+                "no pong from HA in {}s",
+                now.duration_since(since).as_secs()
+            ));
+        }
+        self.unanswered_since.get_or_insert(now);
+        Ok(())
+    }
+
+    /// Any pong clears the outstanding window (ids are monotonic, so a late pong still proves life).
+    fn on_pong(&mut self) {
+        self.unanswered_since = None;
+    }
+}
+
+/// The HA WebSocket ping frame for `id` (`{"id":n,"type":"ping"}`).
+fn ping_frame(id: u64) -> String {
+    json!({ "id": id, "type": "ping" }).to_string()
+}
+
 // ---- config I/O (server-side; token never leaves) ----
 
 fn ha_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
@@ -188,7 +243,7 @@ fn rest_base(url: &str, base: &str) -> String {
 /// BOTH cert and hostname verification — because a self-signed LAN cert usually also has an
 /// IP/CN-SAN mismatch, so cert-only would still fail REST hostname checks while wss streamed.
 fn ha_http_client(insecure: bool) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder();
+    let mut builder = reqwest::Client::builder().connect_timeout(HTTP_TIMEOUT);
     if insecure {
         builder = builder
             .danger_accept_invalid_certs(true)
@@ -412,8 +467,17 @@ fn emit_snapshot<R: Runtime>(app: &AppHandle<R>, states: &Value) {
 // ---- connection task ----
 
 /// Read frames until one of type `expected` arrives (ignoring unrelated frames). Treats
-/// `auth_invalid` and a closed/ended stream as errors.
+/// `auth_invalid`, a closed/ended stream, and `WS_CONNECT_TIMEOUT` of silence as errors.
 async fn expect_type<S>(ws: &mut S, expected: &str) -> Result<(), BoxErr>
+where
+    S: Stream<Item = Result<Message, WsError>> + Unpin,
+{
+    tokio::time::timeout(WS_CONNECT_TIMEOUT, expect_type_inner(ws, expected))
+        .await
+        .map_err(|_| format!("timed out waiting for `{expected}` during handshake"))?
+}
+
+async fn expect_type_inner<S>(ws: &mut S, expected: &str) -> Result<(), BoxErr>
 where
     S: Stream<Item = Result<Message, WsError>> + Unpin,
 {
@@ -442,6 +506,12 @@ where
 /// accepts self-signed certs (explicit opt-in only). Shared by the live client and
 /// `ha_test_connection` so the two TLS paths cannot drift.
 async fn connect_ws(ws_url: &str, insecure: bool) -> Result<WsStream, BoxErr> {
+    tokio::time::timeout(WS_CONNECT_TIMEOUT, connect_ws_inner(ws_url, insecure))
+        .await
+        .map_err(|_| format!("connect timed out after {}s", WS_CONNECT_TIMEOUT.as_secs()))?
+}
+
+async fn connect_ws_inner(ws_url: &str, insecure: bool) -> Result<WsStream, BoxErr> {
     if insecure {
         let tls = native_tls::TlsConnector::builder()
             .danger_accept_invalid_certs(true)
@@ -487,7 +557,10 @@ async fn ws_request_many(
     let mut results: Vec<Option<Value>> = vec![None; commands.len()];
     let mut remaining = commands.len();
     while remaining > 0 {
-        match ws.next().await {
+        let next = tokio::time::timeout(WS_READ_TIMEOUT, ws.next())
+            .await
+            .map_err(|_| "timed out waiting for registry results")?;
+        match next {
             Some(msg) => match msg? {
                 Message::Text(txt) => {
                     let v: Value = serde_json::from_str(&txt)?;
@@ -548,11 +621,40 @@ async fn connect_and_stream<R: Runtime>(
     .to_string();
     ws.send(Message::Text(subscribe)).await?;
 
-    while let Some(msg) = ws.next().await {
+    // Liveness: an idle deadline (no frame of any kind for WS_READ_TIMEOUT) plus an app-level
+    // ping every WS_PING_INTERVAL whose pong must arrive within the same budget. Either failing
+    // is an error, so the outer loop reconnects instead of sitting on a dead socket forever.
+    let mut heartbeat = Heartbeat::new(WS_READ_TIMEOUT);
+    let mut ping = tokio::time::interval(WS_PING_INTERVAL);
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ping.tick().await; // the first tick is immediate; the next is one interval out
+    let mut last_frame = tokio::time::Instant::now();
+
+    loop {
+        let idle = tokio::time::sleep_until(last_frame + WS_READ_TIMEOUT);
+        let msg = tokio::select! {
+            _ = idle => {
+                return Err(format!(
+                    "no frame from HA in {}s",
+                    WS_READ_TIMEOUT.as_secs()
+                )
+                .into());
+            }
+            _ = ping.tick() => {
+                heartbeat.on_tick(Instant::now())?;
+                let id = next_id.fetch_add(1, Ordering::SeqCst);
+                ws.send(Message::Text(ping_frame(id))).await?;
+                continue;
+            }
+            msg = ws.next() => msg,
+        };
+        let Some(msg) = msg else { break };
+        last_frame = tokio::time::Instant::now();
         match msg? {
             Message::Text(txt) => {
                 let v: Value = serde_json::from_str(&txt)?;
                 match v["type"].as_str() {
+                    Some("pong") => heartbeat.on_pong(),
                     Some("result") => {
                         let id = v["id"].as_u64();
                         if v["success"].as_bool().unwrap_or(false) {
@@ -706,8 +808,13 @@ pub async fn ha_test_connection(
 
 /// Whether HA is configured + its URL — NEVER the token.
 #[tauri::command]
-pub fn ha_config_status<R: Runtime>(app: AppHandle<R>) -> Result<HaStatus, String> {
-    match load_ha_config(&app)? {
+pub async fn ha_config_status<R: Runtime>(app: AppHandle<R>) -> Result<HaStatus, String> {
+    // The file read + DPAPI decrypt run on the blocking pool: a sync command would do them on
+    // the UI thread, and this is polled by every window's settings/status probe.
+    let cfg = tokio::task::spawn_blocking(move || load_ha_config(&app))
+        .await
+        .map_err(|e| e.to_string())??;
+    match cfg {
         Some(cfg) => Ok(HaStatus {
             configured: true,
             url: Some(cfg.url),
@@ -766,6 +873,7 @@ pub async fn list_ha_entities<R: Runtime>(app: AppHandle<R>) -> Result<Vec<HaEnt
             rest_base(&cfg.url, &cfg.base_path)
         ))
         .bearer_auth(&cfg.token)
+        .timeout(HTTP_TIMEOUT)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -834,6 +942,7 @@ pub async fn ha_call_service<R: Runtime>(
         ))
         .bearer_auth(&cfg.token)
         .json(&data)
+        .timeout(HTTP_TIMEOUT)
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -940,6 +1049,39 @@ pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn heartbeat_errors_once_a_ping_goes_unanswered_past_the_timeout() {
+        let t0 = Instant::now();
+        let at = |secs: u64| t0 + Duration::from_secs(secs);
+        let mut hb = Heartbeat::new(Duration::from_secs(90));
+        // Pings at 0 / 30 / 60 s with no pong: still within budget…
+        assert!(hb.on_tick(at(0)).is_ok());
+        assert!(hb.on_tick(at(30)).is_ok());
+        assert!(hb.on_tick(at(60)).is_ok());
+        // …the tick at 90 s finds the FIRST ping (t=0) unanswered for the full timeout → dead.
+        let err = hb.on_tick(at(90)).unwrap_err();
+        assert!(err.contains("no pong"), "{err}");
+    }
+
+    #[test]
+    fn heartbeat_pong_resets_the_window() {
+        let t0 = Instant::now();
+        let at = |secs: u64| t0 + Duration::from_secs(secs);
+        let mut hb = Heartbeat::new(Duration::from_secs(90));
+        assert!(hb.on_tick(at(0)).is_ok());
+        hb.on_pong();
+        // 100 s later than the first ping, but that one was answered — the window restarted here.
+        assert!(hb.on_tick(at(100)).is_ok());
+        assert!(hb.on_tick(at(150)).is_ok());
+        assert!(hb.on_tick(at(190)).is_err());
+    }
+
+    #[test]
+    fn ping_frame_is_the_ha_ws_ping_shape() {
+        let v: Value = serde_json::from_str(&ping_frame(7)).unwrap();
+        assert_eq!(v, serde_json::json!({ "id": 7, "type": "ping" }));
+    }
 
     #[test]
     fn valid_entity_id_accepts_slugs_rejects_injection() {

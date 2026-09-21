@@ -5,8 +5,22 @@
 // window whose webview crashed — and therefore stopped reporting — still appears (marked "not
 // responding") instead of vanishing. Its recovery controls (open devtools, drop click-through) go
 // through the backend too, so they work even when that window's own JS is dead. All cross-window
-// plumbing lives in lib/diag.ts; the folds/shapes in core/diagnostics.ts.
+// plumbing lives in lib/diag.ts; the folds/shapes in core/diagnostics.ts. The Logs pane below
+// streams the backend's structured log (lib/logs.ts) and "Copy diagnostics" composes a text report
+// (core/diagnosticsReport.ts) for a bug report — version, monitors, host process, and the
+// watchdog / display-watch / overlay-refit trail plus recent warnings.
 import { useEffect, useState } from 'react';
+import {
+	LOG_CHIPS,
+	composeDiagnosticsReport,
+	filterLogs,
+	formatLogLine,
+	matchesChip,
+	type ReportMonitor
+} from '../core/diagnosticsReport';
+import { LOG_LEVELS, type LogLevel, type LogRecord } from '../core/logs';
+import { getLogFilePath, getLogs, revealLogDir, subscribeLogs } from '../logs';
+import { copyToClipboard, studioMonitorOptions } from '../overlay';
 import {
 	heapUsedFraction,
 	mergeReport,
@@ -35,8 +49,13 @@ const POLL_MS = 1500;
 // A window that hasn't reported within this window is treated as not responding (closed / crashed). It
 // stays listed (the backend still knows the OS window) so it can be rescued / inspected by label.
 const STALE_MS = 6000;
+// Log lines kept client-side (matches the backend ring buffer) and shown in the pane at once.
+const LOG_KEEP = 1000;
+const LOG_SHOW = 200;
 
-export default function DiagnosticsPanel() {
+type Props = { appVersion?: string | null };
+
+export default function DiagnosticsPanel({ appVersion = null }: Props) {
 	const [reports, setReports] = useState<Record<string, WindowDiag>>({});
 	// Authoritative window labels from the backend — the source of truth for which windows exist.
 	const [labels, setLabels] = useState<string[]>([]);
@@ -53,6 +72,32 @@ export default function DiagnosticsPanel() {
 	// Wall clock used only for staleness, refreshed on each poll — keeps `performance.now()` (impure)
 	// out of the render body while giving mergeWindowList a monotonically-advancing "now".
 	const [now, setNow] = useState(() => performance.now());
+	// Backend structured log: the backlog on mount, then the live stream (capped like the backend).
+	const [logs, setLogs] = useState<LogRecord[]>([]);
+	const [minLevel, setMinLevel] = useState<LogLevel>('warn');
+	const [targetText, setTargetText] = useState('');
+	const [chip, setChip] = useState<string | null>(null);
+	const [logPath, setLogPath] = useState<string | null>(null);
+	const [copyStatus, setCopyStatus] = useState<string | null>(null);
+
+	useEffect(() => {
+		let alive = true;
+		// The backend buffers a record BEFORE emitting it, so the backlog already holds anything
+		// streamed while this request was in flight — replace rather than merge.
+		void getLogs().then((backlog) => {
+			if (alive) setLogs(backlog.slice(-LOG_KEEP));
+		});
+		const off = subscribeLogs((r) => {
+			if (alive) setLogs((prev) => [...prev, r].slice(-LOG_KEEP));
+		});
+		void getLogFilePath().then((p) => {
+			if (alive) setLogPath(p);
+		});
+		return () => {
+			alive = false;
+			void off.then((un) => un());
+		};
+	}, []);
 
 	useEffect(() => {
 		let alive = true;
@@ -106,8 +151,58 @@ export default function DiagnosticsPanel() {
 		void setWindowInteractive(label, value);
 	};
 
+	// A chip narrows to its target (+ component) at the chosen level; otherwise the free-text filter.
+	const activeChip = LOG_CHIPS.find((c) => c.id === chip);
+	const visibleLogs = (
+		activeChip
+			? filterLogs(logs, { minLevel, target: '' }).filter((r) => matchesChip(r, activeChip))
+			: filterLogs(logs, { minLevel, target: targetText })
+	).slice(-LOG_SHOW);
+
+	const copyReport = async (): Promise<void> => {
+		let monitors: ReportMonitor[] = [];
+		try {
+			monitors = await studioMonitorOptions();
+		} catch {
+			/* no monitor bridge (tests / browser) — the report says so */
+		}
+		const text = composeDiagnosticsReport({
+			appVersion,
+			now: Date.now(),
+			monitors,
+			process: proc,
+			logs,
+			logFilePath: logPath
+		});
+		const ok = await copyToClipboard(text);
+		setCopyStatus(ok ? 'copied' : 'copy failed');
+	};
+
 	return (
 		<div className="diag">
+			<div className="diag-actions">
+				<button
+					type="button"
+					onClick={() => void copyReport()}
+					title="Copy a text report (version, monitors, host process, watchdog/display/overlay trail + recent warnings) to paste into a bug report"
+				>
+					⎘ Copy diagnostics
+				</button>
+				<button
+					type="button"
+					onClick={() => void revealLogDir()}
+					title="Open the folder holding widgetsack.log in Explorer"
+				>
+					▤ Open log folder
+				</button>
+				{copyStatus && <span className="dim">{copyStatus}</span>}
+			</div>
+			<div
+				className="dim"
+				title="The rotating JSON-lines log the backend writes (survives a crash)"
+			>
+				log file: <code>{logPath ?? 'unknown'}</code>
+			</div>
 			{proc && (
 				<div className="diag-win diag-proc">
 					<div className="diag-win-hd">
@@ -291,6 +386,72 @@ export default function DiagnosticsPanel() {
 					);
 				})
 			)}
+			<div className="diag-win">
+				<div className="diag-win-hd">
+					<span className="diag-label">logs</span>
+					<span className="dim">
+						{visibleLogs.length} shown · {logs.length} buffered
+					</span>
+				</div>
+				<div className="diag-actions" style={{ flexWrap: 'wrap', gap: 'var(--space-2)' }}>
+					<label className="diag-toggle">
+						level ≥{' '}
+						<select
+							aria-label="Minimum log level"
+							value={minLevel}
+							onChange={(e) => setMinLevel(e.currentTarget.value as LogLevel)}
+						>
+							{LOG_LEVELS.map((l) => (
+								<option key={l} value={l}>
+									{l}
+								</option>
+							))}
+						</select>
+					</label>
+					<input
+						type="text"
+						aria-label="Filter by target"
+						placeholder="target…"
+						value={targetText}
+						onChange={(e) => {
+							setTargetText(e.currentTarget.value);
+							setChip(null);
+						}}
+						style={{ width: '9em' }}
+					/>
+					{LOG_CHIPS.map((c) => (
+						<button
+							type="button"
+							key={c.id}
+							aria-pressed={chip === c.id}
+							onClick={() => setChip((cur) => (cur === c.id ? null : c.id))}
+							style={chip === c.id ? undefined : { opacity: 0.6 }}
+						>
+							{c.label}
+						</button>
+					))}
+				</div>
+				{visibleLogs.length === 0 ? (
+					<div className="rp-stub">No log lines match.</div>
+				) : (
+					<pre
+						className="diag-log"
+						style={{
+							margin: 0,
+							maxHeight: 240,
+							overflow: 'auto',
+							whiteSpace: 'pre-wrap',
+							fontSize: 'var(--text-sm)'
+						}}
+					>
+						{visibleLogs.map((r, i) => (
+							<div key={`${r.ts_ms}-${i}`} data-level={r.level}>
+								{formatLogLine(r)}
+							</div>
+						))}
+					</pre>
+				)}
+			</div>
 			<div className="rp-stub diag-note">
 				Watch an overlay’s heap climb to confirm a leak; a steadily-rising “art” total is the
 				media-store fingerprint. A “not responding” window has likely crashed — “interactive” (or

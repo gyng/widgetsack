@@ -8,31 +8,27 @@ import type { Rect } from '../core/layout';
 import type { ControlOverrides, Trigger } from '../core/controls';
 import type { OverlayLayer, OverlayPrefs } from './canvas/overlayPrefs';
 import { checkAppUpdate, copyToClipboard, openDevtools, rescueWindows } from '../overlay';
+import { appUpdateStore, openReleasePage, useAppUpdate } from '../appUpdate';
+import { updateStatusLine } from '../core/updateNotice';
 import ControlsPanel from './ControlsPanel';
 import DiagnosticsPanel from './DiagnosticsPanel';
 import mascotUrl from '../../assets/mascot.png';
 
-// About → "Check for updates": asks the backend (GitHub latest release vs the running version) on
-// demand and reports the result inline. Local state only — closing the panel resets it, which is
-// fine for a manual check (mirrors the per-package update check in PluginsPanel).
-type AppUpdateState =
-	| { kind: 'idle' }
-	| { kind: 'busy' }
-	| { kind: 'current'; current: string }
-	| { kind: 'update'; latest: string; url: string }
-	| { kind: 'error'; message: string };
+// About → Updates: the backend's background checker (update.rs) keeps the last result and pushes
+// new ones; `useAppUpdate` mirrors that here so the tab shows "vX available — Open release page"
+// without a click. "Check for updates" still runs an on-demand check (its result is pushed into the
+// same store so the badge / tray agree). There is no auto-installer — opening the release page in
+// the browser is the whole affordance. Local state is only the in-flight / error status.
+type AppUpdateState = { kind: 'idle' } | { kind: 'busy' } | { kind: 'error'; message: string };
 
 function AppUpdateCheck() {
+	const known = useAppUpdate();
 	const [state, setState] = useState<AppUpdateState>({ kind: 'idle' });
 	const onCheck = async () => {
 		setState({ kind: 'busy' });
 		try {
-			const r = await checkAppUpdate();
-			setState(
-				r.updateAvailable
-					? { kind: 'update', latest: r.latest, url: r.url }
-					: { kind: 'current', current: r.current }
-			);
+			appUpdateStore.set(await checkAppUpdate());
+			setState({ kind: 'idle' });
 		} catch (err) {
 			setState({ kind: 'error', message: err instanceof Error ? err.message : String(err) });
 		}
@@ -40,20 +36,27 @@ function AppUpdateCheck() {
 	return (
 		<>
 			<div className="rp-hd">Updates</div>
+			<div className="pl-desc">{updateStatusLine(known)}</div>
+			{known?.updateAvailable && (
+				<div className="rp-row">
+					<span>v{known.latest} available</span>
+					<span>
+						<button
+							type="button"
+							onClick={() => void openReleasePage(known.url)}
+							title="Open the release page in your browser (there is no auto-installer)"
+						>
+							↗ Open release page
+						</button>{' '}
+						<button type="button" onClick={() => void copyToClipboard(known.url)}>
+							copy link
+						</button>
+					</span>
+				</div>
+			)}
 			<button type="button" disabled={state.kind === 'busy'} onClick={() => void onCheck()}>
 				{state.kind === 'busy' ? 'Checking…' : '⟳ Check for updates'}
 			</button>
-			{state.kind === 'current' && (
-				<div className="pl-desc">You’re up to date (v{state.current}).</div>
-			)}
-			{state.kind === 'update' && (
-				<div className="rp-row">
-					<span>v{state.latest} available</span>
-					<button type="button" onClick={() => void copyToClipboard(state.url)}>
-						copy link
-					</button>
-				</div>
-			)}
 			{state.kind === 'error' && (
 				<div className="pl-desc" title={state.message}>
 					Update check failed: {state.message}
@@ -312,7 +315,7 @@ export default function StudioSettingsPanel({
 						>
 							⛑ Rescue all windows
 						</button>
-						<DiagnosticsPanel />
+						<DiagnosticsPanel appVersion={appVersion} />
 					</>
 				)}
 				{tab === 'about' && (

@@ -2,7 +2,10 @@ name: "Build release"
 on:
   workflow_dispatch:
   release:
-    types: [released]
+    # `created` fires for DRAFT releases too (`released` does not), so the flow is: create the
+    # release as a draft → this build attaches the installer → publish. Assets are on the release
+    # before anyone (or the in-app update check) sees it. See docs/development.md → Release.
+    types: [created]
 
 jobs:
   build-tauri:
@@ -19,6 +22,24 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v6
+      - name: Assert the release tag matches the version files
+        # A tag that disagrees with tauri.conf.json / Cargo.toml would ship an installer whose
+        # embedded version (and the app's own update check) contradicts the release it hangs off.
+        if: github.event_name == 'release'
+        shell: bash
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          conf=$(jq -r .version widgetsack/tauri.conf.json)
+          cargo=$(grep -m1 -E '^version = "' widgetsack/Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/')
+          echo "tag: $TAG · tauri.conf.json: $conf · Cargo.toml: $cargo"
+          if [ "$TAG" != "v$conf" ] || [ "$conf" != "$cargo" ]; then
+            echo "::error::release tag $TAG must equal v<version> in widgetsack/tauri.conf.json ($conf) and widgetsack/Cargo.toml ($cargo)"; exit 1
+          fi
+          if ! grep -qE "^## ${conf//./\.}( |$)" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## $conf' section for this release"; exit 1
+          fi
       - name: setup node
         uses: actions/setup-node@v6
         with:

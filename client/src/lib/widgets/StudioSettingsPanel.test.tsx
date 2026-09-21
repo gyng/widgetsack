@@ -14,6 +14,17 @@ const { checkAppUpdate, copyToClipboard, openDevtools, rescueWindows } = vi.hois
 }));
 vi.mock('../overlay', () => ({ checkAppUpdate, copyToClipboard, openDevtools, rescueWindows }));
 
+// The background update-check mirror (lib/appUpdate.ts): a REAL external store (so the About tab
+// re-renders when a result lands) with the Tauri watch + browser open stubbed out.
+const { openReleasePage } = vi.hoisted(() => ({
+	openReleasePage: vi.fn(() => Promise.resolve(true))
+}));
+vi.mock('../appUpdate', async () => {
+	const { createStore, useStore } = await import('../../stores/createStore');
+	const appUpdateStore = createStore<import('../core/updateNotice').AppUpdate | null>(null);
+	return { appUpdateStore, useAppUpdate: () => useStore(appUpdateStore), openReleasePage };
+});
+
 // The two child panels are tested in isolation; stub them so this test exercises only the settings
 // shell (tab switching + the sections it owns) and can assert they get the pass-through props.
 vi.mock('./ControlsPanel', () => ({
@@ -27,6 +38,7 @@ vi.mock('./DiagnosticsPanel', () => ({
 vi.mock('../../assets/mascot.png', () => ({ default: 'mascot.png' }));
 
 import StudioSettingsPanel, { SETTINGS_TABS, type SettingsTab } from './StudioSettingsPanel';
+import { appUpdateStore } from '../appUpdate';
 
 const baseProps = (over: Partial<Parameters<typeof StudioSettingsPanel>[0]> = {}) => {
 	const workArea: Rect = { x: 0, y: 0, w: 1920, h: 1040 };
@@ -75,6 +87,8 @@ beforeEach(() => {
 	copyToClipboard.mockReset().mockResolvedValue(true);
 	openDevtools.mockReset().mockResolvedValue(undefined);
 	rescueWindows.mockReset().mockResolvedValue(undefined);
+	openReleasePage.mockReset().mockResolvedValue(true);
+	appUpdateStore.set(null);
 });
 
 afterEach(() => vi.restoreAllMocks());
@@ -251,7 +265,7 @@ describe('StudioSettingsPanel — About section', () => {
 	});
 
 	describe('AppUpdateCheck', () => {
-		it('reports "up to date" when no update is available', async () => {
+		it('says no check has run yet, then "up to date" once a manual check finds nothing newer', async () => {
 			checkAppUpdate.mockResolvedValue({
 				updateAvailable: false,
 				current: '1.2.3',
@@ -259,26 +273,50 @@ describe('StudioSettingsPanel — About section', () => {
 				url: 'https://x'
 			});
 			const props = baseProps({ tab: 'about' });
-			const { getByText, findByText } = render(<StudioSettingsPanel {...props} />);
+			const { getByText, findByText, queryByText } = render(<StudioSettingsPanel {...props} />);
+			expect(() => getByText('No update check has run yet.')).not.toThrow();
 			fireEvent.click(getByText(/Check for updates/));
 			// The button flips to a busy label while the check is in flight.
 			expect(() => getByText('Checking…')).not.toThrow();
 			expect(await findByText(/You’re up to date \(v1\.2\.3\)/)).toBeTruthy();
+			expect(queryByText(/Open release page/)).toBeNull();
 		});
 
-		it('offers a copy-link row when an update is available', async () => {
+		it('shows the persisted background result on mount (no click) with Open + copy affordances', async () => {
+			appUpdateStore.set({
+				updateAvailable: true,
+				current: '1.2.3',
+				latest: '1.3.0',
+				url: 'https://github.com/gyng/widgetsack/releases/tag/v1.3.0'
+			});
+			const props = baseProps({ tab: 'about' });
+			const { getByText } = render(<StudioSettingsPanel {...props} />);
+			expect(checkAppUpdate).not.toHaveBeenCalled();
+			expect(() => getByText('v1.3.0 available (you have v1.2.3).')).not.toThrow();
+			fireEvent.click(getByText(/Open release page/));
+			expect(openReleasePage).toHaveBeenCalledWith(
+				'https://github.com/gyng/widgetsack/releases/tag/v1.3.0'
+			);
+			fireEvent.click(getByText('copy link'));
+			await waitFor(() =>
+				expect(copyToClipboard).toHaveBeenCalledWith(
+					'https://github.com/gyng/widgetsack/releases/tag/v1.3.0'
+				)
+			);
+		});
+
+		it('a manual check that finds an update feeds the shared store (badge / tray agree)', async () => {
 			checkAppUpdate.mockResolvedValue({
 				updateAvailable: true,
 				current: '1.2.3',
 				latest: '1.3.0',
-				url: 'https://example/release'
+				url: 'https://github.com/gyng/widgetsack/releases/tag/v1.3.0'
 			});
 			const props = baseProps({ tab: 'about' });
 			const { getByText, findByText } = render(<StudioSettingsPanel {...props} />);
 			fireEvent.click(getByText(/Check for updates/));
-			expect(await findByText('v1.3.0 available')).toBeTruthy();
-			fireEvent.click(getByText('copy link'));
-			await waitFor(() => expect(copyToClipboard).toHaveBeenCalledWith('https://example/release'));
+			expect(await findByText(/Open release page/)).toBeTruthy();
+			expect(appUpdateStore.getSnapshot()?.latest).toBe('1.3.0');
 		});
 
 		it('surfaces an Error message inline when the check throws', async () => {

@@ -346,8 +346,13 @@ pub async fn save_weather_config(
 
 /// The (non-secret) config.
 #[tauri::command]
-pub fn weather_config_status<R: Runtime>(app: AppHandle<R>) -> Result<WeatherStatus, String> {
-    match load_weather_config(&app)? {
+pub async fn weather_config_status<R: Runtime>(app: AppHandle<R>) -> Result<WeatherStatus, String> {
+    // The file read + DPAPI decrypt run on the blocking pool: a sync command would do them on
+    // the UI thread, and this is polled by every window's settings/status probe.
+    let cfg = tokio::task::spawn_blocking(move || load_weather_config(&app))
+        .await
+        .map_err(|e| e.to_string())??;
+    match cfg {
         Some(cfg) => Ok(WeatherStatus {
             configured: has_location(&cfg),
             latitude: cfg.latitude,

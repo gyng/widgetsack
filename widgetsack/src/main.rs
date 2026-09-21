@@ -26,6 +26,7 @@ pub mod clickthrough;
 pub mod command;
 pub mod control;
 pub mod ddc;
+pub mod diag;
 pub mod display;
 pub mod displaywatch;
 pub mod event;
@@ -46,6 +47,7 @@ pub mod sensors;
 pub mod state;
 pub mod stocks;
 pub mod timings;
+pub mod update;
 pub mod watchdog;
 pub mod weather;
 pub mod wifi;
@@ -223,8 +225,19 @@ async fn main() -> Result<(), ()> {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 let active = window.app_handle().state::<sensors::ActiveSensors>();
                 sensors::remove_active_window(&active, window.label());
+                // Its interactive rects die with it, or the cursor watcher never idles again.
+                let rects = window
+                    .app_handle()
+                    .state::<clickthrough::InteractiveRects>();
+                clickthrough::forget_window(&rects, window.label());
             }
-            if matches!(event, tauri::WindowEvent::Destroyed) && window.label() == "studio" {
+            // Flush window geometry to disk when the studio OR an overlay goes away: the overlays'
+            // saved rects are the evidence the layout-key migration uses to put a layout back on its
+            // monitor after Windows re-numbers displays, and the plugin otherwise only writes on a
+            // clean exit (an upgrade's installer kills the process).
+            if matches!(event, tauri::WindowEvent::Destroyed)
+                && (window.label() == "studio" || window.label().starts_with("overlay-"))
+            {
                 use tauri_plugin_window_state::AppHandleExt;
                 let _ = window.app_handle().save_window_state(window_state_flags());
             }
@@ -261,6 +274,7 @@ async fn main() -> Result<(), ()> {
             command::save_layout,
             command::backup_layout,
             command::window_state_hints,
+            keepalive::main_reclaimed,
             command::load_controls,
             command::save_controls,
             windowmgr::list_windows,
@@ -295,6 +309,10 @@ async fn main() -> Result<(), ()> {
             command::log_diag,
             command::log_client,
             command::check_app_update,
+            update::get_app_update,
+            update::open_url,
+            diag::log_file_path,
+            diag::reveal_log_dir,
             command::system_fonts,
             display::list_display_names,
             ddc::list_monitor_inputs,
@@ -465,6 +483,10 @@ async fn main() -> Result<(), ()> {
             // HDMI-switch hang left no trace — WER saw it, the app log didn't). See watchdog.rs.
             watchdog::run_main_thread_watchdog(app.handle().clone());
 
+            // Background update check (no auto-install): polls GitHub releases 30s after boot, then
+            // every 6h; feeds the tray "Update available" item + the studio badge. See update.rs.
+            update::init(app.handle().clone());
+
             // Tray menu (right-click): open the studio, the two overlay utilities, a launch-at-login
             // toggle, then Quit (separated). Edit mode is NOT here — it lives on Ctrl+E and the global
             // hotkey; a tray toggle for it read as confusing chrome.
@@ -482,6 +504,13 @@ async fn main() -> Result<(), ()> {
             let autostart_item = CheckMenuItemBuilder::with_id("autostart", "Start at login")
                 .checked(autostart_on)
                 .build(app)?;
+            // "Update available: vX.Y.Z" — disabled until the background check (update.rs) finds a
+            // newer release; clicking opens that release's GitHub page. There is no auto-installer.
+            let update_item =
+                MenuItemBuilder::with_id(update::TRAY_ITEM_ID, "Checking for updates…")
+                    .enabled(false)
+                    .build(app)?;
+            update::set_tray_item(app.handle(), update_item.clone());
             let quit_item = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
             let tray_menu = MenuBuilder::new(app)
                 .item(&designer_item)
@@ -489,6 +518,7 @@ async fn main() -> Result<(), ()> {
                 .item(&refit_item)
                 .item(&autostart_item)
                 .separator()
+                .item(&update_item)
                 .item(&quit_item)
                 .build()?;
             // Mark a dev / extra instance in the tooltip too (matches the studio "dev" badge), so a
@@ -526,6 +556,10 @@ async fn main() -> Result<(), ()> {
                         let applied =
                             autostart::set_autostart_enabled(app.clone(), !now).unwrap_or(now);
                         let _ = autostart_item.set_checked(applied);
+                    }
+                    update::TRAY_ITEM_ID => {
+                        // Open the last-known newer release's page in the default browser.
+                        update::open_release_page(app);
                     }
                     "quit" => app.exit(0),
                     _ => {}

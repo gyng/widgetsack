@@ -67,6 +67,54 @@ describe('legacyKeyMapping', () => {
 		});
 	});
 
+	it('tells two same-size monitors apart by the saved window position', () => {
+		const twins: MigrationMonitor[] = [
+			{
+				index: 0,
+				key: 'AAA1111-UID1',
+				tag: 'DISPLAY1',
+				primary: false,
+				w: 2560,
+				h: 1440,
+				x: 0,
+				y: -1440
+			},
+			{
+				index: 1,
+				key: 'AAA1111-UID2',
+				tag: 'DISPLAY2',
+				primary: false,
+				w: 2560,
+				h: 1440,
+				x: 2560,
+				y: 0
+			},
+			{
+				index: 2,
+				key: 'BBB2222-UID3',
+				tag: 'DISPLAY3',
+				primary: true,
+				w: 3840,
+				h: 2160,
+				x: 0,
+				y: 0
+			}
+		];
+		const mapping = legacyKeyMapping(twins, [
+			{ label: 'overlay-DISPLAY9', width: 2560, height: 1440, x: 2560, y: 0 }
+		]);
+		expect(mapping.DISPLAY9).toBe('AAA1111-UID2');
+	});
+
+	it('tolerates the 8 px DPI-hop inflation and a re-arranged position', () => {
+		// Saved while inflated (2576x736 at 644,2152) and before the strip moved back under the 4K.
+		const mapping = legacyKeyMapping(
+			today.map((m) => (m.key === STRIP ? { ...m, x: 652, y: 2160 } : { ...m, x: 0, y: 0 })),
+			[{ label: 'overlay-DISPLAY3', width: 2576, height: 736, x: -8, y: 1432 }]
+		);
+		expect(mapping.DISPLAY3).toBe(STRIP);
+	});
+
 	it('never maps onto the primary and never remaps a key that is already stable', () => {
 		const mapping = legacyKeyMapping(today, [
 			{ label: 'overlay-DISPLAY7', width: 3840, height: 2160 }, // the primary's size

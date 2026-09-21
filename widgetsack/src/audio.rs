@@ -22,7 +22,7 @@
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use realfft::num_complex::Complex;
 use realfft::{RealFftPlanner, RealToComplex};
@@ -90,6 +90,88 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+// --- Off-UI-thread COM calls ------------------------------------------------------------------
+// Tauri runs a NON-async command on the main/UI thread. The Core Audio calls below are COM RPCs
+// into the audio service (audiodg / the endpoint's device driver) — normally sub-millisecond, but
+// during a device/monitor switch they can block for seconds, and the volume/switcher widgets poll
+// them every 1–8 s. So every such command is `async`, runs its COM work on a blocking-pool thread,
+// and gives up (returning an error / `None`) after `COM_CALL_BUDGET` so the UI thread and the IPC
+// queue never wait on the audio stack.
+
+/// How long a single Core Audio command may take before the caller is released with an error.
+const COM_CALL_BUDGET: Duration = Duration::from_secs(2);
+
+/// Core Audio calls still running (stuck ones included — a timed-out call can't be cancelled).
+/// Past `COM_CALL_MAX_IN_FLIGHT` new calls fail fast instead of parking another pool thread behind
+/// the same hung audio service: the widgets poll every 1–8 s, so a minutes-long stall would
+/// otherwise accumulate dozens of blocked threads.
+static COM_CALLS_IN_FLIGHT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+const COM_CALL_MAX_IN_FLIGHT: usize = 4;
+
+/// Run `f` on the blocking pool with a hard `budget`. On timeout the blocking task keeps running
+/// to completion on its pool thread (it cannot be cancelled) but the caller is released. `label`
+/// names the command in the error/log line.
+async fn com_call<T: Send + 'static>(
+    label: &'static str,
+    budget: Duration,
+    f: impl FnOnce() -> T + Send + 'static,
+) -> Result<T, String> {
+    use std::sync::atomic::Ordering;
+
+    /// Decrements the in-flight count when the blocking closure finishes (or panics).
+    struct InFlight;
+    impl Drop for InFlight {
+        fn drop(&mut self) {
+            COM_CALLS_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+
+    if COM_CALLS_IN_FLIGHT.fetch_add(1, Ordering::AcqRel) >= COM_CALL_MAX_IN_FLIGHT {
+        COM_CALLS_IN_FLIGHT.fetch_sub(1, Ordering::AcqRel);
+        return Err(format!(
+            "{label}: audio stack busy ({COM_CALL_MAX_IN_FLIGHT} calls already outstanding)"
+        ));
+    }
+    let task = tokio::task::spawn_blocking(move || {
+        let _in_flight = InFlight;
+        f()
+    });
+    match tokio::time::timeout(budget, task).await {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(join)) => Err(format!("{label}: worker failed: {join}")),
+        Err(_) => {
+            log::warn("audio", "Core Audio call timed out")
+                .field("command", label)
+                .field("budget_ms", budget.as_millis())
+                .emit();
+            Err(format!(
+                "{label}: timed out after {} ms",
+                budget.as_millis()
+            ))
+        }
+    }
+}
+
+/// Initialise COM (MTA) on the CALLING thread, once per thread. The blocking pool recycles its
+/// threads, so a per-call `CoInitializeEx` would keep bumping the apartment refcount; a thread-local
+/// flag makes it exactly one init per pool thread (never uninitialised — the thread's lifetime is the
+/// apartment's). `RPC_E_CHANGED_MODE` (COM already up in another mode) is harmless for these calls.
+#[cfg(target_os = "windows")]
+fn ensure_com_mta() {
+    use std::cell::Cell;
+    use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
+    thread_local! {
+        static COM_READY: Cell<bool> = const { Cell::new(false) };
+    }
+    COM_READY.with(|ready| {
+        if !ready.get() {
+            // SAFETY: plain COM apartment init; the result is deliberately ignored (see above).
+            let _ = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) };
+            ready.set(true);
+        }
+    });
 }
 
 // --- Pure DSP seams (unit-tested, no I/O) ------------------------------------------------------
@@ -346,14 +428,19 @@ pub fn stop_spectrum<R: Runtime>(
 
 /// List the system's audio OUTPUT (render) endpoints, so the inspector can offer a device picker.
 /// An empty selection means "system default". Windows-only; elsewhere there is no loopback backend
-/// so the list is empty (the meter just shows nothing).
+/// so the list is empty (the meter just shows nothing). Runs off the UI thread with a budget
+/// (`com_call`) — polled by the switcher widget.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn list_audio_outputs() -> Result<Vec<AudioDevice>, String> {
-    use wasapi::{Direction, initialize_mta};
-    // The command may run on a COM-uninitialised pool thread; init MTA (a no-op / harmless
-    // RPC_E_CHANGED_MODE if COM is already up on this thread — enumeration works either way).
-    let _ = initialize_mta().ok();
+pub async fn list_audio_outputs() -> Result<Vec<AudioDevice>, String> {
+    com_call("list_audio_outputs", COM_CALL_BUDGET, enumerate_outputs).await?
+}
+
+#[cfg(target_os = "windows")]
+fn enumerate_outputs() -> Result<Vec<AudioDevice>, String> {
+    use wasapi::Direction;
+    // The pool thread may be COM-uninitialised; init MTA once (enumeration works either way).
+    ensure_com_mta();
     let enumerator = wasapi::DeviceEnumerator::new().map_err(|e| e.to_string())?;
     let collection = enumerator
         .get_device_collection(&Direction::Render)
@@ -372,7 +459,7 @@ pub fn list_audio_outputs() -> Result<Vec<AudioDevice>, String> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub fn list_audio_outputs() -> Result<Vec<AudioDevice>, String> {
+pub async fn list_audio_outputs() -> Result<Vec<AudioDevice>, String> {
     Ok(Vec::new())
 }
 
@@ -382,12 +469,20 @@ pub fn list_audio_outputs() -> Result<Vec<AudioDevice>, String> {
 // nircmd / SoundSwitch use, because Windows exposes no public API to set the default endpoint.
 
 /// The current default RENDER endpoint's WASAPI id, so the switcher can mark the active device.
-/// `None` on failure / non-Windows.
+/// `None` on failure / timeout / non-Windows.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn default_audio_output() -> Option<String> {
-    use wasapi::{Direction, initialize_mta};
-    let _ = initialize_mta().ok();
+pub async fn default_audio_output() -> Option<String> {
+    com_call("default_audio_output", COM_CALL_BUDGET, read_default_output)
+        .await
+        .ok()
+        .flatten()
+}
+
+#[cfg(target_os = "windows")]
+fn read_default_output() -> Option<String> {
+    use wasapi::Direction;
+    ensure_com_mta();
     let enumerator = wasapi::DeviceEnumerator::new().ok()?;
     enumerator
         .get_default_device(&Direction::Render)
@@ -398,7 +493,7 @@ pub fn default_audio_output() -> Option<String> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub fn default_audio_output() -> Option<String> {
+pub async fn default_audio_output() -> Option<String> {
     None
 }
 
@@ -481,25 +576,31 @@ unsafe trait IPolicyConfig: windows::core::IUnknown {
 /// studio-only setting). No-op error off Windows.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn set_default_audio_output(id: String) -> Result<(), String> {
+pub async fn set_default_audio_output(id: String) -> Result<(), String> {
+    if id.is_empty() {
+        return Err("empty device id".into());
+    }
+    com_call("set_default_audio_output", COM_CALL_BUDGET, move || {
+        write_default_output(&id)
+    })
+    .await?
+}
+
+#[cfg(target_os = "windows")]
+fn write_default_output(id: &str) -> Result<(), String> {
     use std::iter::once;
-    use windows::Win32::System::Com::{
-        CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
-    };
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
     use windows::core::PCWSTR;
 
     // CPolicyConfigClient.
     const CLSID_POLICY_CONFIG: windows::core::GUID =
         windows::core::GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
 
-    if id.is_empty() {
-        return Err("empty device id".into());
-    }
     // SAFETY: standard COM create-and-call; the device id is a NUL-terminated UTF-16 string that
     // outlives the calls. IPolicyConfig's vtable layout is preserved (see the interface decl).
     unsafe {
-        // The command may run on a COM-uninitialised pool thread; init MTA (harmless if already up).
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        // The pool thread may be COM-uninitialised; init MTA once.
+        ensure_com_mta();
         let config: IPolicyConfig =
             CoCreateInstance(&CLSID_POLICY_CONFIG, None, CLSCTX_ALL).map_err(|e| e.to_string())?;
         let wide: Vec<u16> = id.encode_utf16().chain(once(0)).collect();
@@ -515,7 +616,7 @@ pub fn set_default_audio_output(id: String) -> Result<(), String> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub fn set_default_audio_output(_id: String) -> Result<(), String> {
+pub async fn set_default_audio_output(_id: String) -> Result<(), String> {
     Err("setting the default audio output is only supported on Windows".into())
 }
 
@@ -540,13 +641,11 @@ fn endpoint_volume()
     use windows::Win32::Media::Audio::{
         IMMDeviceEnumerator, MMDeviceEnumerator, eConsole, eRender,
     };
-    use windows::Win32::System::Com::{
-        CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx,
-    };
+    use windows::Win32::System::Com::{CLSCTX_ALL, CoCreateInstance};
 
     // SAFETY: standard COM create/activate; every interface is released on drop.
     unsafe {
-        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+        ensure_com_mta();
         let enumerator: IMMDeviceEnumerator =
             CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
         let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
@@ -554,10 +653,19 @@ fn endpoint_volume()
     }
 }
 
-/// Read the system master volume + mute. `None` on failure / non-Windows.
+/// Read the system master volume + mute. `None` on failure / timeout / non-Windows. Polled every
+/// second by the volume widget, so it MUST never block the UI thread (`com_call`).
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn get_audio_volume() -> Option<AudioVolume> {
+pub async fn get_audio_volume() -> Option<AudioVolume> {
+    com_call("get_audio_volume", COM_CALL_BUDGET, read_volume)
+        .await
+        .ok()
+        .flatten()
+}
+
+#[cfg(target_os = "windows")]
+fn read_volume() -> Option<AudioVolume> {
     // SAFETY: standard Core Audio read; all interfaces are released on drop.
     unsafe {
         let vol = endpoint_volume().ok()?;
@@ -569,43 +677,49 @@ pub fn get_audio_volume() -> Option<AudioVolume> {
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub fn get_audio_volume() -> Option<AudioVolume> {
+pub async fn get_audio_volume() -> Option<AudioVolume> {
     None
 }
 
 /// Set the system master volume (scalar 0..1, clamped). No-op error off Windows.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn set_audio_volume(level: f32) -> Result<(), String> {
-    // SAFETY: writes the master scalar level; eventcontext is null (no callback correlation needed).
-    unsafe {
-        let vol = endpoint_volume().map_err(|e| e.to_string())?;
-        vol.SetMasterVolumeLevelScalar(level.clamp(0.0, 1.0), std::ptr::null())
-            .map_err(|e| e.to_string())
-    }
+pub async fn set_audio_volume(level: f32) -> Result<(), String> {
+    com_call("set_audio_volume", COM_CALL_BUDGET, move || {
+        // SAFETY: writes the master scalar level; eventcontext is null (no callback correlation needed).
+        unsafe {
+            let vol = endpoint_volume().map_err(|e| e.to_string())?;
+            vol.SetMasterVolumeLevelScalar(level.clamp(0.0, 1.0), std::ptr::null())
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await?
 }
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub fn set_audio_volume(_level: f32) -> Result<(), String> {
+pub async fn set_audio_volume(_level: f32) -> Result<(), String> {
     Err("setting the volume is only supported on Windows".into())
 }
 
 /// Set the system mute state. No-op error off Windows.
 #[cfg(target_os = "windows")]
 #[tauri::command]
-pub fn set_audio_mute(muted: bool) -> Result<(), String> {
-    // SAFETY: writes the mute flag; eventcontext is null.
-    unsafe {
-        let vol = endpoint_volume().map_err(|e| e.to_string())?;
-        vol.SetMute(muted, std::ptr::null())
-            .map_err(|e| e.to_string())
-    }
+pub async fn set_audio_mute(muted: bool) -> Result<(), String> {
+    com_call("set_audio_mute", COM_CALL_BUDGET, move || {
+        // SAFETY: writes the mute flag; eventcontext is null.
+        unsafe {
+            let vol = endpoint_volume().map_err(|e| e.to_string())?;
+            vol.SetMute(muted, std::ptr::null())
+                .map_err(|e| e.to_string())
+        }
+    })
+    .await?
 }
 
 #[cfg(not(target_os = "windows"))]
 #[tauri::command]
-pub fn set_audio_mute(_muted: bool) -> Result<(), String> {
+pub async fn set_audio_mute(_muted: bool) -> Result<(), String> {
     Err("muting is only supported on Windows".into())
 }
 
@@ -1007,5 +1121,82 @@ mod tests {
         let m = magnitudes(&[Complex::new(3.0, 4.0), Complex::new(0.0, 0.0)]);
         assert!((m[0] - 5.0).abs() < 1e-6);
         assert_eq!(m[1], 0.0);
+    }
+
+    /// The `com_call` tests share the process-wide in-flight counter, so they run one at a time.
+    async fn serial() -> tokio::sync::MutexGuard<'static, ()> {
+        static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        LOCK.lock().await
+    }
+
+    /// The off-UI-thread wrapper returns the closure's value when it finishes in time…
+    #[tokio::test]
+    async fn com_call_returns_the_value_within_budget() {
+        let _serial = serial().await;
+        let v = com_call("t", Duration::from_secs(1), || 42u8).await;
+        assert_eq!(v, Ok(42));
+    }
+
+    /// …and releases the caller with an error (naming the command) when it overruns the budget,
+    /// instead of blocking for as long as the (stuck) COM call takes.
+    #[tokio::test]
+    async fn com_call_times_out_and_names_the_command() {
+        let _serial = serial().await;
+        let started = std::time::Instant::now();
+        let v = com_call("get_audio_volume", Duration::from_millis(30), || {
+            std::thread::sleep(Duration::from_millis(400));
+            1u8
+        })
+        .await;
+        let err = v.unwrap_err();
+        assert!(err.contains("get_audio_volume"), "{err}");
+        assert!(err.contains("timed out"), "{err}");
+        assert!(
+            started.elapsed() < Duration::from_millis(350),
+            "caller was released early"
+        );
+        // Let the stuck closure finish so it doesn't count against the next test's bound.
+        tokio::time::sleep(Duration::from_millis(450)).await;
+    }
+
+    /// While `COM_CALL_MAX_IN_FLIGHT` calls are stuck, a further one fails fast (no new pool thread
+    /// parked behind the hung audio service); once they drain, calls go through again.
+    #[tokio::test]
+    async fn com_call_fails_fast_past_the_in_flight_bound() {
+        let _serial = serial().await;
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let release_rx = std::sync::Arc::new(std::sync::Mutex::new(release_rx));
+        let mut stuck = Vec::new();
+        for _ in 0..COM_CALL_MAX_IN_FLIGHT {
+            let rx = release_rx.clone();
+            stuck.push(tokio::spawn(com_call(
+                "stuck",
+                Duration::from_millis(20),
+                move || {
+                    // Block until released — no lock is held across the wait.
+                    let guard = rx.lock().unwrap_or_else(|e| e.into_inner());
+                    let _ = guard.recv();
+                },
+            )));
+        }
+        // Each stuck call has timed out for its caller, but the closures are still running.
+        for h in stuck {
+            assert!(h.await.unwrap().is_err());
+        }
+        let err = com_call("busy", Duration::from_secs(1), || 1u8)
+            .await
+            .unwrap_err();
+        assert!(err.contains("busy"), "{err}");
+        // Release them and wait for the count to drain; then the call goes through.
+        drop(release_tx);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while COM_CALLS_IN_FLIGHT.load(std::sync::atomic::Ordering::Acquire) > 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "in-flight count never drained"
+            );
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        assert_eq!(com_call("ok", Duration::from_secs(1), || 1u8).await, Ok(1));
     }
 }

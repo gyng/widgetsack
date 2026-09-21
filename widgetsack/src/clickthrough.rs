@@ -49,6 +49,14 @@ pub fn set_interactive_rects(
     }
 }
 
+/// Drop a destroyed window's rects so the watcher can idle again (nothing else ever clears them —
+/// the frontend that would send an empty list died with the window). Called from the app's
+/// `WindowEvent::Destroyed` handler.
+pub fn forget_window(state: &InteractiveRects, label: &str) {
+    let mut map = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    map.remove(label);
+}
+
 /// Spawn the cursor watcher. Idles cheaply when no window has interactive rects;
 /// otherwise polls ~60 Hz and toggles each window's ignore-cursor-events only on
 /// transitions (entering/leaving that window's interactive rects).
@@ -68,6 +76,10 @@ pub fn run_clickthrough_watcher<R: Runtime>(app: AppHandle<R>) {
                 std::thread::sleep(Duration::from_millis(200));
                 continue;
             }
+            // A label that left the map (window destroyed / rects cleared) must not keep a cached
+            // "ignoring" verdict: a re-created window with the same label is born click-through and
+            // would otherwise get no set_ignore_cursor_events(false) while the cursor sits over a rect.
+            ignoring.retain(|label, _| map.contains_key(label));
             std::thread::sleep(Duration::from_millis(16));
 
             let cursor = match app.cursor_position() {
@@ -170,6 +182,23 @@ fn set_wallpaper_parent(window: &tauri::WebviewWindow, enabled: bool) -> Result<
         // Re-attach to the desktop root → a normal top-level overlay again.
         unsafe { SetParent(hwnd, None) }.map_err(|e| e.to_string())?;
         return Ok("detached from the wallpaper (normal overlay)".to_string());
+    }
+
+    // Already parented to a WorkerW? Then there is nothing to do — and this runs on the main thread
+    // on every refit (topology tick, drift, scale change), where the Progman round trip + EnumWindows
+    // polling below (up to ~1.3 s) is exactly the kind of UI-thread stall a display change turns
+    // into a hang.
+    if let Ok(parent) = unsafe { GetParent(hwnd) } {
+        let mut class = [0u16; 32];
+        let n =
+            unsafe { windows::Win32::UI::WindowsAndMessaging::GetClassNameW(parent, &mut class) }
+                as usize;
+        if crate::display::wide_to_string(&class[..n.min(class.len())]) == "WorkerW" {
+            return Ok(format!(
+                "already parented to WorkerW {:#x}",
+                parent.0 as usize
+            ));
+        }
     }
 
     // 1) Ask Progman to spawn the WorkerW that hosts the wallpaper behind the desktop icons. The

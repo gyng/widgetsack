@@ -167,6 +167,13 @@ fn enumerate() -> Vec<DisplayName> {
                 (String::new(), String::new())
             };
 
+            // "Duplicate these displays" puts several CCD paths (targets) behind ONE GDI source —
+            // and one Tauri monitor. Keep the first path per GDI name so the stable key for that
+            // monitor is deterministic across enumerations (last-writer-wins flipped it between
+            // the two EDIDs depending on path order, orphaning the layout keyed on the other).
+            if out.iter().any(|d: &DisplayName| d.gdi == gdi) {
+                continue;
+            }
             out.push(DisplayName {
                 gdi,
                 friendly,

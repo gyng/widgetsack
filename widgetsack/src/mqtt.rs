@@ -7,23 +7,42 @@
 //! auto-subscribes to discovered state topics and friendly-names them.
 //!
 //! Outer-ring adapter (like ha.rs): the pure seams (`payload_to_samples`, `parse_discovery`,
-//! `topic_to_id`, `is_discovery_config`) hold the logic and are unit-tested without a broker.
+//! `topic_to_id`, `is_discovery_config`, `subscription_filters`, `payload_text`,
+//! `catalog_insert`) hold the logic and are unit-tested without a broker.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use rumqttc::{AsyncClient, Event, MqttOptions, Packet, QoS, TlsConfiguration, Transport};
+use rumqttc::{
+    AsyncClient, ClientError, Event, MqttOptions, Packet, QoS, SubscribeFilter, TlsConfiguration,
+    Transport,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::async_runtime::{JoinHandle, Mutex};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
+use crate::log;
 use crate::sensors::{SensorSample, SensorValue, TELEMETRY_EVENT};
 
 /// The conventional HA MQTT discovery topic prefix (`homeassistant/<component>/.../config`).
 const DISCOVERY_PREFIX: &str = "homeassistant";
+
+/// rumqttc request-channel depth (client → event loop). Every `subscribe` is one request; the
+/// loop below NEVER awaits a send on it (`try_*` only), because the same task drives `poll()` —
+/// a blocking send with a full channel would deadlock the loop that drains it.
+const REQUEST_CAP: usize = 32;
+
+/// Payloads above this are dropped (not forwarded as text): a camera frame or a firmware blob on a
+/// subscribed topic would otherwise be JSON-serialised into every telemetry batch.
+const MAX_PAYLOAD_BYTES: usize = 64 * 1024;
+
+/// Upper bound on catalog rows (seen + discovered topics). A `#` subscription on a busy broker can
+/// see tens of thousands of distinct topics; the inspector dropdown can't use them and the map
+/// would grow without bound. Existing rows still update past the cap; new ones are dropped.
+const MAX_CATALOG_ENTRIES: usize = 2000;
 
 fn default_port() -> u16 {
     1883
@@ -201,6 +220,82 @@ fn is_concrete_topic(topic: &str) -> bool {
     !topic.contains('+') && !topic.contains('#')
 }
 
+/// The ONE subscribe request sent on every ConnAck: the configured topics (blank + duplicate
+/// entries dropped) plus the discovery wildcard when enabled. Batched so a 100-topic config is a
+/// single request on the bounded channel instead of 100 (which would exceed `REQUEST_CAP`).
+fn subscription_filters(topics: &[String], discovery: bool) -> Vec<String> {
+    let mut seen: HashSet<&str> = HashSet::new();
+    let mut out: Vec<String> = Vec::new();
+    for t in topics {
+        let t = t.trim();
+        if !t.is_empty() && seen.insert(t) {
+            out.push(t.to_string());
+        }
+    }
+    if discovery {
+        let wildcard = format!("{DISCOVERY_PREFIX}/#");
+        if seen.insert(wildcard.as_str()) {
+            out.push(wildcard.clone());
+        }
+    }
+    out
+}
+
+/// The text sample for a payload: `None` (skip the publish) when it is over `MAX_PAYLOAD_BYTES` or
+/// not valid UTF-8 (binary — a lossy transcode would be garbage in a Text meter anyway).
+fn payload_text(bytes: &[u8]) -> Option<String> {
+    if bytes.len() > MAX_PAYLOAD_BYTES {
+        return None;
+    }
+    std::str::from_utf8(bytes).ok().map(str::to_string)
+}
+
+/// Insert `entry` under `topic` unless the catalog is at `cap` and the topic is new. `replace`
+/// overwrites an existing row (a discovery config brings a friendly label); otherwise an existing row
+/// is kept (`or_insert` semantics). Returns whether the row is now present.
+fn catalog_insert(
+    cat: &mut BTreeMap<String, MqttCatalogEntry>,
+    topic: &str,
+    entry: MqttCatalogEntry,
+    replace: bool,
+    cap: usize,
+) -> bool {
+    if let Some(existing) = cat.get_mut(topic) {
+        if replace {
+            *existing = entry;
+        }
+        return true;
+    }
+    if cat.len() >= cap {
+        return false;
+    }
+    cat.insert(topic.to_string(), entry);
+    true
+}
+
+/// Queue a subscribe for `topic` without ever awaiting the request channel (see `REQUEST_CAP`):
+/// `true` on success; `false` if the channel is full (the caller keeps the topic pending and
+/// retries after the next `poll()` drains a request).
+fn try_subscribe_many(client: &AsyncClient, topics: &[String]) -> bool {
+    if topics.is_empty() {
+        return true;
+    }
+    let filters = topics
+        .iter()
+        .map(|t| SubscribeFilter::new(t.clone(), QoS::AtMostOnce));
+    match client.try_subscribe_many(filters) {
+        Ok(()) => true,
+        Err(ClientError::TryRequest(_)) => false,
+        Err(err) => {
+            log::warn("mqtt", "subscribe rejected")
+                .field("error", err)
+                .field("count", topics.len())
+                .emit();
+            true // invalid filters: nothing to retry
+        }
+    }
+}
+
 // ---- telemetry emission ----
 
 /// Surface the connection state to widgets as an `mqtt.status` text sample (a Text meter bound to
@@ -257,7 +352,9 @@ pub async fn run_mqtt_client<R: Runtime>(
             {
                 Ok(c) => TlsConfiguration::NativeConnector(c),
                 Err(err) => {
-                    eprintln!("mqtt tls connector failed: {err}");
+                    log::warn("mqtt", "tls connector failed; using the default connector")
+                        .field("error", err)
+                        .emit();
                     TlsConfiguration::Native
                 }
             }
@@ -267,62 +364,96 @@ pub async fn run_mqtt_client<R: Runtime>(
         opts.set_transport(Transport::tls_with_config(tls));
     }
 
-    let (client, mut eventloop) = AsyncClient::new(opts, 32);
+    let (client, mut eventloop) = AsyncClient::new(opts, REQUEST_CAP);
     emit_status(&app, "connecting");
+
+    // Subscriptions are queued with `try_subscribe_many` — never an awaited `subscribe` — because
+    // THIS task also drives `eventloop.poll()`, the only thing that drains the request channel.
+    // Anything that doesn't fit (a retained-discovery burst of hundreds of configs) waits in
+    // `pending` and is flushed after each poll; `subscribed` dedupes discovered state topics.
+    let configured = subscription_filters(&cfg.topics, cfg.discovery);
+    let mut pending: Vec<String> = Vec::new();
+    let mut subscribed: HashSet<String> = HashSet::new();
+    let mut dropped_payloads: u64 = 0;
 
     loop {
         match eventloop.poll().await {
             Ok(Event::Incoming(Packet::ConnAck(_))) => {
                 emit_status(&app, "connected");
-                for t in &cfg.topics {
-                    let _ = client.subscribe(t, QoS::AtMostOnce).await;
-                }
-                if cfg.discovery {
-                    let _ = client
-                        .subscribe(format!("{DISCOVERY_PREFIX}/#"), QoS::AtMostOnce)
-                        .await;
-                }
+                // Subscriptions are per-connection: re-queue everything (configured + discovered).
+                subscribed.clear();
+                pending.clear();
+                pending.extend(configured.iter().cloned());
             }
             Ok(Event::Incoming(Packet::Publish(p))) => {
-                let payload = String::from_utf8_lossy(&p.payload).to_string();
+                let Some(payload) = payload_text(&p.payload) else {
+                    dropped_payloads += 1;
+                    if dropped_payloads.is_power_of_two() {
+                        log::warn("mqtt", "dropped oversized or non-UTF-8 payload")
+                            .field("topic", &p.topic)
+                            .field("bytes", p.payload.len())
+                            .field("dropped_total", dropped_payloads)
+                            .emit();
+                    }
+                    continue;
+                };
                 // Discovery config: register + subscribe to the entity's state topic (don't emit it).
                 if cfg.discovery && is_discovery_config(&p.topic) {
                     if let Some(d) = parse_discovery(&payload) {
-                        let _ = client.subscribe(&d.state_topic, QoS::AtMostOnce).await;
+                        if !subscribed.contains(&d.state_topic) && !pending.contains(&d.state_topic)
+                        {
+                            pending.push(d.state_topic.clone());
+                        }
                         if let Ok(mut cat) = catalog.lock() {
-                            cat.insert(
-                                d.state_topic.clone(),
+                            catalog_insert(
+                                &mut cat,
+                                &d.state_topic,
                                 MqttCatalogEntry {
                                     id: topic_to_id(&d.state_topic),
                                     topic: d.state_topic.clone(),
                                     label: d.name,
                                     unit: d.unit,
                                 },
+                                true,
+                                MAX_CATALOG_ENTRIES,
                             );
                         }
                     }
-                    continue;
+                } else {
+                    // Record the seen topic (keeps a discovered entry's friendly label if already set).
+                    if let Ok(mut cat) = catalog.lock() {
+                        catalog_insert(
+                            &mut cat,
+                            &p.topic,
+                            MqttCatalogEntry {
+                                id: topic_to_id(&p.topic),
+                                topic: p.topic.clone(),
+                                label: None,
+                                unit: None,
+                            },
+                            false,
+                            MAX_CATALOG_ENTRIES,
+                        );
+                    }
+                    let batch = payload_to_samples(&p.topic, &payload, now_ms());
+                    let _ = app.emit(TELEMETRY_EVENT, &batch);
                 }
-                // Record the seen topic (keeps a discovered entry's friendly label if already set).
-                if let Ok(mut cat) = catalog.lock() {
-                    cat.entry(p.topic.clone())
-                        .or_insert_with(|| MqttCatalogEntry {
-                            id: topic_to_id(&p.topic),
-                            topic: p.topic.clone(),
-                            label: None,
-                            unit: None,
-                        });
-                }
-                let batch = payload_to_samples(&p.topic, &payload, now_ms());
-                let _ = app.emit(TELEMETRY_EVENT, &batch);
             }
             Ok(_) => {}
             Err(err) => {
                 emit_status(&app, "error");
-                eprintln!("mqtt client error: {err}");
+                log::warn("mqtt", "client error; reconnecting")
+                    .field("error", err)
+                    .emit();
                 // poll() reconnects on the next call; back off so a hard-down broker isn't hammered.
                 tokio::time::sleep(Duration::from_secs(3)).await;
+                continue;
             }
+        }
+        // Flush queued subscriptions as ONE request; on a full channel keep them for the next pass
+        // (the poll above will have drained at least one request by then).
+        if !pending.is_empty() && try_subscribe_many(&client, &pending) {
+            subscribed.extend(pending.drain(..));
         }
     }
 }
@@ -377,8 +508,13 @@ pub async fn save_mqtt_config(
 
 /// The non-secret config (everything except the password).
 #[tauri::command]
-pub fn mqtt_config_status<R: Runtime>(app: AppHandle<R>) -> Result<MqttStatus, String> {
-    match load_mqtt_config(&app)? {
+pub async fn mqtt_config_status<R: Runtime>(app: AppHandle<R>) -> Result<MqttStatus, String> {
+    // The file read + DPAPI decrypt run on the blocking pool: a sync command would do them on
+    // the UI thread, and this is polled by every window's settings/status probe.
+    let cfg = tokio::task::spawn_blocking(move || load_mqtt_config(&app))
+        .await
+        .map_err(|e| e.to_string())??;
+    match cfg {
         Some(cfg) => Ok(MqttStatus {
             configured: true,
             host: cfg.host,
@@ -556,5 +692,71 @@ mod tests {
         let kind = |s: &SensorSample| serde_json::to_value(s).unwrap()["value"]["kind"].clone();
         assert_eq!(kind(&a[0]), json!("text"));
         assert_eq!(kind(&b[0]), json!("text"));
+    }
+
+    #[test]
+    fn subscription_filters_dedupe_trim_and_add_the_discovery_wildcard() {
+        let topics = vec![
+            "a/b".to_string(),
+            " a/b ".to_string(),
+            String::new(),
+            "c/#".to_string(),
+        ];
+        assert_eq!(subscription_filters(&topics, false), vec!["a/b", "c/#"]);
+        assert_eq!(
+            subscription_filters(&topics, true),
+            vec!["a/b", "c/#", "homeassistant/#"]
+        );
+        // A config that already lists the wildcard doesn't get it twice.
+        let with = vec!["homeassistant/#".to_string()];
+        assert_eq!(subscription_filters(&with, true), vec!["homeassistant/#"]);
+        // More topics than the request channel holds still collapse to one batched request.
+        let many: Vec<String> = (0..100).map(|i| format!("t/{i}")).collect();
+        assert_eq!(subscription_filters(&many, false).len(), 100);
+    }
+
+    #[test]
+    fn payload_text_caps_size_and_requires_utf8() {
+        assert_eq!(payload_text(b"21.5").as_deref(), Some("21.5"));
+        assert_eq!(payload_text(b"").as_deref(), Some(""));
+        // Exactly the cap is fine; one byte over is dropped.
+        assert!(payload_text(&vec![b'x'; MAX_PAYLOAD_BYTES]).is_some());
+        assert!(payload_text(&vec![b'x'; MAX_PAYLOAD_BYTES + 1]).is_none());
+        // Binary (invalid UTF-8) is dropped rather than lossily transcoded.
+        assert!(payload_text(&[0xff, 0xfe, 0x00]).is_none());
+    }
+
+    #[test]
+    fn catalog_insert_bounds_new_rows_but_still_updates_existing() {
+        let entry = |topic: &str, label: Option<&str>| MqttCatalogEntry {
+            id: topic_to_id(topic),
+            topic: topic.to_string(),
+            label: label.map(String::from),
+            unit: None,
+        };
+        let mut cat = BTreeMap::new();
+        assert!(catalog_insert(&mut cat, "a", entry("a", None), false, 2));
+        assert!(catalog_insert(&mut cat, "b", entry("b", None), false, 2));
+        // At the cap: a NEW topic is refused…
+        assert!(!catalog_insert(&mut cat, "c", entry("c", None), false, 2));
+        assert_eq!(cat.len(), 2);
+        // …an existing one is kept (or_insert: label not clobbered by a plain publish)…
+        assert!(catalog_insert(
+            &mut cat,
+            "a",
+            entry("a", Some("x")),
+            false,
+            2
+        ));
+        assert_eq!(cat["a"].label, None);
+        // …and a discovery config (replace) still applies its friendly label.
+        assert!(catalog_insert(
+            &mut cat,
+            "a",
+            entry("a", Some("Temp")),
+            true,
+            2
+        ));
+        assert_eq!(cat["a"].label.as_deref(), Some("Temp"));
     }
 }

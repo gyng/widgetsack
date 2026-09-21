@@ -1,14 +1,71 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::fs;
+use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use notify::Watcher;
 use serde::Serialize;
 use tauri::{Emitter, Manager};
 
-/// Serializes widgets.json read/merge/write transactions across every webview in this process.
+/// Serializes widgets.json read/merge/write transactions across every webview in this process, and
+/// remembers what this process itself last wrote (`self_writes`) so the file watcher can tell the
+/// app's own saves from an external edit (`watch_layout`).
 #[derive(Default)]
-pub struct LayoutIoState(tokio::sync::Mutex<()>);
+pub struct LayoutIoState {
+    lock: tokio::sync::Mutex<()>,
+    self_writes: std::sync::Mutex<SelfWrites>,
+}
+
+/// How many of the app's most recent layout writes are remembered. More than one because notify
+/// delivers a save as 1–3 events and may deliver them after a FOLLOWING save already landed — the
+/// content on disk then matches an earlier write, not the latest.
+const SELF_WRITES_KEPT: usize = 8;
+
+/// Content hashes of the last few layout documents this process wrote. Pure seam (tested):
+/// `record` after a write, `contains` when the watcher fires with the file's current bytes.
+#[derive(Default)]
+struct SelfWrites {
+    hashes: VecDeque<u64>,
+}
+
+impl SelfWrites {
+    fn record(&mut self, hash: u64) {
+        self.hashes.push_back(hash);
+        while self.hashes.len() > SELF_WRITES_KEPT {
+            self.hashes.pop_front();
+        }
+    }
+    fn contains(&self, hash: u64) -> bool {
+        self.hashes.contains(&hash)
+    }
+}
+
+/// Stable-within-a-process hash of a file's bytes (only ever compared to hashes made here).
+fn content_hash(bytes: &[u8]) -> u64 {
+    let mut h = std::hash::DefaultHasher::new();
+    bytes.hash(&mut h);
+    h.finish()
+}
+
+/// Where a watched-file change came from — the app's own `save_layout` (ignored by the watcher:
+/// the save emitted `layout_changed` itself) or something else (an editor, a manual hot-fix, a
+/// sync tool): the path that must keep live-reloading AND may need to respawn `main`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ChangeOrigin {
+    SelfWrite,
+    External,
+}
+
+/// Classify the current on-disk layout against the app's recent writes. An unreadable / missing
+/// file is `External` (the user deleted it or a write is mid-flight — reload, don't ignore).
+fn classify_change(current: Option<&[u8]>, self_writes: &SelfWrites) -> ChangeOrigin {
+    match current {
+        Some(bytes) if self_writes.contains(content_hash(bytes)) => ChangeOrigin::SelfWrite,
+        _ => ChangeOrigin::External,
+    }
+}
 
 use crate::bridge::{CONTROLS_CHANGED_EVENT, LAYOUT_CHANGED_EVENT, THEMES_CHANGED_EVENT};
 use crate::{AppState, SessionRecord, log};
@@ -42,7 +99,7 @@ pub async fn get_initial_sessions(
 /// (`crate::multi_instance`), so a dev build run alongside the installed release never reads or writes
 /// the release's widgets.json / themes / layouts / sacks. The real config dir otherwise. All the
 /// config/theme/layout/sack/wallpaper/plugin paths (and their file watchers) go through this.
-fn config_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn config_root<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> Result<PathBuf, String> {
     let base = app.path().app_config_dir().map_err(|e| e.to_string())?;
     Ok(if crate::multi_instance() {
         base.join("multi")
@@ -131,7 +188,7 @@ pub async fn save_layout(
     touched_monitors: Option<Vec<String>>,
     touched_globals: Option<Vec<String>>,
 ) -> Result<(), String> {
-    let _guard = state.0.lock().await;
+    let _guard = state.lock.lock().await;
     let path = layout_path(&app)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -162,7 +219,16 @@ pub async fn save_layout(
         incoming
     };
     let rendered = serde_json::to_string_pretty(&output).map_err(|e| e.to_string())?;
-    atomic_write(&path, &rendered)
+    // Remember the exact bytes BEFORE they land so the watcher, however quickly it fires, can
+    // recognise this write as ours (see `watch_layout`)…
+    if let Ok(mut recent) = state.self_writes.lock() {
+        recent.record(content_hash(rendered.as_bytes()));
+    }
+    atomic_write(&path, &rendered)?;
+    // …and tell the other windows ourselves — exactly once, instead of the 1–3 watcher events a
+    // save used to fan out (each of which also ran the external-edit respawn hook).
+    let _ = app.emit(LAYOUT_CHANGED_EVENT, ());
+    Ok(())
 }
 
 /// Filename prefix for layout backups taken on parse failure (`widgets.json.bad-<epoch-ms>`).
@@ -189,10 +255,16 @@ pub struct WindowGeometryHint {
     pub label: String,
     pub width: f64,
     pub height: f64,
+    /// Saved position (physical px); `None` for entries without one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub x: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub y: Option<f64>,
 }
 
-/// Pure seam: `.window-state.json` (`{ "<label>": { "width": w, "height": h, … }, … }`) → hints.
-/// Entries without both numeric dimensions are skipped; anything unparseable yields an empty list.
+/// Pure seam: `.window-state.json` (`{ "<label>": { "width": w, "height": h, "x": x, "y": y, … }, … }`)
+/// → hints. Entries without both numeric dimensions are skipped (a position is optional); anything
+/// unparseable yields an empty list.
 pub fn parse_window_state_hints(json: &str) -> Vec<WindowGeometryHint> {
     let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(json) else {
         return Vec::new();
@@ -201,10 +273,14 @@ pub fn parse_window_state_hints(json: &str) -> Vec<WindowGeometryHint> {
         .filter_map(|(label, v)| {
             let width = v.get("width")?.as_f64()?;
             let height = v.get("height")?.as_f64()?;
+            let x = v.get("x").and_then(serde_json::Value::as_f64);
+            let y = v.get("y").and_then(serde_json::Value::as_f64);
             Some(WindowGeometryHint {
                 label: label.clone(),
                 width,
                 height,
+                x,
+                y,
             })
         })
         .collect()
@@ -378,7 +454,7 @@ pub fn reload_window(app: tauri::AppHandle, label: String) -> Result<(), String>
 /// unattended overnight OOM survives the crash — read the last `memtrail` lines to see which metric was
 /// climbing. Logged at info so it persists in release builds; the window label is attached as a field.
 #[tauri::command]
-pub fn log_diag(window: tauri::WebviewWindow, summary: String) {
+pub async fn log_diag(window: tauri::WebviewWindow, summary: String) {
     log::info("memtrail", summary)
         .field("window", window.label())
         .emit();
@@ -410,6 +486,82 @@ fn truncate_chars(s: &str, max: usize) -> String {
 const CLIENT_LOG_MESSAGE_MAX: usize = 4096;
 const CLIENT_LOG_COMPONENT_MAX: usize = 64;
 
+/// Per-(window, component, message) ceiling for `log_client`: past this many identical lines in
+/// one window the rest are counted, and the next line that gets through is preceded by a
+/// "suppressed N" record. A render loop that logs the same error every frame is otherwise 60
+/// records/s into the ring buffer, the file and the studio's log stream.
+const CLIENT_LOG_MAX_PER_SEC: u32 = 20;
+const CLIENT_LOG_WINDOW: Duration = Duration::from_secs(1);
+/// Distinct keys tracked at once; past this the table is cleared (a bound, not a policy).
+const CLIENT_LOG_KEYS_MAX: usize = 512;
+
+/// Fixed-window per-key rate limiter. Pure seam (tested): `check(key, now)` says whether this
+/// line may be logged and, if so, how many identical lines were suppressed since the last one that
+/// got through (0 = none — the common case).
+struct ClientLogLimiter {
+    max_per_window: u32,
+    window: Duration,
+    window_start: Option<Instant>,
+    /// key → (allowed in this window, suppressed since the last allowed line — carried across windows)
+    counts: HashMap<String, (u32, u32)>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum LogVerdict {
+    Allow { suppressed_before: u32 },
+    Suppress,
+}
+
+impl ClientLogLimiter {
+    fn new(max_per_window: u32, window: Duration) -> Self {
+        ClientLogLimiter {
+            max_per_window,
+            window,
+            window_start: None,
+            counts: HashMap::new(),
+        }
+    }
+
+    fn check(&mut self, key: String, now: Instant) -> LogVerdict {
+        let rolled = self
+            .window_start
+            .is_none_or(|start| now.duration_since(start) >= self.window);
+        if rolled {
+            self.window_start = Some(now);
+            // New window: everyone gets a fresh allowance; keep only the keys still owed a
+            // "suppressed N" line so the table doesn't grow with one-off messages.
+            self.counts.retain(|_, (allowed, suppressed)| {
+                *allowed = 0;
+                *suppressed > 0
+            });
+        }
+        if self.counts.len() >= CLIENT_LOG_KEYS_MAX && !self.counts.contains_key(&key) {
+            self.counts.clear();
+        }
+        let (allowed, suppressed) = self.counts.entry(key).or_insert((0, 0));
+        if *allowed < self.max_per_window {
+            *allowed += 1;
+            LogVerdict::Allow {
+                suppressed_before: std::mem::take(suppressed),
+            }
+        } else {
+            *suppressed = suppressed.saturating_add(1);
+            LogVerdict::Suppress
+        }
+    }
+}
+
+fn client_log_limiter() -> &'static std::sync::Mutex<ClientLogLimiter> {
+    static LIMITER: std::sync::OnceLock<std::sync::Mutex<ClientLogLimiter>> =
+        std::sync::OnceLock::new();
+    LIMITER.get_or_init(|| {
+        std::sync::Mutex::new(ClientLogLimiter::new(
+            CLIENT_LOG_MAX_PER_SEC,
+            CLIENT_LOG_WINDOW,
+        ))
+    })
+}
+
 /// Persist a FRONTEND failure into the backend log pipeline (console + ring buffer + rotating file +
 /// `log` event). Frontend errors — an overlay reconcile that threw, a failed invoke — otherwise live
 /// only in the webview's console and VANISH when that webview dies, which is exactly the class of
@@ -417,24 +569,48 @@ const CLIENT_LOG_COMPONENT_MAX: usize = 64;
 /// lands them on disk. `level` picks the severity (see `client_log_level`); the `component` and the
 /// calling `window`'s label are attached as fields. Target is the fixed "client" subsystem (the log
 /// builders take a `&'static str` target, so the dynamic part goes in a field). Mirrors `log_diag`.
+/// `async` so it never runs on the UI thread (a sync command would), and rate-limited per
+/// (window, component, message) — see `ClientLogLimiter`.
 #[tauri::command]
-pub fn log_client(window: tauri::WebviewWindow, level: String, component: String, message: String) {
+pub async fn log_client(
+    window: tauri::WebviewWindow,
+    level: String,
+    component: String,
+    message: String,
+) {
     let message = truncate_chars(&message, CLIENT_LOG_MESSAGE_MAX);
+    let component = truncate_chars(&component, CLIENT_LOG_COMPONENT_MAX);
+    let label = window.label();
+    let key = format!("{label}\u{0}{component}\u{0}{message}");
+    let verdict = client_log_limiter()
+        .lock()
+        .map(|mut l| l.check(key, Instant::now()))
+        .unwrap_or(LogVerdict::Allow {
+            suppressed_before: 0,
+        });
+    let suppressed_before = match verdict {
+        LogVerdict::Suppress => return,
+        LogVerdict::Allow { suppressed_before } => suppressed_before,
+    };
+    if suppressed_before > 0 {
+        log::warn("client", "suppressed repeated client log lines")
+            .field("suppressed", suppressed_before)
+            .field("component", &component)
+            .field("window", label)
+            .emit();
+    }
     let entry = match client_log_level(&level) {
         log::LogLevel::Error => log::error("client", message),
         log::LogLevel::Warn => log::warn("client", message),
         _ => log::info("client", message),
     };
     entry
-        .field(
-            "component",
-            truncate_chars(&component, CLIENT_LOG_COMPONENT_MAX),
-        )
-        .field("window", window.label())
+        .field("component", component)
+        .field("window", label)
         .emit();
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemFont {
     /// Family name (CSS `font-family`).
@@ -450,8 +626,59 @@ pub struct SystemFont {
 /// frontend then loads the file directly via @font-face + the asset protocol (the approach of
 /// tauri-plugin-system-fonts, inlined). The per-user fonts dir is added explicitly (where Windows
 /// puts "install for me only" fonts).
+///
+/// Enumerating parses the name tables of every installed face (hundreds of ms, disk-bound) and
+/// every window asks on boot / theme change — so it runs on the blocking pool and the result is
+/// memoised for `FONT_CACHE_TTL` (a font installed mid-session shows up within that).
 #[tauri::command]
-pub fn system_fonts() -> Vec<SystemFont> {
+pub async fn system_fonts() -> Vec<SystemFont> {
+    static CACHE: std::sync::Mutex<FontCache> = std::sync::Mutex::new(FontCache::new());
+    // Single-flight: concurrent first callers (every overlay booting at once) share one scan.
+    static REFRESH: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    let cached = |now: Instant| CACHE.lock().ok().and_then(|c| c.get(now));
+    if let Some(fonts) = cached(Instant::now()) {
+        return (*fonts).clone();
+    }
+    let _refresh = REFRESH.lock().await;
+    if let Some(fonts) = cached(Instant::now()) {
+        return (*fonts).clone();
+    }
+    let fonts = tokio::task::spawn_blocking(enumerate_system_fonts)
+        .await
+        .unwrap_or_default();
+    let fonts = Arc::new(fonts);
+    if let Ok(mut c) = CACHE.lock() {
+        c.put(Instant::now(), fonts.clone());
+    }
+    (*fonts).clone()
+}
+
+/// How long a `system_fonts` scan is served from memory.
+const FONT_CACHE_TTL: Duration = Duration::from_secs(300);
+
+/// Memo for `system_fonts`. Pure seam (tested): `get(now)` hits only within `FONT_CACHE_TTL` of
+/// the `put`.
+struct FontCache {
+    entry: Option<(Instant, Arc<Vec<SystemFont>>)>,
+}
+
+impl FontCache {
+    const fn new() -> Self {
+        FontCache { entry: None }
+    }
+    fn get(&self, now: Instant) -> Option<Arc<Vec<SystemFont>>> {
+        match &self.entry {
+            Some((at, fonts)) if now.duration_since(*at) < FONT_CACHE_TTL => Some(fonts.clone()),
+            _ => None,
+        }
+    }
+    fn put(&mut self, now: Instant, fonts: Arc<Vec<SystemFont>>) {
+        self.entry = Some((now, fonts));
+    }
+}
+
+fn enumerate_system_fonts() -> Vec<SystemFont> {
     use fontdb::{Database, Source};
     let mut db = Database::new();
     db.load_system_fonts();
@@ -1112,7 +1339,7 @@ const GITHUB_LATEST_RELEASE_API: &str =
     "https://api.github.com/repos/gyng/widgetsack/releases/latest";
 const RELEASES_PAGE: &str = "https://github.com/gyng/widgetsack/releases";
 
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct AppUpdate {
     pub current: String,
     pub latest: String,
@@ -1138,27 +1365,16 @@ fn version_is_newer(latest: &str, current: &str) -> bool {
     parse_version(latest) > parse_version(current)
 }
 
-/// Ask GitHub for the latest published release of the app and compare it to the running version.
-/// Manual (driven by the About panel button); best-effort — any network/parse failure is returned
-/// as an `Err` the UI shows verbatim. The GitHub REST API requires a User-Agent.
-#[tauri::command]
-pub async fn check_app_update(app: tauri::AppHandle) -> Result<AppUpdate, String> {
-    let current = app.package_info().version.to_string();
-    let client = install_http_client()?;
-    let resp = client
-        .get(GITHUB_LATEST_RELEASE_API)
-        .header(reqwest::header::USER_AGENT, "widgetsack")
-        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| format!("update check failed: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("update check failed: HTTP {}", resp.status()));
-    }
-    let json: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("update check failed: {e}"))?;
+/// Whether a GitHub API response means "you are rate-limited" rather than a real failure: an
+/// unauthenticated client gets HTTP 403 (or 429) with `x-ratelimit-remaining: 0`. Pure seam.
+fn github_rate_limited(status: u16, ratelimit_remaining: Option<&str>) -> bool {
+    matches!(status, 403 | 429) && ratelimit_remaining.map(str::trim) == Some("0")
+}
+
+/// Fold the latest-release JSON into an `AppUpdate` against `current`. Pure seam: the tag is
+/// compared numerically (a `v` prefix is tolerated), and a missing `html_url` falls back to the
+/// releases page so the "open release" affordance always has somewhere to go.
+fn app_update_from_release(json: &serde_json::Value, current: &str) -> Result<AppUpdate, String> {
     let latest = json
         .get("tag_name")
         .and_then(|v| v.as_str())
@@ -1170,13 +1386,72 @@ pub async fn check_app_update(app: tauri::AppHandle) -> Result<AppUpdate, String
         .and_then(|v| v.as_str())
         .unwrap_or(RELEASES_PAGE)
         .to_string();
-    let update_available = version_is_newer(&latest, &current);
+    let update_available = version_is_newer(&latest, current);
     Ok(AppUpdate {
-        current,
+        current: current.to_string(),
         latest,
         url,
         update_available,
     })
+}
+
+/// Ask GitHub for the latest published release of the app and compare it to the running version.
+/// Shared by the manual About-panel check (`check_app_update`) and the background checker
+/// (update.rs). Best-effort — any network/parse failure is an `Err` the UI shows verbatim. The
+/// GitHub REST API requires a User-Agent (so the plain `fetch_text_capped` client can't be reused
+/// as-is); the body is still read under the same `FETCH_CAP` so a hostile response can't balloon.
+pub async fn fetch_app_update(app: &tauri::AppHandle) -> Result<AppUpdate, String> {
+    use futures_util::StreamExt;
+    let current = app.package_info().version.to_string();
+    let client = install_http_client()?;
+    let resp = client
+        .get(GITHUB_LATEST_RELEASE_API)
+        .header(reqwest::header::USER_AGENT, "widgetsack")
+        .header(reqwest::header::ACCEPT, "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| format!("update check failed: {e}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let remaining = resp
+            .headers()
+            .get("x-ratelimit-remaining")
+            .and_then(|v| v.to_str().ok());
+        if github_rate_limited(status.as_u16(), remaining) {
+            return Err("GitHub rate limit hit, try again later".to_string());
+        }
+        return Err(format!("update check failed: HTTP {status}"));
+    }
+    if let Some(len) = resp.content_length()
+        && len > FETCH_CAP as u64
+    {
+        return Err(format!(
+            "update check failed: response too large ({len} bytes)"
+        ));
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let bytes = chunk.map_err(|e| format!("update check failed mid-body: {e}"))?;
+        if buf.len() + bytes.len() > FETCH_CAP {
+            return Err(format!(
+                "update check failed: response exceeded the {FETCH_CAP}-byte cap"
+            ));
+        }
+        buf.extend_from_slice(&bytes);
+    }
+    let json: serde_json::Value =
+        serde_json::from_slice(&buf).map_err(|e| format!("update check failed: {e}"))?;
+    app_update_from_release(&json, &current)
+}
+
+/// Manual "check for updates" (the About panel button). Also feeds the result to the background
+/// checker's state + tray item (update.rs) so the studio badge / tray label reflect it right away.
+#[tauri::command]
+pub async fn check_app_update(app: tauri::AppHandle) -> Result<AppUpdate, String> {
+    let update = fetch_app_update(&app).await?;
+    crate::update::publish(&app, &update);
+    Ok(update)
 }
 
 #[derive(Serialize)]
@@ -1546,18 +1821,49 @@ pub fn seed_themes(app: &tauri::AppHandle) {
     }
 }
 
+/// After the first matching filesystem event, keep draining for this long so one logical change
+/// (an atomic write is create-temp + rename + attribute events) becomes ONE reload.
+const WATCH_DEBOUNCE: Duration = Duration::from_millis(150);
+
+/// Drain `rx` until `until`, counting the items that pass `keep`. Pure over the channel (tested):
+/// the coalescing half of the watcher, separated from notify + Tauri.
+fn drain_burst<T>(
+    rx: &std::sync::mpsc::Receiver<T>,
+    until: Instant,
+    mut keep: impl FnMut(&T) -> bool,
+) -> usize {
+    let mut extra = 0;
+    loop {
+        let now = Instant::now();
+        if now >= until {
+            return extra;
+        }
+        match rx.recv_timeout(until - now) {
+            Ok(item) => {
+                if keep(&item) {
+                    extra += 1;
+                }
+            }
+            Err(_) => return extra, // timed out (burst over) or the sender is gone
+        }
+    }
+}
+
 /// Shared loop behind `watch_themes`/`watch_layout`/`watch_controls`: watch `dir` (non-recursive)
-/// on a dedicated thread for the app's lifetime, and for every filesystem event that passes
-/// `filter`, emit `event_name` then run `on_match` (the layout watcher's main-respawn hook; a
-/// no-op for the others). `label` tags the log lines. Best-effort: logs and returns on watcher
-/// failure, leaving live reload off for that file.
+/// on a dedicated thread for the app's lifetime. For every burst of filesystem events that pass
+/// `filter` (coalesced over `WATCH_DEBOUNCE`), ask `classify` where the change came from: an
+/// `External` change emits `event_name` then runs `on_external` (the layout watcher's main-respawn
+/// hook; a no-op for the others); a `SelfWrite` is ignored (the writer already notified). `label`
+/// tags the log lines. Best-effort: logs and returns on watcher failure, leaving live reload off
+/// for that file.
 fn watch_and_emit(
     app: tauri::AppHandle,
     dir: PathBuf,
     label: &'static str,
     event_name: &'static str,
     filter: impl Fn(&notify::Event) -> bool + Send + 'static,
-    on_match: impl Fn(&tauri::AppHandle) + Send + 'static,
+    classify: impl Fn(&tauri::AppHandle) -> ChangeOrigin + Send + 'static,
+    on_external: impl Fn(&tauri::AppHandle) + Send + 'static,
 ) {
     std::thread::spawn(move || {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -1579,14 +1885,30 @@ fn watch_and_emit(
             return;
         }
         // Keep `watcher` alive by blocking on the channel for the app's lifetime.
-        for res in rx {
+        for res in rx.iter() {
             match res {
-                Ok(event) => {
-                    if filter(&event) {
-                        let _ = app.emit(event_name, ());
-                        on_match(&app);
+                Ok(event) if filter(&event) => {
+                    let extra = drain_burst(
+                        &rx,
+                        Instant::now() + WATCH_DEBOUNCE,
+                        |r| matches!(r, Ok(ev) if filter(ev)),
+                    );
+                    match classify(&app) {
+                        ChangeOrigin::SelfWrite => {
+                            log::debug("watch", format!("{label}: own write, not reloading"))
+                                .field("events", extra + 1)
+                                .emit();
+                        }
+                        ChangeOrigin::External => {
+                            log::info("watch", format!("{label}: external change"))
+                                .field("events", extra + 1)
+                                .emit();
+                            let _ = app.emit(event_name, ());
+                            on_external(&app);
+                        }
                     }
                 }
+                Ok(_) => {}
                 Err(err) => log::warn("watch", format!("{label} watch error"))
                     .field("error", err)
                     .emit(),
@@ -1613,6 +1935,7 @@ pub fn watch_themes(app: tauri::AppHandle) -> Result<(), String> {
                 .iter()
                 .any(|p| p.extension().and_then(|x| x.to_str()) == Some("css"))
         },
+        |_| ChangeOrigin::External,
         |_| {},
     );
     Ok(())
@@ -1646,8 +1969,11 @@ pub(crate) fn respawn_main_hidden(app: &tauri::AppHandle, reason: &str) {
     }
 }
 
-/// Watch the config dir for changes to widgets.json and emit `layout_changed`
-/// so the frontend can live-reload. Best-effort: logs and returns on failure.
+/// Watch the config dir for EXTERNAL changes to widgets.json (an editor, a manual hot-fix) and emit
+/// `layout_changed` so the frontend can live-reload. The app's own `save_layout` writes are
+/// recognised by content hash (`LayoutIoState::self_writes`) and ignored here — `save_layout`
+/// emits the event itself, once, and must never trigger the respawn hook below. Best-effort: logs
+/// and returns on failure.
 pub fn watch_layout(app: tauri::AppHandle) -> Result<(), String> {
     let path = layout_path(&app)?;
     let dir = path
@@ -1655,6 +1981,8 @@ pub fn watch_layout(app: tauri::AppHandle) -> Result<(), String> {
         .ok_or_else(|| "layout path has no parent".to_string())?
         .to_path_buf();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let file_name = path.file_name().map(|n| n.to_os_string());
+    let classify_path = path.clone();
     watch_and_emit(
         app,
         dir,
@@ -1664,7 +1992,17 @@ pub fn watch_layout(app: tauri::AppHandle) -> Result<(), String> {
             event
                 .paths
                 .iter()
-                .any(|p| p.file_name() == path.file_name())
+                .any(|p| p.file_name().map(|n| n.to_os_string()) == file_name)
+        },
+        move |app| {
+            let current = fs::read(&classify_path).ok();
+            match app.try_state::<LayoutIoState>() {
+                Some(state) => match state.self_writes.lock() {
+                    Ok(recent) => classify_change(current.as_deref(), &recent),
+                    Err(_) => ChangeOrigin::External,
+                },
+                None => ChangeOrigin::External,
+            }
         },
         |app| {
             // Reclaim: `main` is DESTROYED (not hidden) to free its renderer when the primary
@@ -1708,6 +2046,7 @@ pub fn watch_controls(app: tauri::AppHandle) -> Result<(), String> {
                 .iter()
                 .any(|p| p.file_name() == path.file_name())
         },
+        |_| ChangeOrigin::External,
         |_| {},
     );
     Ok(())
@@ -1716,12 +2055,125 @@ pub fn watch_controls(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        WindowGeometryHint, atomic_write, client_log_level, install_http_client,
-        install_package_directory, install_package_directory_with, merge_layout_contents,
-        parse_window_state_hints, stale_backups, truncate_chars, valid_name, version_is_newer,
+        ChangeOrigin, ClientLogLimiter, FontCache, LogVerdict, SelfWrites, SystemFont,
+        WindowGeometryHint, atomic_write, classify_change, client_log_level, content_hash,
+        drain_burst, install_http_client, install_package_directory,
+        install_package_directory_with, merge_layout_contents, parse_window_state_hints,
+        stale_backups, truncate_chars, valid_name, version_is_newer,
     };
     use crate::log::LogLevel;
     use serde_json::json;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn self_writes_recognise_recent_content_and_forget_old() {
+        let mut recent = SelfWrites::default();
+        let a = content_hash(b"{\"a\":1}");
+        let b = content_hash(b"{\"a\":2}");
+        assert_ne!(a, b);
+        assert_eq!(
+            classify_change(Some(b"{\"a\":1}"), &recent),
+            ChangeOrigin::External
+        );
+        recent.record(a);
+        assert_eq!(
+            classify_change(Some(b"{\"a\":1}"), &recent),
+            ChangeOrigin::SelfWrite
+        );
+        // A later save doesn't make an older, still-in-flight one look external…
+        recent.record(b);
+        assert_eq!(
+            classify_change(Some(b"{\"a\":1}"), &recent),
+            ChangeOrigin::SelfWrite
+        );
+        // …but the memory is bounded: after many more writes the oldest is forgotten.
+        for i in 0..super::SELF_WRITES_KEPT {
+            recent.record(content_hash(format!("{i}").as_bytes()));
+        }
+        assert_eq!(
+            classify_change(Some(b"{\"a\":1}"), &recent),
+            ChangeOrigin::External
+        );
+        // A missing/unreadable file is an external change (deleted by hand → reload to empty).
+        assert_eq!(classify_change(None, &recent), ChangeOrigin::External);
+    }
+
+    #[test]
+    fn drain_burst_coalesces_until_the_deadline() {
+        let (tx, rx) = std::sync::mpsc::channel::<u32>();
+        tx.send(1).unwrap();
+        tx.send(2).unwrap();
+        tx.send(u32::MAX).unwrap(); // filtered out
+        let started = Instant::now();
+        let extra = drain_burst(&rx, started + Duration::from_millis(40), |v| *v != u32::MAX);
+        assert_eq!(extra, 2);
+        // It waited out the whole window (a late straggler would have been folded in)…
+        assert!(started.elapsed() >= Duration::from_millis(40));
+        // …and returns promptly when the sender is gone.
+        drop(tx);
+        let started = Instant::now();
+        assert_eq!(
+            drain_burst(&rx, started + Duration::from_secs(5), |_| true),
+            0
+        );
+        assert!(started.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn client_log_limiter_caps_per_key_per_window_and_reports_the_gap() {
+        let t0 = Instant::now();
+        let mut l = ClientLogLimiter::new(3, Duration::from_secs(1));
+        let key = || "main\0Gauge\0boom".to_string();
+        for _ in 0..3 {
+            assert_eq!(
+                l.check(key(), t0),
+                LogVerdict::Allow {
+                    suppressed_before: 0
+                }
+            );
+        }
+        assert_eq!(l.check(key(), t0), LogVerdict::Suppress);
+        assert_eq!(l.check(key(), t0), LogVerdict::Suppress);
+        // A different key is independent.
+        assert_eq!(
+            l.check("studio\0Gauge\0boom".to_string(), t0),
+            LogVerdict::Allow {
+                suppressed_before: 0
+            }
+        );
+        // Next window: the first line through carries the count of what was dropped.
+        assert_eq!(
+            l.check(key(), t0 + Duration::from_secs(1)),
+            LogVerdict::Allow {
+                suppressed_before: 2
+            }
+        );
+        assert_eq!(
+            l.check(key(), t0 + Duration::from_secs(1)),
+            LogVerdict::Allow {
+                suppressed_before: 0
+            }
+        );
+    }
+
+    #[test]
+    fn font_cache_serves_within_ttl_only() {
+        let t0 = Instant::now();
+        let mut c = FontCache::new();
+        assert!(c.get(t0).is_none());
+        let fonts = Arc::new(vec![SystemFont {
+            name: "Inter".into(),
+            font_name: "Inter-Regular".into(),
+            path: "C:\\Fonts\\Inter.ttf".into(),
+        }]);
+        c.put(t0, fonts.clone());
+        assert!(Arc::ptr_eq(
+            &c.get(t0 + Duration::from_secs(60)).unwrap(),
+            &fonts
+        ));
+        assert!(c.get(t0 + super::FONT_CACHE_TTL).is_none());
+    }
 
     #[test]
     fn layout_transaction_replaces_only_explicitly_touched_monitors_and_global_fields() {
@@ -2008,6 +2460,37 @@ mod tests {
     }
 
     #[test]
+    fn github_rate_limited_needs_both_status_and_exhausted_quota() {
+        use super::github_rate_limited;
+        assert!(github_rate_limited(403, Some("0")));
+        assert!(github_rate_limited(429, Some(" 0 ")));
+        assert!(!github_rate_limited(403, Some("57"))); // a real 403 (not quota)
+        assert!(!github_rate_limited(403, None));
+        assert!(!github_rate_limited(500, Some("0"))); // outage, not rate limiting
+    }
+
+    #[test]
+    fn app_update_from_release_folds_tag_and_url() {
+        use super::app_update_from_release;
+        let json = serde_json::json!({
+            "tag_name": "v0.0.56",
+            "html_url": "https://github.com/gyng/widgetsack/releases/tag/v0.0.56"
+        });
+        let u = app_update_from_release(&json, "0.0.55").unwrap();
+        assert_eq!(u.current, "0.0.55");
+        assert_eq!(u.latest, "0.0.56"); // v-prefix stripped for display
+        assert!(u.update_available);
+        assert!(u.url.ends_with("/tag/v0.0.56"));
+        // Same version → no update; a missing html_url falls back to the releases page.
+        let json = serde_json::json!({ "tag_name": "0.0.55" });
+        let u = app_update_from_release(&json, "0.0.55").unwrap();
+        assert!(!u.update_available);
+        assert_eq!(u.url, super::RELEASES_PAGE);
+        // No tag → a clear error (not a false "up to date").
+        assert!(app_update_from_release(&serde_json::json!({}), "0.0.55").is_err());
+    }
+
+    #[test]
     fn valid_name_accepts_plain_tokens() {
         assert!(valid_name("amber"));
         assert!(valid_name("My Theme 2"));
@@ -2229,12 +2712,16 @@ mod tests {
                 WindowGeometryHint {
                     label: "overlay-DISPLAY3".into(),
                     width: 2560.0,
-                    height: 720.0
+                    height: 720.0,
+                    x: Some(652.0),
+                    y: Some(2160.0)
                 },
                 WindowGeometryHint {
                     label: "studio".into(),
                     width: 1767.0,
-                    height: 1016.0
+                    height: 1016.0,
+                    x: Some(1027.0),
+                    y: Some(380.0)
                 },
             ]
         );

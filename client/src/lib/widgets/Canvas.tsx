@@ -73,7 +73,11 @@ import { useConditionHidden } from './canvas/useConditionHidden';
 import GroupFrame from './GroupFrame';
 import { useMeasuredRects } from './canvas/useMeasuredRects';
 import { useOverlayPrefs } from './canvas/overlayPrefs';
-import { overlayPresentation, isWholeWindowInteractive } from './canvas/overlayPresentation';
+import {
+	overlayPresentation,
+	isWholeWindowInteractive,
+	type PresentationInput
+} from './canvas/overlayPresentation';
 import { screenRectToLayout } from '../core/measureMath';
 import { collectSensorRefs, sensorActivity } from '../core/sensorActivity';
 import { SYSTEM_GROUP } from '../core/sensorList';
@@ -102,6 +106,7 @@ import {
 	closeWindow,
 	logClient,
 	onStudioCloseRequested,
+	mainWindowExists,
 	reconcileOverlays,
 	recreateMain,
 	requestLayoutBackup,
@@ -1021,6 +1026,15 @@ export default function Canvas({ studio = false }: Props) {
 	}, [studio]);
 
 	// --- init (mount effect, non-idempotent) ---
+	// The current presentation input (mirrored by the presentation effect below) so the refit driver
+	// (useStudioInit) can re-apply the CURRENT presentation after a geometry-only fit.
+	const presentationRef = useRef<PresentationInput | null>(null);
+	const reapplyPresentation = useCallback(async () => {
+		const input = presentationRef.current;
+		if (!input) return; // studio, or not mounted yet
+		await applyOverlayPresentation(overlayPresentation(input), input.layer);
+	}, []);
+
 	useStudioInit({
 		studio,
 		hub,
@@ -1040,7 +1054,8 @@ export default function Canvas({ studio = false }: Props) {
 			setEditMode(true);
 		},
 		setMonitorOptions,
-		clearPreviewWrite
+		clearPreviewWrite,
+		reapplyPresentation
 	});
 
 	// resize → updateWorkArea (svelte:window on:resize).
@@ -1069,12 +1084,13 @@ export default function Canvas({ studio = false }: Props) {
 	// participates. This supersedes the old per-window setClickThrough(true) at init.
 	useEffect(() => {
 		if (studio) return;
-		const input = {
+		const input: PresentationInput = {
 			windowed: overlayPrefs.debugWindowed,
 			layer: overlayPrefs.overlayLayer,
 			isMain,
 			editMode
 		};
+		presentationRef.current = input;
 		void applyOverlayPresentation(overlayPresentation(input), overlayPrefs.overlayLayer);
 		syncRects();
 	}, [studio, isMain, editMode, overlayPrefs.debugWindowed, overlayPrefs.overlayLayer, syncRects]);
@@ -1195,10 +1211,14 @@ export default function Canvas({ studio = false }: Props) {
 			// While `main` is destroyed to reclaim its renderer (empty primary), nothing drives overlay
 			// reconcile. The studio is the editing surface, so on close it applies the final layout: spawn
 			// /close secondary overlays for the edited monitors, and bring `main` back if the primary was
-			// re-populated. Both are idempotent no-ops when nothing changed / `main` already exists.
+			// re-populated. ONLY when `main` is absent: a live `main` already reconciles on the
+			// `layout_changed` this save emits, and two reconciles in different webviews don't share a
+			// single-flight — both would try to create the same window (the loser errors).
 			try {
-				await reconcileOverlays();
-				await recreateMain();
+				if (!(await mainWindowExists())) {
+					await reconcileOverlays();
+					await recreateMain();
+				}
 			} catch (err) {
 				console.warn('overlay reconcile on studio close failed', err);
 			}
