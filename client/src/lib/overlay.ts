@@ -21,6 +21,7 @@ import { compareMonitorOptions, monitorOptionLabel } from './monitorLabel';
 import { gdiTag, monitorByKey, monitorDeviceKey, type StableIds } from './monitorKey';
 import { migrateMonitorKeys, parseLayoutAny } from './core/migration';
 import { legacyKeyMapping, type WindowGeometryHint } from './core/monitorMigration';
+import { OVERLAY_LABEL_PREFIX, planOverlays } from './core/overlayPlan';
 import { readOverlayPrefs, type OverlayLayer } from './widgets/canvas/overlayPrefs';
 import type { OverlayPresentation } from './widgets/canvas/overlayPresentation';
 import { COMMANDS, EVENTS } from './bridge/contract';
@@ -191,10 +192,24 @@ export async function setMainWindowVisible(visible: boolean): Promise<void> {
 			// `main` is re-created on demand when the primary regains a widget: by the studio on close
 			// (reconcileOverlays + recreateMain) and by Rust's watch_layout respawn for external edits.
 			// While `main` is gone the reconcile driver moves off it; secondaries keep their own renderers.
+			// Tell keepalive WHY: if no secondary is populated either, zero windows is the steady state
+			// and it must not boot a renderer every 30 s hoping something changed.
+			const populated = await populatedMonitorKeys();
+			const populatedElsewhere = populated ? [...populated].some((k) => k !== 'default') : true;
+			await invoke(COMMANDS.mainReclaimed, { populatedElsewhere }).catch(() => undefined);
 			await win.destroy();
 		}
 	} catch (err) {
 		logClient('error', 'overlay', `setMainWindowVisible(${visible}) failed: ${String(err)}`);
+	}
+}
+
+/** Whether the primary `main` window currently exists (any webview may ask). */
+export async function mainWindowExists(): Promise<boolean> {
+	try {
+		return (await getAllWebviewWindows()).some((w) => w.label === 'main');
+	} catch {
+		return false;
 	}
 }
 
@@ -299,6 +314,16 @@ async function fitWindowToMonitor(
 		w: m.size.width,
 		h: m.size.height
 	};
+	// 'wallpaper' layer: the window is a CHILD of the desktop's WorkerW while parented, and tao's
+	// setPosition is then parent-relative (the WorkerW spans the virtual screen, whose origin is
+	// negative on a topology with monitors above the primary) while the read-back is in screen
+	// coordinates — every pass would re-apply the same wrong rect. Un-parent for the fit and let the
+	// caller's presentation pass re-parent afterwards. No-op (cheap short-circuit in Rust) otherwise.
+	const prefs = readOverlayPrefs();
+	const reparent = prefs.overlayLayer === 'wallpaper' && !prefs.debugWindowed;
+	if (reparent) {
+		await invoke(COMMANDS.setOverlayWallpaper, { enabled: false }).catch(() => undefined);
+	}
 	const result = await fitWindowVerified(
 		{
 			setPosition: (x, y) => win.setPosition(new PhysicalPosition(x, y)),
@@ -311,6 +336,9 @@ async function fitWindowToMonitor(
 		target,
 		{ sleep: (ms) => new Promise((r) => setTimeout(r, ms)) }
 	);
+	if (reparent) {
+		await invoke(COMMANDS.setOverlayWallpaper, { enabled: true }).catch(() => undefined);
+	}
 	if (result.mismatch !== null) {
 		logClient(
 			result.ok ? 'info' : 'warn',
@@ -323,103 +351,90 @@ async function fitWindowToMonitor(
 	}
 }
 
-// Guard so repeat fillPrimaryMonitor() calls don't stack duplicate onScaleChanged listeners.
-let scaleListenerWired = false;
-
 /** Size and position the main window to exactly cover the PRIMARY monitor. The main window
  * renders the `default` layout key, and the studio maps `default` → primary, so the launcher
  * must sit on the primary (not wherever it happened to open) or `default` would render on the
- * wrong display. Falls back to the current monitor if the primary can't be resolved. */
+ * wrong display. Falls back to the current monitor if the primary can't be resolved.
+ *
+ * Fit only: the window's presentation (decorations, click-through, z-order — which depend on edit
+ * mode and the windowed-debug pref) is owned by Canvas's presentation effect and re-applied by the
+ * refit driver (useStudioInit) after every fit; forcing it here turned an edit-mode overlay
+ * click-through and a windowed-debug window borderless on every topology tick. The one exception
+ * is borderless/shadow-less in normal mode, re-asserted right after the resize because setSize can
+ * revive the thin accent border on Windows (tauri-apps/discussions/9469). Scale-change re-fits are
+ * wired once by useStudioInit through the same single-flight refit — not here. */
 export async function fillPrimaryMonitor(): Promise<void> {
 	const monitor = (await primaryMonitor()) ?? (await currentMonitor());
 	if (!monitor) return;
 	const win = getCurrentWindow();
-	// #12: DPI/scale hot-plug. When the primary monitor's scale factor changes at runtime
-	// (resolution/scale change, or this window moving to a differently-scaled display), the
-	// physical position/size must be recomputed against the now-primary monitor and the
-	// borderless/topmost state re-asserted. Registered once (guarded) so repeated
-	// fillPrimaryMonitor() calls don't stack listeners, and BEFORE the fit below: the fit itself
-	// can move the window across a DPI boundary, and Windows then re-places it with its own
-	// suggested rect (see fitWindowToMonitor) — a listener wired only afterwards missed that event
-	// and left the window off by the hidden frame. Scale-change only — physical monitor add/remove
-	// is out of scope here (handled by reconcileOverlays on layout change).
-	if (!scaleListenerWired) {
-		scaleListenerWired = true;
-		try {
-			await win.onScaleChanged(() => {
-				fillPrimaryMonitor().catch((err) =>
-					console.warn('fillPrimaryMonitor on scale change failed', err)
-				);
-			});
-		} catch (err) {
-			console.warn('onScaleChanged registration failed', err);
-			scaleListenerWired = false; // allow a retry on a later fill
-		}
-	}
 	await fitWindowToMonitor(win, monitor, 'fillPrimaryMonitor');
-	// Re-assert borderless AFTER the resize: on Windows an undecorated window keeps a thin
-	// accent-coloured border (tauri-apps/discussions/9469), and setSize can revive it even when
-	// the config has shadow:false. Also force decorations off — the window-state plugin can
-	// restore a stale saved `decorations:true` at startup, which only this (or the Rust-side
-	// StateFlags exclusion) undoes.
-	try {
-		await win.setDecorations(false);
-		await win.setShadow(false);
-		// #13: other always-on-top windows can silently steal topmost; re-assert the chosen z-order
-		// layer here (also re-runs on scale change, so the layer survives a DPI hot-plug).
-		await applyOverlayLayer(readOverlayPrefs().overlayLayer);
-	} catch (err) {
-		console.warn('setDecorations/setShadow/overlay layer failed', err);
+	if (!readOverlayPrefs().debugWindowed) {
+		try {
+			await win.setDecorations(false);
+			await win.setShadow(false);
+		} catch (err) {
+			console.warn('setDecorations/setShadow failed', err);
+		}
 	}
 }
 
-// Guard so repeat fillOwnMonitor() calls don't stack duplicate onScaleChanged listeners (one per
-// secondary-overlay webview, mirroring fillPrimaryMonitor's scaleListenerWired).
-let ownScaleListenerWired = false;
+// First reveal of THIS secondary overlay webview: click-through + z-order are applied once here,
+// before the window is ever visible (Canvas's presentation effect applies them too, but it races the
+// reveal). Later fits leave presentation to that effect / the refit driver.
+let ownRevealed = false;
 
 /** Secondary overlay (?monitor=<key>) self-fit + reveal: position/size THIS window onto the monitor
- * whose stable device key is `key`, re-assert borderless + click-through, then show. Runs in the
- * overlay's OWN webview so it can't be orphaned: the spawn-side `tauri://created` setup in
- * reconcileOverlays runs in the CREATING window's JS context, and when an empty-primary `main`
- * destroys itself (renderer reclaim) right after reconciling, that context died before
- * positioning/revealing the new overlay — leaving it permanently invisible (and `if (have) continue`
- * never repaired it). Idempotent with the spawn-side setup when both run. Best-effort: failures are
- * logged, never thrown. No-op when no current monitor matches `key` (a later reconcile closes the
- * orphan). */
+ * whose stable key is `key`, then show. Runs in the overlay's OWN webview so it can't be orphaned by
+ * its creator (an empty-primary `main` destroys itself right after spawning secondaries). When no
+ * connected monitor matches `key` (HDMI switched away) the window is HIDDEN — Windows would otherwise
+ * relocate the off-screen window onto another monitor, or leave it invisible on dead coordinates —
+ * and the next reconcile pass closes it; a monitor that returns re-fits and re-shows it via the
+ * topology poller. Fit only (see fillPrimaryMonitor for why presentation isn't forced here).
+ * Best-effort: failures are logged, never thrown. */
 export async function fillOwnMonitor(key: string): Promise<void> {
 	try {
 		const [monitors, ids] = await Promise.all([availableMonitors(), displayIds()]);
 		const m = monitorByKey(monitors, key, ids.stable);
+		const win = getCurrentWindow();
 		if (!m) {
-			console.warn(`fillOwnMonitor: no monitor matches key '${key}'`);
+			logClient('warn', 'overlay', `fillOwnMonitor(${key}): no connected monitor matches; hiding`);
+			await win.hide().catch(() => undefined);
 			return;
 		}
-		const win = getCurrentWindow();
-		// #12: DPI/scale hot-plug — re-fit to our monitor when its scale factor changes (mirrors
-		// fillPrimaryMonitor; the device key stays stable across a scale change). Wired BEFORE the
-		// fit: a secondary is created from the primary's webview, i.e. on the primary's monitor, and
-		// the fit below is what moves it across the DPI boundary — Windows then re-places it with a
-		// suggested rect that assumes the resize frame tao hides (2026-09-20: 2576x736 at 644,2152
-		// for a 2560x720 strip at 652,2160). A listener wired after the fit missed that event, and
-		// nothing else re-fitted the window, so it stayed 8 px off until restart.
-		if (!ownScaleListenerWired) {
-			ownScaleListenerWired = true;
-			await win.onScaleChanged(() => void fillOwnMonitor(key));
-		}
 		await fitWindowToMonitor(win, m, `fillOwnMonitor(${key})`);
-		// Same re-asserts as the spawn side: no border/title bar (the window-state plugin can restore
-		// a stale decorations:true) and click-through BEFORE the window is ever visible.
-		await win.setDecorations(false);
-		await win.setShadow(false);
-		await win.setIgnoreCursorEvents(true);
-		await win.show();
-		fadeInOverlayContent();
-		// show() raises the window; re-assert the chosen z-order layer AFTER it (see
-		// setMainWindowVisible). Safe to apply the full layer here, incl. the wallpaper SetParent,
-		// which must run from this overlay's own webview anyway.
-		await applyOverlayLayer(readOverlayPrefs().overlayLayer);
+		const prefs = readOverlayPrefs();
+		if (!prefs.debugWindowed) {
+			// No border/title bar (the window-state plugin can restore a stale decorations:true).
+			await win.setDecorations(false);
+			await win.setShadow(false);
+		}
+		if (!ownRevealed) {
+			ownRevealed = true;
+			// Click-through BEFORE the window is ever visible (a passive secondary starts
+			// click-through; edit mode can't be on at first reveal), then show and seed the z-order.
+			if (!prefs.debugWindowed) await win.setIgnoreCursorEvents(true);
+			await win.show();
+			fadeInOverlayContent();
+			// show() raises the window; re-assert the chosen z-order layer AFTER it (see
+			// setMainWindowVisible). Safe to apply the full layer here, incl. the wallpaper SetParent,
+			// which must run from this overlay's own webview anyway.
+			await applyOverlayLayer(prefs.overlayLayer);
+		} else if (!(await win.isVisible().catch(() => true))) {
+			await win.show(); // hidden while its monitor was away — it's back
+		}
 	} catch (err) {
 		logClient('error', 'overlay', `fillOwnMonitor(${key}) failed: ${String(err)}`);
+	}
+}
+
+/** Subscribe to THIS window's DPI/scale-factor changes (Tauri stays at this edge). Returns the
+ * unlisten fn; the caller (useStudioInit) wires it once per webview. */
+export async function onOwnScaleChanged(cb: () => void): Promise<() => void> {
+	try {
+		return await getCurrentWindow().onScaleChanged(cb);
+	} catch (err) {
+		console.warn('onScaleChanged registration failed', err);
+		return () => undefined;
 	}
 }
 
@@ -499,6 +514,7 @@ export function watchDisplayChanges(
 				// mis-fit during an HDMI switch was otherwise invisible in the postmortem.
 				logClient('info', 'overlay', `display topology changed: [${last}] → [${s}]`);
 				last = s;
+				displayIdsCache = null; // GDI names may have been re-numbered with it
 				onChange();
 				return;
 			}
@@ -1024,6 +1040,23 @@ export async function studioMonitorOptions(): Promise<
  * entries dropped so "unknown" falls back to the tag). Both empty on non-Windows / a plain browser /
  * tests, or if the command is unavailable — every caller then falls back to the GDI tag alone. */
 async function displayIds(): Promise<{ friendly: Map<string, string>; stable: StableIds }> {
+	// Cached: stable ids are, by definition, stable while the topology is — and this runs on every
+	// poller tick (drift probe), every fit and every reconcile. Invalidated by the topology poller on
+	// a change and by a TTL as a safety net. Every caller is in the same webview.
+	const now = Date.now();
+	if (displayIdsCache && now - displayIdsCache.at < DISPLAY_IDS_TTL_MS) return displayIdsCache.ids;
+	const ids = await fetchDisplayIds();
+	displayIdsCache = { at: now, ids };
+	return ids;
+}
+
+let displayIdsCache: {
+	at: number;
+	ids: { friendly: Map<string, string>; stable: StableIds };
+} | null = null;
+const DISPLAY_IDS_TTL_MS = 60_000;
+
+async function fetchDisplayIds(): Promise<{ friendly: Map<string, string>; stable: StableIds }> {
 	const friendly = new Map<string, string>();
 	const stable = new Map<string, string>();
 	try {
@@ -1145,10 +1178,28 @@ async function reconcileOverlaysOnce(): Promise<void> {
 			tag: gdiTag(m.name),
 			primary: isPrimaryMon(m),
 			w: m.size.width,
-			h: m.size.height
+			h: m.size.height,
+			x: m.position.x,
+			y: m.position.y
 		})),
 		hints
 	);
+	if (Object.keys(legacyMapping).length > 0) {
+		// Which evidence decided each legacy key is worth a line: a wrong guess here is what puts a
+		// layout on the wrong monitor after an upgrade.
+		logClient(
+			'info',
+			'overlay',
+			`legacy key mapping (hints: ${
+				hints
+					.filter((h) => h.label.startsWith(OVERLAY_LABEL_PREFIX))
+					.map((h) => `${h.label} ${h.width}x${h.height}@${h.x ?? '?'},${h.y ?? '?'}`)
+					.join(', ') || 'none'
+			}) → ${Object.entries(legacyMapping)
+				.map(([a, b]) => `${a}→${b}`)
+				.join(', ')}`
+		);
+	}
 	const populated = await populatedMonitorKeys(legacyMapping);
 	if (populated === null) {
 		// Couldn't read the layout this pass — skip it entirely rather than treat "no data" as
@@ -1161,33 +1212,27 @@ async function reconcileOverlaysOnce(): Promise<void> {
 	// the full layer (incl. wallpaper, which must be invoked from its OWN webview) via its Canvas.
 	const layer = readOverlayPrefs().overlayLayer;
 
-	for (let i = 0; i < monitors.length; i++) {
-		const m = monitors[i];
-		// Skip the primary monitor — the main window covers it and renders the `default` key.
-		if (isPrimaryMon(m)) {
-			continue;
+	// One `overlay-<key>` per connected, non-primary, populated monitor — and nothing else
+	// (core/overlayPlan.ts). The set difference also closes: legacy-labelled windows after the key
+	// migration, an overlay whose monitor was switched away (Windows would relocate it onto another
+	// screen), and the overlay of a monitor that just BECAME the primary (`main` covers it now).
+	const plan = planOverlays({
+		monitors: monitors.map((m, i) => ({
+			key: monitorDeviceKey(m.name, i, ids.stable),
+			primary: isPrimaryMon(m)
+		})),
+		populated,
+		existingLabels: existing.map((w) => w.label)
+	});
+	for (const label of plan.close) {
+		const w = byLabel.get(label);
+		if (w) await destroyOverlayWindow(w);
+	}
+	for (const key of plan.create) {
+		const label = OVERLAY_LABEL_PREFIX + key;
+		if (createRetries.get(label) !== undefined && createRetries.get(label)! >= CREATE_RETRY_MAX) {
+			continue; // gave up on this label this session (logged below)
 		}
-		const key = monitorDeviceKey(m.name, i, ids.stable);
-		const label = `overlay-${key}`;
-		const have = byLabel.get(label);
-		// Close any legacy-keyed window for this slot (`overlay-<i>` from the index era, `overlay-DISPLAYn`
-		// from the GDI-tag era) so it doesn't linger alongside its renamed successor after the migration.
-		for (const legacyLabel of [`overlay-${i}`, `overlay-${gdiTag(m.name)}`]) {
-			const legacy = byLabel.get(legacyLabel);
-			if (legacy && legacy.label !== label) {
-				await legacy
-					.close()
-					.catch((err) => console.warn('close legacy overlay failed', legacy.label, err));
-			}
-		}
-		const want = populated.has(key);
-		// Close an overlay whose monitor no longer has any widgets.
-		if (!want) {
-			if (have) await have.close().catch((err) => console.warn('close overlay failed', label, err));
-			continue;
-		}
-		if (have) continue; // already open
-
 		const w = new WebviewWindow(label, {
 			url: `/?monitor=${encodeURIComponent(key)}`,
 			transparent: true,
@@ -1203,54 +1248,52 @@ async function reconcileOverlaysOnce(): Promise<void> {
 			// uses no OS file-drop, so Tauri's native handler is safe to disable here too.
 			dragDropEnabled: false
 		});
-		// Constructor sizes are logical; place precisely in physical px, then show. BEST-EFFORT fast
-		// path only: this callback lives in the CREATING window's JS context and dies with it (an
-		// empty-primary `main` self-destructs right after reconciling). The overlay's own Canvas init
-		// re-runs the same setup via fillOwnMonitor (idempotent), so it reveals either way.
-		w.once('tauri://created', async () => {
-			try {
-				await fitWindowToMonitor(w, m, `spawn ${label}`);
-				// Re-assert after the resize (see fillPrimaryMonitor) so no border/title bar
-				// remains — the window-state plugin can restore a stale decorations:true.
-				await w.setDecorations(false);
-				await w.setShadow(false);
-				await w.setIgnoreCursorEvents(true);
-				await w.show();
-				// #13: seed the z-order after show (other always-on-top windows can steal topmost).
-				// 'wallpaper' is NOT applied here — its Rust SetParent must run from the secondary's
-				// own webview, so the secondary self-parents via its Canvas effect on mount.
-				if (layer === 'bottom') {
-					await w.setAlwaysOnTop(false);
-					await w.setAlwaysOnBottom(true);
-				} else if (layer === 'top') {
-					await w.setAlwaysOnTop(true);
-				}
-				// #12: DPI/scale hot-plug. Re-fit this overlay to ITS monitor when its scale factor
-				// changes at runtime — resolved afresh by device key, NOT the `m` captured above: a
-				// topology change (HDMI switch, monitor re-arranged) can move the monitor, and a DPI
-				// hop that follows would otherwise re-anchor the overlay to the stale coordinates.
-				// Scale-change only — monitor add/remove is reconcileOverlays' job on layout change.
-				await w.onScaleChanged(() => {
-					(async () => {
-						const [mons, live] = await Promise.all([availableMonitors(), displayIds()]);
-						const now = monitorByKey(mons, key, live.stable);
-						if (now) await fitWindowToMonitor(w, now, `scale-change ${label}`);
-					})().catch((err) =>
-						logClient(
-							'warn',
-							'overlay',
-							`overlay re-fit on scale change failed (${label}): ${String(err)}`
-						)
-					);
-				});
-			} catch (err) {
-				logClient('error', 'overlay', `overlay window setup failed (${label}): ${String(err)}`);
+		// The overlay fits + reveals ITSELF (fillOwnMonitor in its own Canvas init) — there is
+		// deliberately no creator-side fit here: it lived in the CREATING window's JS context (dying
+		// with an empty-primary `main`), raced the overlay's own fit with a second setPosition/setSize
+		// sequence, and leaked a label-keyed scale listener per respawn.
+		w.once('tauri://created', () => createRetries.delete(label));
+		w.once('tauri://error', (err) => {
+			const n = (createRetries.get(label) ?? 0) + 1;
+			createRetries.set(label, n);
+			logClient(
+				n >= CREATE_RETRY_MAX ? 'error' : 'warn',
+				'overlay',
+				`overlay window error (${label}, attempt ${n}/${CREATE_RETRY_MAX}): ${String(err)}`
+			);
+			// Most often "a window with this label already exists": the previous instance's destroy
+			// had not completed when this pass snapshotted the windows. Re-run the (single-flight)
+			// reconcile shortly; the retry budget stops a genuinely broken label from looping.
+			if (n < CREATE_RETRY_MAX) {
+				setTimeout(() => void reconcileOverlays(), CREATE_RETRY_DELAY_MS);
 			}
 		});
-		w.once('tauri://error', (err) =>
-			logClient('error', 'overlay', `overlay window error (${label}): ${String(err)}`)
-		);
 	}
+}
+
+/** Per-label create failures this session (reset on a successful create) — see the error handler. */
+const createRetries = new Map<string, number>();
+const CREATE_RETRY_MAX = 3;
+const CREATE_RETRY_DELAY_MS = 400;
+
+/** Destroy an overlay window and wait (briefly) until its label is gone, so a pass that closes and
+ * re-creates the same label — remove the last widget on a monitor, then re-add one within the same
+ * second — doesn't see the dying window as "already open" (or trip "label already exists" on
+ * create). `destroy` rather than `close`: overlays have no close-request listeners, and `close()`
+ * resolves when the REQUEST is dispatched, not when the window is gone. */
+async function destroyOverlayWindow(w: WebviewWindow): Promise<void> {
+	try {
+		await w.destroy();
+	} catch (err) {
+		console.warn('destroy overlay failed', w.label, err);
+		return;
+	}
+	for (let i = 0; i < 10; i++) {
+		const all = await getAllWebviewWindows();
+		if (!all.some((x) => x.label === w.label)) return;
+		await new Promise((r) => setTimeout(r, 50));
+	}
+	logClient('warn', 'overlay', `destroy ${w.label}: still listed after 500ms`);
 }
 
 /** Primary window only: reconcile per-monitor overlays against the saved layout — see

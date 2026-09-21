@@ -11,6 +11,30 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  version_check:
+    name: Version + changelog consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      # The three places a release version lives must agree BEFORE a tag is cut: tauri.conf.json
+      # (the bundle/installer version), Cargo.toml (the crate + the update check's "current"), and
+      # the CHANGELOG section the release notes come from. build.yml re-checks the tag against them.
+      - name: Assert tauri.conf.json == Cargo.toml version and CHANGELOG has a section for it
+        shell: bash
+        run: |
+          set -euo pipefail
+          conf=$(jq -r .version widgetsack/tauri.conf.json)
+          cargo=$(grep -m1 -E '^version = "' widgetsack/Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/')
+          echo "tauri.conf.json: $conf"
+          echo "Cargo.toml:      $cargo"
+          if [ "$conf" != "$cargo" ]; then
+            echo "::error::widgetsack/tauri.conf.json ($conf) and widgetsack/Cargo.toml ($cargo) versions differ"; exit 1
+          fi
+          if ! grep -qE "^## ${conf//./\.}( |$)" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## $conf' section"; exit 1
+          fi
+          echo "OK: $conf"
+
   rust_test:
     name: Tests for Rust backend
     runs-on: windows-latest

@@ -246,14 +246,42 @@ pub async fn list_windows(window: tauri::WebviewWindow) -> Result<Vec<WindowDesc
 /// Snap the window `hwnd` so its visible frame fills `rect` (physical px). Restores a maximized /
 /// minimized window first and compensates the DWM border. Returns an error (rather than panicking)
 /// when the target is an elevated window UIPI won't let us touch. Studio-only.
+/// `async` + blocking pool: `snap` sleeps through the restore animation and `SetWindowPos` on a
+/// foreign window is a synchronous cross-process message — neither may run on the UI thread. A
+/// target that is not responding (`IsHungAppWindow`) is refused up front, because SendMessage-class
+/// calls into a hung window block until it drains its queue (the monitor-switch hang).
 #[tauri::command]
-pub fn snap_window(
+pub async fn snap_window(
     window: tauri::WebviewWindow,
     hwnd: i64,
     rect: ScreenRect,
 ) -> Result<(), String> {
     require_app_window(&window)?;
-    snap(hwnd, rect)
+    tokio::task::spawn_blocking(move || {
+        if is_hung(hwnd) {
+            return Err(format!(
+                "window {hwnd:#x} is not responding; refusing to snap it"
+            ));
+        }
+        snap(hwnd, rect)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Whether `hwnd`'s owning thread has stopped pumping messages (Windows' "Not Responding" test).
+#[cfg(target_os = "windows")]
+fn is_hung(hwnd: i64) -> bool {
+    use std::ffi::c_void;
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::IsHungAppWindow;
+    // SAFETY: a plain query on a window handle; an invalid handle just reports not-hung.
+    unsafe { IsHungAppWindow(HWND(hwnd as isize as *mut c_void)).as_bool() }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn is_hung(_hwnd: i64) -> bool {
+    false
 }
 
 // ---- live drag detection (MVP2): a SetWinEventHook message-pump thread + a pointer probe ----

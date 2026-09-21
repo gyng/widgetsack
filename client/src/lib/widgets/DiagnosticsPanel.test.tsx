@@ -30,6 +30,26 @@ vi.mock('./canvas/widgetProfile', () => ({
 	resetWidgetProfile: vi.fn()
 }));
 
+// The structured-log adapter (lib/logs.ts): backlog + live stream + log path + reveal. `subscribeLogs`
+// captures its callback so a test can push a live record through.
+let logCb: ((r: LogRecord) => void) | null = null;
+const unlistenLogs = vi.fn();
+vi.mock('../logs', () => ({
+	getLogs: vi.fn(() => Promise.resolve([])),
+	subscribeLogs: vi.fn((cb: (r: LogRecord) => void) => {
+		logCb = cb;
+		return Promise.resolve(unlistenLogs);
+	}),
+	getLogFilePath: vi.fn(() => Promise.resolve(null)),
+	revealLogDir: vi.fn(() => Promise.resolve(true))
+}));
+
+// The two overlay helpers the report uses: monitor list (with stable keys) + clipboard.
+vi.mock('../overlay', () => ({
+	studioMonitorOptions: vi.fn(() => Promise.resolve([])),
+	copyToClipboard: vi.fn(() => Promise.resolve(true))
+}));
+
 import DiagnosticsPanel from './DiagnosticsPanel';
 import {
 	getProcessDiagnostics,
@@ -43,6 +63,17 @@ import {
 	type SubsystemTiming
 } from '../diag';
 import { resetWidgetProfile, widgetCosts } from './canvas/widgetProfile';
+import { getLogFilePath, getLogs, revealLogDir } from '../logs';
+import { copyToClipboard, studioMonitorOptions } from '../overlay';
+import type { LogRecord } from '../core/logs';
+
+const logRec = (over: Partial<LogRecord> = {}): LogRecord => ({
+	ts_ms: 1_700_000_000_000,
+	level: 'info',
+	target: 'sensors',
+	message: 'tick',
+	...over
+});
 
 // A WindowDiag fixture with sensible defaults; `at` is stamped on the studio clock by the panel
 // (it re-stamps performance.now() on arrival), so its exact value here doesn't matter. Heap/art
@@ -86,6 +117,12 @@ function hasText(container: HTMLElement, text: string): HTMLElement {
 beforeEach(() => {
 	vi.clearAllMocks();
 	reportCb = null;
+	logCb = null;
+	vi.mocked(getLogs).mockResolvedValue([]);
+	vi.mocked(getLogFilePath).mockResolvedValue(null);
+	vi.mocked(revealLogDir).mockResolvedValue(true);
+	vi.mocked(studioMonitorOptions).mockResolvedValue([]);
+	vi.mocked(copyToClipboard).mockResolvedValue(true);
 	vi.mocked(getProcessDiagnostics).mockResolvedValue(null);
 	vi.mocked(getSubsystemTimings).mockResolvedValue([]);
 	vi.mocked(listWindowLabels).mockResolvedValue([]);
@@ -314,5 +351,154 @@ describe('DiagnosticsPanel window rows', () => {
 		// The heap branch falls back to 'n/a' and drops the % fraction.
 		expect(hasText(container, 'heap n/a')).toBeTruthy();
 		await flush();
+	});
+});
+
+describe('DiagnosticsPanel logs pane', () => {
+	const backlog = [
+		logRec({ level: 'debug', target: 'sensors', message: 'debug noise' }),
+		logRec({ level: 'warn', target: 'ha', message: 'ha warned' }),
+		logRec({ level: 'info', target: 'watchdog', message: 'stall 900ms' }),
+		logRec({
+			level: 'info',
+			target: 'client',
+			fields: { component: 'overlay', window: 'main' },
+			message: 'refit start (main)'
+		})
+	];
+
+	it('shows warn+ from the backlog by default, and lets the level filter widen it', async () => {
+		vi.mocked(getLogs).mockResolvedValue(backlog);
+		const { findByText, queryByText, getByLabelText, container } = render(<DiagnosticsPanel />);
+		expect(await findByText(/ha: ha warned/)).toBeTruthy();
+		expect(queryByText(/debug noise/)).toBeNull();
+		expect(queryByText(/stall 900ms/)).toBeNull();
+		expect(hasText(container, '1 shown · 4 buffered')).toBeTruthy();
+		fireEvent.change(getByLabelText('Minimum log level'), { target: { value: 'debug' } });
+		expect(queryByText(/debug noise/)).toBeTruthy();
+		expect(queryByText(/stall 900ms/)).toBeTruthy();
+		await flush();
+	});
+
+	it('quick chips narrow to their target (+ component) and toggle off again', async () => {
+		vi.mocked(getLogs).mockResolvedValue(backlog);
+		const { findByText, getByLabelText, getByRole, queryByText } = render(<DiagnosticsPanel />);
+		await findByText(/ha warned/);
+		fireEvent.change(getByLabelText('Minimum log level'), { target: { value: 'trace' } });
+		const watchdog = getByRole('button', { name: 'watchdog' });
+		fireEvent.click(watchdog);
+		expect(watchdog.getAttribute('aria-pressed')).toBe('true');
+		expect(queryByText(/stall 900ms/)).toBeTruthy();
+		expect(queryByText(/ha warned/)).toBeNull();
+		// The client chip requires the overlay component.
+		fireEvent.click(getByRole('button', { name: 'client · overlay' }));
+		expect(queryByText(/refit start/)).toBeTruthy();
+		expect(queryByText(/stall 900ms/)).toBeNull();
+		// Clicking the active chip clears it → everything at trace+ is back.
+		fireEvent.click(getByRole('button', { name: 'client · overlay' }));
+		expect(queryByText(/stall 900ms/)).toBeTruthy();
+		expect(queryByText(/ha warned/)).toBeTruthy();
+		await flush();
+	});
+
+	it('the target text filter matches targets and clears any chip', async () => {
+		vi.mocked(getLogs).mockResolvedValue(backlog);
+		const { findByText, getByLabelText, getByRole, queryByText } = render(<DiagnosticsPanel />);
+		await findByText(/ha warned/);
+		fireEvent.change(getByLabelText('Minimum log level'), { target: { value: 'trace' } });
+		fireEvent.click(getByRole('button', { name: 'watchdog' }));
+		fireEvent.change(getByLabelText('Filter by target'), { target: { value: 'ha' } });
+		expect(getByRole('button', { name: 'watchdog' }).getAttribute('aria-pressed')).toBe('false');
+		expect(queryByText(/ha warned/)).toBeTruthy();
+		expect(queryByText(/stall 900ms/)).toBeNull();
+		await flush();
+	});
+
+	it('appends live records from the stream and shows the empty stub when nothing matches', async () => {
+		const { findByText, queryByText, unmount } = render(<DiagnosticsPanel />);
+		expect(await findByText('No log lines match.')).toBeTruthy();
+		act(() => logCb?.(logRec({ level: 'error', target: 'panic', message: 'boom' })));
+		expect(queryByText(/panic: boom/)).toBeTruthy();
+		unmount();
+		await flush();
+		expect(unlistenLogs).toHaveBeenCalled();
+		// After unmount the alive guard drops late records without a setState on the dead tree.
+		expect(() => logCb?.(logRec({ level: 'error', message: 'late' }))).not.toThrow();
+	});
+
+	it('ignores a backlog / log-path read that resolves after unmount (alive guard)', async () => {
+		let resolveLogs: ((l: LogRecord[]) => void) | undefined;
+		let resolvePath: ((p: string | null) => void) | undefined;
+		vi.mocked(getLogs).mockImplementationOnce(
+			() =>
+				new Promise((r) => {
+					resolveLogs = r;
+				})
+		);
+		vi.mocked(getLogFilePath).mockImplementationOnce(
+			() =>
+				new Promise((r) => {
+					resolvePath = r;
+				})
+		);
+		const { unmount } = render(<DiagnosticsPanel />);
+		await flush();
+		unmount();
+		const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+		await act(async () => {
+			resolveLogs?.([logRec({ level: 'error', message: 'late' })]);
+			resolvePath?.('C:/late.log');
+		});
+		expect(errorSpy).not.toHaveBeenCalled();
+		errorSpy.mockRestore();
+	});
+
+	it('shows the log file path and opens the folder via the backend', async () => {
+		vi.mocked(getLogFilePath).mockResolvedValue('C:/logs/widgetsack.log');
+		const { findByText, getByRole } = render(<DiagnosticsPanel />);
+		expect(await findByText('C:/logs/widgetsack.log')).toBeTruthy();
+		fireEvent.click(getByRole('button', { name: /Open log folder/ }));
+		expect(revealLogDir).toHaveBeenCalledTimes(1);
+		await flush();
+	});
+
+	it('"Copy diagnostics" composes the report from version, monitors, process and logs', async () => {
+		vi.mocked(getLogs).mockResolvedValue(backlog);
+		vi.mocked(getLogFilePath).mockResolvedValue('C:/logs/widgetsack.log');
+		vi.mocked(studioMonitorOptions).mockResolvedValue([
+			{ key: 'default', label: 'DISPLAY1 (primary)', name: 'DISPLAY1', w: 1920, h: 1080 }
+		]);
+		vi.mocked(getProcessDiagnostics).mockResolvedValue({
+			pid: 7,
+			cpuPercent: 1,
+			memBytes: 1048576,
+			virtualBytes: 2097152,
+			uptimeSecs: 5,
+			cpus: 4
+		});
+		const { findByText, getByRole } = render(<DiagnosticsPanel appVersion="9.9.9" />);
+		await findByText(/ha warned/);
+		await findByText(/pid 7/);
+		fireEvent.click(getByRole('button', { name: /Copy diagnostics/ }));
+		expect(await findByText('copied')).toBeTruthy();
+		const text = vi.mocked(copyToClipboard).mock.calls[0][0];
+		expect(text).toContain('widgetsack diagnostics · v9.9.9');
+		expect(text).toContain('log file: C:/logs/widgetsack.log');
+		expect(text).toContain('- default: DISPLAY1 (primary) [DISPLAY1 1920×1080]');
+		expect(text).toContain('pid 7 ·');
+		// Trace lines (watchdog + overlay refit) ride along regardless of level; debug noise does not.
+		expect(text).toContain('watchdog: stall 900ms');
+		expect(text).toContain('client: refit start (main) component=overlay window=main');
+		expect(text).toContain('ha: ha warned');
+		expect(text).not.toContain('debug noise');
+	});
+
+	it('reports a failed copy and tolerates a missing monitor bridge', async () => {
+		vi.mocked(studioMonitorOptions).mockRejectedValue(new Error('no tauri'));
+		vi.mocked(copyToClipboard).mockResolvedValue(false);
+		const { findByText, getByRole } = render(<DiagnosticsPanel />);
+		fireEvent.click(getByRole('button', { name: /Copy diagnostics/ }));
+		expect(await findByText('copy failed')).toBeTruthy();
+		expect(vi.mocked(copyToClipboard).mock.calls[0][0]).toContain('(none reported)');
 	});
 });

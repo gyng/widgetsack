@@ -1,7 +1,11 @@
 // The studio's left nav strip (presentational molecule): a permanent vertical column of section
 // buttons carved from the left rail. Props-only — the active section + selection are owned by the
-// Canvas. The matching panel (Outline / designer / sensors / …) renders beside it.
+// Canvas. The matching panel (Outline / designer / sensors / …) renders beside it. The one
+// self-sourced bit is the Settings item's update badge: it mirrors the backend's background
+// update check (lib/appUpdate.ts store) so a newer release is visible from any section.
 import { SECTIONS, type Section, type SectionId } from './canvas/studioSections';
+import { useAppUpdate } from '../appUpdate';
+import { updateBadge } from '../core/updateNotice';
 import './NavRail.css';
 
 type Props = {
@@ -10,6 +14,7 @@ type Props = {
 };
 
 export default function NavRail({ active, onSelect }: Props) {
+	const badge = updateBadge(useAppUpdate());
 	const item = (s: Section) => (
 		<button
 			key={s.id}
@@ -33,6 +38,23 @@ export default function NavRail({ active, onSelect }: Props) {
 				{s.icon}
 			</span>
 			<span className="nav-short">{s.short}</span>
+			{s.id === 'settings' && badge && (
+				<span
+					className="nav-badge"
+					title={`Update available: ${badge} — see Settings → About`}
+					style={{
+						fontSize: '0.7em',
+						lineHeight: 1,
+						padding: '2px 5px',
+						borderRadius: 999,
+						background: 'rgb(var(--ui-accent-rgb))',
+						color: 'var(--ui-bg)',
+						whiteSpace: 'nowrap'
+					}}
+				>
+					{badge}
+				</span>
+			)}
 		</button>
 	);
 	return (

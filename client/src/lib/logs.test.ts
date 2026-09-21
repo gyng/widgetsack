@@ -65,3 +65,23 @@ describe('subscribeLogs', () => {
 		expect(stop).toBe(unlisten);
 	});
 });
+
+describe('getLogFilePath / revealLogDir', () => {
+	it('resolves the backend path, or null when the command is unavailable', async () => {
+		invoke.mockResolvedValueOnce('C:/logs/widgetsack.log');
+		const { getLogFilePath } = await load();
+		await expect(getLogFilePath()).resolves.toBe('C:/logs/widgetsack.log');
+		expect(invoke).toHaveBeenCalledWith('log_file_path');
+		invoke.mockRejectedValueOnce(new Error('no tauri'));
+		await expect(getLogFilePath()).resolves.toBeNull();
+	});
+
+	it('asks the backend to reveal the log dir and reports success / failure', async () => {
+		invoke.mockResolvedValueOnce(undefined);
+		const { revealLogDir } = await load();
+		await expect(revealLogDir()).resolves.toBe(true);
+		expect(invoke).toHaveBeenCalledWith('reveal_log_dir');
+		invoke.mockRejectedValueOnce(new Error('explorer missing'));
+		await expect(revealLogDir()).resolves.toBe(false);
+	});
+});

@@ -792,8 +792,13 @@ pub async fn save_llm_config(
 /// The (non-secret) config for EVERY configured provider + the active selection — never any api_key,
 /// only per-provider `has_key`. The UI uses the map to switch the active provider without a round-trip.
 #[tauri::command]
-pub fn llm_config_status<R: Runtime>(app: AppHandle<R>) -> Result<LlmStatus, String> {
-    let file = load_llm_file(&app)?.unwrap_or_else(LlmFile::empty);
+pub async fn llm_config_status<R: Runtime>(app: AppHandle<R>) -> Result<LlmStatus, String> {
+    // The file read + DPAPI decrypt run on the blocking pool: a sync command would do them on
+    // the UI thread, and this is polled by every window's settings/status probe.
+    let file = tokio::task::spawn_blocking(move || load_llm_file(&app))
+        .await
+        .map_err(|e| e.to_string())??
+        .unwrap_or_else(LlmFile::empty);
     let providers = file
         .providers
         .iter()

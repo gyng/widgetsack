@@ -15,6 +15,7 @@ import {
 	listThemes,
 	logClient,
 	monitorParam,
+	onOwnScaleChanged,
 	openStudio,
 	overlayDrift,
 	setMainWindowVisible,
@@ -38,6 +39,9 @@ export type StudioInitDeps = {
 	setEditModeImmediate: () => void; // studio: editMode = true (no click-through round-trip)
 	setMonitorOptions: (o: MonitorOption[]) => void;
 	clearPreviewWrite: () => void;
+	/** Re-apply this overlay's presentation (decorations / click-through / z-order for the CURRENT
+	 * edit + windowed-debug state) — called after every refit, which only fits geometry. */
+	reapplyPresentation: () => Promise<void>;
 };
 
 export function useStudioInit(deps: StudioInitDeps): void {
@@ -57,6 +61,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 		let unlistenStudio: UnlistenFn | undefined;
 		let unlistenEdit: UnlistenFn | undefined;
 		let unlistenRefit: UnlistenFn | undefined;
+		let unlistenScale: UnlistenFn | undefined;
 		let stopDisplayWatch: (() => void) | undefined;
 
 		(async () => {
@@ -68,7 +73,6 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// means the work-area read below sees the window on its real monitor, not wherever the
 			// window-state plugin parked it.
 			const ownKey = dep.studio ? null : monitorParam();
-			if (ownKey) await fillOwnMonitor(ownKey);
 
 			// Re-fit this window to the CURRENT display layout — on the tray "Re-fit overlays" trigger AND
 			// automatically when monitors are moved/added/removed at runtime (no per-window scale-change
@@ -93,14 +97,31 @@ export function useStudioInit(deps: StudioInitDeps): void {
 				}
 				// Re-read the work area (taskbar inset) after the move: a window that only MOVED fires
 				// no `resize`, which was the sole other trigger, so the flow root stayed rebased on
-				// whichever monitor the window sat on at its last resize.
-				if (!dep.studio) await d.current.updateWorkArea();
+				// whichever monitor the window sat on at its last resize. Then re-apply presentation:
+				// the fit is geometry only, and a DPI hop / topology change can reset decorations or
+				// the z-order — but click-through etc. must follow the CURRENT edit/windowed state.
+				if (!dep.studio) {
+					await d.current.updateWorkArea();
+					await d.current.reapplyPresentation();
+				}
 				logClient('info', 'overlay', `refit done (${role}) in ${Date.now() - t0}ms`);
 			});
 			const triggerRefit = (): void => {
 				refit().catch((err) => logClient('error', 'overlay', `refit failed: ${String(err)}`));
 			};
+			// A secondary overlay (?monitor=<key>) fits + reveals ITSELF before anything else, through
+			// the same single-flight so no later trigger can interleave with it. (The spawn side no
+			// longer fits: it lived in the creating window's JS context and died with an empty-primary
+			// `main`, which left secondaries permanently invisible.) Running first also means the
+			// work-area read sees the window on its real monitor, not where the window-state plugin
+			// parked it.
+			if (ownKey) await refit();
 			unlistenRefit = await listen(EVENTS.refitOverlays, triggerRefit);
+			// #12: DPI/scale hot-plug — wired ONCE here (not inside the fit functions, where it raced
+			// the fit that moves the window across the DPI boundary) and routed through the same
+			// single-flight refit, so the poller, the tray trigger and a scale change never run
+			// concurrent setPosition/setSize sequences on this window.
+			if (!dep.studio) unlistenScale = await onOwnScaleChanged(triggerRefit);
 			// Overlays also hand the poller a drift probe (own window vs its monitor); the studio is
 			// a normal window the user places, so it gets none.
 			stopDisplayWatch = watchDisplayChanges(
@@ -109,6 +130,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			);
 			if (cancelled) {
 				unlistenRefit?.();
+				unlistenScale?.();
 				stopDisplayWatch?.();
 				return;
 			}
@@ -175,10 +197,10 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			}
 
 			// The main window covers the PRIMARY monitor (rendering the `default` key) and opens
-			// overlays on every other monitor.
+			// overlays on every other monitor — through the single-flight refit, so a topology tick
+			// landing during init can't run a second fit/reconcile alongside this one.
 			if (!monitorParam()) {
-				await fillPrimaryMonitor();
-				await dep.syncPrimaryOverlays();
+				await refit();
 				unlistenStudio = await listen(EVENTS.openStudio, () => openStudio());
 			}
 			if (cancelled) {
@@ -229,6 +251,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			unlistenStudio?.();
 			unlistenEdit?.();
 			unlistenRefit?.();
+			unlistenScale?.();
 			stopDisplayWatch?.();
 			d.current.clearPreviewWrite();
 		};

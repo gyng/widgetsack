@@ -17,6 +17,8 @@ let monitorParamValue: string | null = null;
 let onDisplayChange: (() => void) | null = null;
 /** The drift probe handed alongside it (overlays only). */
 let driftProbe: (() => Promise<string | null>) | null = null;
+/** The scale-change callback the hook registered via onOwnScaleChanged (overlays only). */
+let onScaleChange: (() => void) | null = null;
 
 vi.mock('../../overlay', () => ({
 	fillOwnMonitor: (key: string) => fillOwnMonitor(key),
@@ -25,6 +27,10 @@ vi.mock('../../overlay', () => ({
 	monitorParam: () => monitorParamValue,
 	listThemes: vi.fn(async () => []),
 	logClient: vi.fn(),
+	onOwnScaleChanged: vi.fn(async (cb: () => void) => {
+		onScaleChange = cb;
+		return () => undefined;
+	}),
 	openStudio: vi.fn(() => Promise.resolve()),
 	overlayDrift: vi.fn(async () => null),
 	studioMonitorOptions: vi.fn(async () => []),
@@ -57,6 +63,7 @@ function makeDeps(overrides: Partial<StudioInitDeps> = {}): StudioInitDeps {
 		setEditModeImmediate: vi.fn(),
 		setMonitorOptions: vi.fn(),
 		clearPreviewWrite: vi.fn(),
+		reapplyPresentation: vi.fn(() => Promise.resolve()),
 		...overrides
 	};
 }
@@ -66,6 +73,7 @@ beforeEach(() => {
 	monitorParamValue = null;
 	onDisplayChange = null;
 	driftProbe = null;
+	onScaleChange = null;
 });
 
 describe('useStudioInit display-change refit', () => {
@@ -74,15 +82,36 @@ describe('useStudioInit display-change refit', () => {
 		const deps = makeDeps();
 		renderHook(() => useStudioInit(deps));
 		await waitFor(() => expect(fillOwnMonitor).toHaveBeenCalledWith('DISPLAY3'));
-		await waitFor(() => expect(deps.updateWorkArea).toHaveBeenCalledTimes(1)); // init
+		await waitFor(() => expect(deps.syncRects).toHaveBeenCalled()); // init finished
 		fillOwnMonitor.mockClear();
 		vi.mocked(deps.updateWorkArea).mockClear();
+		vi.mocked(deps.reapplyPresentation).mockClear();
 
 		onDisplayChange!();
 		await waitFor(() => expect(fillOwnMonitor).toHaveBeenCalledWith('DISPLAY3'));
 		// The taskbar inset is re-read after the move: a window that moves without resizing fires
 		// no `resize`, which was the only other trigger, leaving the flow root rebased on stale data.
 		await waitFor(() => expect(deps.updateWorkArea).toHaveBeenCalledTimes(1));
+		// And the presentation (click-through / z-order for the CURRENT edit state) is re-applied:
+		// the fit is geometry only, and forcing click-through there broke edit mode on a refit.
+		await waitFor(() => expect(deps.reapplyPresentation).toHaveBeenCalledTimes(1));
+	});
+
+	it('a DPI/scale change of this window goes through the same single-flight refit', async () => {
+		monitorParamValue = 'DISPLAY3';
+		const deps = makeDeps();
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(onScaleChange).not.toBeNull());
+		await waitFor(() => expect(deps.syncRects).toHaveBeenCalled());
+		fillOwnMonitor.mockClear();
+		onScaleChange!();
+		await waitFor(() => expect(fillOwnMonitor).toHaveBeenCalledWith('DISPLAY3'));
+	});
+
+	it('the studio registers no scale-change refit', async () => {
+		renderHook(() => useStudioInit(makeDeps({ studio: true })));
+		await waitFor(() => expect(onDisplayChange).not.toBeNull());
+		expect(onScaleChange).toBeNull();
 	});
 
 	it('overlays hand the poller a drift probe for their own monitor; the studio does not', async () => {

@@ -16,3 +16,16 @@ export function getLogs(): Promise<LogRecord[]> {
 export function subscribeLogs(cb: (record: LogRecord) => void): Promise<UnlistenFn> {
 	return listen<LogRecord>(EVENTS.log, (ev) => cb(ev.payload));
 }
+
+/** Absolute path of the rotating on-disk log (diag.rs), or `null` outside Tauri / on failure. */
+export function getLogFilePath(): Promise<string | null> {
+	return invoke<string>(COMMANDS.logFilePath).catch(() => null);
+}
+
+/** Open the log folder in Explorer (diag.rs). Best-effort: resolves whether it worked. */
+export function revealLogDir(): Promise<boolean> {
+	return invoke(COMMANDS.revealLogDir).then(
+		() => true,
+		() => false
+	);
+}

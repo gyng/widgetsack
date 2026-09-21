@@ -193,11 +193,13 @@ fn flatten_latest(
     out
 }
 
-/// Mirror the latest sensor values to `<app_config_dir>/mcp/state.json` so the (out-of-process) MCP
+/// Mirror the latest sensor values to `<config root>/mcp/state.json` so the (out-of-process) MCP
 /// server can read LIVE readings — the file-based MCP can't reach this in-memory state otherwise.
-/// Written to an `mcp/` SUBDIR so the NonRecursive config-dir watchers never see it. Best-effort.
+/// The root follows `command::config_root` (an extra dev instance writes under `multi/`, like every
+/// other config file). Written to an `mcp/` SUBDIR so the NonRecursive config-dir watchers never see
+/// it, and atomically (temp + rename) so a reader never sees a truncated document. Best-effort.
 fn write_state_snapshot<R: Runtime>(app: &AppHandle<R>, latest: &HashMap<String, SensorValue>) {
-    let Ok(dir) = app.path().app_config_dir() else {
+    let Ok(dir) = crate::command::config_root(app) else {
         return;
     };
     let mcp_dir = dir.join("mcp");
@@ -209,7 +211,39 @@ fn write_state_snapshot<R: Runtime>(app: &AppHandle<R>, latest: &HashMap<String,
         "sensors": flatten_latest(latest),
     });
     if let Ok(txt) = serde_json::to_string(&snapshot) {
-        let _ = std::fs::write(mcp_dir.join("state.json"), txt);
+        let _ = crate::command::atomic_write(&mcp_dir.join("state.json"), &txt);
+    }
+}
+
+/// What a sampling tick does given whether the PREVIOUS sample has finished: run, or skip it (the
+/// sampler's state is still on the blocking thread). A stuck driver call (NVML during a display
+/// switch, a volume IOCTL on a sleeping disk) would otherwise stack a new blocking task per tick.
+/// Skips are logged on the first and then every power-of-two, not at 1 Hz. Pure (tested).
+#[derive(Default)]
+struct OverrunGuard {
+    skipped: u32,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum TickPlan {
+    /// Sample now; `recovered_after` is how many ticks were skipped since the last run (0 = none).
+    Run { recovered_after: u32 },
+    /// The previous sample is still running; `log` says whether this skip deserves a log line.
+    Skip { log: bool },
+}
+
+impl OverrunGuard {
+    fn plan(&mut self, previous_done: bool) -> TickPlan {
+        if previous_done {
+            let recovered_after = self.skipped;
+            self.skipped = 0;
+            TickPlan::Run { recovered_after }
+        } else {
+            self.skipped = self.skipped.saturating_add(1);
+            TickPlan::Skip {
+                log: self.skipped.is_power_of_two(),
+            }
+        }
     }
 }
 
@@ -813,10 +847,8 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
     let mut sys = System::new();
     sys.refresh_cpu_all(); // primes usage + frequency, and loads static CPU info (brand)
     sys.refresh_memory();
-    let mut networks = Networks::new_with_refreshed_list();
-    let mut disks = Disks::new_with_refreshed_list();
-    // Previous per-volume I/O counters, keyed by drive letter — disk rates/active-time are deltas.
-    let mut disk_io_prev: HashMap<String, DiskIo> = HashMap::new();
+    let networks = Networks::new_with_refreshed_list();
+    let disks = Disks::new_with_refreshed_list();
 
     // Static host facts, read once.
     let cpu_brand = sys
@@ -827,9 +859,11 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
     let logical_cores = sys.cpus().len();
     let physical_cores = sys.physical_core_count();
 
-    // GPU is best-effort: degrade gracefully on machines without NVML/NVIDIA.
-    let nvml = match Nvml::init() {
-        Ok(nvml) => Some(nvml),
+    // GPU is best-effort: degrade gracefully on machines without NVML/NVIDIA. The library handle is
+    // leaked to `'static` so the device (which borrows it) can travel with the sampler onto the
+    // blocking pool — it lives for the process anyway (this task runs until exit).
+    let nvml: Option<&'static Nvml> = match Nvml::init() {
+        Ok(nvml) => Some(Box::leak(Box::new(nvml))),
         Err(err) => {
             log::warn("sensors", "GPU sensors disabled (NVML init failed)")
                 .field("error", err)
@@ -837,23 +871,122 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
             None
         }
     };
-    let gpu = nvml.as_ref().and_then(|nvml| nvml.device_by_index(0).ok());
+    let gpu = nvml.and_then(|nvml| nvml.device_by_index(0).ok());
     let gpu_name = gpu
         .as_ref()
         .and_then(|d| d.name().ok())
         .filter(|s| !s.is_empty());
 
-    // Latest value per sensor id, mirrored to <config>/mcp/state.json every few ticks for the MCP
-    // server's read_sensors tool (live readings for an external agent).
-    let mut latest: HashMap<String, SensorValue> = HashMap::new();
-    let mut snap_tick: u32 = 0;
-
-    // Opt-in per-subsystem CPU timing for the Diagnostics panel (inert unless the panel enabled it).
-    let timings = app.state::<crate::timings::SubsystemTimings>();
+    let mut sampler = Some(Sampler {
+        app,
+        sys,
+        networks,
+        disks,
+        disk_io_prev: HashMap::new(),
+        cpu_brand,
+        logical_cores,
+        physical_cores,
+        gpu,
+        gpu_name,
+        latest: HashMap::new(),
+        snap_tick: 0,
+    });
+    // The sample in progress (the sampler's state travels with it and comes back on completion).
+    let mut in_flight: Option<tokio::task::JoinHandle<Sampler<R>>> = None;
+    let mut overrun = OverrunGuard::default();
 
     let mut ticker = tokio::time::interval(Duration::from_millis(INTERVAL_MS));
+    // A late tick (the runtime was starved, the machine slept) must not be followed by a burst of
+    // catch-up ticks: just resume the cadence from now.
+    ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     loop {
         ticker.tick().await;
+        // Sampling is BLOCKING work (sysinfo refreshes, NVML, disk IOCTLs, WMI-ish Win32 queries) and
+        // runs on the blocking pool, never on a runtime worker. If the previous sample is still
+        // running (a wedged driver call), skip this tick rather than stacking another task.
+        let previous_done = in_flight.as_ref().is_none_or(|h| h.is_finished());
+        match overrun.plan(previous_done) {
+            TickPlan::Skip { log: true } => {
+                log::warn("sensors", "sample still running; skipping tick")
+                    .field("skipped", overrun.skipped)
+                    .emit();
+                continue;
+            }
+            TickPlan::Skip { log: false } => continue,
+            TickPlan::Run { recovered_after } => {
+                if recovered_after > 0 {
+                    log::info("sensors", "sampling recovered")
+                        .field("skipped_ticks", recovered_after)
+                        .emit();
+                }
+            }
+        }
+        if let Some(handle) = in_flight.take() {
+            match handle.await {
+                Ok(s) => sampler = Some(s),
+                Err(err) => {
+                    // A panic inside a sensor read took the sampler state with it; stop cleanly
+                    // rather than spin (the panic itself is already in the log via the hook).
+                    log::error("sensors", "sampler task failed; system sensors stopped")
+                        .field("error", err)
+                        .emit();
+                    return;
+                }
+            }
+        }
+        let Some(mut s) = sampler.take() else {
+            continue;
+        };
+        in_flight = Some(tokio::task::spawn_blocking(move || {
+            s.sample_once();
+            s
+        }));
+    }
+}
+
+/// Everything one sampling pass needs, bundled so it can move onto the blocking pool and back
+/// (`run_system_sensors`). `sample_once` is the former loop body, unchanged.
+struct Sampler<R: Runtime> {
+    app: AppHandle<R>,
+    sys: System,
+    networks: Networks,
+    disks: Disks,
+    /// Previous per-volume I/O counters, keyed by drive letter — disk rates/active-time are deltas.
+    disk_io_prev: HashMap<String, DiskIo>,
+    cpu_brand: Option<String>,
+    logical_cores: usize,
+    physical_cores: Option<usize>,
+    gpu: Option<nvml_wrapper::Device<'static>>,
+    gpu_name: Option<String>,
+    /// Latest value per sensor id, mirrored to <config>/mcp/state.json every few ticks for the MCP
+    /// server's read_sensors tool (live readings for an external agent).
+    latest: HashMap<String, SensorValue>,
+    snap_tick: u32,
+}
+
+impl<R: Runtime> Sampler<R> {
+    /// One full sampling pass: refresh, build the batch, emit `telemetry`, mirror the snapshot.
+    fn sample_once(&mut self) {
+        let Sampler {
+            app,
+            sys,
+            networks,
+            disks,
+            disk_io_prev,
+            cpu_brand,
+            logical_cores,
+            physical_cores,
+            gpu,
+            gpu_name,
+            latest,
+            snap_tick,
+        } = self;
+        let logical_cores = *logical_cores;
+        let physical_cores = *physical_cores;
+
+        // Opt-in per-subsystem CPU timing for the Diagnostics panel (inert unless the panel enabled it).
+        let timings = app.state::<crate::timings::SubsystemTimings>();
+
         {
             let _t = timings.start("sensors.base");
             sys.refresh_cpu_usage();
@@ -1231,9 +1364,9 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         for s in &batch {
             latest.insert(s.sensor.clone(), s.value.clone());
         }
-        snap_tick = snap_tick.wrapping_add(1);
+        *snap_tick = snap_tick.wrapping_add(1);
         if snap_tick.is_multiple_of(3) {
-            write_state_snapshot(&app, &latest);
+            write_state_snapshot(app, latest);
         }
     }
 }
@@ -1241,6 +1374,21 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn overrun_guard_skips_while_busy_logs_sparsely_and_reports_recovery() {
+        let mut g = OverrunGuard::default();
+        assert_eq!(g.plan(true), TickPlan::Run { recovered_after: 0 });
+        // A wedged sample: the first skip and every power-of-two skip log, the rest are silent.
+        assert_eq!(g.plan(false), TickPlan::Skip { log: true }); // 1
+        assert_eq!(g.plan(false), TickPlan::Skip { log: true }); // 2
+        assert_eq!(g.plan(false), TickPlan::Skip { log: false }); // 3
+        assert_eq!(g.plan(false), TickPlan::Skip { log: true }); // 4
+        assert_eq!(g.plan(false), TickPlan::Skip { log: false }); // 5
+        // Once it finishes, the run reports how many ticks were lost and the count resets.
+        assert_eq!(g.plan(true), TickPlan::Run { recovered_after: 5 });
+        assert_eq!(g.plan(true), TickPlan::Run { recovered_after: 0 });
+    }
 
     #[test]
     fn scalar_sample_serializes_to_bridge_contract() {

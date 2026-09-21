@@ -308,8 +308,13 @@ pub async fn save_rss_config(
 }
 
 #[tauri::command]
-pub fn rss_config_status<R: Runtime>(app: AppHandle<R>) -> Result<RssStatus, String> {
-    match load_rss_config(&app)? {
+pub async fn rss_config_status<R: Runtime>(app: AppHandle<R>) -> Result<RssStatus, String> {
+    // The file read + DPAPI decrypt run on the blocking pool: a sync command would do them on
+    // the UI thread, and this is polled by every window's settings/status probe.
+    let cfg = tokio::task::spawn_blocking(move || load_rss_config(&app))
+        .await
+        .map_err(|e| e.to_string())??;
+    match cfg {
         Some(cfg) => Ok(RssStatus {
             configured: has_feed(&cfg),
             url: cfg.url,

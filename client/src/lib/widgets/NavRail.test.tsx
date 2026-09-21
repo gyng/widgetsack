@@ -1,7 +1,19 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
+
+// The Settings item's update badge mirrors the background update check (lib/appUpdate.ts). Mock
+// the adapter with a real external store so a test can flip the badge on without Tauri.
+vi.mock('../appUpdate', async () => {
+	const { createStore, useStore } = await import('../../stores/createStore');
+	const appUpdateStore = createStore<import('../core/updateNotice').AppUpdate | null>(null);
+	return { appUpdateStore, useAppUpdate: () => useStore(appUpdateStore) };
+});
+
 import NavRail from './NavRail';
 import { SECTIONS } from './canvas/studioSections';
+import { appUpdateStore } from '../appUpdate';
+
+beforeEach(() => appUpdateStore.set(null));
 
 // NavRail is a presentational molecule: it renders one button per studio section, split into the
 // `main` group and the `foot` group around a spacer, and reports clicks via onSelect. The title /
@@ -82,6 +94,29 @@ describe('NavRail', () => {
 		expect(container.querySelector('button[data-section="layouts"] .nav-short')!.textContent).toBe(
 			'Layout'
 		);
+	});
+});
+
+describe('NavRail — update badge', () => {
+	it('badges the Settings item with the new version only when an update is known', () => {
+		const { container, rerender } = render(<NavRail active="layouts" onSelect={noop} />);
+		expect(container.querySelector('.nav-badge')).toBeNull();
+		appUpdateStore.set({
+			current: '0.0.55',
+			latest: '0.0.56',
+			url: 'https://github.com/gyng/widgetsack/releases/tag/v0.0.56',
+			updateAvailable: true
+		});
+		rerender(<NavRail active="layouts" onSelect={noop} />);
+		const badge = container.querySelector('button[data-section="settings"] .nav-badge')!;
+		expect(badge.textContent).toBe('v0.0.56');
+		expect(badge.getAttribute('title')).toContain('Update available: v0.0.56');
+		// Only the Settings item carries it.
+		expect(container.querySelectorAll('.nav-badge').length).toBe(1);
+		// An up-to-date result clears it again.
+		appUpdateStore.set({ current: '0.0.55', latest: '0.0.55', url: '', updateAvailable: false });
+		rerender(<NavRail active="layouts" onSelect={noop} />);
+		expect(container.querySelector('.nav-badge')).toBeNull();
 	});
 });
 
