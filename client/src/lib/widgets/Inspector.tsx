@@ -24,8 +24,9 @@ import type {
 	WidgetDef,
 	WidgetInstance
 } from '../core/layoutTree';
-import { getMeta } from '../core/widget';
+import { fieldGroups, getMeta } from '../core/widget';
 import type { ConfigField } from '../core/widget';
+import { readOverlayPrefs } from './canvas/overlayPrefs';
 import { toYaml } from '../core/yaml';
 import { normalizeMacro } from '../core/macro';
 import MacroEditor from './MacroEditor';
@@ -33,6 +34,7 @@ import MonitorSourcesEditor from './meters/MonitorSourcesEditor';
 import WidgetPreview from './WidgetPreview';
 import CssEditor from './CssEditor';
 import BoxField from './BoxField';
+import ColorField from './ColorField';
 import Select, { type SelectOption } from './Select';
 import { BUILTIN_TEMPLATE_GROUP, resolveTemplateOptions, type Template } from '../core/templates';
 import { useTemplateGroups } from './useTemplateGroups';
@@ -113,6 +115,13 @@ type Props = {
 	node?: LayoutNode | null;
 	// Copy helper supplied by the container (keeps the Tauri clipboard adapter out of this component).
 	onCopy?: (text: string) => void;
+	// Sticky add target (Canvas state): the container new palette widgets land in, set by "＋ Add into
+	// this container" on a selected container. The palette header shows a chip naming it (with a ✕
+	// that clears it). `addTargetLabel` is the friendly name; absent → the id.
+	addTarget?: string | null;
+	addTargetLabel?: string;
+	onSetAddTarget?: (id: string) => void;
+	onClearAddTarget?: () => void;
 };
 
 const RECT_KEYS = ['x', 'y', 'w', 'h'] as const;
@@ -206,6 +215,42 @@ function ExprHint({
 		</small>
 	);
 }
+// The per-field explanation: the short `help` sentence inline, and — when a field also carries a
+// longer `details` — a "?" affordance that shows it as a tooltip on hover and expands it on click.
+function FieldHelp({ help, details }: { help?: string; details?: string }) {
+	const [open, setOpen] = useState(false);
+	if (!help && !details) return null;
+	return (
+		<small className="field-help">
+			{help}
+			{details ? (
+				<>
+					{' '}
+					<button
+						type="button"
+						className="field-details"
+						title={details}
+						aria-label="More about this field"
+						aria-expanded={open}
+						onClick={() => setOpen((o) => !o)}
+					>
+						?
+					</button>
+					{open ? <span className="field-details-text">{details}</span> : null}
+				</>
+			) : null}
+		</small>
+	);
+}
+
+// Developer mode (a studio setting, read defensively — older prefs have no such key) shows raw
+// instance ids next to the friendly names in the Inspector headers.
+const isDeveloperMode = (): boolean =>
+	!!(readOverlayPrefs() as { developerMode?: boolean }).developerMode;
+
+// User-facing name for a container kind (the shared vocabulary: "container" for row/col/grid).
+const KIND_LABEL: Record<Container['kind'], string> = { row: 'Row', col: 'Column', grid: 'Grid' };
+
 // Whether a basis means "grow/stretch along the parent's main axis" (an `fr` length).
 const isFrBasis = (b?: Length): boolean => typeof b === 'object' && b !== null && 'fr' in b;
 
@@ -266,7 +311,7 @@ function TemplateOptionsForm({
 			<button
 				type="button"
 				className="tpl-opts-insert"
-				title={`${t.description} — inserts a standalone copy onto the canvas (not linked to the library)`}
+				title={`${t.description} — inserts a standalone copy onto the canvas (not saved as a custom widget)`}
 				onClick={() => onInsert(opts)}
 			>
 				＋ Insert
@@ -305,12 +350,22 @@ export default function Inspector({
 	onDeleteDef,
 	onPreviewTemplate,
 	node = null,
-	onCopy
+	onCopy,
+	addTarget = null,
+	addTargetLabel,
+	onSetAddTarget,
+	onClearAddTarget
 }: Props) {
 	const op = (o: LayoutOp) => onOp?.(o);
-	// Where a clicked palette widget lands: into the selected container, else as a floating widget.
-	// Mirrors addWidget in useEditorModel so the button names its real destination (no hidden mode).
-	const addDest = container ? `into ${container.kind}` : 'floating';
+	// Where a clicked palette widget lands: the sticky add target, else the selected container, else
+	// as a floating widget. Mirrors addWidget in useEditorModel so the button names its real
+	// destination (no hidden mode).
+	const addTargetName = addTarget ? (addTargetLabel ?? addTarget) : null;
+	const addDest = addTargetName
+		? `into ${addTargetName}`
+		: container
+			? `into this ${KIND_LABEL[container.kind].toLowerCase()}`
+			: 'floating';
 
 	// Collapse the Add/Library palette once a node is selected, so the selected node's properties sit
 	// at the TOP of the rail (not below the palette you scroll past). Auto-set on selection change but
@@ -711,6 +766,178 @@ export default function Inspector({
 		</>
 	);
 
+	// One config field → its control. The reset button lives OUTSIDE the <label> (positioned over its
+	// top-right) so the field's input stays the label's labeled control — a nested button would
+	// otherwise become the label's control (a11y regression + clicking the label would reset it).
+	// Help text likewise sits beside the label, not inside it, so it never joins a control's name.
+	function renderConfigField(w: WidgetInstance, f: ConfigField) {
+		const def = fieldDefault(f);
+		const dirty = dirtyKeys.has('config.' + f.key);
+		const resetBtn = (
+			<button
+				type="button"
+				className="reset-field"
+				title="Reset to default"
+				disabled={def === undefined}
+				onClick={() => setConfig(f.key, def)}
+			>
+				↺
+			</button>
+		);
+		const help = <FieldHelp help={f.help} details={f.details} />;
+		// A macro field isn't a single labeled control — render its list editor outside a <label>
+		// (wrapping the multi-input editor in a label would be an a11y regression).
+		if (f.kind === 'macro') {
+			return (
+				<div
+					className={['cfg-field', 'cfg-macro', dirty && 'dirty'].filter(Boolean).join(' ')}
+					key={f.key}
+				>
+					{resetBtn}
+					<span className="hd" title={f.help}>
+						{f.label}
+					</span>
+					<MacroEditor
+						value={normalizeMacro(w.config[f.key])}
+						onChange={(next) => setConfig(f.key, next)}
+						entities={haEntityIds}
+					/>
+					{help}
+				</div>
+			);
+		}
+		// A monitor-sources field is a multi-row editor (checklist + rename), so like the macro field
+		// it renders outside the single-control <label> pattern below.
+		if (f.kind === 'monitorSources') {
+			return (
+				<div className={['cfg-field', dirty && 'dirty'].filter(Boolean).join(' ')} key={f.key}>
+					{resetBtn}
+					<span className="hd" title={f.help}>
+						{f.label}
+					</span>
+					<MonitorSourcesEditor
+						value={cfgStr(w.config[f.key])}
+						monitor={cfgStr(w.config.monitor)}
+						onChange={(spec) => setConfig(f.key, spec || undefined)}
+					/>
+					{help}
+				</div>
+			);
+		}
+		// A toggle is a checkbox + its label on one aligned row (checkbox left, label vertically
+		// centred), help below — not the label-stacked-over-control layout the generic fields use.
+		if (f.kind === 'toggle') {
+			return (
+				<div
+					className={['cfg-field', 'cfg-toggle', dirty && 'dirty'].filter(Boolean).join(' ')}
+					key={f.key}
+				>
+					{resetBtn}
+					<label className="check" title={f.help}>
+						<input
+							type="checkbox"
+							checked={cfgBool(w.config[f.key])}
+							onChange={(e) => setConfig(f.key, e.currentTarget.checked)}
+						/>
+						<span>{f.label}</span>
+					</label>
+					{help}
+				</div>
+			);
+		}
+		// A colour: the same swatch + text control the theme token editor uses (ColorField), with a ✕
+		// that clears back to the default. Free-text CSS colours (names, rgba(), var()) still work.
+		if (f.kind === 'color') {
+			const id = `cfg-${w.id}-${f.key}`;
+			return (
+				<div
+					className={['cfg-field', 'cfg-color', dirty && 'dirty'].filter(Boolean).join(' ')}
+					key={f.key}
+				>
+					{resetBtn}
+					<label htmlFor={id} className={['full', dirty && 'dirty'].filter(Boolean).join(' ')}>
+						{f.label}
+					</label>
+					<ColorField
+						id={id}
+						value={cfgStr(w.config[f.key])}
+						placeholder={cfgStr(def) || 'css colour'}
+						ariaLabel={f.label}
+						clearTitle="Clear (use the default)"
+						onChange={(v) => setConfig(f.key, v || undefined)}
+					/>
+					{help}
+				</div>
+			);
+		}
+		return (
+			<div className="cfg-field" key={f.key}>
+				{resetBtn}
+				<label title={f.help} className={['full', dirty && 'dirty'].filter(Boolean).join(' ')}>
+					{f.label}
+					{f.kind === 'number' ? (
+						<input
+							type="number"
+							value={cfgStr(w.config[f.key])}
+							onInput={(e) =>
+								setConfig(
+									f.key,
+									e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value),
+									true
+								)
+							}
+						/>
+					) : f.kind === 'select' ? (
+						<Select
+							value={cfgStr(w.config[f.key])}
+							// An unset key shows its effective default as "<option> (default)".
+							defaultValue={cfgStr(def) || undefined}
+							options={
+								f.catalog === 'audioOutputs'
+									? [
+											{ value: '', label: 'System default' },
+											...audioOutputs.map((d) => ({ value: d.id, label: d.name }))
+										]
+									: f.catalog === 'microphones'
+										? [
+												{ value: '', label: 'System default' },
+												...microphones.map((d) => ({ value: d.id, label: d.name }))
+											]
+										: f.catalog === 'displayNames'
+											? [
+													{ value: '', label: 'Primary monitor' },
+													...displayNames.map((d) => ({ value: d.id, label: d.name }))
+												]
+											: f.options.map((o) => ({ value: o, label: o }))
+							}
+							onChange={(v) => setConfig(f.key, v)}
+							aria-label={f.label}
+						/>
+					) : f.kind === 'expr' ? (
+						<textarea
+							className="cfg-expr"
+							rows={2}
+							spellCheck={false}
+							value={cfgStr(w.config[f.key])}
+							placeholder={f.result === 'text' ? 'text + {expression}' : 'expression'}
+							onInput={(e) => setConfig(f.key, e.currentTarget.value || undefined, true)}
+						/>
+					) : (
+						<input
+							type="text"
+							value={cfgStr(w.config[f.key])}
+							onInput={(e) => setConfig(f.key, e.currentTarget.value || undefined, true)}
+						/>
+					)}
+				</label>
+				{f.kind === 'expr' ? (
+					<ExprHint src={cfgStr(w.config[f.key])} result={f.result} known={sensors} />
+				) : null}
+				{help}
+			</div>
+		);
+	}
+
 	return (
 		<div className={['inspector', docked && 'docked'].filter(Boolean).join(' ')}>
 			{/* Add-palette hover preview (Tier 2): a fixed popover with a live demo render of the hovered
@@ -741,12 +968,26 @@ export default function Inspector({
 				onToggle={(e) => setAddOpen(e.currentTarget.open)}
 			>
 				<summary>＋ Add widget · {addDest}</summary>
-				{/* One search box narrows widgets + templates + library at once — ~20 widgets plus
-				    templates + library made find-by-scan slow. */}
+				{addTargetName ? (
+					<span className="add-target-chip">
+						Adding into: {addTargetName}
+						<button
+							type="button"
+							className="x"
+							title="Stop adding into this container"
+							aria-label="Clear add target"
+							onClick={() => onClearAddTarget?.()}
+						>
+							✕
+						</button>
+					</span>
+				) : null}
+				{/* One search box narrows widgets + templates + My widgets at once — ~20 widgets plus
+				    templates + custom widgets made find-by-scan slow. */}
 				<input
 					className="palette-filter"
 					type="search"
-					placeholder="Filter widgets, templates, library…"
+					placeholder="Filter widgets, templates, my widgets…"
 					value={paletteFilter}
 					onChange={(e) => setPaletteFilter(e.currentTarget.value)}
 					aria-label="Filter the add palette"
@@ -773,9 +1014,11 @@ export default function Inspector({
 										{
 											label: w.label,
 											desc: getMeta(w.type)?.description,
-											hint: container
-												? `Click to add into the ${container.kind} · drag to place`
-												: 'Click to add · drag to place',
+											hint: addTargetName
+												? `Click to add into ${addTargetName} · drag to place`
+												: container
+													? `Click to add into this ${KIND_LABEL[container.kind].toLowerCase()} · drag to place`
+													: 'Click to add · drag to place',
 											type: w.type
 										},
 										e.currentTarget
@@ -794,7 +1037,7 @@ export default function Inspector({
 				))}
 
 				{/* Templates: insert a STANDALONE inline copy (the designer rail's ⎘ clones one into an
-				    editable library widget instead). 👁 jumps to the designer's read-only preview. Groups
+				    editable custom widget instead). 👁 jumps to the designer's read-only preview. Groups
 				    come from the registry: built-ins first, then one per enabled plugin package. */}
 				{fTemplateGroups.map((g) => (
 					<div key={g.group} className="palette">
@@ -843,10 +1086,10 @@ export default function Inspector({
 					</div>
 				))}
 
-				{/* Library: your saved widget defs (insert an instance linked to the def). */}
+				{/* My widgets: your saved custom widgets (insert a copy linked to the custom widget). */}
 				{fDefs.length ? (
 					<div className="palette">
-						<span className="hd">Library</span>
+						<span className="hd">My widgets</span>
 						{fDefs.map((d) => (
 							<span key={d.id} className="libitem">
 								<button
@@ -869,8 +1112,8 @@ export default function Inspector({
 								<button
 									type="button"
 									className="x"
-									title="Delete from library (only if unused)"
-									aria-label={`Delete ${d.name} from library`}
+									title="Delete this custom widget (only if unused)"
+									aria-label={`Delete ${d.name} from My widgets`}
 									onClick={() =>
 										onDeleteDef ? onDeleteDef(d.id, d.name) : op({ op: 'deleteDef', defId: d.id })
 									}
@@ -1008,9 +1251,26 @@ export default function Inspector({
 					aria-labelledby="inspector-tab-form"
 					tabIndex={0}
 				>
-					<span className="hd node-hd" title={`${container.kind} · ${container.id}`}>
-						{container.kind} · {container.id}
+					<span
+						className="hd node-hd"
+						title={`${KIND_LABEL[container.kind]} container · ${container.id}`}
+					>
+						{KIND_LABEL[container.kind]} container
+						{isDeveloperMode() ? ` · ${container.id}` : ''}
 					</span>
+					{/* Properties first: the palette stays collapsed on selection; this compact button opens
+					    it with THIS container as the sticky add target. */}
+					<button
+						type="button"
+						className="full add-into"
+						title="Open the Add palette; new widgets land in this container"
+						onClick={() => {
+							onSetAddTarget?.(container.id);
+							setAddOpen(true);
+						}}
+					>
+						＋ Add into this container
+					</button>
 					<label className={['full', dirtyKeys.has('kind') && 'dirty'].filter(Boolean).join(' ')}>
 						kind
 						<Select
@@ -1197,8 +1457,12 @@ export default function Inspector({
 						</>
 					)}
 					<div className="actions">
-						<button type="button" onClick={makeWidgetFromContainer}>
-							Make widget
+						<button
+							type="button"
+							onClick={makeWidgetFromContainer}
+							title="Save this container as a reusable custom widget"
+						>
+							Save as custom widget
 						</button>
 						<button type="button" className="remove" onClick={removeContainer}>
 							Remove
@@ -1213,20 +1477,37 @@ export default function Inspector({
 					aria-labelledby="inspector-tab-form"
 					tabIndex={0}
 				>
-					<span className="hd node-hd" title={`${widget.type} · ${widget.id}`}>
-						{widget.type} · {widget.id}
+					<span
+						className="hd node-hd"
+						title={`${widgetMeta?.label ?? widget.type} (${widget.type}) · ${widget.id}`}
+					>
+						{widgetMeta?.label ?? widget.type}
+						{isDeveloperMode() ? ` · ${widget.id}` : ''}
 					</span>
-					<label className={['full', dirtyKeys.has('sensor') && 'dirty'].filter(Boolean).join(' ')}>
-						sensor
-						<Select
-							value={widget.sensor ?? ''}
-							options={sensorOptions}
-							onChange={(v) => patchWidget({ sensor: v.trim() || undefined }, 'sensor')}
-							placeholder="(none)"
-							allowCustom
-							aria-label="sensor"
-						/>
-					</label>
+					{/* Self-sourcing types (binds:'none') have no sensor input — no row for them. A bound
+					    id that isn't in the catalogue is still allowed (it may appear later) but warned. */}
+					{widgetMeta?.binds !== 'none' && (
+						<label
+							className={['full', dirtyKeys.has('sensor') && 'dirty'].filter(Boolean).join(' ')}
+						>
+							sensor
+							<Select
+								value={widget.sensor ?? ''}
+								options={sensorOptions}
+								onChange={(v) => patchWidget({ sensor: v.trim() || undefined })}
+								placeholder="(none)"
+								allowCustom
+								commitOn="blur"
+								selectAllOnFocus
+								aria-label="sensor"
+							/>
+							{widget.sensor && sensors.length > 0 && !sensors.includes(widget.sensor) ? (
+								<small className="field-help field-warn" role="status">
+									unknown sensor — the widget will show –
+								</small>
+							) : null}
+						</label>
+					)}
 					{placement === 'floating' && (
 						<div className="row">
 							{RECT_KEYS.map((key) => (
@@ -1284,192 +1565,14 @@ export default function Inspector({
 							{leafBoxControls(widget.id)}
 						</>
 					)}
-					{configFields.map((f) => {
-						// The reset button lives OUTSIDE the <label> (positioned over its top-right) so the
-						// field's input stays the label's labeled control — a nested button would otherwise
-						// become the label's control (a11y regression + clicking the label would reset it).
-						const def = fieldDefault(f);
-						// A macro field isn't a single labeled control — render its list editor outside a
-						// <label> (wrapping the multi-input editor in a label would be an a11y regression).
-						if (f.kind === 'macro') {
-							return (
-								<div
-									className={['cfg-field', 'cfg-macro', dirtyKeys.has('config.' + f.key) && 'dirty']
-										.filter(Boolean)
-										.join(' ')}
-									key={f.key}
-								>
-									<button
-										type="button"
-										className="reset-field"
-										title="Reset to default"
-										disabled={def === undefined}
-										onClick={() => setConfig(f.key, def)}
-									>
-										↺
-									</button>
-									<span className="hd" title={f.help}>
-										{f.label}
-									</span>
-									<MacroEditor
-										value={normalizeMacro(widget.config[f.key])}
-										onChange={(next) => setConfig(f.key, next)}
-										entities={haEntityIds}
-									/>
-									{f.help ? <small className="field-help">{f.help}</small> : null}
-								</div>
-							);
-						}
-						// A monitor-sources field is a multi-row editor (checklist + rename), so like the
-						// macro field it renders outside the single-control <label> pattern below.
-						if (f.kind === 'monitorSources') {
-							return (
-								<div
-									className={['cfg-field', dirtyKeys.has('config.' + f.key) && 'dirty']
-										.filter(Boolean)
-										.join(' ')}
-									key={f.key}
-								>
-									<button
-										type="button"
-										className="reset-field"
-										title="Reset to default"
-										disabled={def === undefined}
-										onClick={() => setConfig(f.key, def)}
-									>
-										↺
-									</button>
-									<span className="hd" title={f.help}>
-										{f.label}
-									</span>
-									<MonitorSourcesEditor
-										value={cfgStr(widget.config[f.key])}
-										monitor={cfgStr(widget.config.monitor)}
-										onChange={(spec) => setConfig(f.key, spec || undefined)}
-									/>
-									{f.help ? <small className="field-help">{f.help}</small> : null}
-								</div>
-							);
-						}
-						// A toggle is a checkbox + its label on one aligned row (checkbox left, label
-						// vertically centred), help below — not the label-stacked-over-control layout the
-						// generic fields use.
-						if (f.kind === 'toggle') {
-							return (
-								<div
-									className={[
-										'cfg-field',
-										'cfg-toggle',
-										dirtyKeys.has('config.' + f.key) && 'dirty'
-									]
-										.filter(Boolean)
-										.join(' ')}
-									key={f.key}
-								>
-									<button
-										type="button"
-										className="reset-field"
-										title="Reset to default"
-										disabled={def === undefined}
-										onClick={() => setConfig(f.key, def)}
-									>
-										↺
-									</button>
-									<label className="check" title={f.help}>
-										<input
-											type="checkbox"
-											checked={cfgBool(widget.config[f.key])}
-											onChange={(e) => setConfig(f.key, e.currentTarget.checked)}
-										/>
-										<span>{f.label}</span>
-									</label>
-									{f.help ? <small className="field-help">{f.help}</small> : null}
-								</div>
-							);
-						}
-						return (
-							<div className="cfg-field" key={f.key}>
-								<button
-									type="button"
-									className="reset-field"
-									title="Reset to default"
-									disabled={def === undefined}
-									onClick={() => setConfig(f.key, def)}
-								>
-									↺
-								</button>
-								<label
-									title={f.help}
-									className={['full', dirtyKeys.has('config.' + f.key) && 'dirty']
-										.filter(Boolean)
-										.join(' ')}
-								>
-									{f.label}
-									{f.kind === 'number' ? (
-										<input
-											type="number"
-											value={cfgStr(widget.config[f.key])}
-											onInput={(e) =>
-												setConfig(
-													f.key,
-													e.currentTarget.value === '' ? undefined : Number(e.currentTarget.value),
-													true
-												)
-											}
-										/>
-									) : f.kind === 'select' ? (
-										<Select
-											value={cfgStr(widget.config[f.key])}
-											options={
-												f.catalog === 'audioOutputs'
-													? [
-															{ value: '', label: 'System default' },
-															...audioOutputs.map((d) => ({ value: d.id, label: d.name }))
-														]
-													: f.catalog === 'microphones'
-														? [
-																{ value: '', label: 'System default' },
-																...microphones.map((d) => ({ value: d.id, label: d.name }))
-															]
-														: f.catalog === 'displayNames'
-															? [
-																	{ value: '', label: 'Primary monitor' },
-																	...displayNames.map((d) => ({ value: d.id, label: d.name }))
-																]
-															: f.options.map((o) => ({ value: o, label: o }))
-											}
-											onChange={(v) => setConfig(f.key, v)}
-											aria-label={f.label}
-										/>
-									) : f.kind === 'expr' ? (
-										<textarea
-											className="cfg-expr"
-											rows={2}
-											spellCheck={false}
-											value={cfgStr(widget.config[f.key])}
-											placeholder={f.result === 'text' ? 'text + {expression}' : 'expression'}
-											onInput={(e) => setConfig(f.key, e.currentTarget.value || undefined, true)}
-										/>
-									) : (
-										<input
-											type="text"
-											value={cfgStr(widget.config[f.key])}
-											placeholder={f.kind === 'color' ? 'css color' : ''}
-											onInput={(e) => setConfig(f.key, e.currentTarget.value || undefined, true)}
-										/>
-									)}
-									{f.kind === 'expr' ? (
-										<ExprHint
-											src={cfgStr(widget.config[f.key])}
-											result={f.result}
-											known={sensors}
-										/>
-									) : null}
-									{f.help ? <small className="field-help">{f.help}</small> : null}
-								</label>
-							</div>
-						);
-					})}
+					{/* Config fields, bucketed under Data / Appearance / Behaviour sub-headings (fieldGroups):
+					    a field's `showWhen` hides it for the current config, and `group` picks its heading. */}
+					{fieldGroups(configFields, widget.config).map((g) => (
+						<div className="cfg-group" key={g.group}>
+							<span className="hd cfg-group-hd">{g.group}</span>
+							{g.fields.map((f) => renderConfigField(widget, f))}
+						</div>
+					))}
 					{/* The raw-JSON + CSS escape hatches are expert-rare — collapsed by default (progressive
 					    disclosure) so the common sensor/config fields above aren't buried under them. */}
 					<details className="adv">
@@ -1497,16 +1600,24 @@ export default function Inspector({
 					</details>
 					<div className="actions">
 						{placement === 'floating' ? (
-							<button type="button" onClick={dockWidget}>
-								Dock →flow
+							<button
+								type="button"
+								onClick={dockWidget}
+								title="Move this floating widget into the layout flow"
+							>
+								Snap into layout
 							</button>
 						) : placement === 'flow' ? (
 							<button type="button" onClick={floatWidget}>
 								Float
 							</button>
 						) : null}
-						<button type="button" onClick={makeWidgetFromWidget}>
-							Make widget
+						<button
+							type="button"
+							onClick={makeWidgetFromWidget}
+							title="Save this widget as a reusable custom widget"
+						>
+							Save as custom widget
 						</button>
 						<button
 							type="button"
@@ -1522,8 +1633,12 @@ export default function Inspector({
 				</div>
 			) : groupUnit ? (
 				<div className="fields">
-					<span className="hd node-hd" title={`group · ${groupUnit.id}`}>
-						group · {groupUnit.id}
+					<span
+						className="hd node-hd"
+						title={`${def ? 'Custom widget' : 'Group'} · ${groupUnit.name ?? def?.name ?? ''} · ${groupUnit.id}`}
+					>
+						{groupUnit.name ?? def?.name ?? 'Group'}
+						{isDeveloperMode() ? ` · ${groupUnit.id}` : ''}
 					</span>
 					<label className={['full', dirtyKeys.has('name') && 'dirty'].filter(Boolean).join(' ')}>
 						name
@@ -1556,12 +1671,12 @@ export default function Inspector({
 					{def ? (
 						<>
 							<label className="full">
-								def name
+								custom widget name
 								<input value={def.name} onInput={(e) => renameDefName(e.currentTarget.value)} />
 							</label>
 							<div className="row2">
 								<label>
-									def w
+									custom widget w
 									<input
 										type="number"
 										value={def.size.w}
@@ -1569,7 +1684,7 @@ export default function Inspector({
 									/>
 								</label>
 								<label>
-									def h
+									custom widget h
 									<input
 										type="number"
 										value={def.size.h}
@@ -1578,7 +1693,7 @@ export default function Inspector({
 								</label>
 							</div>
 							<button type="button" onClick={editDef}>
-								Edit def…
+								Edit custom widget…
 							</button>
 							{def.params?.length ? (
 								<>
@@ -1618,7 +1733,7 @@ export default function Inspector({
 									onChange={(e) => setParamKey(e.currentTarget.value)}
 								/>
 								<input
-									placeholder="target e.g. unit.sensor"
+									placeholder="path, e.g. unit.sensor"
 									value={paramTarget}
 									onChange={(e) => setParamTarget(e.currentTarget.value)}
 								/>
@@ -1627,18 +1742,18 @@ export default function Inspector({
 								Add param
 							</button>
 							<label className="full">
-								def css
+								custom widget css
 								<CssEditor
 									key={def.id}
 									value={def.css ?? ''}
 									onBlur={setDefCss}
 									placeholder="color: red;  .value …"
-									ariaLabel="def css"
+									ariaLabel="custom widget css"
 								/>
 							</label>
 						</>
 					) : (
-						<div className="meta">inline group (no def)</div>
+						<div className="meta">inline group (not a custom widget)</div>
 					)}
 					<label className={['full', dirtyKeys.has('css') && 'dirty'].filter(Boolean).join(' ')}>
 						css
@@ -1654,9 +1769,9 @@ export default function Inspector({
 						<button
 							type="button"
 							onClick={ungroupGroup}
-							title="Split this grouped widget back into its individual widgets"
+							title="Split this group back into its individual widgets"
 						>
-							⛓ Unlink
+							Ungroup
 						</button>
 						<button type="button" className="remove" onClick={removeGroup}>
 							Remove

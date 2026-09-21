@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, waitFor, within } from '@testing-library/react';
 
 // copyToClipboard is a Tauri/clipboard adapter (outer ring) — mock it so the "Copy widget reference"
-// button can be exercised without a backend. The panel also calls window.alert after copying.
+// button can be exercised without a backend. The outcome shows inline (no alert()).
 vi.mock('../overlay', () => ({ copyToClipboard: vi.fn(() => Promise.resolve(true)) }));
 
 import DesignerListPanel from './DesignerListPanel';
@@ -61,11 +61,19 @@ const baseProps = () => ({
 });
 
 let alertSpy: ReturnType<typeof vi.spyOn>;
+let promptSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
 	vi.clearAllMocks();
+	// Neither dialog may fire: rename is inline, the copy outcome is an inline status line.
 	alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+	promptSpy = vi.spyOn(window, 'prompt').mockImplementation(() => null);
 });
-afterEach(() => alertSpy.mockRestore());
+afterEach(() => {
+	expect(alertSpy).not.toHaveBeenCalled();
+	expect(promptSpy).not.toHaveBeenCalled();
+	alertSpy.mockRestore();
+	promptSpy.mockRestore();
+});
 
 describe('DesignerListPanel library list', () => {
 	it('renders one row per library def with its name', () => {
@@ -81,16 +89,78 @@ describe('DesignerListPanel library list', () => {
 		expect(props.actions.openExistingDef).toHaveBeenCalledWith('def-a');
 	});
 
-	it('the per-row icons fire rename / clone / delete for that def', () => {
+	it('the per-row icons fire clone / delete for that def', () => {
 		const props = baseProps();
 		const { getByText } = render(<DesignerListPanel {...props} />);
 		const row = within(getByText('My Gauge').closest('.dl-item')! as HTMLElement);
-		fireEvent.click(row.getByTitle('Rename widget'));
-		expect(props.actions.renameWidget).toHaveBeenCalledWith('def-a', 'My Gauge');
-		fireEvent.click(row.getByTitle('Clone to a new widget'));
+		fireEvent.click(row.getByTitle('Clone to a new custom widget'));
 		expect(props.actions.cloneDefToEdit).toHaveBeenCalledWith('def-a');
-		fireEvent.click(row.getByTitle('Delete widget'));
+		fireEvent.click(row.getByTitle('Delete custom widget'));
 		expect(props.actions.deleteWidget).toHaveBeenCalledWith('def-a', 'My Gauge');
+	});
+
+	it('✎ turns the row name into an inline field; Enter commits the new name and closes it', () => {
+		const props = baseProps();
+		const { getByText, getByLabelText, queryByLabelText } = render(
+			<DesignerListPanel {...props} />
+		);
+		const row = getByText('My Gauge').closest('.dl-item')! as HTMLElement;
+		fireEvent.click(within(row).getByTitle('Rename custom widget'));
+		const field = getByLabelText('Rename My Gauge') as HTMLInputElement;
+		expect(field.value).toBe('My Gauge');
+		expect(document.activeElement).toBe(field); // autofocused so typing starts right away
+		fireEvent.change(field, { target: { value: 'Big Gauge' } });
+		fireEvent.keyDown(field, { key: 'Enter' });
+		fireEvent.blur(field); // Enter blurs the field, which is what commits (once)
+		expect(props.actions.renameWidget).toHaveBeenCalledTimes(1);
+		expect(props.actions.renameWidget).toHaveBeenCalledWith('def-a', 'Big Gauge');
+		expect(queryByLabelText('Rename My Gauge')).toBeNull(); // back to the label + ✎
+		expect(within(row).getByTitle('Rename custom widget')).toBeTruthy();
+	});
+
+	it('Escape cancels an inline rename without committing; an unchanged / blank name commits nothing', () => {
+		const props = baseProps();
+		const { getByText, getByLabelText, queryByLabelText } = render(
+			<DesignerListPanel {...props} />
+		);
+		const row = getByText('My Clock').closest('.dl-item')! as HTMLElement;
+		fireEvent.click(within(row).getByTitle('Rename custom widget'));
+		const field = getByLabelText('Rename My Clock') as HTMLInputElement;
+		fireEvent.change(field, { target: { value: 'Nope' } });
+		fireEvent.keyDown(field, { key: 'Escape' });
+		expect(props.actions.renameWidget).not.toHaveBeenCalled();
+		expect(queryByLabelText('Rename My Clock')).toBeNull();
+		// Blur with the name untouched → no rename op either.
+		fireEvent.click(within(row).getByTitle('Rename custom widget'));
+		fireEvent.blur(getByLabelText('Rename My Clock'));
+		expect(props.actions.renameWidget).not.toHaveBeenCalled();
+		// A blank draft never commits (the hook's no-op guard is also honoured here).
+		fireEvent.click(within(row).getByTitle('Rename custom widget'));
+		const again = getByLabelText('Rename My Clock') as HTMLInputElement;
+		fireEvent.change(again, { target: { value: '   ' } });
+		fireEvent.blur(again);
+		expect(props.actions.renameWidget).not.toHaveBeenCalled();
+		// Other keys pass through (no commit / cancel).
+		fireEvent.click(within(row).getByTitle('Rename custom widget'));
+		fireEvent.keyDown(getByLabelText('Rename My Clock'), { key: 'a' });
+		expect(getByLabelText('Rename My Clock')).toBeTruthy();
+	});
+
+	it('shows the open custom widget’s name as an editable header field', () => {
+		const props = baseProps();
+		const { getByLabelText, queryByLabelText, rerender } = render(
+			<DesignerListPanel {...props} editingDefId="def-b" />
+		);
+		const field = getByLabelText('Custom widget name') as HTMLInputElement;
+		expect(field.value).toBe('My Clock');
+		fireEvent.change(field, { target: { value: 'Wall Clock' } });
+		fireEvent.blur(field);
+		expect(props.actions.renameWidget).toHaveBeenCalledWith('def-b', 'Wall Clock');
+		// The header field stays (it is the open widget's name, not a transient row edit).
+		expect(getByLabelText('Custom widget name')).toBeTruthy();
+		// No open widget → no header field.
+		rerender(<DesignerListPanel {...props} editingDefId={null} />);
+		expect(queryByLabelText('Custom widget name')).toBeNull();
 	});
 
 	it('marks the currently-edited def row with the "cur" class', () => {
@@ -99,11 +169,13 @@ describe('DesignerListPanel library list', () => {
 		expect(getByText('My Gauge').closest('.dl-item')!.className).not.toContain('cur');
 	});
 
-	it('shows the empty-library stub when there are no defs', () => {
-		const { getByText } = render(
-			<DesignerListPanel {...baseProps()} library={{ version: 1, defs: [] }} />
+	it('shows the empty-library stub when there are no defs (and no header field for an unknown open id)', () => {
+		const { getByText, queryByLabelText } = render(
+			<DesignerListPanel {...baseProps()} library={{ version: 1, defs: [] }} editingDefId="gone" />
 		);
-		expect(getByText(/No widgets yet/)).toBeTruthy();
+		expect(getByText(/No custom widgets yet/)).toBeTruthy();
+		expect(getByText('My widgets')).toBeTruthy();
+		expect(queryByLabelText('Custom widget name')).toBeNull();
 	});
 });
 
@@ -127,7 +199,7 @@ describe('DesignerListPanel template groups', () => {
 		const props = baseProps();
 		const { getByText } = render(<DesignerListPanel {...props} />);
 		const row = within(getByText('Network').closest('.dl-item')! as HTMLElement);
-		fireEvent.click(row.getByTitle(/Clone into a new editable library widget/));
+		fireEvent.click(row.getByTitle(/Clone into a new editable custom widget/));
 		expect(props.actions.newFromTemplate).toHaveBeenCalledWith('network');
 	});
 
@@ -155,32 +227,30 @@ describe('DesignerListPanel template groups', () => {
 });
 
 describe('DesignerListPanel header actions', () => {
-	it('the New widget button starts a fresh def', () => {
+	it('the New custom widget button starts a fresh def', () => {
 		const props = baseProps();
 		const { getByText } = render(<DesignerListPanel {...props} />);
-		fireEvent.click(getByText('＋ New widget'));
+		fireEvent.click(getByText('＋ New custom widget'));
 		expect(props.actions.startNewWidget).toHaveBeenCalledTimes(1);
 	});
 
-	it('Copy widget reference copies markdown and alerts success', async () => {
-		const { getByText } = render(<DesignerListPanel {...baseProps()} />);
+	it('Copy widget reference copies markdown and reports success inline', async () => {
+		const { getByText, findByRole } = render(<DesignerListPanel {...baseProps()} />);
 		fireEvent.click(getByText('⧉ Copy widget reference'));
 		await waitFor(() => expect(copyToClipboard).toHaveBeenCalledTimes(1));
 		// The copied payload is the generated widget-reference markdown (non-empty).
 		const md = vi.mocked(copyToClipboard).mock.calls[0][0];
 		expect(typeof md).toBe('string');
 		expect(md.length).toBeGreaterThan(0);
-		await waitFor(() => expect(alertSpy).toHaveBeenCalledWith(expect.stringMatching(/copied/i)));
+		expect((await findByRole('status')).textContent).toMatch(/copied/i);
 	});
 
-	it('alerts a failure (and does not claim success) when the copy fails', async () => {
+	it('reports a failure inline (and does not claim success) when the copy fails', async () => {
 		const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 		vi.mocked(copyToClipboard).mockResolvedValueOnce(false);
-		const { getByText } = render(<DesignerListPanel {...baseProps()} />);
+		const { getByText, findByRole } = render(<DesignerListPanel {...baseProps()} />);
 		fireEvent.click(getByText('⧉ Copy widget reference'));
-		await waitFor(() =>
-			expect(alertSpy).toHaveBeenCalledWith(expect.stringMatching(/Copy failed/i))
-		);
+		expect((await findByRole('status')).textContent).toMatch(/Copy failed/i);
 		expect(log).toHaveBeenCalledOnce();
 	});
 });

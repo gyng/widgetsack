@@ -32,7 +32,7 @@
         "sidebarImage": "./windows/installer-sidebar.bmp"
       }
     },
-    "longDescription": "WidgetSack desktop widget platform",
+    "longDescription": "widgetsack desktop widget platform",
     "macOS": {
       "entitlements": null,
       "exceptionDomain": "",
@@ -60,7 +60,7 @@
         "fullscreen": false,
         "height": 400,
         "resizable": true,
-        "title": "WidgetSack",
+        "title": "widgetsack",
         "width": 300,
         "transparent": true,
         "shadow": false,

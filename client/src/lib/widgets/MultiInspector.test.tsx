@@ -223,3 +223,47 @@ describe('MultiInspector docked variant', () => {
 		expect(within(root as HTMLElement).getByText('2 widgets selected')).toBeTruthy();
 	});
 });
+
+describe('MultiInspector align / distribute (floating widgets)', () => {
+	it('renders nothing for fewer than two floating widgets', () => {
+		const { queryByRole } = render(<MultiInspector {...baseProps} floatingIds={['w1']} />);
+		expect(queryByRole('group', { name: 'Align' })).toBeNull();
+	});
+
+	it('emits alignSelected for each edge with the floating ids (2+), no distribute yet', () => {
+		const onOp = vi.fn();
+		const { getByRole, queryByRole } = render(
+			<MultiInspector {...baseProps} floatingIds={['w1', 'w2']} onOp={onOp} />
+		);
+		expect(queryByRole('group', { name: 'Distribute' })).toBeNull();
+		fireEvent.click(getByRole('button', { name: 'Align left' }));
+		expect(onOp).toHaveBeenLastCalledWith({ op: 'alignSelected', ids: ['w1', 'w2'], edge: 'left' });
+		fireEvent.click(getByRole('button', { name: 'Align middles' }));
+		expect(onOp).toHaveBeenLastCalledWith({
+			op: 'alignSelected',
+			ids: ['w1', 'w2'],
+			edge: 'middle'
+		});
+		const edges = within(getByRole('group', { name: 'Align' }))
+			.getAllByRole('button')
+			.map((b) => b.getAttribute('aria-label'));
+		expect(edges).toEqual([
+			'Align left',
+			'Align centres',
+			'Align right',
+			'Align top',
+			'Align middles',
+			'Align bottom'
+		]);
+	});
+
+	it('emits distributeSelected once three or more floating widgets are selected', () => {
+		const onOp = vi.fn();
+		const ids = ['w1', 'w2', 'w3'];
+		const { getByRole } = render(<MultiInspector {...baseProps} floatingIds={ids} onOp={onOp} />);
+		fireEvent.click(getByRole('button', { name: 'Distribute horizontally' }));
+		expect(onOp).toHaveBeenLastCalledWith({ op: 'distributeSelected', ids, axis: 'horizontal' });
+		fireEvent.click(getByRole('button', { name: 'Distribute vertically' }));
+		expect(onOp).toHaveBeenLastCalledWith({ op: 'distributeSelected', ids, axis: 'vertical' });
+	});
+});

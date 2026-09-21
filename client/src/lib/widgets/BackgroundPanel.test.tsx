@@ -122,11 +122,13 @@ describe('BackgroundPanel — web kind', () => {
 });
 
 describe('BackgroundPanel — media kinds (image/video)', () => {
-	it('lists wallpaper files and selecting one emits patchBg({src})', () => {
+	it('lists the background images (under the "Background" wording) and selecting one emits patchBg({src})', () => {
 		const { getByText, getByTitle, h } = renderPanel(
 			{ kind: 'image', src: 'a.png' },
 			{ wallpaperFiles: ['a.png', 'b.jpg'] }
 		);
+		// The folder on disk stays `wallpapers/`, but the UI calls the feature Background.
+		expect(() => getByText('Background images (wallpapers folder)')).not.toThrow();
 		expect(() => getByText('b.jpg')).not.toThrow();
 		fireEvent.click(getByText('b.jpg'));
 		expect(h.patchBg).toHaveBeenCalledWith({ src: 'b.jpg' });
@@ -226,7 +228,7 @@ describe('BackgroundPanel — auto theme (image only)', () => {
 			{ kind: 'image', src: 'a.png' },
 			{ wallpaperFiles: ['a.png'], autoTheme: at }
 		);
-		fireEvent.click(getByText('🎨 From wallpaper'));
+		fireEvent.click(getByText('🎨 From background'));
 		expect(at.run).toHaveBeenCalledTimes(1);
 	});
 
@@ -273,6 +275,6 @@ describe('BackgroundPanel — auto theme (image only)', () => {
 			{ kind: 'video', src: 'clip.mp4' },
 			{ wallpaperFiles: ['clip.mp4'], autoTheme: autoTheme() }
 		);
-		expect(queryByText('🎨 From wallpaper')).toBeNull();
+		expect(queryByText('🎨 From background')).toBeNull();
 	});
 });

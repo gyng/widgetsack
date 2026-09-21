@@ -20,6 +20,34 @@ than hand-editing `.ini` files.
 > build`/`test`/`clippy` + `npm check`/`lint`/`test`/`build` all green. Only the native passive-mode
 > right-click menu (5d) is deferred — see Phase 5d. See "Layout tree + groups (v2)" and Phases 5–6.
 
+## Tray & global shortcuts (current)
+
+The tray icon is the app's only always-present chrome. **Left-click opens the studio**; the
+right-click menu is:
+
+| Item | What it does |
+|------|--------------|
+| Open studio | Focuses (or spawns) the studio window — same as a left-click / the Start-menu shortcut. |
+| Arrange windows | Snaps every open window that matches a zone widget's rule into that zone. |
+| Re-fit overlays to monitors | Re-fits the overlays after monitors are moved/added/removed at runtime. |
+| Launch at login (check item) | Mirrors Settings → Startup (the durable HKCU preference, see `autostart.rs`). |
+| Update available: vX / Update checks off | Disabled until the opt-in background check finds a newer release; clicking opens the release page (no auto-installer). |
+| Quit | |
+
+Global shortcuts (registered with Windows by `main.rs`, listed read-only as "built-in" under
+Settings → Shortcuts):
+
+- **`Ctrl+Alt+E`** — toggle desktop edit mode on every overlay (`Ctrl+E` is the in-window alias).
+- **`Ctrl+Alt+Shift+E`** — rescue: force every widgetsack window interactive and bring it
+  forward, even if its webview crashed. Settings → Diagnostics has the same button.
+
+Settings → Diagnostics also hosts the live **logs** pane (the backend's structured log ring buffer,
+filterable by level/target), **Copy diagnostics** (a text report of versions, process stats, and
+recent logs for bug reports), and the **Developer mode** toggle (shows node ids and the devtools
+items). Settings → About has the **check for updates automatically** toggle — **off by default**;
+when on, the app asks GitHub for the latest release every 6 hours and only ever shows it (tray
+item + badge); nothing is downloaded.
+
 ## Goals
 
 - Replace Rainmeter with a homegrown, web-tech-themed widget system.
@@ -130,8 +158,10 @@ Studio window (normal, taskbar)          Overlay per monitor (transparent, click
 - **Sync:** the file stays the source of truth (commit + `notify` live-reload, as today). On
   top, transient `layout_draft` Tauri events mirror in-progress edits between studio ↔ overlays
   so dragging on the canvas updates the outline (and vice-versa) without a per-frame file round-trip.
-- **Entry:** tray "Open designer", the global hotkey, and the overlay's right-click →
-  "Open designer / Edit layout" all focus (or spawn) the studio window.
+- **Entry:** a tray left-click (or the tray menu's "Open studio" / the Start-menu shortcut,
+  which passes `--studio`) focuses or spawns the studio window. `Ctrl+Alt+E` toggles desktop
+  edit mode on the overlays instead (`Ctrl+E` inside a window); there is no "Edit layout" tray
+  item any more — see "Tray & global shortcuts (current)" below.
 
 ## Stable contracts (the framework-agnostic API)
 

@@ -51,6 +51,22 @@ pub fn reveal_log_dir(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Open the `sacks/` folder (the exported `<name>.sack.json` bundles, under the app config root —
+/// isolated per `--multi` instance like every other config path) in Explorer, creating it first so
+/// a fresh install still has somewhere to land. Same best-effort shape as `reveal_log_dir`.
+/// Register alongside it in `main.rs` (`diag::reveal_sacks_dir`); the studio's Sacks section calls
+/// `invoke("reveal_sacks_dir")` from its "Open sacks folder" button.
+#[tauri::command]
+pub fn reveal_sacks_dir(app: AppHandle) -> Result<(), String> {
+    let dir = crate::command::config_root(&app)?.join("sacks");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    std::process::Command::new("explorer.exe")
+        .arg(&dir)
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::dir_to_reveal;

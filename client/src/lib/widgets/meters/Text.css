@@ -20,3 +20,29 @@
 	/* Equal-width digits so a changing value (rate, %) doesn't make the text wobble/shift. */
 	font-variant-numeric: tabular-nums;
 }
+
+/* Empty-content placeholder: hidden on the passive overlay (the plain "–" shows), swapped in for the
+   value ONLY inside an edit-mode host (.widget.editable — the studio / overlay edit mode) so a
+   freshly added or unbound Text reads as a dashed "Text" box instead of an invisible sliver. */
+.np-text .placeholder {
+	display: none;
+}
+
+.widget.editable .np-text.empty .value {
+	display: none;
+}
+
+.widget.editable .np-text.empty .placeholder {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 48px;
+	min-height: 18px;
+	padding: 0 8px;
+	box-sizing: border-box;
+	border: 1px dashed currentColor;
+	border-radius: 3px;
+	opacity: 0.55;
+	font-size: 12px;
+	letter-spacing: 0.5px;
+}

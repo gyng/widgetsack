@@ -54,3 +54,15 @@
 .inspector.multi .multi-delete:hover {
 	background: rgba(var(--ui-danger-rgb), 0.28);
 }
+
+/* Align / distribute rows: a compact strip of glyph buttons (≥24px targets). */
+.inspector.multi .multi-align {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1);
+}
+.inspector.multi .multi-align button {
+	min-width: 28px;
+	min-height: 24px;
+	padding: 0 var(--space-2);
+}

@@ -2,7 +2,7 @@
 ; wired via tauri.conf.json bundle.windows.nsis.template. It is otherwise the stock template — the
 ; bundler renders it through Handlebars, so keep its placeholders intact and DON'T write a literal
 ; double-brace sequence anywhere (even in comments). Local additions are marked "WIDGETSACK:":
-;   1. a "Launch WidgetSack at login" checkbox on the finish page (WS_AutostartShow/WS_AutostartLeave)
+;   1. a "Launch widgetsack at login" checkbox on the finish page (WS_AutostartShow/WS_AutostartLeave)
 ;      that writes the durable HKCU preference the app re-asserts on startup (see widgetsack/src/autostart.rs);
 ;   2. cleanup of that preference in the delete-app-data branch.
 ; RE-SYNC THIS FILE when the Tauri bundler is upgraded: diff against the new version's
@@ -420,13 +420,13 @@ Var AppStartMenuFolder
 ; WIDGETSACK: add a third "Launch at login" checkbox to the finish page (SHOW), and persist its
 ; state to the durable preference the app re-asserts on startup (LEAVE). MUI's finish-page LEAVE
 ; calls this custom leave BEFORE its own Run/ShowReadme handling (Contrib/Modern UI 2/Pages/Finish.nsh),
-; so the existing "Run WidgetSack" checkbox keeps working.
+; so the existing "Run widgetsack" checkbox keeps working.
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW WS_AutostartShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE WS_AutostartLeave
 !insertmacro MUI_PAGE_FINISH
 
 Function RunMainBinary
-  ; WIDGETSACK: --studio so the finish-page "Run WidgetSack" checkbox opens the designer rather than
+  ; WIDGETSACK: --studio so the finish-page "Run widgetsack" checkbox opens the studio rather than
   ; launching a silent, empty overlay the user can't see.
   nsis_tauri_utils::RunAsUser "$INSTDIR\${MAINBINARYNAME}.exe" "--studio"
 FunctionEnd
@@ -436,7 +436,7 @@ FunctionEnd
 ; Layout (Finish.nsh defaults): Run y=90u, ShowReadme y=110u → this sits at y=130u.
 Var WS_AutostartCheckbox
 Function WS_AutostartShow
-  ${NSD_CreateCheckbox} 120u 130u 195u 10u "Launch WidgetSack at login"
+  ${NSD_CreateCheckbox} 120u 130u 195u 10u "Launch widgetsack at login"
   Pop $WS_AutostartCheckbox
   SetCtlColors $WS_AutostartCheckbox "${MUI_TEXTCOLOR}" "${MUI_BGCOLOR}"
   ; Checked by default. On a fresh install there's no saved preference (ReadRegDWORD sets the error

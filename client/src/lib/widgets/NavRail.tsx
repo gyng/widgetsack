@@ -8,6 +8,9 @@ import { useAppUpdate } from '../appUpdate';
 import { updateBadge } from '../core/updateNotice';
 import './NavRail.css';
 
+// A short label of this many characters or more doesn't fit the strip at --text-xs monospace.
+const LONG_SHORT_LABEL = 8;
+
 type Props = {
 	active: SectionId;
 	onSelect: (id: SectionId) => void;
@@ -21,11 +24,14 @@ export default function NavRail({ active, onSelect }: Props) {
 			type="button"
 			data-section={s.id}
 			className={['nav-item', s.id === active && 'active'].filter(Boolean).join(' ')}
-			// Native tooltip only when it ADDS to the visible short label (an abbreviation like "Defs" →
-			// "Widget designer", or "Backdrop" → "Background") or flags a stub — otherwise it just repeats
-			// the label that's already shown, which reads as redundant clutter. The full name is the
-			// accessible name regardless, via aria-label.
-			title={s.label !== s.short || s.stub ? s.label + (s.stub ? ' (coming soon)' : '') : undefined}
+			// Native tooltip only when it ADDS to the visible short label (an abbreviation like "Custom" →
+			// "Widget designer", a section's own `title` like "Sacks — export/import") or flags a stub —
+			// otherwise it just repeats the label that's already shown, which reads as redundant clutter.
+			// The full name is the accessible name regardless, via aria-label.
+			title={
+				s.title ??
+				(s.label !== s.short || s.stub ? s.label + (s.stub ? ' (coming soon)' : '') : undefined)
+			}
 			aria-label={s.label + (s.stub ? ' (coming soon)' : '')}
 			// Convey the open section to assistive tech (the visual cue is colour-only otherwise — WCAG
 			// 1.4.1). aria-current marks the active rail item as the current "page" of the studio.
@@ -37,7 +43,13 @@ export default function NavRail({ active, onSelect }: Props) {
 			<span className="nav-icon" aria-hidden="true">
 				{s.icon}
 			</span>
-			<span className="nav-short">{s.short}</span>
+			{/* Long labels ("BACKGROUND", "SHORTCUTS") drop to the compact size so they never overflow the
+			    56px strip; the class flips at 8 chars (the widest that fits at the normal size). */}
+			<span
+				className={s.short.length >= LONG_SHORT_LABEL ? 'nav-short nav-short--long' : 'nav-short'}
+			>
+				{s.short}
+			</span>
 			{s.id === 'settings' && badge && (
 				<span
 					className="nav-badge"

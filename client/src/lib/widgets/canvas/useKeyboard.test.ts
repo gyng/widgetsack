@@ -133,17 +133,19 @@ describe('useKeyboard registry dispatch', () => {
 		expect(nudge).not.toHaveBeenCalled();
 	});
 
-	it('Ctrl+1..8 jumps to the matching section (0-based index)', () => {
+	it('Ctrl+1..9 jumps to the matching section (0-based index; 9 = Settings)', () => {
 		renderHook(() => useKeyboard(deps));
 		press({ key: '1', code: 'Digit1', ctrlKey: true });
 		expect(gotoSection).toHaveBeenLastCalledWith(0);
 		press({ key: '8', code: 'Digit8', ctrlKey: true });
 		expect(gotoSection).toHaveBeenLastCalledWith(7);
-		expect(gotoSection).toHaveBeenCalledTimes(2);
+		press({ key: '9', code: 'Digit9', ctrlKey: true });
+		expect(gotoSection).toHaveBeenLastCalledWith(8);
+		expect(gotoSection).toHaveBeenCalledTimes(3);
 	});
 
-	it('a section chord with a digit outside 1..8 (remapped trigger) does not jump', () => {
-		// The built-in triggers only bind Ctrl+1..8; a remap can still hit studio.section with an
+	it('a section chord with a digit outside 1..9 (remapped trigger) does not jump', () => {
+		// The built-in triggers only bind Ctrl+1..9; a remap can still hit studio.section with an
 		// out-of-range digit (or no digit at all) — the guard must skip gotoSection for those.
 		renderHook(() =>
 			useKeyboard({
@@ -151,7 +153,6 @@ describe('useKeyboard registry dispatch', () => {
 				overrides: () => ({
 					'studio.section': {
 						triggers: [
-							{ type: 'key', key: '9', ctrl: true },
 							{ type: 'key', key: '0', ctrl: true },
 							{ type: 'key', key: 'x', ctrl: true }
 						]
@@ -159,7 +160,6 @@ describe('useKeyboard registry dispatch', () => {
 				})
 			})
 		);
-		press({ key: '9', code: 'Digit9', ctrlKey: true }); // an integer, but > 8
 		press({ key: '0', code: 'Digit0', ctrlKey: true }); // an integer, but < 1
 		press({ key: 'x', code: 'KeyX', ctrlKey: true }); // not a number at all
 		expect(gotoSection).not.toHaveBeenCalled();

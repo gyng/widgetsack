@@ -13,12 +13,16 @@ import {
 	type ClimateAttrs
 } from '../../core/haControls';
 import type { ControlEvent } from '../meterProps';
+import { haTileState } from '../../core/haTileState';
+import HaTileNotice from './HaTileNotice';
 import './HaClimate.css';
 
 type HaState = { state?: string; attributes?: Record<string, unknown> };
 
 type Props = {
 	value?: unknown;
+	/** The `ha.status` sample (host-supplied): undefined = not wired, null = plugin not configured. */
+	haStatus?: string | null;
 	label?: string;
 	onControl?: (e: ControlEvent) => void;
 	showMode?: boolean; // tap-to-cycle HVAC mode button
@@ -28,6 +32,7 @@ type Props = {
 
 export default function HaClimate({
 	value = null,
+	haStatus,
 	label,
 	onControl,
 	showMode = true,
@@ -56,6 +61,11 @@ export default function HaClimate({
 		onControl?.({ domain: 'climate', service: call.service, data: call.data });
 	const nudge = (dir: 1 | -1) => emit(climateNudge(attrs, dir));
 	const cycleMode = () => emit(climateSetHvacMode(climateNextHvacMode(attrs, mode)));
+
+	// No live data (plugin unset / offline / entity unavailable / still waiting) → the shared notice.
+	const tile = haTileState(haStatus, value);
+	if (tile.kind !== 'ok')
+		return <HaTileNotice className="ha-climate np-ha-climate" label={name} tile={tile} />;
 
 	return (
 		<div className="ha-climate np-ha-climate" data-part="root">

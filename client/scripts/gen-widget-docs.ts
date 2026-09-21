@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { listMetas } from '../src/lib/core/widget';
+import { fieldsMissingHelp, listMetas } from '../src/lib/core/widget';
 import { pluginLoadErrors, registerBuiltinPlugins } from '../src/lib/widgets/plugins/index';
 import { widgetReferenceMarkdown } from '../src/lib/core/widgetDocs';
 import { templatingReferenceMarkdown } from '../src/lib/core/templatingDocs';
@@ -28,6 +28,13 @@ if (loadErrors.length) {
 	process.exit(1);
 }
 const metas = listMetas();
+// Help lint: every config field of every shipped widget must carry `help` — a field without it
+// renders unexplained in the Inspector and as an empty description cell in docs/widgets.md.
+const noHelp = fieldsMissingHelp(metas);
+if (noHelp.length) {
+	console.error(`✗ ${noHelp.length} config field(s) have no help text: ${noHelp.join(', ')}`);
+	process.exit(1);
+}
 // Compare line-ending-insensitively so a CRLF checkout (git autocrlf) doesn't read as stale.
 const norm = (s: string): string => s.replace(/\r\n/g, '\n');
 

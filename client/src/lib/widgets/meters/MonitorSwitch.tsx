@@ -58,7 +58,7 @@ export default function MonitorSwitch({
 				</div>
 			) : unavailable ? (
 				<div className="ms-empty" data-part="empty">
-					no DDC monitor found
+					This monitor doesn’t support input switching (DDC/CI may be off in its menu)
 				</div>
 			) : rows.length === 0 ? (
 				<div className="ms-empty" data-part="empty">

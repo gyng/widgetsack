@@ -72,7 +72,7 @@ describe('MonitorSwitch meter', () => {
 			<MonitorSwitch title="Desk" rows={[]} unavailable onPick={() => undefined} />
 		);
 		expect(unavailable.container.querySelector('.ms-empty')?.textContent).toBe(
-			'no DDC monitor found'
+			'This monitor doesn’t support input switching (DDC/CI may be off in its menu)'
 		);
 	});
 

@@ -254,9 +254,12 @@ describe('PluginsPanel detail pane', () => {
 });
 
 describe('PluginsPanel packages list', () => {
-	it('shows the no-packages stub and the install button when nothing is discovered', () => {
-		const { getByText } = renderPanel();
-		expect(getByText('Install from URL…')).toBeTruthy();
+	it('shows the no-packages stub and the inline install form when nothing is discovered', () => {
+		const { getByText, getByLabelText } = renderPanel();
+		expect(getByText('Install')).toBeTruthy();
+		expect((getByLabelText('Package source') as HTMLInputElement).placeholder).toBe(
+			'owner/repo or https://…manifest.json'
+		);
 		expect(getByText(/No packages installed/)).toBeTruthy();
 	});
 
@@ -337,14 +340,15 @@ describe('PluginsPanel packages list', () => {
 		await waitFor(() => expect(removePackage).toHaveBeenCalledWith('demo'));
 	});
 
-	it('alerts the reason when removal fails', async () => {
+	it('shows the reason inline on the row (no alert) when removal fails', async () => {
 		act(() => packagesStore.set([pkgRow()]));
 		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		vi.mocked(removePackage).mockResolvedValue({ ok: false, error: 'folder locked' });
-		const { getByText } = renderPanel();
+		const { getByText, findByText } = renderPanel();
 		fireEvent.click(getByText('Remove'));
-		await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('Remove failed: folder locked'));
+		expect(await findByText('Remove failed: folder locked')).toBeTruthy();
+		expect(alertSpy).not.toHaveBeenCalled();
 	});
 
 	it('does NOT remove when the confirm dialog is declined', async () => {
@@ -357,26 +361,55 @@ describe('PluginsPanel packages list', () => {
 		expect(removePackage).not.toHaveBeenCalled();
 	});
 
-	it('installs from the URL prompt, passing the trimmed source', async () => {
-		vi.spyOn(window, 'prompt').mockReturnValue('  owner/repo  ');
-		const { getByText } = renderPanel();
-		fireEvent.click(getByText('Install from URL…'));
+	it('installs from the inline form (trimmed source) and names the package that landed', async () => {
+		// installPackage refreshes the discovered rows; simulate the new row appearing.
+		vi.mocked(installPackage).mockImplementationOnce(async () => {
+			packagesStore.set([pkgRow({ id: 'fresh', name: 'Fresh Pack' })]);
+			return { ok: true };
+		});
+		const { getByText, getByLabelText, findByRole } = renderPanel();
+		const field = getByLabelText('Package source') as HTMLInputElement;
+		const install = getByText('Install') as HTMLButtonElement;
+		expect(install.disabled).toBe(true); // nothing typed yet
+		fireEvent.change(field, { target: { value: '  owner/repo  ' } });
+		expect(install.disabled).toBe(false);
+		fireEvent.click(install);
 		await waitFor(() => expect(installPackage).toHaveBeenCalledWith('owner/repo'));
+		const status = await findByRole('status');
+		expect(status.textContent).toContain('Installed “Fresh Pack”');
+		expect(field.value).toBe(''); // cleared for the next one
 	});
 
-	it('alerts the reason when the install fails', async () => {
-		vi.spyOn(window, 'prompt').mockReturnValue('owner/repo');
+	it('falls back to the typed source in the success line when no new row appeared (re-install)', async () => {
+		act(() => packagesStore.set([pkgRow({ id: 'demo' })]));
+		const { getByText, getByLabelText, findByRole } = renderPanel();
+		fireEvent.change(getByLabelText('Package source'), { target: { value: 'owner/demo' } });
+		fireEvent.click(getByText('Install'));
+		expect((await findByRole('status')).textContent).toContain('Installed “owner/demo”');
+	});
+
+	it('shows the reason inline (no alert) when the install fails, and a default when it has none', async () => {
 		const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		vi.mocked(installPackage).mockResolvedValue({ ok: false, error: 'not found' });
-		const { getByText } = renderPanel();
-		fireEvent.click(getByText('Install from URL…'));
-		await waitFor(() => expect(alertSpy).toHaveBeenCalledWith('Install failed: not found'));
+		const { getByText, getByLabelText, findByRole } = renderPanel();
+		const field = getByLabelText('Package source') as HTMLInputElement;
+		fireEvent.change(field, { target: { value: 'owner/repo' } });
+		fireEvent.click(getByText('Install'));
+		expect((await findByRole('alert')).textContent).toBe('Install failed: not found');
+		expect(alertSpy).not.toHaveBeenCalled();
+		expect(field.value).toBe('owner/repo'); // kept so it can be corrected
+		vi.mocked(installPackage).mockResolvedValue({ ok: false });
+		fireEvent.click(getByText('Install'));
+		await waitFor(() =>
+			expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+				'Install failed: install failed'
+			)
+		);
 	});
 
-	it('does not install when the install prompt is cancelled (empty)', async () => {
-		vi.spyOn(window, 'prompt').mockReturnValue('');
-		const { getByText } = renderPanel();
-		fireEvent.click(getByText('Install from URL…'));
+	it('does not install when the form is submitted with an empty source (Enter in the field)', async () => {
+		const { container } = renderPanel();
+		fireEvent.submit(container.querySelector('form.pkg-install')!);
 		await act(async () => undefined);
 		expect(installPackage).not.toHaveBeenCalled();
 	});

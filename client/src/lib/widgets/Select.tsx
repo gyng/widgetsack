@@ -33,6 +33,12 @@ type CommonProps = {
 	title?: string;
 	/** Accessible name when the control isn't wrapped in a <label>. */
 	'aria-label'?: string;
+	/**
+	 * The option that is in effect while `value` is '' (an unset config key falling back to its
+	 * default). That option renders as selected and reads "<label> (default)" — in the trigger AND in
+	 * the menu — while the value written on change stays the plain option value.
+	 */
+	defaultValue?: string;
 };
 
 type Props = CommonProps & {
@@ -40,7 +46,27 @@ type Props = CommonProps & {
 	searchable?: boolean;
 	/** Accept a typed value that isn't one of the options (e.g. a sensor id). Implies searchable. */
 	allowCustom?: boolean;
+	/**
+	 * Free-text (allowCustom) commit timing. 'input' (default) commits every keystroke; 'blur' holds
+	 * the typed text and commits once on blur / Enter (or on picking an option) — so a hand-typed id
+	 * is ONE change, not one per character.
+	 */
+	commitOn?: 'input' | 'blur';
+	/** Select the whole text on focus (free-text), so a click-then-type replaces the id outright. */
+	selectAllOnFocus?: boolean;
 };
+
+// Options with the `defaultValue` row relabelled "<label> (default)" (only while nothing is set).
+function withDefaultLabel(
+	options: SelectOption[],
+	value: string,
+	defaultValue: string | undefined
+): SelectOption[] {
+	if (value !== '' || !defaultValue) return options;
+	return options.map((o) =>
+		o.value === defaultValue ? { ...o, label: `${o.label} (default)` } : o
+	);
+}
 
 const SEARCHABLE_THRESHOLD = 8;
 
@@ -78,16 +104,23 @@ function menuStyle(rect: DOMRect | null): CSSProperties {
 }
 
 function SelectListbox({
-	value,
-	options,
+	value: rawValue,
+	options: rawOptions,
 	onChange,
 	placeholder,
 	disabled,
 	className,
 	title,
+	defaultValue,
 	'aria-label': ariaLabel
 }: CommonProps) {
 	const wrapRef = useRef<HTMLDivElement | null>(null);
+	// An unset value shows its effective default as the selection (labelled "(default)").
+	const value = rawValue === '' && defaultValue ? defaultValue : rawValue;
+	const options = useMemo(
+		() => withDefaultLabel(rawOptions, rawValue, defaultValue),
+		[rawOptions, rawValue, defaultValue]
+	);
 	const selectedItem = optionFor(options, value);
 	const { isOpen, highlightedIndex, getToggleButtonProps, getMenuProps, getItemProps } =
 		useSelect<SelectOption>({
@@ -155,10 +188,13 @@ function SelectCombobox({
 	className,
 	title,
 	allowCustom,
+	commitOn = 'input',
+	selectAllOnFocus,
 	'aria-label': ariaLabel
-}: CommonProps & { allowCustom?: boolean }) {
+}: CommonProps & Pick<Props, 'allowCustom' | 'commitOn' | 'selectAllOnFocus'>) {
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const selectedItem = optionFor(options, value);
+	const deferCommit = !!allowCustom && commitOn === 'blur';
 	const [inputValue, setInputValue] = useState(() => displayValue(options, value, !!allowCustom));
 
 	// Re-sync the visible text when `value` changes from OUTSIDE (reset / undo / programmatic), but not
@@ -208,7 +244,7 @@ function SelectCombobox({
 			// NB: do NOT touch lastValue here — `value` updates a render later (the commit is async), and
 			// pre-empting it makes the sync effect below "correct" the input back to the stale value,
 			// clearing each keystroke. The effect alone reconciles lastValue once `value` actually changes.
-			if (allowCustom && type === useCombobox.stateChangeTypes.InputChange) {
+			if (allowCustom && !deferCommit && type === useCombobox.stateChangeTypes.InputChange) {
 				onChange(next.trim());
 			}
 		},
@@ -219,6 +255,14 @@ function SelectCombobox({
 		}
 	});
 	const rect = useAnchoredRect(wrapRef, isOpen);
+
+	// Deferred free-text commit (wired only when deferCommit): the typed text becomes the value on
+	// blur / Enter (one change), unless it already equals the current value (a pick / an untouched
+	// focus-out commits nothing).
+	const commitTyped = (): void => {
+		const next = inputValue.trim();
+		if (next !== value) onChange(next);
+	};
 
 	// On close, a non-custom combobox with stray filter text snaps back to the selected label. Runs on
 	// the open→close transition only (store-previous idiom), during render rather than in an effect.
@@ -247,6 +291,17 @@ function SelectCombobox({
 					// to see its options is what users expect ("I can't click to choose"). Attached after the
 					// prop-getter spread so it isn't dropped; useCombobox sets no onClick of its own to compose.
 					onClick={() => openMenu()}
+					onFocus={selectAllOnFocus ? (e) => e.currentTarget.select() : undefined}
+					onBlur={deferCommit ? commitTyped : undefined}
+					onKeyDownCapture={
+						deferCommit
+							? (e) => {
+									// Enter commits the typed text — unless an option is highlighted in the open
+									// menu, in which case Downshift picks it and onSelectedItemChange commits that.
+									if (e.key === 'Enter' && (!isOpen || highlightedIndex < 0)) commitTyped();
+								}
+							: undefined
+					}
 				/>
 				<button
 					type="button"

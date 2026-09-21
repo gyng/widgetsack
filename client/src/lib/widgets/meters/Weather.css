@@ -13,6 +13,13 @@
 	color: var(--np-fg, rgb(255, 255, 255));
 }
 
+/* No reading yet ("Set your location in Plugins → Weather" / loading / error): a quiet wrapping
+   note in place of the icon + temperature block. */
+.wx-empty {
+	font-size: var(--wx-cond-size, 0.72em);
+	line-height: 1.3;
+	color: var(--np-label, rgba(255, 255, 255, 0.65));
+}
 .wx-main {
 	display: flex;
 	align-items: center;

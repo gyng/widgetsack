@@ -120,7 +120,7 @@ describe('MonitorSwitchHost (container wiring)', () => {
 		const { container } = render(<MonitorSwitchHost />);
 		await waitFor(() =>
 			expect(container.querySelector('[data-part="empty"]')?.textContent).toBe(
-				'no DDC monitor found'
+				'This monitor doesn’t support input switching (DDC/CI may be off in its menu)'
 			)
 		);
 		expect(container.querySelector('.ms-row')).toBeNull();

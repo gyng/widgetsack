@@ -10,25 +10,33 @@ import {
 describe('overlayPrefs', () => {
 	beforeEach(() => localStorage.clear());
 
-	it('defaults to respecting the work area, a below-windows (bottom) layer, and no debug windowed mode', () => {
+	it('defaults to respecting the work area, a below-windows (bottom) layer, no debug windowed mode, and developer mode off', () => {
 		expect(readOverlayPrefs()).toEqual({
 			respectWorkArea: true,
 			overlayLayer: 'bottom',
-			debugWindowed: false
+			debugWindowed: false,
+			developerMode: false
 		});
 		expect(OVERLAY_PREF_DEFAULTS).toEqual({
 			respectWorkArea: true,
 			overlayLayer: 'bottom',
-			debugWindowed: false
+			debugWindowed: false,
+			developerMode: false
 		});
 	});
 
 	it('round-trips written values', () => {
-		writeOverlayPrefs({ respectWorkArea: false, overlayLayer: 'wallpaper', debugWindowed: true });
+		writeOverlayPrefs({
+			respectWorkArea: false,
+			overlayLayer: 'wallpaper',
+			debugWindowed: true,
+			developerMode: true
+		});
 		expect(readOverlayPrefs()).toEqual({
 			respectWorkArea: false,
 			overlayLayer: 'wallpaper',
-			debugWindowed: true
+			debugWindowed: true,
+			developerMode: true
 		});
 	});
 
@@ -37,16 +45,18 @@ describe('overlayPrefs', () => {
 		expect(readOverlayPrefs()).toEqual({
 			respectWorkArea: true,
 			overlayLayer: 'bottom',
-			debugWindowed: false
+			debugWindowed: false,
+			developerMode: false
 		});
 	});
 
-	it('merges defaults for missing keys (old prefs without overlayLayer/debugWindowed)', () => {
+	it('merges defaults for missing keys (old prefs without overlayLayer/debugWindowed/developerMode)', () => {
 		localStorage.setItem('widgetsack.overlay.prefs', JSON.stringify({ respectWorkArea: false }));
 		expect(readOverlayPrefs()).toEqual({
 			respectWorkArea: false,
 			overlayLayer: 'bottom',
-			debugWindowed: false
+			debugWindowed: false,
+			developerMode: false
 		});
 	});
 });
@@ -68,31 +78,48 @@ describe('useOverlayPrefs', () => {
 	it('a patch merges over the latest persisted value, not stale state', () => {
 		const { result } = renderHook(() => useOverlayPrefs());
 		// Another window writes directly to storage between renders.
-		writeOverlayPrefs({ respectWorkArea: false, overlayLayer: 'wallpaper', debugWindowed: true });
+		writeOverlayPrefs({
+			respectWorkArea: false,
+			overlayLayer: 'wallpaper',
+			debugWindowed: true,
+			developerMode: true
+		});
 		act(() => result.current[1]({ debugWindowed: false }));
 		expect(result.current[0]).toEqual({
 			respectWorkArea: false,
 			overlayLayer: 'wallpaper',
-			debugWindowed: false
+			debugWindowed: false,
+			developerMode: true
 		});
 	});
 
 	it('reacts to a storage event for the prefs key from another window', () => {
 		const { result } = renderHook(() => useOverlayPrefs());
-		writeOverlayPrefs({ respectWorkArea: false, overlayLayer: 'top', debugWindowed: true });
+		writeOverlayPrefs({
+			respectWorkArea: false,
+			overlayLayer: 'top',
+			debugWindowed: true,
+			developerMode: false
+		});
 		act(() => {
 			window.dispatchEvent(new StorageEvent('storage', { key: 'widgetsack.overlay.prefs' }));
 		});
 		expect(result.current[0]).toEqual({
 			respectWorkArea: false,
 			overlayLayer: 'top',
-			debugWindowed: true
+			debugWindowed: true,
+			developerMode: false
 		});
 	});
 
 	it('ignores storage events for other keys', () => {
 		const { result } = renderHook(() => useOverlayPrefs());
-		writeOverlayPrefs({ respectWorkArea: false, overlayLayer: 'top', debugWindowed: true });
+		writeOverlayPrefs({
+			respectWorkArea: false,
+			overlayLayer: 'top',
+			debugWindowed: true,
+			developerMode: false
+		});
 		act(() => {
 			window.dispatchEvent(new StorageEvent('storage', { key: 'some.other.key' }));
 		});
@@ -103,7 +130,12 @@ describe('useOverlayPrefs', () => {
 	it('detaches the storage listener on unmount', () => {
 		const { result, unmount } = renderHook(() => useOverlayPrefs());
 		unmount();
-		writeOverlayPrefs({ respectWorkArea: false, overlayLayer: 'top', debugWindowed: true });
+		writeOverlayPrefs({
+			respectWorkArea: false,
+			overlayLayer: 'top',
+			debugWindowed: true,
+			developerMode: false
+		});
 		act(() => {
 			window.dispatchEvent(new StorageEvent('storage', { key: 'widgetsack.overlay.prefs' }));
 		});

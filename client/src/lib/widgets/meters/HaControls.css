@@ -266,3 +266,13 @@
 	accent-color: var(--np-accent, rgba(119, 196, 211, 0.9));
 	cursor: pointer;
 }
+
+/* The HA family's "no live data" body (HaTileNotice): a quiet, wrapping note in place of the value —
+   "Not configured — set up in Plugins → Home Assistant", "Home Assistant offline", … Kept small and
+   dimmed so a dozen unconfigured tiles read as hints, not alarms. */
+.ha-tile-notice {
+	font-size: 10px;
+	line-height: 1.3;
+	opacity: 0.7;
+	white-space: normal;
+}

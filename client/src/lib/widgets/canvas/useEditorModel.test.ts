@@ -51,6 +51,120 @@ function oneWidgetMonitor(id = 'w-fix'): MonitorLayout {
 	return { root, floating: [] };
 }
 
+describe('sticky add target (addTarget)', () => {
+	// The Outline "+ Row" → Gauge, Bar, Text palette flow: every add lands in the row even though
+	// each new widget (a leaf) becomes the selection after its add.
+	function modelWithRow() {
+		const { result } = renderModel();
+		act(() => result.current.handleOp({ op: 'addContainer', kind: 'row' }));
+		const rowId = result.current.state.selectedId!;
+		return { result, rowId };
+	}
+	const rowChildren = (result: ReturnType<typeof renderModel>['result'], rowId: string) =>
+		(
+			result.current.state.monitor.root.children.find((c) => c.id === rowId) as {
+				children: unknown[];
+			}
+		).children.length;
+
+	it('adds keep landing in the container the first add went into, with the new widget selected', () => {
+		const { result, rowId } = modelWithRow();
+		for (const t of ['gauge', 'bar', 'text']) {
+			act(() => result.current.handleOp({ op: 'addWidget', widgetType: t }));
+			expect(result.current.state.selectedId).toMatch(new RegExp(`^${t}-`));
+			expect(result.current.state.addTarget).toBe(rowId);
+		}
+		expect(rowChildren(result, rowId)).toBe(3);
+		expect(result.current.state.monitor.floating).toHaveLength(0);
+	});
+
+	it('selecting something INSIDE the target keeps it; outside (or nothing) clears it', () => {
+		const { result, rowId } = modelWithRow();
+		act(() => result.current.handleOp({ op: 'addWidget', widgetType: 'gauge' }));
+		const gaugeId = result.current.state.selectedId!;
+		// A sibling inside the row → still targeting the row.
+		act(() => result.current.dispatch({ type: 'selectClick', id: gaugeId }));
+		expect(result.current.state.addTarget).toBe(rowId);
+		// The root itself is OUTSIDE the row (an ancestor, not a descendant) → cleared.
+		act(() => result.current.dispatch({ type: 'select', id: ROOT }));
+		expect(result.current.state.addTarget).toBeNull();
+		// Re-arm, then deselect everything (a click on empty stage) → cleared.
+		act(() => result.current.dispatch({ type: 'select', id: rowId }));
+		act(() => result.current.handleOp({ op: 'addWidget', widgetType: 'bar' }));
+		expect(result.current.state.addTarget).toBe(rowId);
+		act(() => result.current.dispatch({ type: 'setSelectedIds', ids: [], primary: null }));
+		expect(result.current.state.addTarget).toBeNull();
+		// Re-arm, then a selection-clearing `patch` (monitor switch / cancel) → cleared too.
+		act(() => result.current.dispatch({ type: 'select', id: rowId }));
+		act(() => result.current.handleOp({ op: 'addWidget', widgetType: 'bar' }));
+		act(() =>
+			result.current.dispatch({ type: 'patch', patch: { selectedId: null, selectedIds: [] } })
+		);
+		expect(result.current.state.addTarget).toBeNull();
+		// A patch that doesn't touch the selection leaves the target alone.
+		act(() => result.current.dispatch({ type: 'select', id: rowId }));
+		act(() => result.current.handleOp({ op: 'addWidget', widgetType: 'bar' }));
+		act(() => result.current.dispatch({ type: 'patch', patch: { historyReady: true } }));
+		expect(result.current.state.addTarget).toBe(rowId);
+	});
+
+	it('is dropped when the target container leaves the tree (remove / undo)', () => {
+		const { result, rowId } = modelWithRow();
+		act(() => result.current.dispatch({ type: 'resetHistory' }));
+		act(() => result.current.handleOp({ op: 'addWidget', widgetType: 'gauge' }));
+		expect(result.current.state.addTarget).toBe(rowId);
+		act(() => result.current.handleOp({ op: 'remove', id: rowId }));
+		expect(result.current.state.addTarget).toBeNull();
+		// Undo brings the row back but not the stale target (a fresh add re-arms it).
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(result.current.state.addTarget).toBeNull();
+	});
+
+	it('a floating add (no target) flags the new widget as justAdded and arms no target', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		act(() => result.current.handleOp({ op: 'addWidget', widgetType: 'gauge' }));
+		expect(result.current.state.addTarget).toBeUndefined();
+		expect(result.current.state.justAdded).toBe(result.current.state.selectedId);
+		expect(result.current.state.monitor.floating).toHaveLength(1);
+	});
+});
+
+describe('alignSelected / distributeSelected (handleOp)', () => {
+	it('aligns + distributes the floating selection as ONE commit each (one undo step)', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		act(() => result.current.dispatch({ type: 'resetHistory' }));
+		const ids: string[] = [];
+		for (const x of [0, 110, 400]) {
+			act(() => result.current.handleOp({ op: 'addWidgetAt', widgetType: 'gauge', x, y: 500 }));
+			ids.push(result.current.state.selectedId!);
+		}
+		// Nudge the last one down so an align has something to move.
+		act(() =>
+			result.current.handleOp({
+				op: 'patchWidget',
+				id: ids[2],
+				patch: { rect: { x: 400, y: 900, w: 110, h: 110 } }
+			})
+		);
+		const rects = () =>
+			ids.map(
+				(id) =>
+					(result.current.state.monitor.floating.find((l) => l.id === id)!.unit as WidgetInstance)
+						.rect
+			);
+		const undoBefore = result.current.state.undoStack.length;
+		act(() => result.current.handleOp({ op: 'alignSelected', ids, edge: 'top' }));
+		expect(rects().map((r) => r.y)).toEqual([448, 448, 448]); // (500 - 55, grid-snapped)
+		expect(result.current.state.undoStack.length).toBe(undoBefore + 1);
+		act(() => result.current.handleOp({ op: 'distributeSelected', ids, axis: 'horizontal' }));
+		const xs = rects().map((r) => r.x);
+		expect(xs[1] - xs[0]).toBe(xs[2] - xs[1]);
+		expect(result.current.state.undoStack.length).toBe(undoBefore + 2);
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(rects().map((r) => r.y)).toEqual([448, 448, 448]); // (500 - 55, grid-snapped) // the distribute is undone, the align kept
+	});
+});
+
 describe('selection sub-reducer', () => {
 	it('select sets selectedId and collapses any marquee to the single primary', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));

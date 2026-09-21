@@ -19,7 +19,28 @@ const NO_OVERRIDES = (): ControlOverrides => ({});
 export type ZoomFit = Pan & {
 	setPan: React.Dispatch<React.SetStateAction<Pan>>;
 	fit: () => void;
+	/** Zoom + pan so `rect` (world coords, e.g. the content or selection bounding box) fills the
+	 *  stage with some breathing room — capped at 4× so a lone tiny widget doesn't blow up to a blur. */
+	fitRect: (rect: { x: number; y: number; w: number; h: number }) => void;
 };
+
+/** The bounding box of `rects` (null when there are none) — for zoom-to-content / selection. Pure. */
+export function boundingBox(
+	rects: { x: number; y: number; w: number; h: number }[]
+): { x: number; y: number; w: number; h: number } | null {
+	if (!rects.length) return null;
+	let x0 = Infinity;
+	let y0 = Infinity;
+	let x1 = -Infinity;
+	let y1 = -Infinity;
+	for (const r of rects) {
+		x0 = Math.min(x0, r.x);
+		y0 = Math.min(y0, r.y);
+		x1 = Math.max(x1, r.x + r.w);
+		y1 = Math.max(y1, r.y + r.h);
+	}
+	return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
 
 export function useZoomFit(opts: {
 	studio: boolean;
@@ -53,6 +74,17 @@ export function useZoomFit(opts: {
 		if (!m.w || !m.h || !sw || !sh) return;
 		const zoom = Math.min(sw / m.w, sh / m.h) * 0.95;
 		setPan({ zoom, panX: (sw - m.w * zoom) / 2, panY: (sh - m.h * zoom) / 2 });
+	}, []);
+
+	const fitRect = useCallback((rect: { x: number; y: number; w: number; h: number }) => {
+		const { stageW: sw, stageH: sh } = sizes.current;
+		if (!sw || !sh || rect.w <= 0 || rect.h <= 0) return;
+		// 24px of stage padding around the box; never zoom past 4× (the wheel's ceiling).
+		const pad = 24;
+		const zoom = Math.min(4, (sw - pad * 2) / rect.w, (sh - pad * 2) / rect.h);
+		const cx = rect.x + rect.w / 2;
+		const cy = rect.y + rect.h / 2;
+		setPan({ zoom, panX: sw / 2 - cx * zoom, panY: sh / 2 - cy * zoom });
 	}, []);
 
 	// Auto-fit on first measure and whenever the edited monitor changes (not on manual zoom).
@@ -115,5 +147,5 @@ export function useZoomFit(opts: {
 		return () => el.removeEventListener('wheel', onWheel);
 	}, [studio, canvasRef]);
 
-	return { ...pan, setPan, fit };
+	return { ...pan, setPan, fit, fitRect };
 }

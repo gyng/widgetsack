@@ -1,5 +1,6 @@
 // Background section (extracted from Canvas): per-monitor full-screen effect behind the widgets —
-// kind picker (color / image / video / web), the wallpapers/ file list, fit/mute/loop/opacity/dim.
+// kind picker (colour / image / video / web), the background-image list (the folder on disk is
+// still `wallpapers/`; the UI says Background), fit/mute/loop/opacity/dim.
 // Purely a panel: the spec + handlers live in Canvas (canvas/useBackground) and arrive as props;
 // the only module call it makes itself is the stateless open-folder helper. Lazy-loaded like the
 // other studio panels (Canvas's lazy() block), so the overlay never fetches it.
@@ -15,7 +16,7 @@ type Props = {
 	patchBg: (patch: Partial<BackgroundSpec>) => void;
 	setBgKind: (kind: BackgroundKind) => void;
 	clearBg: () => void;
-	// Wallpaper auto-theme (issue #15) — the shared action (also offered in the Themes section) +
+	// Background auto-theme (issue #15) — the shared action (also offered in the Themes section) +
 	// a "reset colours" callback (clears the token overrides).
 	autoTheme?: AutoTheme;
 	onClearTokens?: () => void;
@@ -36,7 +37,7 @@ export default function BackgroundPanel({
 			<div className="rp-hd">Background</div>
 			<div className="rp-stub">
 				A full-screen effect behind this monitor’s widgets. It shows on the desktop when the overlay
-				sits below windows (Settings → overlay layer); the studio always previews it.
+				sits below windows (Settings → Overlay → window layer); the studio always previews it.
 			</div>
 
 			<label className="bg-field">
@@ -76,7 +77,7 @@ export default function BackgroundPanel({
 						type="text"
 						defaultValue={bg.src ?? ''}
 						key={bg.src ?? ''}
-						placeholder="https://…  (a web / WebGL wallpaper)"
+						placeholder="https://…  (a web / WebGL background)"
 						onBlur={(e) => patchBg({ src: e.currentTarget.value.trim() })}
 					/>
 				</label>
@@ -85,14 +86,14 @@ export default function BackgroundPanel({
 			{bg && isMediaKind(bg.kind) && (
 				<>
 					<div className="bg-files-hd">
-						<span className="rp-sub">Files in wallpapers/</span>
+						<span className="rp-sub">Background images (wallpapers folder)</span>
 						<span className="bg-files-ops">
 							<button type="button" title="Refresh the list" onClick={refreshWallpapers}>
 								↻
 							</button>
 							<button
 								type="button"
-								title="Open the wallpapers folder — drop image/video files in here"
+								title="Open the wallpapers folder — drop background image/video files in here"
 								onClick={() => openWallpapersDir()}
 							>
 								⊞ Folder
@@ -143,7 +144,7 @@ export default function BackgroundPanel({
 						<span className="rp-sub">Auto theme</span>
 					</div>
 					<div className="rp-stub">
-						Derive readable widget colours from this wallpaper — an accent from its dominant tone,
+						Derive readable widget colours from this background — an accent from its dominant tone,
 						with text that flips light/dark to stay legible over it.
 					</div>
 					<div className="bg-files-ops">
@@ -153,7 +154,7 @@ export default function BackgroundPanel({
 							disabled={autoTheme.busy}
 							aria-busy={autoTheme.busy}
 						>
-							{autoTheme.busy ? 'Reading…' : '🎨 From wallpaper'}
+							{autoTheme.busy ? 'Reading…' : '🎨 From background'}
 						</button>
 						{onClearTokens && (
 							<button

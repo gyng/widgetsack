@@ -127,7 +127,7 @@ const SPECS: Spec[] = [
 		borderStrong: '#444444',
 		fg: '#eeeeee',
 		fgMuted: '#aaaaaa',
-		fgDim: '#8a8a8a',
+		fgDim: '#9a9a9a',
 		accent: '#77c4d3',
 		accentFg: '#96d6e4',
 		danger: '#dc7878',

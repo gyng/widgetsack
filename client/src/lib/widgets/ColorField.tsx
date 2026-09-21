@@ -12,10 +12,19 @@ type Props = {
 	value: string; // the override ('' = none / inherit)
 	placeholder?: string; // the inherited/default value, shown faint + reflected in the swatch
 	ariaLabel?: string;
+	id?: string; // the text input's id, so an external <label htmlFor> can name it
+	clearTitle?: string; // tooltip on the ✕ (default: the token-override wording)
 	onChange: (value: string) => void; // commit a new value ('' clears)
 };
 
-export default function ColorField({ value, placeholder, ariaLabel, onChange }: Props) {
+export default function ColorField({
+	value,
+	placeholder,
+	ariaLabel,
+	id,
+	clearTitle = 'Clear this override',
+	onChange
+}: Props) {
 	// Local text state so typing doesn't commit (and re-render the world) on every keystroke; resync
 	// when the external value changes (Clear, theme switch, selecting another widget).
 	const [text, setText] = useState(value);
@@ -44,6 +53,7 @@ export default function ColorField({ value, placeholder, ariaLabel, onChange }: 
 			/>
 			<input
 				type="text"
+				id={id}
 				className="cf-text"
 				value={text}
 				placeholder={placeholder}
@@ -59,7 +69,7 @@ export default function ColorField({ value, placeholder, ariaLabel, onChange }: 
 				<button
 					type="button"
 					className="cf-clear"
-					title="Clear this override"
+					title={clearTitle}
 					aria-label="clear"
 					onClick={() => {
 						setText('');

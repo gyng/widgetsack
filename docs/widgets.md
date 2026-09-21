@@ -45,19 +45,19 @@ Gauge for one scalar sensor (default 0–100%): arc ring, full circle, linear ba
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text | "CPU" |  |  |
+| `label` | text | "CPU" |  | caption shown with the value |
 | `unit` | text | "%" |  | suffix after the value, e.g. % or °C |
 | `min` | number | 0 |  | value mapped to an empty gauge |
 | `max` | number | 100 |  | value mapped to a full gauge |
-| `color` | color |  |  |  |
-| `track` | color |  |  | color of the unfilled arc |
+| `value` | expr |  | → number | overrides the sensor, e.g. round(mem.used, 0) or cpu.total / 2 |
+| `minExpr` | expr |  | → number (sets `min`) | a formula for the empty-gauge value (overrides min) |
+| `maxExpr` | expr |  | → number (sets `max`) | a formula for the full-gauge value (overrides max) |
+| `color` | color |  |  | fill colour of the arc (blank = theme accent) |
+| `track` | color |  |  | colour of the unfilled arc |
 | `style` | select | "arc" | `arc`, `circle`, `linear`, `pips`, `needle` | arc ring (default), closed circle, linear bar, discrete pips, or analog needle dial |
 | `direction` | select | "arc" | `arc`, `ltr`, `rtl`, `btt`, `ttb` | pips + linear styles only: arc keeps pips on the ring; ltr/rtl/btt/ttb lay the bar or pip row along an axis |
 | `pips` | number | 10 | min 3, max 40, step 1 | pips style only: number of segments |
 | `sweep` | number | 270 | min 90, max 360, step 15 | arc/pips/needle styles: arc span in degrees (180 = semicircle); the gap stays centred at the bottom |
-| `value` | expr |  | → number | overrides the sensor, e.g. round(mem.used, 0) or cpu.total / 2 |
-| `minExpr` | expr |  | → number (sets `min`) |  |
-| `maxExpr` | expr |  | → number (sets `max`) |  |
 
 ### Bar — `bar`
 
@@ -70,15 +70,15 @@ Linear progress bar for one scalar sensor; horizontal or vertical.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text | "MEM" |  |  |
+| `label` | text | "MEM" |  | caption shown beside the bar |
 | `min` | number | 0 |  | value mapped to an empty bar |
 | `max` | number | 100 |  | value mapped to a full bar |
-| `orientation` | select |  | `horizontal`, `vertical` | fill direction |
-| `color` | color |  |  |  |
-| `track` | color |  |  | color of the unfilled track |
 | `value` | expr |  | → number | overrides the sensor, e.g. clamp(cpu.total, 0, 100) |
-| `minExpr` | expr |  | → number (sets `min`) |  |
-| `maxExpr` | expr |  | → number (sets `max`) |  |
+| `minExpr` | expr |  | → number (sets `min`) | a formula for the empty-bar value (overrides min) |
+| `maxExpr` | expr |  | → number (sets `max`) | a formula for the full-bar value (overrides max) |
+| `orientation` | select |  | `horizontal`, `vertical` | fill direction |
+| `color` | color |  |  | fill colour (blank = theme accent) |
+| `track` | color |  |  | colour of the unfilled track |
 
 ### Sparkline — `sparkline`
 
@@ -91,12 +91,12 @@ Compact line / area / histogram of a sensor history (a time series).
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `color` | color |  |  |  |
+| `seconds` | number | 60 | min 5, step 5 | seconds of history to show |
+| `color` | color |  |  | line / bar colour (blank = theme accent) |
 | `fill` | toggle |  |  | fill the area under the line |
 | `histogram` | toggle |  |  | draw bars instead of a line |
 | `axis` | toggle | true |  | show a baseline axis line under the bars (histogram mode) |
 | `barGap` | number | 0.2 | min 0, max 0.9, step 0.05 | gap between histogram bars, 0–0.9 of a slot (0 = touching) |
-| `seconds` | number | 60 | min 5, step 5 | seconds of history to show |
 | `lineWidth` | number |  | min 0.5, step 0.5 | stroke thickness (line mode) |
 
 ### Text — `text`
@@ -111,10 +111,10 @@ A single value as formatted text (percent / rate / bytes / duration / integer) w
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text | "↓" |  |  |
+| `label` | text | "↓" |  | prefix shown before the value |
 | `format` | text | "rate" |  | percent \| rate (bytes/s) \| bytes (e.g. 16.0 GiB) \| duration (uptime) \| integer; else raw |
-| `color` | color |  |  |  |
 | `value` | expr |  | → text | template: text + {expressions}, e.g. CPU {round(cpu.total)}% · {bytes(mem.used.bytes)} |
+| `color` | color |  |  | text colour (blank = theme) |
 
 ### Clock — `clock`
 
@@ -130,8 +130,8 @@ Date / time clock using a moment-style token format (self-sourcing).
 | --- | --- | --- | --- | --- |
 | `format` | text | "HH:mm:ss" |  | moment-style tokens: YYYY MMMM MMM MM M dddd ddd DD D HH H hh h mm m ss s A a; literals in [brackets], e.g. HH:mm:ss or dddd D MMMM |
 | `locale` | select |  | `en`, `ja`, `zh` | month/day names |
-| `label` | text |  |  |  |
-| `color` | color |  |  |  |
+| `label` | text |  |  | caption shown before the time |
+| `color` | color |  |  | text colour (blank = theme) |
 
 ### Calendar — `calendar`
 
@@ -144,13 +144,13 @@ A month calendar grid: configurable first day of week, optional weekday header, 
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `firstDay` | select | "Sunday" | `Sunday`, `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday` |  |
-| `weekdayHeader` | toggle | true |  |  |
-| `continuous` | toggle | false |  | spill dimmed days through the end of next month |
-| `highlightToday` | toggle | true |  |  |
-| `showTitle` | toggle | true |  |  |
+| `firstDay` | select | "Sunday" | `Sunday`, `Monday`, `Tuesday`, `Wednesday`, `Thursday`, `Friday`, `Saturday` | which weekday starts each row |
 | `locale` | select | "en" | `en`, `ja`, `zh` | weekday / month names |
-| `color` | color |  |  |  |
+| `weekdayHeader` | toggle | true |  | show the row of weekday names above the grid |
+| `continuous` | toggle | false |  | spill dimmed days through the end of next month |
+| `highlightToday` | toggle | true |  | mark the current day with the accent colour |
+| `showTitle` | toggle | true |  | show the month + year heading |
+| `color` | color |  |  | today highlight colour (blank = theme accent) |
 
 ### Analog Clock — `analogclock`
 
@@ -163,14 +163,14 @@ Analog clock face with hour / minute / second hands (self-sourcing).
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `showSeconds` | toggle | true |  |  |
-| `showTicks` | toggle | false |  |  |
-| `showNumbers` | toggle | false |  |  |
-| `showCap` | toggle | false |  |  |
-| `updateMs` | number | 1000 | min 16, step 50 | redraw interval; lower = smoother second hand, higher = lighter |
+| `showSeconds` | toggle | true |  | show the sweeping second hand |
+| `showTicks` | toggle | false |  | show minute / hour tick marks around the ring |
+| `showNumbers` | toggle | false |  | show the 12 hour numerals |
+| `showCap` | toggle | false |  | show a small disc where the hands meet |
 | `color` | color |  |  | hour + minute hands, ticks, ring |
-| `accent` | color |  |  |  |
+| `accent` | color |  |  | second hand colour |
 | `face` | color |  |  | face fill (default transparent) |
+| `updateMs` | number | 1000 | min 16, step 50 | redraw interval; lower = smoother second hand, higher = lighter |
 
 ### Button / Macro — `button`
 
@@ -184,7 +184,7 @@ Pressable button that runs a macro of {domain, service, data} calls (HA services
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text | "tap" |  |  |
+| `label` | text | "tap" |  | text on the button |
 | `actions` | macro | [] |  | run these calls in order on press — domain/service like Home Assistant (put entity_id in data), or domain "media" for now-playing transport (playpause/next/previous) |
 
 ### CPU — `cpu`
@@ -199,12 +199,12 @@ Self-sourcing CPU widget: a per-core sparkline grid or one combined gauge.
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `mode` | select | "cores" | `cores`, `combined` | per-core sparkline grid vs one combined gauge |
-| `cols` | number | 8 | min 1 | columns in the per-core grid (blank = 8; clamped to the core count) |
 | `seconds` | number | 30 | min 5, step 5 | seconds of history to show |
+| `label` | text |  |  | caption for the combined gauge |
+| `cols` | number | 8 | min 1 | columns in the per-core grid (blank = 8; clamped to the core count) |
 | `histogram` | toggle |  |  | draw bars instead of lines |
 | `lineWidth` | number |  | min 0.5, step 0.5 | per-core stroke thickness |
-| `label` | text |  |  |  |
-| `color` | color |  |  |  |
+| `color` | color |  |  | line / gauge colour (blank = theme accent) |
 
 ### Battery — `battery`
 
@@ -218,7 +218,7 @@ A battery indicator: charge icon, percent, and charging / time-remaining status 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `showStatus` | toggle | true |  | show charging / time-remaining under the percent |
-| `color` | color |  |  |  |
+| `color` | color |  |  | battery icon fill (blank = theme accent) |
 
 ### GPU — `gpu`
 
@@ -231,9 +231,9 @@ A GPU panel: card name, utilisation %, and the reported temp / VRAM / power / cl
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `showName` | toggle | true |  | show the GPU model header |
 | `label` | text |  |  | replace the detected card name |
-| `color` | color |  |  |  |
+| `showName` | toggle | true |  | show the GPU model header |
+| `color` | color |  |  | utilisation colour (blank = theme accent) |
 
 ### Disks — `disks`
 
@@ -247,7 +247,7 @@ Storage usage: one bar per volume (used %, used/total), auto-discovering your dr
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `showBytes` | toggle | true |  | append used/total bytes after the percent |
-| `color` | color |  |  |  |
+| `color` | color |  |  | usage bar colour (blank = theme accent) |
 
 ### Top Process — `topproc`
 
@@ -262,7 +262,7 @@ The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my
 | --- | --- | --- | --- | --- |
 | `by` | select | "cpu" | `cpu`, `mem`, `disk`, `gpu` | CPU %, RAM, disk I/O, or GPU VRAM (GPU needs NVIDIA/NVML) |
 | `label` | text |  |  | header (defaults to "Top CPU" etc.) |
-| `color` | color |  |  |  |
+| `color` | color |  |  | value colour (blank = theme accent) |
 
 ### Process Watcher — `procwatch`
 
@@ -277,7 +277,7 @@ Watch a specific process by name: is it running, and its CPU % + RAM (summed acr
 | --- | --- | --- | --- | --- |
 | `name` | text | "chrome.exe" |  | executable name, e.g. chrome.exe, obs64.exe, Spotify.exe |
 | `label` | text |  |  | override the shown name (defaults to the process) |
-| `color` | color |  |  |  |
+| `color` | color |  |  | running-state colour (blank = theme accent) |
 
 ### Connections — `netconn`
 
@@ -292,7 +292,7 @@ Active network connections by process: established + listening counts and how ma
 | --- | --- | --- | --- | --- |
 | `showListening` | toggle | false |  | include processes that are only LISTENing (accepting inbound), not just active talkers |
 | `maxRows` | number | 8 | min 1, max 20, step 1 | how many processes to list (busiest — most public — first) |
-| `color` | color |  |  |  |
+| `color` | color |  |  | header / count colour (blank = theme accent) |
 
 ### Ping — `ping`
 
@@ -308,8 +308,8 @@ Ping a host (default 1.1.1.1) and show reachability + round-trip latency — a q
 | --- | --- | --- | --- | --- |
 | `host` | text | "1.1.1.1" |  | IP or hostname to ping, e.g. 1.1.1.1 or cloudflare.com |
 | `label` | text |  |  | override the shown name (defaults to the host) |
+| `color` | color |  |  | up-state colour (blank = theme accent) |
 | `slowMs` | number | 150 | min 1, step 10 | latency at/above this is shown as "slow" (amber) |
-| `color` | color |  |  |  |
 
 ### Wi-Fi — `wifi`
 
@@ -323,7 +323,7 @@ Wi-Fi link detail: SSID, signal strength, and band / channel / 802.11 generation
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `showDetail` | toggle | true |  | show band / channel / generation / RSSI / link rate under the SSID |
-| `color` | color |  |  |  |
+| `color` | color |  |  | signal bars colour (blank = theme accent) |
 
 ### Spectrum — `spectrum`
 
@@ -336,9 +336,9 @@ Self-sourcing audio spectrum (WASAPI loopback FFT): frequency bars or a scrollin
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `device` | select | "" | (runtime list) — from `audioOutputs` | which audio output to visualise (blank = system default). App-wide: one capture stream per app, so the last spectrum widget to (re)start sets it for all |
+| `device` | select | "" | (runtime list) — from `audioOutputs` | which audio output to visualise (blank = system default) — App-wide: one capture stream per app, so the last spectrum widget to (re)start sets the device for all spectrum widgets. |
+| `scale` | select | "log" | `log`, `linear` | log spreads the low frequencies (musical, default); linear is even Hz/bar — App-wide like the device: shared by every spectrum widget. |
 | `mode` | select | "bars" | `bars`, `spectrogram` | frequency bars vs a scrolling spectrogram heatmap |
-| `scale` | select | "log" | `log`, `linear` | log spreads the low frequencies (musical, default); linear is even Hz/bar. App-wide like device: shared by every spectrum widget |
 | `pips` | toggle | false |  | gridline markers at 100 Hz / 1 kHz / 10 kHz |
 | `bars` | number | 48 | min 8, max 128, step 1 | number of frequency bars (bars mode) |
 | `gap` | number | 0.15 | min 0, max 0.9, step 0.05 | spacing between bars (0..1) |
@@ -357,12 +357,12 @@ Embedded web page (self-hosted dashboards); optional click-through interactivity
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `url` | text | "" |  | bare domains get https://; only https:// loads (the CSP blocks plain http://); javascript:/data: are rejected |
+| `title` | text | "" |  | accessible label for the frame (screen readers / tooltip) |
 | `refresh` | number | 0 | min 0, max 3600, step 5 | auto-reload interval in seconds (0 = never); reloads cost CPU/network |
 | `scroll` | toggle | false |  | allow scrolling inside the frame |
 | `interact` | toggle | false |  | off: clicks pass through to the desktop; on: the frame catches clicks (passive overlay only — dragging always works in edit mode) |
-| `sandbox` | toggle | true |  | recommended: isolates the page (scripts only, no parent/popups/top-nav). Turn off only for a trusted page needing same-origin features (e.g. a Home Assistant login) |
+| `sandbox` | toggle | true |  | recommended: isolates the page (scripts only, no parent/popups/top-nav) — Turn off only for a trusted page needing same-origin features (e.g. a Home Assistant login). |
 | `referrerPolicy` | select | "no-referrer" | `no-referrer`, `origin`, `same-origin` | what Referer the embedded page sees (no-referrer leaks nothing) |
-| `title` | text | "" |  | accessible label for the frame (screen readers / tooltip) |
 | `timeoutMs` | number | 6000 | min 1000, max 30000, step 500 | how long to wait for a load before showing a 'blocked or unreachable' hint |
 
 ### Zone — `zone`
@@ -392,7 +392,7 @@ Switch the default audio output device with a tap — lists your speakers/headph
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `color` | color |  |  |  |
+| `color` | color |  |  | active-device colour (blank = theme accent) |
 
 ### Recycle Bin — `recyclebin`
 
@@ -405,8 +405,8 @@ Recycle Bin contents: how many items and how much space they take, with a "needs
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
+| `color` | color |  |  | icon colour (blank = theme accent) |
 | `warnGb` | number | 0 | min 0, step 1 | highlight when the bin reaches this many GB (0 = never) |
-| `color` | color |  |  |  |
 
 ### Volume — `volume`
 
@@ -420,7 +420,7 @@ System master volume: a slider + mute toggle controlling the default output devi
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `color` | color |  |  |  |
+| `color` | color |  |  | slider colour (blank = theme accent) |
 
 ### Image — `image`
 
@@ -434,8 +434,8 @@ A static image / photo from a URL (https / data) or a filename in your wallpaper
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `src` | text | "" |  | an image URL (https:// or data:), or a filename in your wallpapers folder |
-| `fit` | select | "contain" | `contain`, `cover`, `fill`, `none` | how the image fills the box (contain = whole image, cover = fill + crop) |
 | `alt` | text | "" |  | accessible description (screen readers) |
+| `fit` | select | "contain" | `contain`, `cover`, `fill`, `none` | how the image fills the box (contain = whole image, cover = fill + crop) |
 
 ### Sticky Note — `note`
 
@@ -478,12 +478,12 @@ Counts down to a target date/time ("days until …"), or runs an auto-cycling Po
 | --- | --- | --- | --- | --- |
 | `mode` | select | "event" | `event`, `pomodoro` | count down to a date, or run a repeating work/break rhythm |
 | `target` | text | "" |  | event mode: a date/time, e.g. 2026-12-31 or 2026-12-31T18:00 |
-| `format` | select | "auto" | `auto`, `dhms`, `hms`, `ms` | event display: auto trims units; dhms/hms/ms are fixed |
-| `countUp` | toggle | false |  | event mode: once the target passes, count the time elapsed since (instead of stopping at 0) |
 | `workMin` | number | 25 | min 1, step 1 | pomodoro work length |
 | `breakMin` | number | 5 | min 1, step 1 | pomodoro break length |
-| `label` | text | "" |  |  |
-| `color` | color |  |  |  |
+| `label` | text | "" |  | caption above the remaining time |
+| `format` | select | "auto" | `auto`, `dhms`, `hms`, `ms` | event display: auto trims units; dhms/hms/ms are fixed |
+| `color` | color |  |  | text colour (blank = theme) |
+| `countUp` | toggle | false |  | event mode: once the target passes, count the time elapsed since (instead of stopping at 0) |
 
 ### Timer — `timer`
 
@@ -499,10 +499,10 @@ A countdown timer or stopwatch with start / pause / reset. A countdown can loop 
 | --- | --- | --- | --- | --- |
 | `mode` | select | "countdown" | `countdown`, `stopwatch` | count down from a duration, or up from zero |
 | `duration` | number | 300 | min 0 | countdown length in seconds |
-| `format` | select | "auto" | `auto`, `mm:ss`, `hh:mm:ss`, `ss` | time display format |
-| `loop` | toggle | false |  | restart automatically when a countdown reaches zero |
 | `label` | text | "" |  | header text |
+| `format` | select | "auto" | `auto`, `mm:ss`, `hh:mm:ss`, `ss` | time display format |
 | `color` | color | "" |  | text colour (blank = theme) |
+| `loop` | toggle | false |  | restart automatically when a countdown reaches zero |
 
 ### Monitor Switch — `monitorswitch`
 
@@ -517,14 +517,14 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `monitor` | select |  | (runtime list) — from `displayNames` | which monitor to control (blank = the primary monitor) |
-| `sources` | monitorSources |  |  | pick which inputs to show, rename them (e.g. HDMI 2 → Switch 2), and optionally pair each with a volume (0–100, e.g. 0x12=NS2@20) applied when switching to it — only while "volume target" is not off; blank = show all detected |
-| `volumeTarget` | select | "off" | `off`, `system`, `monitor` | what a source’s paired volume (the @NN in sources) changes when you switch: off (default — volumes are ignored), system = the Windows master volume after the switch, monitor = the monitor’s own speakers over DDC/CI just before the switch |
-| `volumeDevice` | select |  | (runtime list) — from `audioOutputs` | system target only: which Windows output’s volume to set (blank = whatever is the default output at the time) |
+| `sources` | monitorSources |  |  | pick which inputs to show and rename them (blank = show all detected) — Each source can also carry a volume (0–100, e.g. 0x12=NS2@20) applied when switching to it — only while "volume target" is not off. |
 | `label` | text |  |  | title override (blank = the monitor’s name) |
 | `showCurrent` | toggle | true |  | highlight the currently-selected input |
 | `showStats` | toggle | false |  | show the current resolution + refresh rate |
 | `compact` | toggle | false |  | show a compact list instead of large touch buttons |
-| `color` | color |  |  |  |
+| `color` | color |  |  | active-source colour (blank = theme accent) |
+| `volumeTarget` | select | "off" | `off`, `system`, `monitor` | what a source’s paired volume changes when you switch (off = volumes are ignored) — The paired volume is the @NN in sources. system = the Windows master volume, set after the switch; monitor = the monitor’s own speakers over DDC/CI, set just before the switch. |
+| `volumeDevice` | select |  | (runtime list) — from `audioOutputs` | which Windows output’s volume to set (blank = whatever is the default output at the time) |
 
 ### HA Sensor — `ha.sensor`
 
@@ -535,7 +535,7 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
 
 ### HA Binary Sensor — `ha.binary_sensor`
 
@@ -546,7 +546,7 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
 
 ### HA Light — `ha.light`
 
@@ -558,8 +558,8 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
-| `showBrightness` | toggle | true |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
+| `showBrightness` | toggle | true |  | show a brightness slider under the on/off toggle |
 
 ### HA Switch — `ha.switch`
 
@@ -571,7 +571,7 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
 
 ### HA Fan — `ha.fan`
 
@@ -583,9 +583,9 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
-| `showSpeed` | toggle | true |  |  |
-| `showOscillate` | toggle | true |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
+| `showSpeed` | toggle | true |  | show a fan-speed slider |
+| `showOscillate` | toggle | true |  | show an oscillation on/off control |
 
 ### HA Climate / A-C — `ha.climate`
 
@@ -597,10 +597,10 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
-| `showMode` | toggle | true |  |  |
-| `showTemp` | toggle | true |  |  |
-| `showFan` | toggle | true |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
+| `showMode` | toggle | true |  | show the HVAC mode control (heat / cool / off …) |
+| `showTemp` | toggle | true |  | show the target-temperature − / + buttons |
+| `showFan` | toggle | true |  | show the fan-mode picker |
 
 ### HA Cover — `ha.cover`
 
@@ -612,9 +612,9 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
-| `showButtons` | toggle | true |  |  |
-| `showPosition` | toggle | true |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
+| `showButtons` | toggle | true |  | show open / stop / close buttons |
+| `showPosition` | toggle | true |  | show a 0–100 % position slider |
 
 ### HA Lock — `ha.lock`
 
@@ -626,7 +626,7 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
 
 ### HA Scene — `ha.scene`
 
@@ -638,7 +638,7 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
 
 ### HA Input — `ha.input`
 
@@ -650,7 +650,7 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
 
 ### HA Media Player — `ha.media_player`
 
@@ -662,9 +662,9 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
-| `showTransport` | toggle | true |  |  |
-| `showVolume` | toggle | true |  |  |
+| `label` | text |  |  | caption (blank = the entity’s friendly name) |
+| `showTransport` | toggle | true |  | show previous / play-pause / next buttons |
+| `showVolume` | toggle | true |  | show a volume slider |
 
 ### Now Playing — `nowplaying`
 
@@ -676,7 +676,7 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text |  |  |  |
+| `label` | text |  |  | text shown while nothing is playing |
 
 ### Stock Ticker — `ticker`
 
@@ -702,10 +702,10 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `showHiLo` | toggle | true |  |  |
-| `showDetail` | toggle | true |  |  |
+| `showHiLo` | toggle | true |  | show today’s high / low beside the temperature (location is set in Plugins → Weather) |
+| `showDetail` | toggle | true |  | show the feels-like temperature, humidity and wind line |
 | `forecastDays` | number | 5 | min 0, max 7, step 1 | how many days of forecast to show below (0 = off; up to 7) |
-| `color` | color |  |  |  |
+| `color` | color |  |  | temperature / icon colour (blank = theme accent) |
 
 ### Sun & Moon — `sunmoon`
 
@@ -718,9 +718,9 @@ Today’s sunrise + sunset (from your weather location) and the current moon pha
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `showSun` | toggle | true |  |  |
-| `showMoon` | toggle | true |  |  |
-| `color` | color |  |  |  |
+| `showSun` | toggle | true |  | show today’s sunrise + sunset times (location is set in Plugins → Weather) |
+| `showMoon` | toggle | true |  | show the current moon phase + illumination |
+| `color` | color |  |  | sun / moon icon colour (blank = theme accent) |
 
 ### Air Quality — `airquality`
 
@@ -733,9 +733,9 @@ European Air Quality Index with a colour-coded band, plus PM2.5 and the UV index
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `showPm` | toggle | true |  |  |
-| `showUv` | toggle | true |  |  |
-| `color` | color |  |  |  |
+| `showPm` | toggle | true |  | show the PM2.5 reading (location is set in Plugins → Weather) |
+| `showUv` | toggle | true |  | show the UV index |
+| `color` | color |  |  | AQI band colour override (blank = colour-coded by band) |
 
 ### RSS — `rss`
 
@@ -750,7 +750,7 @@ A list of headlines from your configured RSS / Atom feed.
 | --- | --- | --- | --- | --- |
 | `title` | text | "" |  | optional title above the list |
 | `maxRows` | number | 8 | min 1, max 30, step 1 | how many headlines to show |
-| `color` | color |  |  |  |
+| `color` | color |  |  | header / bullet colour (blank = theme accent) |
 
 ### Agenda — `agenda`
 
@@ -765,7 +765,7 @@ Your upcoming calendar events from a configured ICS feed.
 | --- | --- | --- | --- | --- |
 | `title` | text | "" |  | optional title above the list |
 | `maxRows` | number | 6 | min 1, max 20, step 1 | how many upcoming events to show |
-| `color` | color |  |  |  |
+| `color` | color |  |  | header / bullet colour (blank = theme accent) |
 
 ### AI Briefing — `assistant`
 

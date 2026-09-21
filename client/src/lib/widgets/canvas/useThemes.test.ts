@@ -207,6 +207,24 @@ describe('theme editor dialog', () => {
 		expect(result.current.themeEditorOpen).toBe(false);
 	});
 
+	it('themeEditorDirty tracks the draft vs what the editor opened with', async () => {
+		loadThemeCss.mockResolvedValue('.user{}');
+		const { result } = setup();
+		expect(result.current.themeEditorDirty).toBe(false); // closed
+		await act(async () => {
+			await result.current.openThemeEditor('mine');
+		});
+		expect(result.current.themeEditorDirty).toBe(false); // untouched
+		act(() => result.current.setThemeDraft('.user{color:red}'));
+		expect(result.current.themeEditorDirty).toBe(true);
+		act(() => result.current.setThemeDraft('.user{}'));
+		expect(result.current.themeEditorDirty).toBe(false); // typed back to the original
+		act(() => result.current.setThemeDraftName('mine-2'));
+		expect(result.current.themeEditorDirty).toBe(true);
+		act(() => result.current.setThemeEditorOpen(false));
+		expect(result.current.themeEditorDirty).toBe(false); // closed → never dirty
+	});
+
 	it('opening with NO name + no active theme scaffolds a starter "custom" theme', async () => {
 		const { result } = setup({ selectedTheme: '' });
 		await act(async () => {

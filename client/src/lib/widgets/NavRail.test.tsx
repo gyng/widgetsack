@@ -60,23 +60,37 @@ describe('NavRail', () => {
 	it('sets a title only when the full label differs from the short label, else omits it', () => {
 		const { container } = render(<NavRail active="layouts" onSelect={noop} />);
 
-		// widget-designer: label "Widget designer" !== short "Defs" → title is the full label.
-		const defs = container.querySelector('button[data-section="widget-designer"]')!;
-		expect(defs.getAttribute('title')).toBe('Widget designer');
+		// widget-designer: label "Widget designer" !== short "Custom" → title is the full label.
+		const custom = container.querySelector('button[data-section="widget-designer"]')!;
+		expect(custom.getAttribute('title')).toBe('Widget designer');
 
 		// sensors: label "Sensors" === short "Sensors" and not a stub → no redundant title.
 		const sensors = container.querySelector('button[data-section="sensors"]')!;
 		expect(sensors.getAttribute('title')).toBeNull();
+
+		// sacks: the section's own explanatory title wins over the label-vs-short rule.
+		const share = container.querySelector('button[data-section="sacks"]')!;
+		expect(share.getAttribute('title')).toBe('Sacks — export/import');
+		expect(share.getAttribute('aria-label')).toBe('Share');
 	});
 
 	it('always exposes the full label as the accessible name via aria-label', () => {
 		const { container } = render(<NavRail active="layouts" onSelect={noop} />);
 		const sensors = container.querySelector('button[data-section="sensors"]')!;
 		expect(sensors.getAttribute('aria-label')).toBe('Sensors');
-		const backdrop = container.querySelector('button[data-section="background"]')!;
-		expect(backdrop.getAttribute('aria-label')).toBe('Background');
+		const custom = container.querySelector('button[data-section="widget-designer"]')!;
+		expect(custom.getAttribute('aria-label')).toBe('Widget designer');
 		// the visible short label still differs from the accessible name
-		expect(backdrop.querySelector('.nav-short')!.textContent).toBe('Backdrop');
+		expect(custom.querySelector('.nav-short')!.textContent).toBe('Custom');
+	});
+
+	it('marks long short-labels (Background, Settings) with the compact class so they fit the strip', () => {
+		const { container } = render(<NavRail active="layouts" onSelect={noop} />);
+		const bg = container.querySelector('button[data-section="background"] .nav-short')!;
+		expect(bg.textContent).toBe('Background');
+		expect(bg.classList.contains('nav-short--long')).toBe(true);
+		const layout = container.querySelector('button[data-section="layouts"] .nav-short')!;
+		expect(layout.classList.contains('nav-short--long')).toBe(false);
 	});
 
 	it('does not annotate the (non-stub) real sections with "(coming soon)"', () => {

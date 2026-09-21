@@ -4,10 +4,14 @@ import {
 	configCompleteness,
 	createWidget,
 	exprFieldsOf,
+	fieldGroups,
+	fieldsMissingHelp,
+	fieldVisible,
 	getMeta,
 	listMetas,
 	registerMeta
 } from './widget';
+import type { ConfigField } from './widget';
 
 describe('createWidget (registry-driven)', () => {
 	it('builds a sensor-bound gauge with the built-in defaults', () => {
@@ -255,5 +259,81 @@ describe('configCompleteness (UI-driven config guard)', () => {
 				]
 			})
 		).toEqual([]);
+	});
+});
+
+describe('field metadata: showWhen / group / help', () => {
+	const fields: ConfigField[] = [
+		{ key: 'a', label: 'a', kind: 'text', group: 'Appearance', help: 'a' },
+		{ key: 'b', label: 'b', kind: 'text', help: 'b' }, // ungrouped → joins the first group
+		{ key: 'c', label: 'c', kind: 'toggle', group: 'Data', help: 'c' },
+		{
+			key: 'd',
+			label: 'd',
+			kind: 'number',
+			group: 'Behaviour',
+			help: 'd',
+			showWhen: (cfg) => cfg.c === true
+		}
+	];
+
+	it('fieldVisible honours showWhen and defaults to visible', () => {
+		expect(fieldVisible(fields[0], {})).toBe(true);
+		expect(fieldVisible(fields[3], {})).toBe(false);
+		expect(fieldVisible(fields[3], { c: true })).toBe(true);
+	});
+
+	it('fieldGroups buckets visible fields in Data → Appearance → Behaviour order', () => {
+		expect(fieldGroups(fields, { c: true })).toEqual([
+			{ group: 'Data', fields: [fields[2]] },
+			{ group: 'Appearance', fields: [fields[0], fields[1]] },
+			{ group: 'Behaviour', fields: [fields[3]] }
+		]);
+	});
+
+	it('fieldGroups drops hidden fields (and any group left empty by them)', () => {
+		expect(fieldGroups(fields, {}).map((g) => g.group)).toEqual(['Data', 'Appearance']);
+	});
+
+	it('fieldGroups puts an all-ungrouped schema under Data', () => {
+		const plain: ConfigField[] = [{ key: 'x', label: 'x', kind: 'text' }];
+		expect(fieldGroups(plain)).toEqual([{ group: 'Data', fields: plain }]);
+		expect(fieldGroups([])).toEqual([]);
+	});
+
+	it('fieldsMissingHelp lists type.key for every field with blank or absent help', () => {
+		expect(
+			fieldsMissingHelp([
+				{ type: 't', configFields: [{ key: 'ok', label: 'ok', kind: 'text', help: 'x' }] },
+				{
+					type: 'u',
+					configFields: [
+						{ key: 'none', label: 'n', kind: 'text' },
+						{ key: 'blank', label: 'b', kind: 'toggle', help: '  ' }
+					]
+				},
+				{ type: 'v' }
+			])
+		).toEqual(['u.none', 'u.blank']);
+	});
+
+	it('every built-in field carries help and a group', () => {
+		expect(fieldsMissingHelp(BUILTIN_METAS)).toEqual([]);
+		const ungrouped = BUILTIN_METAS.flatMap((m) =>
+			(m.configFields ?? []).filter((f) => !f.group).map((f) => `${m.type}.${f.key}`)
+		);
+		expect(ungrouped).toEqual([]);
+	});
+
+	it('monitorswitch: the volume device only shows for the system volume target', () => {
+		const ms = getMeta('monitorswitch')!;
+		const dev = ms.configFields!.find((f) => f.key === 'volumeDevice')!;
+		expect(fieldVisible(dev, {})).toBe(false);
+		expect(fieldVisible(dev, { volumeTarget: 'monitor' })).toBe(false);
+		expect(fieldVisible(dev, { volumeTarget: 'system' })).toBe(true);
+		// The long explanation moved behind `details`; the inline help is one short sentence.
+		const target = ms.configFields!.find((f) => f.key === 'volumeTarget')!;
+		expect(target.details).toBeTruthy();
+		expect(target.help!.length).toBeLessThan(120);
 	});
 });

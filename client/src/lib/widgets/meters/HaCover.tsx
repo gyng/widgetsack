@@ -4,12 +4,16 @@
 // set_cover_position) which Canvas turns into ha_call_service. Prop-only (AGENTS.md §6).
 import { coverSetPosition } from '../../core/haControls';
 import type { ControlEvent } from '../meterProps';
+import { haTileState } from '../../core/haTileState';
+import HaTileNotice from './HaTileNotice';
 import './HaControls.css';
 
 type HaState = { state?: string; attributes?: Record<string, unknown> };
 
 type Props = {
 	value?: unknown;
+	/** The `ha.status` sample (host-supplied): undefined = not wired, null = plugin not configured. */
+	haStatus?: string | null;
 	label?: string;
 	onControl?: (e: ControlEvent) => void;
 	showButtons?: boolean;
@@ -18,6 +22,7 @@ type Props = {
 
 export default function HaCover({
 	value = null,
+	haStatus,
 	label,
 	onControl,
 	showButtons = true,
@@ -35,6 +40,11 @@ export default function HaCover({
 		const c = coverSetPosition(p);
 		onControl?.({ domain: 'cover', service: c.service, data: c.data });
 	};
+
+	// No live data (plugin unset / offline / entity unavailable / still waiting) → the shared notice.
+	const tile = haTileState(haStatus, value);
+	if (tile.kind !== 'ok')
+		return <HaTileNotice className="ha-cover np-ha-cover" label={name} tile={tile} />;
 
 	return (
 		<div className="ha-cover np-ha-cover" data-part="root">

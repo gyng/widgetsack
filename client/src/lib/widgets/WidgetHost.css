@@ -93,8 +93,10 @@
 
 .handle {
 	position: absolute;
-	width: 8px;
-	height: 8px;
+	/* --hs is set inline by WidgetHost as 8px / zoom, so handles stay ≥ 8px on screen when the
+	   stage is zoomed out (the offsets below follow it, keeping the handle centred on the edge). */
+	width: var(--hs, 8px);
+	height: var(--hs, 8px);
 	margin: 0;
 	padding: 0;
 	box-sizing: border-box;
@@ -104,50 +106,50 @@
 }
 
 .handle.n {
-	top: -4px;
-	left: calc(50% - 4px);
+	top: calc(var(--hs, 8px) / -2);
+	left: calc(50% - var(--hs, 8px) / 2);
 	cursor: ns-resize;
 }
 
 .handle.s {
-	bottom: -4px;
-	left: calc(50% - 4px);
+	bottom: calc(var(--hs, 8px) / -2);
+	left: calc(50% - var(--hs, 8px) / 2);
 	cursor: ns-resize;
 }
 
 .handle.e {
-	right: -4px;
-	top: calc(50% - 4px);
+	right: calc(var(--hs, 8px) / -2);
+	top: calc(50% - var(--hs, 8px) / 2);
 	cursor: ew-resize;
 }
 
 .handle.w {
-	left: -4px;
-	top: calc(50% - 4px);
+	left: calc(var(--hs, 8px) / -2);
+	top: calc(50% - var(--hs, 8px) / 2);
 	cursor: ew-resize;
 }
 
 .handle.ne {
-	top: -4px;
-	right: -4px;
+	top: calc(var(--hs, 8px) / -2);
+	right: calc(var(--hs, 8px) / -2);
 	cursor: nesw-resize;
 }
 
 .handle.nw {
-	top: -4px;
-	left: -4px;
+	top: calc(var(--hs, 8px) / -2);
+	left: calc(var(--hs, 8px) / -2);
 	cursor: nwse-resize;
 }
 
 .handle.se {
-	bottom: -4px;
-	right: -4px;
+	bottom: calc(var(--hs, 8px) / -2);
+	right: calc(var(--hs, 8px) / -2);
 	cursor: nwse-resize;
 }
 
 .handle.sw {
-	bottom: -4px;
-	left: -4px;
+	bottom: calc(var(--hs, 8px) / -2);
+	left: calc(var(--hs, 8px) / -2);
 	cursor: nesw-resize;
 }
 

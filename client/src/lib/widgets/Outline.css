@@ -115,15 +115,13 @@
 }
 
 .outline .row.root {
-	width: 100%;
-	text-align: left;
-	border: none;
-	background: transparent;
-	color: var(--ui-fg);
-	font-family: monospace;
-	font-size: var(--text-md);
-	cursor: pointer;
 	padding: var(--space-1) var(--space-2);
+}
+
+/* Rows are the tree's keyboard stops (roving tabindex): a visible ring on the focused row. */
+.outline .row:focus-visible {
+	outline: 2px solid var(--ui-accent-fg);
+	outline-offset: -1px;
 }
 
 .outline .row.sel {
@@ -156,7 +154,8 @@
 
 .outline .label {
 	flex: 1;
-	min-width: 0;
+	/* The label never collapses below ~60px — the action glyphs (✕ ⋯) yield instead. */
+	min-width: 60px;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -193,20 +192,52 @@
 	line-height: 22px;
 }
 
-/* Reveal the structure-move ops (↑ ↓ ⟸ ⟹ ⤓ / ⤒) only when the row is hovered, selected, or
-   keyboard-focused — so the resting row isn't a six-target minefield, and the destructive ✕ no
-   longer sits 1px from a move control. They stay in the DOM (focus-within keeps the keyboard path:
-   tabbing onto the row's label reveals them, then Tab reaches them). */
+/* Reveal the row actions (✕ + the ⋯ overflow holding ↑ ↓ ⟸ ⟹ ⤓ / ⤒) only while the row is hovered
+   or keyboard-focused — so the resting row is just its label, and a selected row's label isn't
+   crushed by a strip of glyphs. The structural moves live in the ⋯ menu (and on Alt+Arrow), so at
+   most two glyphs ever sit beside the label. */
 .outline .btns button.mv {
 	display: none;
 }
 
 .outline .row:hover .btns button.mv,
-.outline .row.sel .btns button.mv,
-.outline .row:focus-within .btns button.mv {
+.outline .row:focus-within .btns button.mv,
+.outline .row.menu-open .btns button.mv,
+.outline .row-menu button.mv {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
+}
+
+/* The ▸/▾ collapse chevron on a container row (mouse; ←/→ on the keyboard). */
+.outline .twisty {
+	flex: 0 0 auto;
+	width: 16px;
+	height: 24px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: var(--ui-fg-dim);
+	font-size: var(--text-sm);
+	cursor: pointer;
+}
+
+/* The ⋯ overflow menu: a small strip anchored under the ⋯ button, above the rows below it. */
+.outline .more-wrap {
+	position: relative;
+}
+.outline .row-menu {
+	position: absolute;
+	right: 0;
+	top: calc(100% + 2px);
+	z-index: 5;
+	display: flex;
+	gap: var(--space-1);
+	padding: var(--space-1);
+	background: var(--ui-surface);
+	border: 1px solid var(--ui-border-strong);
+	border-radius: var(--radius-control);
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
 /* The destructive Remove: muted at rest (separated from its neighbours by the .btns gap + this

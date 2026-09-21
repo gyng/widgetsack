@@ -37,7 +37,7 @@ describe('Inspector add-palette — widget types', () => {
 				onOp={onOp}
 			/>
 		);
-		expect(screen.getByText('＋ Add widget · into col')).toBeTruthy();
+		expect(screen.getByText('＋ Add widget · into this column')).toBeTruthy();
 	});
 
 	it('puts the widget type on the dataTransfer when dragged from the palette', () => {
@@ -101,7 +101,7 @@ describe('Inspector add-palette — library defs', () => {
 	it('lists library defs and inserts an instance on click', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector defs={[def('d1', 'My Widget')]} onOp={onOp} />);
-		expect(within(palette()).getByText('Library', { selector: '.hd' })).toBeTruthy();
+		expect(within(palette()).getByText('My widgets', { selector: '.hd' })).toBeTruthy();
 		fireEvent.click(within(palette()).getByRole('button', { name: 'My Widget' }));
 		expect(onOp).toHaveBeenCalledWith({ op: 'insertWidget', defId: 'd1' });
 	});
@@ -110,7 +110,7 @@ describe('Inspector add-palette — library defs', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		const onDeleteDef = vi.fn<(id: string, name: string) => void>();
 		render(<Inspector defs={[def('d1', 'My Widget')]} onOp={onOp} onDeleteDef={onDeleteDef} />);
-		fireEvent.click(within(palette()).getByLabelText('Delete My Widget from library'));
+		fireEvent.click(within(palette()).getByLabelText('Delete My Widget from My widgets'));
 		expect(onDeleteDef).toHaveBeenCalledWith('d1', 'My Widget');
 		// With a handler supplied, the plain deleteDef op is NOT emitted.
 		expect(onOp.mock.calls.some((c) => c[0].op === 'deleteDef')).toBe(false);
@@ -119,7 +119,7 @@ describe('Inspector add-palette — library defs', () => {
 	it('falls back to a deleteDef op when no onDeleteDef handler is given (overlay)', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector defs={[def('d1', 'My Widget')]} onOp={onOp} />);
-		fireEvent.click(within(palette()).getByLabelText('Delete My Widget from library'));
+		fireEvent.click(within(palette()).getByLabelText('Delete My Widget from My widgets'));
 		expect(onOp).toHaveBeenCalledWith({ op: 'deleteDef', defId: 'd1' });
 	});
 });

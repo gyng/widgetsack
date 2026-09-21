@@ -5,12 +5,38 @@
 // window prompts, keep the real sack/cssThreats/mergeLibrary core, and assert observable effects.
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { sackSummary, useSacks } from './useSacks';
+import { importSummary, sackNameError, sackSummary, useSacks } from './useSacks';
 import { packSack } from '../../core/sack';
 import type { Library } from '../../core/layoutTree';
 import { container } from '../../core/layoutTree';
 import type { EditorState } from './types';
 import type { Themes } from './useThemes';
+
+describe('sackNameError', () => {
+	it('accepts the backend allowlist (letters, digits, spaces, _ -; 1–64 chars)', () => {
+		expect(sackNameError('my sack_v2-final')).toBeNull();
+		expect(sackNameError('  padded  ')).toBeNull(); // trimmed before the check
+	});
+	it('names the problem for an empty, over-long, or unsafe name', () => {
+		expect(sackNameError('')).toBe('Enter a name for the sack');
+		expect(sackNameError('   ')).toBe('Enter a name for the sack');
+		expect(sackNameError('x'.repeat(65))).toBe('Keep the name under 64 characters');
+		expect(sackNameError('../etc')).toBe('Use letters, numbers, spaces, _ or - only');
+		expect(sackNameError('a:b')).toBe('Use letters, numbers, spaces, _ or - only');
+	});
+});
+
+describe('importSummary', () => {
+	it('lists what landed, singular/plural aware, omitting absent parts', () => {
+		expect(importSummary({ widgets: 3, theme: 'Nord-imported', sandboxed: 1 })).toBe(
+			'Imported 3 widgets · theme saved as Nord-imported · 1 iframe sandboxed'
+		);
+		expect(importSummary({ widgets: 1, theme: null, sandboxed: 2 })).toBe(
+			'Imported 1 widget · 2 iframes sandboxed'
+		);
+		expect(importSummary({ widgets: 0, theme: null, sandboxed: 0 })).toBe('Imported 0 widgets');
+	});
+});
 
 describe('sackSummary', () => {
 	it('joins widgets, theme, and overrides with middots (singular/plural aware)', () => {
@@ -45,6 +71,11 @@ vi.mock('../../overlay', () => ({
 	listThemes: (...a: []) => listThemes(...a),
 	resolveThemeCss: (...a: [string]) => resolveThemeCss(...a),
 	saveThemeCss: (...a: [string, string]) => saveThemeCss(...a)
+}));
+
+const invoke = vi.fn<(cmd: string) => Promise<unknown>>();
+vi.mock('@tauri-apps/api/core', () => ({
+	invoke: (cmd: string) => invoke(cmd)
 }));
 
 const themeLabel = vi.fn((n: string) => n || '(default)');
@@ -198,17 +229,31 @@ describe('exportSack', () => {
 		expect(writeSack).not.toHaveBeenCalled();
 	});
 
-	it('aborts when the name prompt is cancelled', async () => {
-		vi.spyOn(window, 'prompt').mockReturnValue(null);
+	it('the inline name is seeded from the active theme label, validated live, and editable', () => {
+		themeLabel.mockReturnValue('Nord');
+		const { result } = setup({ navSection: 'settings', selectedTheme: 'builtin:nord' });
+		expect(result.current.exportName).toBe('Nord');
+		expect(result.current.exportNameError).toBeNull();
+		act(() => result.current.setExportName('bad/name'));
+		expect(result.current.exportName).toBe('bad/name');
+		expect(result.current.exportNameError).toBe('Use letters, numbers, spaces, _ or - only');
+	});
+
+	it('refuses an invalid name with an inline error (no write, no alert)', async () => {
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		const { result } = setup({ navSection: 'settings' });
+		act(() => result.current.setExportName(''));
 		await act(async () => {
 			await result.current.exportSack();
 		});
 		expect(writeSack).not.toHaveBeenCalled();
+		expect(alert).not.toHaveBeenCalled();
+		expect(result.current.notice).toEqual({ tone: 'error', text: 'Enter a name for the sack' });
+		act(() => result.current.clearNotice());
+		expect(result.current.notice).toBeNull();
 	});
 
-	it('packs library + resolved theme CSS + tokens, writes, and alerts the saved path', async () => {
-		vi.spyOn(window, 'prompt').mockReturnValue('my-sack');
+	it('packs library + resolved theme CSS + tokens, writes, and reports the saved path inline', async () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		resolveThemeCss.mockResolvedValue(':root{--np-accent:#abc}');
 		themeLabel.mockReturnValue('Nord');
@@ -220,32 +265,58 @@ describe('exportSack', () => {
 			library: lib,
 			tokenOverrides: { '--x': '1' }
 		});
+		act(() => result.current.setExportName(' my-sack '));
 		await act(async () => {
 			await result.current.exportSack();
 		});
 		expect(resolveThemeCss).toHaveBeenCalledWith('builtin:nord');
 		const [name, json] = writeSack.mock.calls[0];
-		expect(name).toBe('my-sack');
+		expect(name).toBe('my-sack'); // trimmed
 		const sack = JSON.parse(json);
 		expect(sack.library).toEqual(lib);
 		expect(sack.theme).toEqual({ name: 'Nord', css: ':root{--np-accent:#abc}' });
 		expect(sack.tokens).toEqual({ '--x': '1' });
-		expect(alert).toHaveBeenCalledWith(expect.stringContaining('C:/cfg/sacks/my-sack.sack.json'));
+		expect(alert).not.toHaveBeenCalled(); // success is an inline line, not a modal
+		expect(result.current.notice).toEqual({
+			tone: 'ok',
+			text: 'Exported my-sack',
+			path: 'C:/cfg/sacks/my-sack.sack.json'
+		});
 	});
 
-	it('omits the theme (no resolve) when nothing is selected, and skips the path alert when write returns null', async () => {
-		const prompt = vi.spyOn(window, 'prompt').mockReturnValue('plain');
+	it('omits the theme (no resolve) when nothing is selected; a failed write alerts + shows an error line', async () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
-		writeSack.mockResolvedValue(null); // write produced no path
-		themeLabel.mockReturnValue(''); // empty label → prompt falls back to the 'my-sack' default
+		writeSack.mockResolvedValue(null); // the backend rejected (writeSack logged + returned null)
+		themeLabel.mockReturnValue(''); // empty label → the field seeds with the 'my-sack' default
 		const { result } = setup({ navSection: 'settings', selectedTheme: '' });
+		expect(result.current.exportName).toBe('my-sack');
 		await act(async () => {
 			await result.current.exportSack();
 		});
 		expect(resolveThemeCss).not.toHaveBeenCalled();
 		expect(JSON.parse(writeSack.mock.calls[0][1]).theme).toBeUndefined();
-		expect(prompt).toHaveBeenCalledWith(expect.any(String), 'my-sack'); // the || fallback default
-		expect(alert).not.toHaveBeenCalled(); // no path → no "Saved sack" alert
+		expect(alert).toHaveBeenCalledWith(
+			expect.stringContaining('Could not write the sack "my-sack"')
+		);
+		expect(result.current.notice?.tone).toBe('error');
+		expect(result.current.notice?.path).toBeUndefined();
+	});
+});
+
+describe('revealSacksDir', () => {
+	it('invokes the backend reveal command; a failure only warns', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		invoke.mockReset().mockResolvedValue(undefined);
+		const { result } = setup({ navSection: 'settings' });
+		await act(async () => {
+			await result.current.revealSacksDir();
+		});
+		expect(invoke).toHaveBeenCalledWith('reveal_sacks_dir');
+		invoke.mockRejectedValue(new Error('not registered'));
+		await act(async () => {
+			await result.current.revealSacksDir();
+		});
+		expect(warn).toHaveBeenCalledWith('reveal_sacks_dir failed', expect.any(Error));
 	});
 });
 
@@ -298,6 +369,7 @@ describe('importSack', () => {
 		// The theme was written under its own (uncollided) name + the picker list refreshed.
 		expect(saveThemeCss).toHaveBeenCalledWith('Imported', ':root{}');
 		expect(setThemeList).toHaveBeenCalled();
+		expect(result.current.notice?.text).toContain('theme saved as Imported');
 		// ONE commit carries the merged library + tokens + selected theme.
 		expect(commitOp).toHaveBeenCalledTimes(1);
 		const patch = commitOp.mock.calls[0][0]({
@@ -414,6 +486,11 @@ describe('importSack', () => {
 		} as unknown as EditorState);
 		const merged = patch.library!.defs[0].child as { unit: { config: Record<string, unknown> } };
 		expect(merged.unit.config.sandbox).toBe(true);
+		// The result line reports what landed, incl. the hardening the user consented to.
+		expect(result.current.notice).toEqual({
+			tone: 'ok',
+			text: 'Imported 1 widget · 1 iframe sandboxed'
+		});
 	});
 
 	it('imports a theme-ONLY sack: the commit patch carries just the selection', async () => {

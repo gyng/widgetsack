@@ -37,8 +37,8 @@ describe('built-in controls', () => {
 		expect(detectConflicts(listControls())).toEqual([]);
 	});
 
-	it('exposes keyboard section navigation (Ctrl+1..8 jump + Ctrl+Tab cycle)', () => {
-		expect(getControl('studio.section')?.triggers.length).toBe(8);
+	it('exposes keyboard section navigation (Ctrl+1..9 jump + Ctrl+Tab cycle)', () => {
+		expect(getControl('studio.section')?.triggers.length).toBe(9);
 		expect(getControl('studio.sectionNext')).toBeDefined();
 		expect(getControl('studio.sectionPrev')).toBeDefined();
 		// still conflict-free with the new bindings

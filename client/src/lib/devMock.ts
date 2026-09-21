@@ -27,7 +27,21 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			// --- boot: persistence / themes / controls / fonts (empty so the studio opens blank,
 			// unless the caller supplies a canned layout — the screenshot rig does) ---
 			case COMMANDS.loadLayout:
-				return opts.layout ?? null;
+				// A Playwright spec can hand the studio a canned (or deliberately corrupt) widgets.json
+				// through `?mockLayout=<json>` — e.g. to boot an empty monitor or the unparseable-file path.
+				return opts.layout ?? new URLSearchParams(window.location.search).get('mockLayout');
+			case COMMANDS.backupLayout:
+				// The unparseable-layout path: the backend copies widgets.json aside and returns the path.
+				return 'C:/mock/config/widgets.json.bad-1700000000000';
+			case COMMANDS.listLayouts:
+			case COMMANDS.listWindowLabels:
+			case COMMANDS.subsystemTimings:
+				return [];
+			case COMMANDS.processDiagnostics:
+				// Shape mirrors diag.ts ProcessDiag (the Diagnostics tab's host-process row).
+				return { pid: 4242, cpuPercent: 0, memBytes: 0, virtualBytes: 0, uptimeSecs: 0, cpus: 1 };
+			case COMMANDS.revealSacksDir:
+				return undefined;
 			case COMMANDS.loadControls:
 			case COMMANDS.loadTheme:
 			case COMMANDS.readSack:

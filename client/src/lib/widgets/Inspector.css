@@ -379,6 +379,12 @@
 	top: 0;
 	right: 0;
 	z-index: 1;
+	/* A 20×20 minimum hit area (the glyph itself stays small) — WCAG 2.5.8 target size. */
+	min-width: 20px;
+	min-height: 20px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	border: none;
 	background: transparent;
 	color: var(--ui-fg-dim);
@@ -402,6 +408,94 @@
 	color: var(--ui-fg-dim);
 	font-size: var(--text-sm);
 	line-height: 1.3;
+}
+
+/* Inline warning under a field (e.g. a sensor id that isn't in the catalogue). */
+.inspector .field-help.field-warn {
+	color: var(--ui-warn-fg, rgb(var(--ui-warn-rgb)));
+}
+
+/* The "?" beside a short help sentence: hover shows the long `details` as a tooltip, click expands
+   it inline. A 20px round target so it can be hit, dim at rest. */
+.inspector .field-details {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 20px;
+	height: 20px;
+	padding: 0;
+	margin-left: var(--space-1);
+	border: 1px solid var(--ui-border-strong);
+	border-radius: 999px;
+	background: var(--ui-raised);
+	color: var(--ui-fg-dim);
+	font-size: var(--text-sm);
+	line-height: 1;
+	cursor: help;
+	vertical-align: middle;
+}
+.inspector .field-details:hover,
+.inspector .field-details[aria-expanded='true'] {
+	border-color: rgb(var(--ui-accent-rgb));
+	color: var(--ui-accent-fg);
+}
+.inspector .field-details-text {
+	display: block;
+	margin-top: var(--space-1);
+	padding: var(--space-2);
+	border-left: 2px solid rgba(var(--ui-accent-rgb), 0.5);
+	color: var(--ui-fg);
+}
+
+/* Config-field grouping: Data / Appearance / Behaviour sub-headings, each a small run of fields. */
+.inspector .cfg-group {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+}
+.inspector .cfg-group-hd {
+	margin-top: var(--space-2);
+	padding-bottom: var(--space-1);
+	border-bottom: 1px solid var(--ui-border);
+}
+
+/* A colour config field: the label sits above the shared swatch + text + ✕ control (ColorField). */
+.inspector .cfg-color {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+}
+.inspector .cfg-color > label {
+	padding-right: var(--space-5, 24px); /* keep clear of the reset ↺ pinned top-right */
+}
+
+/* "＋ Add into this container": the compact door from a selected container's properties to the
+   palette (which opens with this container as the sticky add target). */
+.inspector .add-into {
+	text-align: left;
+}
+
+/* The sticky add-target chip in the palette header: names where new widgets land + a ✕ to clear. */
+.inspector .add-target-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	margin: var(--space-2) 0;
+	padding: var(--space-1) var(--space-2);
+	border: 1px solid rgba(var(--ui-accent-rgb), 0.6);
+	border-radius: 999px;
+	background: rgba(var(--ui-accent-rgb), 0.12);
+	color: var(--ui-accent-fg);
+	font-size: var(--text-sm);
+}
+.inspector .add-target-chip .x {
+	min-width: 20px;
+	height: 20px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
 }
 
 /* Formula (expr) field: a full-width monospace editor + its referenced-sensor hint. */

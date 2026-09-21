@@ -39,6 +39,22 @@ const GROUP_LABEL: Record<ControlGroup, string> = {
 	widget: 'Widgets'
 };
 const GROUP_ORDER: ControlGroup[] = ['edit', 'selection', 'view', 'file', 'navigation', 'widget'];
+
+// The OS-level hotkeys the backend registers (main.rs). They work while any app is focused and can't
+// be remapped from here, so they're listed read-only as "built-in" — the rescue chord in particular
+// must be discoverable from the same page as every other shortcut.
+export const BUILTIN_SHORTCUTS = [
+	{
+		label: 'Toggle desktop edit mode (global)',
+		keys: 'Ctrl+Alt+E',
+		help: 'Arrange widgets right on the desktop. Ctrl+E does the same inside a widgetsack window.'
+	},
+	{
+		label: 'Rescue all windows (global)',
+		keys: 'Ctrl+Alt+Shift+E',
+		help: 'Forces every widgetsack window interactive and brings it forward — even if its webview crashed.'
+	}
+] as const;
 const MOD_KEYS = ['Control', 'Shift', 'Alt', 'Meta', 'OS'];
 
 // Rebindable in-app only when it's a small set of key chords (≤2). Pointer/wheel and the 8-arrow nudge
@@ -154,13 +170,22 @@ export default function ControlsPanel({ overrides, onRebind, onReset, onResetAll
 				</div>
 			))}
 			<div className="cp-group">
-				<div className="cp-grouphd">System</div>
+				<div className="cp-grouphd">Global (work from any app)</div>
 				<div className="rp-list">
-					<div className="cp-row">
-						<span className="cp-label">Toggle edit (global)</span>
-						<span className="cp-keys dim">Ctrl+Alt+E</span>
-						<span className="cp-actions dim">set in app</span>
-					</div>
+					{BUILTIN_SHORTCUTS.map((b) => (
+						<div className="cp-row" key={b.label}>
+							<span className="cp-label" title={b.help}>
+								{b.label}
+							</span>
+							<span className="cp-keys dim">{b.keys}</span>
+							<span
+								className="cp-actions dim"
+								title="Registered with Windows by the app — not remappable here"
+							>
+								built-in
+							</span>
+						</div>
+					))}
 				</div>
 			</div>
 		</div>

@@ -15,29 +15,42 @@ export type SectionId =
 
 export type Section = {
 	id: SectionId;
-	label: string; // full name (tooltip)
+	label: string; // full name (accessible name; the tooltip when it differs from `short`)
 	short: string; // compact label shown under the icon in the narrow strip
+	/** Optional tooltip that adds to the label (e.g. what a "sack" is). Overrides the default. */
+	title?: string;
 	icon: string;
 	group: 'main' | 'foot'; // `foot` sits after a spacer at the bottom (the <gap> before Settings)
 	stub?: boolean; // not yet a real panel
 };
 
+// The ids are stable (e2e + Ctrl+digit jumps key off them); only the user-facing words follow the
+// shared vocabulary: "custom widget" (the designer), "Background", "Share" (sacks = your exports),
+// "Presets" (saved layouts).
 export const SECTIONS: Section[] = [
-	{ id: 'layouts', label: 'Layouts', short: 'Layout', icon: '▤', group: 'main' },
-	{ id: 'widget-designer', label: 'Widget designer', short: 'Defs', icon: '◳', group: 'main' },
+	{ id: 'layouts', label: 'Layout', short: 'Layout', icon: '▤', group: 'main' },
+	{ id: 'widget-designer', label: 'Widget designer', short: 'Custom', icon: '◳', group: 'main' },
 	{ id: 'sensors', label: 'Sensors', short: 'Sensors', icon: '∿', group: 'main' },
-	// Plugins ❖ (not ⧉ — ⧉ is "copy" elsewhere) and Sacks ❏ (not ▦ — ▦ is a container/grid/monitor)
+	// Plugins ❖ (not ⧉ — ⧉ is "copy" elsewhere) and Share ❏ (not ▦ — ▦ is a container/grid/monitor)
 	// so each nav glyph is a distinct signifier (the glyph-uniqueness test locks this in).
 	{ id: 'plugins', label: 'Plugins', short: 'Plugins', icon: '❖', group: 'main' },
 	{ id: 'themes', label: 'Themes', short: 'Themes', icon: '◐', group: 'main' },
-	// The per-monitor full-screen background/wallpaper layer. ◧ (a framed picture) is distinct from
-	// every other nav glyph and from the in-canvas ▦ signifier.
-	{ id: 'background', label: 'Background', short: 'Backdrop', icon: '◧', group: 'main' },
-	{ id: 'sacks', label: 'Sacks', short: 'Sacks', icon: '❏', group: 'main' },
-	// Saved layout profiles (save the current monitor's arrangement, load it back). ⊞ is distinct
-	// from the other nav glyphs and from the in-canvas ▦ (container/grid) signifier.
-	{ id: 'saved-layouts', label: 'Saved layouts', short: 'Saved', icon: '⊞', group: 'main' },
-	// Control remaps moved into Settings → Controls; Settings is the sole foot item now.
+	// The per-monitor full-screen background layer. ◧ (a framed picture) is distinct from every
+	// other nav glyph and from the in-canvas ▦ signifier.
+	{ id: 'background', label: 'Background', short: 'Background', icon: '◧', group: 'main' },
+	// Sacks: export your widgets + theme as a shareable bundle, import someone else's.
+	{
+		id: 'sacks',
+		label: 'Share',
+		short: 'Share',
+		title: 'Sacks — export/import',
+		icon: '❏',
+		group: 'main'
+	},
+	// Presets (saved layout profiles: save the current monitor's arrangement, load it back). ⊞ is
+	// distinct from the other nav glyphs and from the in-canvas ▦ (container/grid) signifier.
+	{ id: 'saved-layouts', label: 'Presets', short: 'Presets', icon: '⊞', group: 'main' },
+	// Shortcut remaps moved into Settings → Shortcuts; Settings is the sole foot item now.
 	{ id: 'settings', label: 'Settings', short: 'Settings', icon: '⚙', group: 'foot' }
 ];
 

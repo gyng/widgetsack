@@ -79,6 +79,15 @@ export type EditorState = {
 	// Manual-save baseline (studio).
 	savedBaseline: Baseline | null;
 	pendingExtras: Extra[];
+	// Sticky add target: the container the LAST palette add went into. While set, further palette
+	// adds (widgets / templates / My widgets) keep landing there even though the new widget — not
+	// the container — is what's selected, until the user selects something outside it (or nothing).
+	// Cleared automatically when the container leaves the tree. Optional so the many op-level test
+	// fixtures needn't spell it out (absent ⇒ none).
+	addTarget?: string | null;
+	// The id of the node the last add op created (widget or group), so the Canvas can scroll/flash it
+	// into view — an add that lands off-screen or under another widget otherwise reads as a no-op.
+	justAdded?: string | null;
 	// Bumped on every commit (saveLayout); the persistence effect watches it to write to disk.
 	saveSeq: number;
 	// Distinguishes overlay (auto-save now) from studio (debounced preview) for the save effect.

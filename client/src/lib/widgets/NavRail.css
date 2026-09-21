@@ -66,9 +66,22 @@
 }
 
 .canvas .nav-rail .nav-short {
-	font-size: var(--text-sm);
+	font-size: var(--text-xs);
 	letter-spacing: 0.2px;
 	text-transform: uppercase;
+	/* Never widen the strip: a label that still doesn't fit is clipped with an ellipsis (the full
+	   name is the button's aria-label / tooltip). */
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* "BACKGROUND" / "SETTINGS"-length labels: one notch smaller and tighter so they fit the 56px strip
+   (monospace ≈ 0.6em per glyph → 10 chars need ≤ 52px). */
+.canvas .nav-rail .nav-short--long {
+	font-size: 8px;
+	letter-spacing: 0;
 }
 
 /* A section panel (every section except Layouts, which is the stage + Outline + Inspector). It
@@ -214,6 +227,38 @@
 
 .canvas .designer-list .dl-label:hover {
 	color: var(--ui-accent-fg);
+}
+
+/* Inline rename (no prompt): the row's name becomes a field in place (✎), and the open custom
+   widget's name is an always-editable field in the list header. Same metrics as .dl-label so the
+   row doesn't jump when it flips. */
+.canvas .designer-list .dl-name-input {
+	flex: 1;
+	min-width: 0;
+	box-sizing: border-box;
+	font-family: monospace;
+	font-size: var(--text-md);
+	padding: var(--space-1) var(--space-2);
+	background: var(--ui-raised);
+	border: 1px solid rgb(var(--ui-accent-rgb));
+	color: var(--ui-fg);
+}
+
+.canvas .designer-list .dl-editing {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	margin: var(--space-3) 0 var(--space-2);
+}
+
+.canvas .designer-list .dl-editing .rp-sub {
+	flex: 0 0 auto;
+}
+
+/* "copied" / "failed" line under the reference button — quiet, wraps. */
+.canvas .designer-list .dl-copy-status {
+	padding-top: 0;
+	font-size: var(--text-sm);
 }
 
 .canvas .designer-list .dl-icon {
@@ -526,6 +571,31 @@
 
 .canvas .rail-panel.bg-panel button.bg-clear:hover {
 	border-color: rgb(var(--ui-danger-rgb));
+	color: var(--ui-danger-fg);
+}
+
+/* Presets: the inline "name + Save" form (no prompt) and its outcome line. */
+.canvas .presets-panel .preset-save {
+	display: flex;
+	gap: var(--space-2);
+	margin: var(--space-2) 0 var(--space-3);
+}
+
+.canvas .presets-panel .preset-save input {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.canvas .presets-panel .preset-save button {
+	flex: 0 0 auto;
+	margin: 0;
+}
+
+.canvas .presets-panel .preset-status {
+	padding-top: 0;
+}
+
+.canvas .presets-panel .preset-status--err {
 	color: var(--ui-danger-fg);
 }
 
@@ -950,12 +1020,41 @@
 	word-break: break-all; /* a long direct URL must not widen the rail */
 }
 
-/* The "Install from URL…" button sits between the Packages header and the rows; full-width so it
-   reads as part of the list, not a stray chip. */
-.canvas .plugins-panel button.pkg-install {
-	display: block;
+/* The inline "Install a package" form sits between the Packages header and the rows: a labelled
+   source field over a full-width Install button, with the result line (error / "Installed …")
+   right under it. */
+.canvas .plugins-panel form.pkg-install {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	margin: 0 0 var(--space-3);
+}
+
+.canvas .plugins-panel .pkg-install-field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	color: var(--ui-fg-muted);
+}
+
+.canvas .plugins-panel .pkg-install-field input {
 	width: 100%;
-	margin: 0 0 var(--space-2);
+	box-sizing: border-box;
+}
+
+.canvas .plugins-panel form.pkg-install > button {
+	width: 100%;
+	margin: 0;
+}
+
+.canvas .plugins-panel form.pkg-install .pkg-status {
+	font-size: var(--text-sm);
+	line-height: 1.4;
+	word-break: break-word;
+}
+
+.canvas .plugins-panel form.pkg-install .pkg-status--err {
+	color: var(--ui-danger-fg);
 }
 
 /* Per-row remote actions (Check updates / Update / Remove) + the inline check result. Compact —

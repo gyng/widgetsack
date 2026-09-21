@@ -64,6 +64,20 @@ describe('widgetReferenceMarkdown', () => {
 		expect(piped).toContain('a \\| b');
 	});
 
+	it('joins the long `details` after the short help in the description cell', () => {
+		const md = widgetReferenceMarkdown([
+			{
+				type: 't',
+				label: 'T',
+				binds: 'none',
+				configFields: [
+					{ key: 'k', label: 'k', kind: 'toggle', help: 'short.', details: 'The long version.' }
+				]
+			}
+		]);
+		expect(md).toContain('| short. — The long version. |');
+	});
+
 	it('documents an empty/catalog select, expr fields (with/without a target), and a numeric range', () => {
 		const kitchen: WidgetMeta = {
 			type: 'kitchen',

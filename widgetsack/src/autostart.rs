@@ -131,7 +131,7 @@ pub fn reconcile_action(pref: Option<bool>, current: bool) -> Option<bool> {
 
 /// Re-assert the OS autostart registration from the saved preference. This is the line that makes
 /// the setting survive installs: after an upgrade wipes the `…\Run` value, the first launch (the
-/// installer's "Run WidgetSack" finish-page checkbox, or the user reopening the app) restores it.
+/// installer's "Run widgetsack" finish-page checkbox, or the user reopening the app) restores it.
 /// Best-effort — failures are logged, never fatal.
 pub fn reconcile(app: &tauri::AppHandle) {
     use tauri_plugin_autostart::ManagerExt;

@@ -24,10 +24,10 @@ test('NavRail switches sections and marks the active one', async ({ page }) => {
 	await expect(page.locator('.rail-panel')).toBeVisible();
 	await expect(page.locator('.inspector')).toHaveCount(0);
 
-	// Settings → the Display/Startup/… panel.
+	// Settings → the Monitor/Startup/… panel.
 	await openSection(page, 'settings');
 	await expect(navItem(page, 'settings')).toHaveClass(/active/);
-	await expect(page.locator('.rail-panel')).toContainText('Display');
+	await expect(page.locator('.rail-panel')).toContainText('Monitor');
 });
 
 test('a NavRail click leaves a read-only template preview (no dead modal)', async ({ page }) => {

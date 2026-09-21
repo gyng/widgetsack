@@ -4,6 +4,8 @@
 // I/O around it and funnels the import through ONE commit (one undo step). Theme side-effects go
 // through the useThemes seam (adoptTheme / setThemeList) so the live CSS can't drift.
 import { useCallback, useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { COMMANDS } from '../../bridge/contract';
 import type { Library } from '../../core/layoutTree';
 import {
 	mergeLibrary,
@@ -54,12 +56,56 @@ export function sackSummary(info: SackInfo): string {
 	return parts.length ? parts.join(' · ') : 'empty';
 }
 
+/** The export name rule, mirroring the backend allowlist (command.rs valid_sack_name): 1–64 chars of
+ * letters, digits, spaces, `_` and `-`. Returns the user-facing problem, or null when the name is fine. */
+export function sackNameError(name: string): string | null {
+	const n = name.trim();
+	if (!n) return 'Enter a name for the sack';
+	if (n.length > 64) return 'Keep the name under 64 characters';
+	if (!/^[A-Za-z0-9 _-]+$/.test(n)) return 'Use letters, numbers, spaces, _ or - only';
+	return null;
+}
+
+/** The one-line result of an import: what landed. Pure (tested). */
+export function importSummary(r: {
+	widgets: number;
+	theme: string | null;
+	sandboxed: number;
+}): string {
+	const parts = [`Imported ${r.widgets} widget${r.widgets === 1 ? '' : 's'}`];
+	if (r.theme) parts.push(`theme saved as ${r.theme}`);
+	if (r.sandboxed) parts.push(`${r.sandboxed} iframe${r.sandboxed === 1 ? '' : 's'} sandboxed`);
+	return parts.join(' · ');
+}
+
+/** A result line for the Sacks section: the outcome of the last export / import. */
+export type SackNotice = { tone: 'ok' | 'error'; text: string; path?: string };
+
 export type Sacks = {
 	/** The saved sacks (name + contents summary), loaded when the Sacks section is open. */
 	sackInfos: SackInfo[];
+	/** The inline export name field (seeded from the active theme's name) + its validation problem. */
+	exportName: string;
+	setExportName: (name: string) => void;
+	exportNameError: string | null;
+	/** Export under `exportName` (validated). Alerts on a mid-def-edit / write failure. */
 	exportSack: () => Promise<void>;
 	importSack: (name: string) => Promise<void>;
+	/** The last export/import outcome, shown inline in the section; null = nothing yet. */
+	notice: SackNotice | null;
+	clearNotice: () => void;
+	/** Open the sacks/ folder in Explorer (the backend `reveal_sacks_dir` command). */
+	revealSacksDir: () => Promise<void>;
 };
+
+/** Reveal the `sacks/` folder in Explorer. Best-effort (a missing command just logs). */
+async function revealSacksDir(): Promise<void> {
+	try {
+		await invoke(COMMANDS.revealSacksDir);
+	} catch (err) {
+		console.warn('reveal_sacks_dir failed', err);
+	}
+}
 
 export function useSacks({
 	studio,
@@ -73,6 +119,13 @@ export function useSacks({
 }: Deps): Sacks {
 	const { themeLabel, setThemeList, adoptTheme } = themes;
 	const [sackInfos, setSackInfos] = useState<SackInfo[]>([]);
+	const [notice, setNotice] = useState<SackNotice | null>(null);
+	const clearNotice = useCallback(() => setNotice(null), []);
+	// The inline export name: seeded from the active theme's label (what the old prompt defaulted to)
+	// until the user types their own (null = untouched → use the seed).
+	const [exportNameRaw, setExportName] = useState<string | null>(null);
+	const exportName = exportNameRaw ?? (themeLabel(selectedTheme) || 'my-sack');
+	const exportNameError = sackNameError(exportName);
 
 	// Names + a peek inside each (count of defs, theme name, override count) so the Import list can
 	// say what a sack contains instead of a bare filename. Sacks are small local JSON; reading each
@@ -107,8 +160,12 @@ export function useSacks({
 			window.alert('Finish editing the current widget (Done) before exporting a sack.');
 			return;
 		}
-		const name = window.prompt('Export a sack (name):', themeLabel(selectedTheme) || 'my-sack');
-		if (!name) return;
+		const problem = sackNameError(exportName);
+		if (problem) {
+			setNotice({ tone: 'error', text: problem });
+			return;
+		}
+		const name = exportName.trim();
 		// Re-read the theme CSS at export time so a not-yet-loaded `themeCss` can't silently drop it. A
 		// built-in is baked into the sack under its catalog name (the `builtin:` id never leaves the app).
 		const css = selectedTheme ? await resolveThemeCss(selectedTheme) : '';
@@ -120,8 +177,16 @@ export function useSacks({
 		});
 		const path = await writeSack(name, JSON.stringify(sack, null, '\t'));
 		await refreshSacks();
-		if (path) window.alert(`Saved sack:\n${path}`);
-	}, [editingDefId, selectedTheme, themeLabel, library, tokenOverrides, refreshSacks]);
+		if (!path) {
+			// writeSack swallows the backend error (it logs + returns null): say so plainly, or a failed
+			// export reads as a silent success.
+			const text = `Could not write the sack "${name}" — check the sacks folder is writable.`;
+			setNotice({ tone: 'error', text });
+			window.alert(text);
+			return;
+		}
+		setNotice({ tone: 'ok', text: `Exported ${name}`, path });
+	}, [editingDefId, exportName, selectedTheme, themeLabel, library, tokenOverrides, refreshSacks]);
 
 	const importSack = useCallback(
 		async (name: string) => {
@@ -141,7 +206,7 @@ export function useSacks({
 			// is hardened (iframe sandbox forced on, prototype-walking param specs dropped) before merge.
 			const consent = sackConsentMessage(unpacked);
 			if (consent && !window.confirm(consent)) return;
-			const { sack } = sanitizeSack(unpacked);
+			const { sack, changed } = sanitizeSack(unpacked);
 			// Theme first: resolve a name collision so an import never clobbers an existing user theme.
 			let themeName: string | null = null;
 			if (sack.theme) {
@@ -171,6 +236,14 @@ export function useSacks({
 			});
 			// Live-apply the theme CSS (the commit set selectedTheme; mirror it for the live styles).
 			if (themeName) await adoptTheme(themeName);
+			setNotice({
+				tone: 'ok',
+				text: importSummary({
+					widgets: sack.library?.defs.length ?? 0,
+					theme: themeName,
+					sandboxed: changed
+				})
+			});
 		},
 		[editingDefId, commitOp, setThemeList, adoptTheme]
 	);
@@ -189,5 +262,15 @@ export function useSacks({
 		};
 	}, [studio, navSection, loadSackInfos]);
 
-	return { sackInfos, exportSack, importSack };
+	return {
+		sackInfos,
+		exportName,
+		setExportName,
+		exportNameError,
+		exportSack,
+		importSack,
+		notice,
+		clearNotice,
+		revealSacksDir
+	};
 }

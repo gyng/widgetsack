@@ -49,10 +49,23 @@ describe('Weather meter', () => {
 		expect(container.querySelector('.wx-detail')?.textContent).toContain('9 mph');
 	});
 
-	it('renders dashes with no data', () => {
-		const { container } = render(<Weather sensors={{}} />);
+	it('with no data and no status it tells the user to set a location (not a row of dashes)', () => {
+		const { container, getByRole } = render(<Weather sensors={{}} />);
+		expect(getByRole('status').textContent).toBe('Set your location in Plugins → Weather');
+		expect(container.querySelector('.wx-temp-val')).toBeNull();
+	});
+
+	it('with a status but no reading yet it says loading / unavailable instead', () => {
+		const { getByRole, rerender } = render(<Weather sensors={{ status: txt('connecting') }} />);
+		expect(getByRole('status').textContent).toBe('Loading weather…');
+		rerender(<Weather sensors={{ status: txt('error') }} />);
+		expect(getByRole('status').textContent).toMatch(/Weather unavailable/);
+	});
+
+	it('a reading with only a condition code (no temperature yet) still renders the main block', () => {
+		const { container } = render(<Weather sensors={{ code: scalar(0), is_day: scalar(1) }} />);
 		expect(container.querySelector('.wx-temp-val')?.textContent).toBe('—');
-		expect(container.querySelector('.wx-cond')?.textContent).toBe('—');
+		expect(container.querySelector('.wx-cond')?.textContent).toBe('Clear');
 	});
 
 	it('renders a forecast column per day from the day.N sensors', () => {

@@ -5,6 +5,33 @@ Notable changes per release. Older releases are described by their auto-generate
 
 ## Unreleased
 
+### Changed — studio UX round
+
+- **Building a dashboard works on the first try.** After adding a widget into a container the palette
+  keeps targeting that container (a chip shows "Adding into: row ✕"); new widgets land in the first
+  free spot instead of stacking at one corner, and flash into view; an empty Text widget shows a
+  placeholder while editing; an empty monitor shows a three-step card, and first boot a dismissible
+  strip; selecting a container shows its properties first with an "Add into this container" button.
+- **Overlay edit mode (Ctrl+Alt+E on the desktop) now matches the studio:** monitor badge, shortcut
+  bar, Revert, a correct exit hint, and an alert when a write fails.
+- **Undo/labels/forms:** selects show their default ("arc (default)"); colour fields use the colour
+  picker; the sensor field commits on blur/Enter as one undo step and warns about unknown ids; widget
+  config forms are grouped (Data / Appearance / Behaviour) and every field has help; the Monitor Switch
+  volume device is hidden unless the target is system.
+- **Keyboard and sizing:** one tab stop per widget, keyboard-navigable Outline with hover-revealed
+  actions, larger resize handles and buttons, 12 px base UI text, Ctrl+9 for Settings, align and
+  distribute for floating widgets, theme editor guards unsaved edits and traps focus, "Zoom to content".
+- **Vocabulary:** custom widget (not def), Background (not backdrop/wallpaper), monitor (not display),
+  Save (not save draft), Ungroup (not Unlink), Presets, Shortcuts, "Behind desktop icons" for the
+  wallpaper layer, lowercase "widgetsack" everywhere; raw ids and devtools items are behind a new
+  Developer mode toggle (Settings → Diagnostics).
+- **Failures are visible:** each studio section has its own error boundary; a corrupt widgets.json shows
+  a banner with the backup path; sack import reports what merged and export failures are shown; inline
+  forms replace browser prompts for export, package install, rename, and presets; launch-at-login
+  failures are explained; Home Assistant tiles say "not configured" / "offline" / "entity unavailable";
+  Weather says where to set a location; Monitor Switch explains an unsupported monitor.
+- README and docs describe the current tray menu and the Ctrl+Alt+E / Ctrl+Alt+Shift+E shortcuts.
+
 ### Added
 
 - **Monitor Switch: choose which Windows output the system volume applies to.** With `volume target

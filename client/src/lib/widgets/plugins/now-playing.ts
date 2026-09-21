@@ -41,7 +41,15 @@ export const registerNowPlayingPlugin = (): void =>
 					defaultCss: NOWPLAYING_DEFAULT_CSS,
 					// Catches clicks in passive mode so the transport buttons work (un-hide them via css).
 					interactive: true,
-					configFields: [{ key: 'label', label: 'label (when idle)', kind: 'text' }]
+					configFields: [
+						{
+							key: 'label',
+							label: 'label (when idle)',
+							kind: 'text',
+							group: 'Data',
+							help: 'text shown while nothing is playing'
+						}
+					]
 				},
 				component: asMeter(NowPlayingHost)
 			}

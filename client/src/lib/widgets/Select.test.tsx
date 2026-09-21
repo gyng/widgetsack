@@ -195,3 +195,84 @@ describe('Select (combobox: external value + selection behaviours)', () => {
 		expect(rows[0].querySelector('.np-select-opt-hint')).toBeNull();
 	});
 });
+
+describe('Select (listbox: defaultValue shows the effective default)', () => {
+	it('renders the default option as selected, labelled "(default)", while the value is unset', () => {
+		const onChange = vi.fn();
+		render(<Select value="" options={SMALL} onChange={onChange} defaultValue="a" />);
+		const trigger = screen.getByRole('combobox');
+		expect(trigger).toHaveTextContent('Apple (default)');
+		fireEvent.click(trigger);
+		const rows = document.querySelectorAll('.np-select-menu .np-select-option');
+		expect(rows[0].getAttribute('data-selected')).toBe('true');
+		expect(rows[0].querySelector('.np-select-opt-label')?.textContent).toBe('Apple (default)');
+		expect(rows[1].querySelector('.np-select-opt-label')?.textContent).toBe('Banana');
+		// Picking writes the plain option value — never the "(default)" decoration.
+		fireEvent.click(screen.getByText('Banana'));
+		expect(onChange).toHaveBeenCalledWith('b');
+	});
+
+	it('drops the "(default)" label once a value is set explicitly', () => {
+		render(<Select value="a" options={SMALL} onChange={vi.fn()} defaultValue="a" />);
+		expect(screen.getByRole('combobox').querySelector('.np-select-value')?.textContent).toBe(
+			'Apple'
+		);
+	});
+});
+
+describe('Select (combobox: deferred commit + select-all on focus)', () => {
+	it('commitOn="blur" holds keystrokes and commits ONCE on blur', () => {
+		const onChange = vi.fn();
+		render(
+			<Select value="s.1" options={SENSORS} onChange={onChange} allowCustom commitOn="blur" />
+		);
+		const input = screen.getByRole('combobox') as HTMLInputElement;
+		fireEvent.change(input, { target: { value: 'my.se' } });
+		fireEvent.change(input, { target: { value: 'my.sensor' } });
+		expect(onChange).not.toHaveBeenCalled();
+		fireEvent.blur(input);
+		expect(onChange).toHaveBeenCalledTimes(1);
+		expect(onChange).toHaveBeenCalledWith('my.sensor');
+	});
+
+	it('commitOn="blur" commits on Enter with the menu closed and skips an unchanged value', () => {
+		const onChange = vi.fn();
+		render(
+			<Select value="s.1" options={SENSORS} onChange={onChange} allowCustom commitOn="blur" />
+		);
+		const input = screen.getByRole('combobox') as HTMLInputElement;
+		fireEvent.keyDown(input, { key: 'Enter' }); // untouched → nothing to commit
+		expect(onChange).not.toHaveBeenCalled();
+		fireEvent.change(input, { target: { value: 'typed.id' } });
+		fireEvent.keyDown(input, { key: 'Escape' }); // close the menu the change opened
+		fireEvent.keyDown(input, { key: 'Enter' });
+		expect(onChange).toHaveBeenCalledTimes(1);
+		expect(onChange).toHaveBeenCalledWith('typed.id');
+	});
+
+	it('commitOn="blur": picking a listed option still commits immediately (and Enter picks a highlight)', () => {
+		const onChange = vi.fn();
+		render(<Select value="" options={SENSORS} onChange={onChange} allowCustom commitOn="blur" />);
+		const input = screen.getByRole('combobox') as HTMLInputElement;
+		fireEvent.click(input);
+		fireEvent.click(screen.getByText('Sensor 4'));
+		expect(onChange).toHaveBeenCalledWith('s.4');
+		onChange.mockClear();
+		// Open, arrow to highlight the first row, Enter → Downshift's pick wins (one commit, the option).
+		fireEvent.click(input);
+		fireEvent.keyDown(input, { key: 'ArrowDown' });
+		fireEvent.keyDown(input, { key: 'Enter' });
+		expect(onChange).toHaveBeenCalledTimes(1);
+		expect(onChange).toHaveBeenCalledWith('s.0');
+	});
+
+	it('selectAllOnFocus selects the whole text on focus', () => {
+		render(
+			<Select value="s.2" options={SENSORS} onChange={vi.fn()} allowCustom selectAllOnFocus />
+		);
+		const input = screen.getByRole('combobox') as HTMLInputElement;
+		const select = vi.spyOn(input, 'select');
+		fireEvent.focus(input);
+		expect(select).toHaveBeenCalled();
+	});
+});
