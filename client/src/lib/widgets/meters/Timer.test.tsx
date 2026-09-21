@@ -67,7 +67,9 @@ describe('TimerView', () => {
 });
 
 describe('Timer (default, self-sourcing) wires useTimer to TimerView', () => {
-	beforeEach(() => vi.useFakeTimers());
+	// Pin the clock ON a tick boundary: the tick is the shared boundary-aligned useNow clock, so an
+	// arbitrary real-time phase would make "how far past the flip" nondeterministic.
+	beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));
 	afterEach(() => vi.useRealTimers());
 
 	const val = (c: HTMLElement): string => c.querySelector('[data-part="value"]')?.textContent ?? '';

@@ -78,6 +78,7 @@ export const COMMANDS = {
 	checkPluginPackageUpdate: 'check_plugin_package_update',
 	removePluginPackage: 'remove_plugin_package',
 	packageFetch: 'package_fetch',
+	setPackageEnabled: 'set_package_enabled',
 	// foreign windows / monitors / click-through (windowmgr.rs, clickthrough.rs, display.rs)
 	listWindows: 'list_windows',
 	snapWindow: 'snap_window',
@@ -181,3 +182,10 @@ export const COMMANDS = {
 	autostartGet: 'get_autostart_enabled',
 	autostartSet: 'set_autostart_enabled'
 } as const;
+
+/**
+ * Payload of `layout_changed`. An app `save_layout` (command.rs) names the WINDOW that wrote the
+ * file (its Tauri label: 'studio', 'main', 'overlay-<key>'…) so an editor can tell its own save from
+ * another window's; the file watcher's emit for an external edit carries no payload (`null`).
+ */
+export type LayoutChangedPayload = { writer?: string } | null;

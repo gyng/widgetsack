@@ -642,14 +642,140 @@ describe('debounced preview write', () => {
 		expect(saveCalls()).toBe(1);
 	});
 
-	it('clears the pending preview write on unmount', async () => {
+	it('FLUSHES (not drops) the pending preview write on unmount — the last edit before a close lands', async () => {
 		vi.useFakeTimers();
 		const { result, unmount } = renderHook(() => usePersistence(editorState(), 'mon-A'));
 		act(() => result.current.schedulePreviewWrite());
+		expect(savedContents).toBeNull();
 		unmount();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(0); // the write runs immediately, not after the debounce
+		});
+		expect(Object.keys(written().monitors as object)).toEqual(['mon-A']);
+	});
+
+	it('flushPreviewWrite writes a pending preview now and resolves true; a no-op when none is pending', async () => {
+		vi.useFakeTimers();
+		const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));
+		let ok: boolean | undefined;
+		await act(async () => {
+			ok = await result.current.flushPreviewWrite(); // nothing pending
+		});
+		expect(ok).toBe(true);
+		expect(savedContents).toBeNull();
+		act(() => result.current.schedulePreviewWrite());
+		expect(result.current.previewPending()).toBe(true);
+		await act(async () => {
+			ok = await result.current.flushPreviewWrite();
+		});
+		expect(ok).toBe(true);
+		expect(savedContents).not.toBeNull();
+		expect(result.current.previewPending()).toBe(false);
+		// The debounce timer was cleared by the flush: no second write fires later.
+		const saveCalls = () => invoke.mock.calls.filter((c) => c[0] === COMMANDS.saveLayout).length;
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(300);
+		});
+		expect(saveCalls()).toBe(1);
+	});
+
+	it('a preview scheduled for one monitor never writes after the studio switched to another', async () => {
+		// The bug: switchMonitor replaces the editor tree with an EMPTY root while the new monitor
+		// reloads; a preview timer armed on the old monitor that fires in that window wrote the empty
+		// tree under the NEW key. The timer captures its key at schedule time and the run skips on a
+		// mismatch.
+		vi.useFakeTimers();
+		const { result, rerender } = renderHook(
+			({ key }: { key: string }) => usePersistence(editorState(), key),
+			{ initialProps: { key: 'mon-A' } }
+		);
+		act(() => result.current.schedulePreviewWrite());
+		rerender({ key: 'mon-B' }); // the switch lands before the debounce fires
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(300);
 		});
 		expect(savedContents).toBeNull();
+	});
+});
+
+describe('persistToDisk is single-flight with a trailing rerun (the last state wins)', () => {
+	// Gate load_layout so the first run is held mid-flight while more requests arrive.
+	function gatedLoad() {
+		let release: () => void = () => undefined;
+		const gate = new Promise<void>((r) => {
+			release = r;
+		});
+		invoke.mockImplementation(async (cmd: string, args?: { contents?: string }) => {
+			if (cmd === COMMANDS.loadLayout) {
+				await gate;
+				return loadLayoutRaw;
+			}
+			if (cmd === COMMANDS.saveLayout) {
+				savedContents = args?.contents ?? null;
+				return undefined;
+			}
+			throw new Error(`unexpected command ${cmd}`);
+		});
+		return () => release();
+	}
+	const saveCalls = () => invoke.mock.calls.filter((c) => c[0] === COMMANDS.saveLayout).length;
+
+	it('requests arriving mid-run collapse into ONE trailing rerun that writes the newest state', async () => {
+		const release = gatedLoad();
+		const { result, rerender } = renderHook(
+			({ state }: { state: EditorState }) => usePersistence(state, 'mon-A'),
+			{ initialProps: { state: editorState({ monitor: monitorWith('first') }) } }
+		);
+		const p1 = result.current.persistToDisk([]); // in flight (held at load_layout)
+		// Two more commits land while it runs — the editor now holds 'third'.
+		rerender({ state: editorState({ monitor: monitorWith('second') }) });
+		const p2 = result.current.persistToDisk([]);
+		rerender({ state: editorState({ monitor: monitorWith('third') }) });
+		const p3 = result.current.persistToDisk([]);
+		expect(result.current.previewPending()).toBe(true); // in flight counts as pending
+		release();
+		let results: boolean[] = [];
+		await act(async () => {
+			results = await Promise.all([p1, p2, p3]);
+		});
+		expect(results).toEqual([true, true, true]);
+		// Exactly two writes: the in-flight run (stale 'first') + ONE trailing rerun with the latest.
+		expect(saveCalls()).toBe(2);
+		const monitors = written().monitors as Record<string, MonitorLayout>;
+		expect(monitors['mon-A'].root.children[0].id).toBe('third');
+		expect(result.current.previewPending()).toBe(false);
+	});
+
+	it('a trailing rerun that starts after a monitor switch is skipped (resolves false, writes nothing)', async () => {
+		const release = gatedLoad();
+		const { result, rerender } = renderHook(
+			({ key }: { key: string }) => usePersistence(editorState(), key),
+			{ initialProps: { key: 'mon-A' } }
+		);
+		const p1 = result.current.persistToDisk([]); // in flight, for mon-A
+		const p2 = result.current.persistToDisk([]); // queued behind it, also for mon-A
+		rerender({ key: 'mon-B' }); // the studio switches before the trailing rerun starts
+		release();
+		let results: boolean[] = [];
+		await act(async () => {
+			results = await Promise.all([p1, p2]);
+		});
+		expect(results).toEqual([true, false]);
+		expect(saveCalls()).toBe(1); // only the in-flight mon-A write; nothing under mon-B
+		expect(Object.keys(written().monitors as object)).toEqual(['mon-A']);
+	});
+
+	it('a trailing rerun merges the extras of the LAST request (a Save queued behind a preview)', async () => {
+		const release = gatedLoad();
+		const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));
+		const p1 = result.current.persistToDisk([]);
+		const extra: Extra = { key: 'mon-B', leaf: leaf(createWidget('text', 'moved')) };
+		const p2 = result.current.persistToDisk([extra]);
+		release();
+		await act(async () => {
+			await Promise.all([p1, p2]);
+		});
+		const monitors = written().monitors as Record<string, MonitorLayout>;
+		expect(monitors['mon-B'].floating[0].id).toBe('moved');
 	});
 });

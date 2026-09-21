@@ -102,8 +102,11 @@ export function onFormulaEngineReady(cb: () => void): () => void {
 
 /** Evaluate a single expression against namespaced sensor values, in the sandbox. Returns a finite
  *  number or a string on success, or `null` on any parse/eval error, non-finite result, or timeout —
- *  callers render `null` as `–` rather than crashing. Sensor values are injected as DATA (JSON) and
- *  read via `with`, so they can't be reinterpreted as code and don't leak between evaluations. */
+ *  callers render `null` as `–` rather than crashing. Sensor values are injected as DATA — a JSON
+ *  STRING literal the sandbox `JSON.parse`s onto a prototype-less scope object read via `with` — so
+ *  they can't be reinterpreted as code, don't leak between evaluations, and a `__proto__` key
+ *  (buildScope already drops prototype-walking ids; this is the engine's own line) becomes an inert
+ *  own property instead of the object-literal prototype setter it would be if spliced in as source. */
 export function evalExpr(
 	src: string,
 	values: Record<string, number | string | null>
@@ -114,12 +117,14 @@ export function evalExpr(
 	// the reference is `undefined` → arithmetic yields NaN and a bare ref throws → we return null → `–`.
 	const present: Record<string, number | string> = {};
 	for (const [k, v] of Object.entries(values)) if (v !== null) present[k] = v;
-	const scopeJson = JSON.stringify(buildScope(present));
+	// Double-stringified: the inner JSON becomes a string LITERAL in the source, parsed inside the VM.
+	const scopeLiteral = JSON.stringify(JSON.stringify(buildScope(present)));
 	const deadline = Date.now() + EVAL_DEADLINE_MS;
 	runtime.setInterruptHandler(() => Date.now() > deadline);
 	try {
 		const out = ctx.evalCode(
-			`(function (__scope) { with (__scope) { return (${src}); } })(${scopeJson})`
+			`(function (__scope) { with (__scope) { return (${src}); } })(` +
+				`Object.assign(Object.create(null), JSON.parse(${scopeLiteral})))`
 		);
 		if (out.error) {
 			out.error.dispose();

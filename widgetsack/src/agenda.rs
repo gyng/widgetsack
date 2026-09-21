@@ -27,7 +27,10 @@ fn default_interval() -> u64 {
     1800 // 30 min — calendars change slowly
 }
 
-/// Server-side agenda config (`plugins/agenda.json`). No secrets (a feed URL), so all non-secret.
+/// Server-side agenda config (`plugins/agenda.json`). The `url` IS a secret: a calendar's "private
+/// address" embeds an unguessable token that reads the whole calendar, so the file is stored via
+/// `secure_config` (DPAPI on Windows — like the HA / LLM / MQTT tokens) and the URL never crosses the
+/// bridge back to the webview (the status carries only its host).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AgendaConfig {
     #[serde(default)]
@@ -39,12 +42,14 @@ pub struct AgendaConfig {
     pub poll_interval_secs: u64,
 }
 
-/// What the webview learns about the config. camelCase on the wire.
+/// What the webview learns about the config — never the URL itself, only its host. camelCase on the
+/// wire; mirrors `AgendaStatus` in `client/src/lib/widgets/plugins/agenda-types.ts`.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgendaStatus {
     pub configured: bool,
-    pub url: String,
+    /// The saved feed's hostname ('' when unconfigured / unparseable).
+    pub host: String,
     pub title: String,
     pub poll_seconds: u64,
 }
@@ -208,15 +213,22 @@ fn agenda_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String>
     Ok(dir.join("plugins").join("agenda.json"))
 }
 
+/// Load the config. `secure_config::read` decrypts a protected file and MIGRATES a legacy plaintext
+/// `agenda.json` (written before the URL was treated as a secret) to the protected form on first read.
 pub fn load_agenda_config<R: Runtime>(app: &AppHandle<R>) -> Result<Option<AgendaConfig>, String> {
     let path = agenda_config_path(app)?;
-    match std::fs::read_to_string(&path) {
-        Ok(txt) => serde_json::from_str(&txt)
-            .map(Some)
-            .map_err(|e| e.to_string()),
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(err) => Err(err.to_string()),
-    }
+    crate::secure_config::read(&path)?
+        .map(|txt| serde_json::from_str(&txt).map_err(|e| e.to_string()))
+        .transpose()
+}
+
+/// The hostname of a feed URL for the status line (`webcal://` normalised like the poller does), or
+/// '' when it doesn't parse. Pure — the only part of the URL the webview ever sees.
+fn feed_host(url: &str) -> String {
+    reqwest::Url::parse(&normalize_url(url))
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_default()
 }
 
 fn has_feed(cfg: &AgendaConfig) -> bool {
@@ -261,11 +273,8 @@ fn http_client() -> Result<reqwest::Client, String> {
 }
 
 async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, String> {
-    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
-    if !resp.status().is_success() {
-        return Err(format!("HTTP {}", resp.status()));
-    }
-    resp.text().await.map_err(|e| e.to_string())
+    // Streaming 1 MiB cap (shared with the RSS poller): a calendar is tens of KiB.
+    crate::rss::fetch_text_capped(client, url, crate::rss::FEED_BODY_CAP).await
 }
 
 pub async fn run_agenda_client<R: Runtime>(app: AppHandle<R>, cfg: AgendaConfig) {
@@ -323,6 +332,8 @@ pub async fn run_agenda_client<R: Runtime>(app: AppHandle<R>, cfg: AgendaConfig)
 
 // ---- commands ----
 
+/// Persist the config (DPAPI-protected). The URL is write-only: a BLANK `url` keeps the previously
+/// saved one (the settings field never shows it), mirroring the HA token rule. Studio-only.
 #[tauri::command]
 pub async fn save_agenda_config(
     window: tauri::WebviewWindow,
@@ -338,13 +349,19 @@ pub async fn save_agenda_config(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
+    let url = url.trim().to_string();
+    let url = if url.is_empty() {
+        load_agenda_config(&app)?.map(|c| c.url).unwrap_or_default()
+    } else {
+        url
+    };
     let cfg = AgendaConfig {
-        url: url.trim().to_string(),
+        url,
         title,
         poll_interval_secs: poll_seconds.clamp(MIN_INTERVAL, MAX_INTERVAL),
     };
     let txt = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
-    crate::command::atomic_write(&path, &txt)
+    crate::secure_config::write(&path, &txt)
 }
 
 #[tauri::command]
@@ -357,13 +374,13 @@ pub async fn agenda_config_status<R: Runtime>(app: AppHandle<R>) -> Result<Agend
     match cfg {
         Some(cfg) => Ok(AgendaStatus {
             configured: has_feed(&cfg),
-            url: cfg.url,
+            host: feed_host(&cfg.url),
             title: cfg.title,
             poll_seconds: cfg.poll_interval_secs,
         }),
         None => Ok(AgendaStatus {
             configured: false,
-            url: String::new(),
+            host: String::new(),
             title: String::new(),
             poll_seconds: default_interval(),
         }),
@@ -506,6 +523,34 @@ mod tests {
             normalize_url("https://ex.com/cal.ics"),
             "https://ex.com/cal.ics"
         );
+    }
+
+    #[test]
+    fn feed_host_exposes_only_the_hostname() {
+        assert_eq!(
+            feed_host("https://calendar.google.com/calendar/ical/SECRET-TOKEN/basic.ics"),
+            "calendar.google.com"
+        );
+        assert_eq!(
+            feed_host("webcal://cal.example/private/abc.ics"),
+            "cal.example"
+        );
+        assert_eq!(feed_host(""), "");
+        assert_eq!(feed_host("not a url"), "");
+    }
+
+    #[test]
+    fn status_never_serializes_the_url() {
+        let status = AgendaStatus {
+            configured: true,
+            host: "cal.example".into(),
+            title: "t".into(),
+            poll_seconds: 1800,
+        };
+        let v = serde_json::to_value(&status).unwrap();
+        assert_eq!(v["host"], "cal.example");
+        assert!(v.get("url").is_none());
+        assert_eq!(v["pollSeconds"], 1800);
     }
 
     #[test]

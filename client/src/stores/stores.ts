@@ -221,6 +221,10 @@ export type HandleUpdateOpts = {
 	sessionRecord: SessionRecord;
 };
 export function handleUpdate(opts: HandleUpdateOpts) {
+	// A record with no `source` can only come from an update for a session the backend never saw
+	// created (a late tick after `session_delete`). The backend drops those (state.rs updater); this
+	// is the belt-and-braces guard so a zombie session can never keep now-playing alive from here.
+	if (opts.sessionRecord.source === null) return;
 	mediaStore.update((cur) => {
 		// Restore the album art the backend omits on model/timeline updates (carried forward by id), then
 		// upsert keyed by session_id while evicting any stale record for the SAME source — a player that

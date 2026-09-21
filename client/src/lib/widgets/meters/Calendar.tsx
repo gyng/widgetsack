@@ -2,8 +2,9 @@
 // on a slow tick so "today" stays current across midnight). BARE DOM; the look lives in Calendar.css,
 // driven by tokens with --np-* fallbacks so it's fully restylable via the editable css. The grid logic
 // is pure (core/calendar.ts); this only renders it.
-import { useEffect, useState, type CSSProperties } from 'react';
+import { type CSSProperties } from 'react';
 import { buildCalendar, weekdayOrder, type CalMode } from '../../core/calendar';
+import { useNow } from '../useNow';
 import { formatClock, localeDayNames } from '../../core/format';
 import './Calendar.css';
 
@@ -29,13 +30,9 @@ export default function Calendar({
 	locale = 'en',
 	color
 }: Props) {
-	// Re-read the date every 60s so `isToday` flips within a minute of midnight (a calendar needs no
-	// faster tick). Like Clock, this is the documented self-sourcing exception for a time widget.
-	const [now, setNow] = useState(new Date());
-	useEffect(() => {
-		const timer = setInterval(() => setNow(new Date()), 60_000);
-		return () => clearInterval(timer);
-	}, []);
+	// Re-read the date on the shared minute clock so `isToday` flips right at midnight (a calendar
+	// needs no faster tick). Like Clock, this is the documented self-sourcing exception for a time widget.
+	const now = new Date(useNow(60_000));
 
 	const firstDayIdx = Math.max(0, FIRST_DAYS.indexOf(firstDay));
 	const mode: CalMode = continuous ? 'continuous' : 'month';

@@ -6,9 +6,18 @@
 
 import type { Library, MonitorLayout, WidgetDef } from '../../core/layoutTree';
 
-/** An undo/redo snapshot of the editable {monitor, library} pair. Immutable tree ops reassign
- * these to NEW objects, so a snapshot is just the current references — no deep clone. */
-export type Snap = { monitor: MonitorLayout; library: Library | undefined };
+/** An undo/redo snapshot of the editable state: the {monitor, library} pair plus everything else a
+ * commit can change — the queued cross-monitor moves, the token overrides, the selected theme and
+ * the theme lock — so Ctrl+Z always undoes the MOST RECENT change regardless of its kind. Immutable
+ * ops reassign these to NEW objects, so a snapshot is just the current references — no deep clone. */
+export type Snap = {
+	monitor: MonitorLayout;
+	library: Library | undefined;
+	pendingExtras: Extra[];
+	tokenOverrides: Record<string, string>;
+	selectedTheme: string;
+	themeLock: boolean;
+};
 
 /** The last-persisted snapshot (studio manual-save): `dirty` compares the live editor state to
  * it; Cancel reverts to it. Captured on load and after every Save. */
@@ -63,6 +72,10 @@ export type EditorState = {
 	redoStack: Snap[];
 	lastSnap: Snap | null;
 	historyReady: boolean;
+	// The last commit's coalesce key + time. A burst of same-key commits (per-keystroke text edits,
+	// key-repeat nudges) within COALESCE_MS folds into ONE undo step instead of one per event.
+	// Optional (like globalTheme) so the many op-level test fixtures needn't spell it out.
+	lastCommit?: { key: string; at: number } | null;
 	// Manual-save baseline (studio).
 	savedBaseline: Baseline | null;
 	pendingExtras: Extra[];

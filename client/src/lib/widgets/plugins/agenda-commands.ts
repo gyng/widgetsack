@@ -6,6 +6,7 @@ import { COMMANDS } from '../../bridge/contract';
 import type { AgendaStatus } from './agenda-types';
 
 export type AgendaConfigInput = {
+	/** The feed URL; '' keeps the previously saved one (the field is write-only, like the HA token). */
 	url: string;
 	title: string;
 	pollSeconds: number;

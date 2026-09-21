@@ -14,6 +14,7 @@ import {
 	parseAssistantReply,
 	providerMeta,
 	pushUser,
+	sanitizeAssistantConfig,
 	startTurn,
 	toMessages,
 	type AssistantOp
@@ -419,6 +420,148 @@ describe('applyAssistantOps', () => {
 		expect(JSON.stringify(m)).toBe(before);
 	});
 
+	it('validates proposed config against the widget meta on addWidget AND setConfig', () => {
+		let res = applyAssistantOps(
+			monitor(),
+			[
+				{
+					op: 'addWidget',
+					widgetType: 'gauge',
+					// JSON.parse (what a model reply goes through) yields an OWN `__proto__` key
+					config: JSON.parse('{"label":"CPU","max":"lots","bogus":1,"__proto__":{"polluted":true}}')
+				}
+			],
+			counter()
+		);
+		const cfgOf = (r: typeof res): Record<string, unknown> =>
+			(
+				(r.monitor.root.children[0] as ReturnType<typeof leaf>).unit as {
+					config: Record<string, unknown>;
+				}
+			).config;
+		expect(cfgOf(res).label).toBe('CPU');
+		expect(cfgOf(res).max).not.toBe('lots'); // wrong type → rejected (default kept)
+		expect('bogus' in cfgOf(res)).toBe(false); // unknown key → dropped
+		expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+		expect(res.errors.join(' ')).toMatch(/"max" must be a number/);
+		expect(res.errors.join(' ')).toMatch(/unknown config key "bogus"/);
+		expect(res.errors.join(' ')).toMatch(/refused config key "__proto__"/);
+
+		const id = res.addedIds[0];
+		res = applyAssistantOps(
+			res.monitor,
+			[{ op: 'setConfig', id, config: { max: 200, min: null, nope: 'x' } }],
+			counter()
+		);
+		expect(res.applied).toBe(1);
+		expect(cfgOf(res).max).toBe(200);
+		expect(cfgOf(res).min).not.toBeNull();
+		expect('nope' in cfgOf(res)).toBe(false);
+	});
+
+	it('refuses to switch an iframe sandbox off (addWidget and setConfig)', () => {
+		let res = applyAssistantOps(
+			monitor(),
+			[
+				{
+					op: 'addWidget',
+					widgetType: 'iframe',
+					config: { url: 'https://a.example', sandbox: false }
+				}
+			],
+			counter()
+		);
+		const unit = () =>
+			(res.monitor.root.children[0] as ReturnType<typeof leaf>).unit as {
+				config: Record<string, unknown>;
+			};
+		expect(unit().config.sandbox).toBe(true);
+		expect(unit().config.url).toBe('https://a.example');
+		expect(res.errors.join(' ')).toMatch(/refused sandbox: false/);
+		const id = res.addedIds[0];
+		res = applyAssistantOps(
+			res.monitor,
+			[{ op: 'setConfig', id, config: { sandbox: false, interact: true } }],
+			counter()
+		);
+		expect(unit().config.sandbox).toBe(true);
+		expect(unit().config.interact).toBe(true); // a declared toggle with the right type lands
+		// an explicit `true` is fine (no error)
+		res = applyAssistantOps(
+			res.monitor,
+			[{ op: 'setConfig', id, config: { sandbox: true } }],
+			counter()
+		);
+		expect(res.errors).toEqual([]);
+	});
+});
+
+describe('sanitizeAssistantConfig', () => {
+	it('drops non-object config and reports an unknown widget type', () => {
+		expect(sanitizeAssistantConfig('gauge', null)).toEqual({ config: {}, errors: [] });
+		expect(sanitizeAssistantConfig('gauge', [1])).toEqual({ config: {}, errors: [] });
+		expect(sanitizeAssistantConfig('gauge', 'x')).toEqual({ config: {}, errors: [] });
+		expect(sanitizeAssistantConfig('no-such-type', { a: 1 }).errors).toEqual([
+			'unknown widget type "no-such-type"'
+		]);
+	});
+
+	it('checks each declared field kind (number / toggle / text-ish / macro)', () => {
+		// gauge: label (text), min/max (number); iframe: scroll (toggle); button: actions (macro)
+		expect(sanitizeAssistantConfig('gauge', { label: 5 }).errors[0]).toMatch(
+			/"label" must be a text/
+		);
+		expect(sanitizeAssistantConfig('gauge', { min: Number.NaN }).errors[0]).toMatch(
+			/must be a number/
+		);
+		expect(sanitizeAssistantConfig('iframe', { scroll: 'yes' }).errors[0]).toMatch(
+			/must be a toggle/
+		);
+		expect(sanitizeAssistantConfig('button', { actions: 'go' }).errors[0]).toMatch(
+			/must be a macro/
+		);
+		const ok = sanitizeAssistantConfig('button', {
+			label: 'Lights',
+			actions: [{ domain: 'light', service: 'toggle' }, 'junk']
+		});
+		expect(ok.errors).toEqual([]);
+		expect(ok.config).toEqual({
+			label: 'Lights',
+			actions: [{ domain: 'light', service: 'toggle' }]
+		});
+	});
+
+	it('accepts primitive keys that exist only in defaultConfig (same primitive type), rejects others', () => {
+		// A synthetic meta with a defaultConfig but no configFields: only same-typed primitives pass.
+		registerMeta({
+			type: 'defaults-only-test',
+			label: 'D',
+			defaultConfig: { n: 1, s: 'a', b: true, o: { nested: 1 }, z: null }
+		});
+		const r = sanitizeAssistantConfig('defaults-only-test', {
+			n: 2,
+			s: 'b',
+			b: false,
+			o: { nested: 2 },
+			z: 'x',
+			n2: 3
+		});
+		expect(r.config).toEqual({ n: 2, s: 'b', b: false });
+		expect(r.errors).toEqual([
+			'"defaults-only-test": config "o" must be a object',
+			'"defaults-only-test": config "z" must be a object',
+			'"defaults-only-test": dropped unknown config key "n2"'
+		]);
+		expect(sanitizeAssistantConfig('defaults-only-test', { n: 'nope' }).errors[0]).toMatch(
+			/"n" must be a number/
+		);
+		// a meta with neither configFields nor defaultConfig drops everything
+		registerMeta({ type: 'bare-meta-test', label: 'B' });
+		expect(sanitizeAssistantConfig('bare-meta-test', { a: 1 }).config).toEqual({});
+	});
+});
+
+describe('applyAssistantOps — misc', () => {
 	it('falls back to the root for an unknown parent container (with an error note)', () => {
 		const res = applyAssistantOps(
 			monitor(),

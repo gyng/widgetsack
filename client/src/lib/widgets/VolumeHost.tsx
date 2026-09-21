@@ -7,7 +7,10 @@ import { getAudioVolume, setAudioMute, setAudioVolume } from '../audio/volume';
 
 type Props = { color?: string };
 
-const POLL_MS = 1000;
+// Each poll is a Core Audio COM round-trip on a pool thread (audio.rs get_audio_volume); the
+// system volume rarely changes behind the widget's back, so 3 s is plenty — and the widget's own
+// writes update the display optimistically. Polling pauses entirely while the window is hidden.
+const POLL_MS = 3000;
 
 export default function VolumeHost({ color }: Props) {
 	const [level, setLevel] = useState<number | null>(null);
@@ -30,11 +33,28 @@ export default function VolumeHost({ color }: Props) {
 					setMuted(v.muted);
 				}
 			});
-		poll();
-		const t = window.setInterval(poll, POLL_MS);
+		// Poll only while the window can be seen: a hidden (minimised / occluded) studio or overlay
+		// would otherwise keep waking the audio stack for a readout nobody sees. On becoming visible
+		// again, refresh immediately (the level may have moved meanwhile) and resume the cadence.
+		let timer: number | null = null;
+		const stop = (): void => {
+			if (timer !== null) window.clearInterval(timer);
+			timer = null;
+		};
+		const start = (): void => {
+			poll();
+			if (timer === null) timer = window.setInterval(poll, POLL_MS);
+		};
+		const onVisibility = (): void => {
+			if (document.visibilityState === 'hidden') stop();
+			else start();
+		};
+		if (document.visibilityState !== 'hidden') start();
+		document.addEventListener('visibilitychange', onVisibility);
 		return () => {
 			alive = false;
-			window.clearInterval(t);
+			stop();
+			document.removeEventListener('visibilitychange', onVisibility);
 			if (holdTimer.current) clearTimeout(holdTimer.current);
 		};
 	}, []);

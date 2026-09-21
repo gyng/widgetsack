@@ -556,6 +556,38 @@
 	color: var(--ui-warn-fg);
 }
 
+/* "Layout changed on disk — Reload / Keep mine": another writer changed widgets.json while this
+   editor holds unsaved work. Same shape/placement family as the def banner, amber like the preview
+   banner (a state that needs a decision), below the studio bar so it never covers the title bar. */
+.canvas .layout-banner {
+	position: absolute;
+	top: calc(var(--bar-h, 36px) + var(--space-2));
+	left: 50%;
+	transform: translateX(-50%);
+	display: flex;
+	gap: var(--space-3);
+	align-items: center;
+	padding: var(--space-2) var(--space-4);
+	font-family: monospace;
+	font-size: var(--text-md);
+	color: var(--ui-bg);
+	background: var(--ui-warn-fg);
+	border-radius: var(--radius-control);
+	box-shadow: 0 4px 14px var(--ui-scrim);
+	pointer-events: auto;
+	z-index: 31;
+}
+
+.canvas .layout-banner button {
+	background: var(--ui-bg);
+	color: var(--ui-warn-fg);
+	border: none;
+	border-radius: var(--radius-control);
+	padding: var(--space-1) var(--space-3);
+	cursor: pointer;
+	font-family: monospace;
+}
+
 /* The studio's full-width top bar (in the reserved margin above the stage). Doubles as the borderless
    window's TITLE BAR: it carries data-tauri-drag-region (the empty space + label + mascot move the
    window), and themes via --ui-* so it follows the active theme instead of an OS frame. */

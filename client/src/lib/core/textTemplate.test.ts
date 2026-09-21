@@ -122,6 +122,28 @@ describe('buildScope', () => {
 	it('keeps nulls (a not-yet-emitted sensor)', () => {
 		expect(buildScope({ 'gpu.temp': null })).toEqual({ gpu: { temp: null } });
 	});
+
+	it('drops ids with prototype-walking segments (an MQTT topic can spell __proto__)', () => {
+		const scope = buildScope({
+			'__proto__.polluted': 1,
+			'mqtt.constructor.x': 2,
+			'mqtt.prototype': 3,
+			'mqtt.ok': 4
+		});
+		expect(scope).toEqual({ mqtt: { ok: 4 } });
+		expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+		expect(Object.getPrototypeOf(scope)).toBe(Object.prototype);
+	});
+
+	it('replaces a scalar intermediate with a namespace object rather than writing into it', () => {
+		// `cpu` is first a scalar, then a namespace: the later dotted id wins the slot.
+		expect(buildScope({ cpu: 5, 'cpu.total': 3 })).toEqual({ cpu: { total: 3 } });
+		// An inherited key (`toString` on Object.prototype) is not an own namespace: a fresh object
+		// is created for it instead of descending into the shared prototype function.
+		const scope = buildScope({ 'toString.x': 1 });
+		expect(scope).toEqual({ toString: { x: 1 } });
+		expect((Object.prototype.toString as unknown as Record<string, unknown>).x).toBeUndefined();
+	});
 });
 
 describe('renderTemplate', () => {

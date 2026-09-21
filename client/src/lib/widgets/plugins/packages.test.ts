@@ -20,6 +20,8 @@ let removeImpl: (id: string) => Promise<void>;
 const installCalls: string[] = [];
 const replaceCalls: Array<string | undefined> = [];
 const removeCalls: string[] = [];
+const enabledMarkerCalls: Array<[string, boolean]> = [];
+let setEnabledImpl: (id: string, enabled: boolean) => Promise<void>;
 
 vi.mock('./packages-commands', () => ({
 	listPluginPackages: () => {
@@ -37,6 +39,10 @@ vi.mock('./packages-commands', () => ({
 	removePluginPackage: (id: string) => {
 		removeCalls.push(id);
 		return removeImpl(id);
+	},
+	setPackageEnabled: (id: string, enabled: boolean) => {
+		enabledMarkerCalls.push([id, enabled]);
+		return setEnabledImpl(id, enabled);
 	}
 }));
 
@@ -127,6 +133,8 @@ beforeEach(() => {
 	installCalls.length = 0;
 	replaceCalls.length = 0;
 	removeCalls.length = 0;
+	enabledMarkerCalls.length = 0;
+	setEnabledImpl = () => Promise.resolve();
 	sourceStarts.length = 0;
 	sourceStops.length = 0;
 	installImpl = () => Promise.resolve({ id: 'pack-a', version: '1.0.0' });
@@ -472,6 +480,127 @@ describe('togglePackage — theme CSS consent', () => {
 		const confirm = vi.fn(() => true);
 		await togglePackage('pack-a', true, confirm);
 		expect(confirm).toHaveBeenCalledTimes(1);
+	});
+});
+
+// ---- the server-side enabled marker ------------------------------------------------------------
+
+describe('enabled marker (set_package_enabled)', () => {
+	beforeEach(async () => {
+		setFiles([{ id: 'pack-a', manifest: manifestJson(), install: null }]);
+		await initPackages(hub);
+	});
+
+	it('mirrors enable / disable to the backend marker', async () => {
+		await togglePackage('pack-a', true);
+		expect(enabledMarkerCalls.at(-1)).toEqual(['pack-a', true]);
+		await togglePackage('pack-a', false);
+		expect(enabledMarkerCalls.at(-1)).toEqual(['pack-a', false]);
+	});
+
+	it('is best-effort: a refused call (an overlay window) does not break the apply', async () => {
+		setEnabledImpl = () => Promise.reject(new Error('only allowed from the studio window'));
+		await togglePackage('pack-a', true);
+		expect(enabledPackages.getSnapshot()).toContain('pack-a');
+		expect(listTemplateGroups().some((g) => g.group === 'Pack A')).toBe(true);
+	});
+});
+
+// ---- togglePackage: template (widget-tree) consent ----------------------------------------------
+
+describe('togglePackage — template consent', () => {
+	const iframeTemplate = (sandbox: unknown) => ({
+		id: 'web',
+		name: 'Web',
+		size: { w: 100, h: 40 },
+		tree: {
+			id: 'fr',
+			unit: {
+				id: 'fr',
+				type: 'iframe',
+				rect: { x: 0, y: 0, w: 1, h: 1 },
+				config: { url: 'https://dash.example', sandbox }
+			}
+		}
+	});
+
+	beforeEach(async () => {
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({ templates: [iframeTemplate(false)] }),
+				install: null
+			}
+		]);
+		await initPackages(hub);
+	});
+
+	it('prompts once with what the templates embed, stores consent, and registers the SANDBOXED tree', async () => {
+		const confirm = vi.fn((_message: string) => true);
+		await togglePackage('pack-a', true, confirm);
+		expect(confirm).toHaveBeenCalledTimes(1);
+		const msg = confirm.mock.calls[0][0];
+		expect(msg).toContain('widgets contain 1 embedded web page');
+		expect(msg).not.toContain('unsandboxed'); // forced on at parse time
+		expect(enabledPackages.getSnapshot()).toContain('pack-a');
+		const tpl = listTemplateGroups()
+			.flatMap((g) => g.templates)
+			.find((t) => t.id === 'pkg:pack-a:web');
+		const tree = tpl?.tree() as { unit: { config: Record<string, unknown> } };
+		expect(tree.unit.config.sandbox).toBe(true);
+
+		// re-enabling the same package does not re-prompt
+		await togglePackage('pack-a', false);
+		const again = vi.fn(() => true);
+		await togglePackage('pack-a', true, again);
+		expect(again).not.toHaveBeenCalled();
+	});
+
+	it('declining the template prompt aborts the enable', async () => {
+		await togglePackage('pack-a', true, () => false);
+		expect(enabledPackages.getSnapshot()).not.toContain('pack-a');
+	});
+
+	it('re-prompts when a refreshed manifest adds a new capability, and forgets consent on remove', async () => {
+		await togglePackage('pack-a', true, () => true);
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({
+					templates: [
+						iframeTemplate(true),
+						{
+							id: 'pic',
+							name: 'Pic',
+							size: { w: 1, h: 1 },
+							tree: {
+								id: 'im',
+								unit: {
+									id: 'im',
+									type: 'image',
+									rect: { x: 0, y: 0, w: 1, h: 1 },
+									config: { src: 'https://evil.example/b.png' }
+								}
+							}
+						}
+					]
+				}),
+				install: null
+			}
+		]);
+		await refreshPackages();
+		await togglePackage('pack-a', false);
+		const confirm = vi.fn((_message: string) => true);
+		await togglePackage('pack-a', true, confirm);
+		expect(confirm).toHaveBeenCalledTimes(1);
+		expect(confirm.mock.calls[0][0]).toContain('1 remote image');
+
+		removeImpl = () => {
+			setFiles([]);
+			return Promise.resolve();
+		};
+		await removePackage('pack-a');
+		expect(localStorage.getItem('widgetsack.packages.templateConsent')).toBe('{}');
 	});
 });
 

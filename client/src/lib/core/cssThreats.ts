@@ -14,11 +14,34 @@ export type CssThreat = {
 	detail: string;
 };
 
-// A `url(...)` whose target is remote: an absolute http(s) URL or a protocol-relative `//host`.
-// Local references — convertFileSrc/asset:, data:, blob:, and relative paths — are NOT flagged.
-const REMOTE_URL = /url\(\s*(['"]?)\s*(https?:\/\/|\/\/)[^)'"]+/gi;
+// A remote resource reference: `url(` / `image(` / `image-set(` / `-webkit-image-set(` / `src(`
+// whose (first) target is an absolute http(s) URL or a protocol-relative `//host`. Local references
+// — convertFileSrc/asset:, data:, blob:, and relative paths — are NOT flagged.
+const REMOTE_URL =
+	/(?:url|image|(?:-webkit-)?image-set|src)\(\s*(['"]?)\s*(https?:\/\/|\/\/)[^)'"]+/gi;
 const IMPORT = /@import\b[^;]*/gi;
 const OVERLAY = /position\s*:\s*(?:fixed|sticky)/gi;
+
+/**
+ * Normalise CSS so the regexes see what the browser's tokenizer sees: comments replaced by a space
+ * (a comment is a token separator, so `@imp/\*\*\/ort` is NOT an import and a `url(…)` inside a
+ * comment is NOT a fetch — neither may produce a false alarm or a miss), CSS escapes decoded
+ * (`\75rl(` is `url(`, `posi\74ion` is `position`, `\3a` is `:`), and whitespace runs collapsed.
+ * Exported for tests. Pure.
+ */
+export function normalizeCss(css: string): string {
+	const noComments = css.replace(/\/\*[\s\S]*?\*\//g, ' ');
+	// `\` + 1–6 hex digits + one optional whitespace char, or `\` + any other single char (which
+	// stands for itself). A lone trailing `\` is dropped.
+	const decoded = noComments.replace(/\\(?:([0-9a-fA-F]{1,6})\s?|([\s\S]))/g, (_m, hex, ch) => {
+		if (hex !== undefined) {
+			const code = parseInt(hex, 16);
+			return code === 0 || code > 0x10ffff ? '�' : String.fromCodePoint(code);
+		}
+		return ch;
+	});
+	return decoded.replace(/\s+/g, ' ');
+}
 
 /** First ~80 chars of a match, whitespace-collapsed, for a readable dialog line. */
 function snippet(s: string): string {
@@ -31,7 +54,7 @@ function snippet(s: string): string {
  * Returns one threat per distinct site (de-duplicated by detail), empty when the CSS is benign.
  */
 export function scanCssThreats(css: string | undefined): CssThreat[] {
-	const text = css ?? '';
+	const text = normalizeCss(css ?? '');
 	const seen = new Set<string>();
 	const out: CssThreat[] = [];
 	const add = (kind: ThreatKind, detail: string) => {

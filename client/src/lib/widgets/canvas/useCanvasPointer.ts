@@ -16,6 +16,7 @@ import type { Rect } from '../../core/layout';
 import { rectsIntersect } from '../../core/geometry';
 import type { Renderable } from '../../core/solve';
 import type { Pan } from './useZoomFit';
+import { isEmptyStagePress } from './stageHit';
 
 export type CanvasPointerDeps = {
 	editMode: boolean;
@@ -168,8 +169,10 @@ export function useCanvasPointer(deps: CanvasPointerDeps): CanvasPointer {
 	const onCanvasMouseDown = useCallback(
 		(event: React.MouseEvent) => {
 			if (!deps.editMode) return;
-			const t = event.target as HTMLElement | null;
-			const onCanvas = !!t?.classList.contains('world') || !!t?.classList.contains('canvas');
+			// "Empty canvas" is a walk-up test (stageHit.isEmptyStagePress): the flow frame + the root
+			// FlowNode div cover the whole monitor, so a press INSIDE the monitor never targets
+			// .world/.canvas itself — it must still rubber-band unless it hit a widget/panel/etc.
+			const onCanvas = isEmptyStagePress(event.target);
 			// Resolve the gesture against the registry (pan vs marquee, honoring remaps) instead of a
 			// hard-coded button/Space branch. Widget presses stopPropagation in WidgetHost, so reaching
 			// here means an empty-canvas / chrome press.

@@ -168,6 +168,52 @@ describe('createTelemetryHub', () => {
 	});
 });
 
+describe('sample age (lastSeen / fresh sensorIds)', () => {
+	it('lastSeen is the newest ts per id, for every value kind, and null before any sample', () => {
+		const hub = createTelemetryHub();
+		expect(hub.lastSeen('cpu.total')).toBeNull();
+		hub.ingest({ sensor: 'cpu.total', ts_ms: 1000, value: { kind: 'scalar', value: 1 } });
+		hub.ingest({ sensor: 'host.name', ts_ms: 1500, value: { kind: 'text', value: 'pc' } });
+		expect(hub.lastSeen('cpu.total')).toBe(1000);
+		expect(hub.lastSeen('host.name')).toBe(1500); // text samples age too (no historyTs for them)
+		// A back-dated backfill sample never rewinds the id's age.
+		hub.ingest({ sensor: 'cpu.total', ts_ms: 200, value: { kind: 'scalar', value: 2 } });
+		expect(hub.lastSeen('cpu.total')).toBe(1000);
+	});
+
+	it('sensorIds({ freshWithinMs }) drops ids that stopped ticking while others carried on', () => {
+		const hub = createTelemetryHub();
+		const tick = (ts: number, ids: string[]) =>
+			hub.ingestBatch(
+				ids.map((sensor) => ({ sensor, ts_ms: ts, value: { kind: 'scalar', value: 1 } }))
+			);
+		tick(1000, ['disk.C.used', 'disk.E.used']);
+		tick(2000, ['disk.C.used', 'disk.E.used']);
+		// E: is ejected — only C keeps reporting.
+		tick(3000, ['disk.C.used']);
+		tick(4000, ['disk.C.used']);
+		// Within the window, E: is still listed…
+		expect(hub.sensorIds({ freshWithinMs: 3000 }).sort()).toEqual(['disk.C.used', 'disk.E.used']);
+		tick(5000, ['disk.C.used']);
+		tick(6000, ['disk.C.used']);
+		// …and once its last sample is older than the window relative to the newest, it's gone.
+		expect(hub.sensorIds({ freshWithinMs: 3000 })).toEqual(['disk.C.used']);
+		// The unfiltered list is unchanged (the id was seen).
+		expect(hub.sensorIds().sort()).toEqual(['disk.C.used', 'disk.E.used']);
+	});
+
+	it('freshness is relative to the hub clock: a stalled backend does not empty the list', () => {
+		const hub = createTelemetryHub();
+		hub.ingestBatch([
+			{ sensor: 'a', ts_ms: 0, value: { kind: 'scalar', value: 1 } },
+			{ sensor: 'b', ts_ms: 0, value: { kind: 'scalar', value: 1 } }
+		]);
+		// Nothing has ticked since; every id is as fresh as the newest sample.
+		expect(hub.sensorIds({ freshWithinMs: 0 }).sort()).toEqual(['a', 'b']);
+		expect(createTelemetryHub().sensorIds({ freshWithinMs: 3000 })).toEqual([]);
+	});
+});
+
 describe('active-sensor tracking (demand-gating)', () => {
 	it('subscribing a new id makes it active and fires onActiveChange once', () => {
 		const hub = createTelemetryHub();

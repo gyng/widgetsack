@@ -17,14 +17,17 @@ import {
 	consentFingerprint,
 	enableConsentMessage,
 	packageSensorId,
+	packageTemplateThreats,
 	packageTemplates,
 	parseInstallSidecar,
 	parsePluginPackage,
 	reinstallSource,
+	templateThreatFingerprint,
 	versionsDiffer,
 	type InstallSidecar,
 	type PluginPackageManifest
 } from '../../core/pluginPackage';
+import { treeThreatSummary } from '../../core/treeThreats';
 import { registerTemplates, unregisterTemplates } from '../../core/templates';
 import type { TelemetryHub } from '../../core/telemetry';
 import {
@@ -32,7 +35,8 @@ import {
 	installPluginPackage,
 	listPluginPackages,
 	readPluginPackageAsset,
-	removePluginPackage
+	removePluginPackage,
+	setPackageEnabled
 } from './packages-commands';
 import { startPackageSource } from './packages-source';
 
@@ -109,6 +113,15 @@ async function cssConsentFingerprint(css: string): Promise<string> {
 const trustedCssPackages = createPersistedStore<Record<string, string>>(
 	'widgetsack.packages.cssTrusted',
 	parseCssConsentMap
+);
+
+// Template consent per package id, keyed by a fingerprint of every capability-bearing unit across
+// the package's templates (embedded pages, remote images, service-call buttons, widget CSS — see
+// core/treeThreats) the user saw in the first-enable confirm. A manifest update that adds or
+// changes such a unit mismatches the stored fingerprint and re-prompts.
+const templateConsentPackages = createPersistedStore<Record<string, string>>(
+	'widgetsack.packages.templateConsent',
+	parseConsentMap
 );
 
 // Network consent per package id, keyed by the hosts FINGERPRINT (sorted hosts string) the user
@@ -221,9 +234,22 @@ function packageCatalog(m: PluginPackageManifest): SensorCatalogEntry[] {
 // Apply one package's enabled state: register/unregister its template group (keyed by stable
 // package id, with the display name used only as the palette heading), add/remove its theme style,
 // and start/stop its sandboxed source (+ catalog entries).
+// Mirror the enabled state to the server-side marker `package_fetch` checks. Best-effort: the
+// command is studio-only (an overlay's attempt is refused and ignored) and a missing folder just
+// errors — neither may break the apply. Runs on every apply (init included) so a package enabled
+// before the marker existed self-heals the first time the studio applies it.
+async function mirrorEnabledMarker(id: string, enabled: boolean): Promise<void> {
+	try {
+		await setPackageEnabled(id, enabled);
+	} catch {
+		/* not the studio, or the folder is gone — the marker is only advisory here */
+	}
+}
+
 async function applyPackage(d: Discovered, enabled: boolean): Promise<void> {
 	if (!enabled || !d.manifest) {
-		unapplyPackage(d.id);
+		unapplyPackage(d.id); // synchronous first: resetPackagesForTest relies on it (no await above)
+		await mirrorEnabledMarker(d.id, false);
 		return;
 	}
 	// Reapplication is replacement, not an additive merge. A same-id manifest that drops its theme,
@@ -232,6 +258,8 @@ async function applyPackage(d: Discovered, enabled: boolean): Promise<void> {
 	if (d.manifest.templates.length) {
 		registerTemplates(`pkg:${d.id}`, packageTemplates(d.manifest), d.manifest.name);
 	}
+	// Before the source starts: its first package_fetch needs the marker on disk.
+	await mirrorEnabledMarker(d.id, true);
 	await injectPackageTheme(d);
 	if (d.manifest.source) {
 		const m = d.manifest;
@@ -336,17 +364,27 @@ export async function togglePackage(
 				}
 			}
 		}
+		// Templates are a stranger's layout trees: state what they embed / fetch / actuate in the
+		// same dialog (the iframe sandbox is already forced on at parse time).
+		const templateThreats = packageTemplateThreats(d.manifest);
+		const templateFp = templateThreats.length ? templateThreatFingerprint(templateThreats) : null;
+		const needsTemplate =
+			templateFp !== null && templateConsentPackages.getSnapshot()[id] !== templateFp;
 		const source = d.manifest.source;
 		const fingerprint = source ? consentFingerprint(source.hosts) : null;
 		const needsNet = fingerprint !== null && netConsentPackages.getSnapshot()[id] !== fingerprint;
-		if (cssSummary !== null || needsNet) {
+		if (cssSummary !== null || needsTemplate || needsNet) {
 			const message = enableConsentMessage({
 				...(cssSummary !== null ? { cssSummary } : {}),
+				...(needsTemplate ? { templateSummary: treeThreatSummary(templateThreats) } : {}),
 				...(needsNet && source ? { hosts: source.hosts, pollSeconds: source.pollSeconds } : {})
 			});
 			if (!confirmEnable(message)) return;
 			if (approvedCssFingerprint !== null) {
 				trustedCssPackages.update((m) => ({ ...m, [id]: approvedCssFingerprint }));
+			}
+			if (needsTemplate && templateFp !== null) {
+				templateConsentPackages.update((m) => ({ ...m, [id]: templateFp }));
 			}
 			if (needsNet && fingerprint !== null) {
 				netConsentPackages.update((m) => ({ ...m, [id]: fingerprint }));
@@ -462,6 +500,12 @@ export async function removePackage(id: string): Promise<PackageOpResult> {
 		delete rest[id];
 		return rest;
 	});
+	templateConsentPackages.update((m) => {
+		if (m[id] === undefined) return m;
+		const rest = { ...m };
+		delete rest[id];
+		return rest;
+	});
 	await refreshPackages();
 	return { ok: true };
 }
@@ -475,6 +519,7 @@ export function resetPackagesForTest(): void {
 	enabledPackages.set([]);
 	trustedCssPackages.set({});
 	netConsentPackages.set({});
+	templateConsentPackages.set({});
 	hubRef = null;
 	initialized = false;
 	refreshTail = Promise.resolve();

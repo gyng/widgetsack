@@ -7,6 +7,7 @@
 import { useContext, useEffect, useState, type CSSProperties } from 'react';
 import { TelemetryHubContext } from '../telemetryContext';
 import { diskLetters } from '../../core/disks';
+import { STALE_AFTER_MS } from '../../core/telemetry';
 import { formatBytes } from '../../core/format';
 import './Disks.css';
 
@@ -35,7 +36,9 @@ export default function Disks({ showBytes = true, color }: Props) {
 			return v && v.kind === 'scalar' ? v.value : null;
 		};
 		const read = (): void => {
-			const next = diskLetters(hub.sensorIds()).map((l) => ({
+			// Only volumes still reporting: the hub remembers every id it ever saw, so an ejected drive
+			// would otherwise keep its last reading on screen forever.
+			const next = diskLetters(hub.sensorIds({ freshWithinMs: STALE_AFTER_MS })).map((l) => ({
 				letter: l,
 				pct: sc(`disk.${l}.used.pct`),
 				used: sc(`disk.${l}.used`),

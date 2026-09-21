@@ -282,6 +282,77 @@ describe('groups', () => {
 		);
 		expect('unit' in (r.child as Record<string, unknown>)).toBe(false);
 	});
+
+	it('refuses a prototype-walking target (no prototype pollution from a hostile def)', () => {
+		const defChild = leaf(prim('p', 10, 10, { config: { core: 'orig' } }));
+		const def = {
+			id: 'd',
+			name: 'd',
+			size: { w: 40, h: 26 },
+			child: defChild,
+			params: [
+				{ key: 'evil', target: 'unit.__proto__.polluted' },
+				{ key: 'evil2', target: 'constructor.prototype.polluted2' },
+				{ key: 'core', targets: ['unit.config.core', 'unit.config.prototype'] }
+			]
+		};
+		const lib: Library = { version: 1, defs: [def] };
+		const r = resolveGroup(
+			group('g', { w: 40, h: 26 }, leaf(prim('x', 1, 1)), {
+				def: 'd',
+				params: { evil: 'x', evil2: 'y', core: 'cpu.3' }
+			}),
+			lib
+		);
+		expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+		expect(({} as Record<string, unknown>).polluted2).toBeUndefined();
+		const unit = (r.child as Leaf).unit as WidgetInstance;
+		expect(unit.config).toEqual({ core: 'cpu.3' }); // the safe target applied, the unsafe one skipped
+	});
+
+	it('is a no-op when an intermediate segment is a scalar or null (never auto-vivifies)', () => {
+		const defChild = leaf(prim('p', 10, 10, { config: { core: 'orig', empty: null } }));
+		const def = {
+			id: 'd',
+			name: 'd',
+			size: { w: 40, h: 26 },
+			child: defChild,
+			params: [
+				{ key: 'a', target: 'unit.config.core.deep' }, // through a string
+				{ key: 'b', target: 'unit.config.empty.deep' } // through null
+			]
+		};
+		const lib: Library = { version: 1, defs: [def] };
+		const r = resolveGroup(
+			group('g', { w: 40, h: 26 }, leaf(prim('x', 1, 1)), { def: 'd', params: { a: 1, b: 2 } }),
+			lib
+		);
+		expect(((r.child as Leaf).unit as WidgetInstance).config).toEqual({
+			core: 'orig',
+			empty: null
+		});
+	});
+
+	it('only descends into OWN intermediate objects (an inherited key is not a path)', () => {
+		// `unit.config.toString` is inherited from Object.prototype — not an own object, so the write
+		// under it must be a no-op rather than mutating Object.prototype.toString's properties.
+		const defChild = leaf(prim('p', 10, 10, { config: {} }));
+		const def = {
+			id: 'd',
+			name: 'd',
+			size: { w: 40, h: 26 },
+			child: defChild,
+			params: [{ key: 'k', target: 'unit.config.toString.polluted' }]
+		};
+		const lib: Library = { version: 1, defs: [def] };
+		resolveGroup(
+			group('g', { w: 40, h: 26 }, leaf(prim('x', 1, 1)), { def: 'd', params: { k: 1 } }),
+			lib
+		);
+		expect((Object.prototype.toString as unknown as Record<string, unknown>).polluted).toBe(
+			undefined
+		);
+	});
 });
 
 // ---- collectRenderables --------------------------------------------------

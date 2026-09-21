@@ -57,6 +57,13 @@ export async function removePluginPackage(id: string): Promise<void> {
 	await invoke(COMMANDS.removePluginPackage, { id });
 }
 
+/** Record a package's enabled state SERVER-SIDE (the `plugins/<id>/.enabled` marker): `package_fetch`
+ * refuses to proxy for a package without it. Studio-only on the Rust side — an overlay's call is
+ * refused (callers swallow that; the studio is where enabling happens). */
+export async function setPackageEnabled(id: string, enabled: boolean): Promise<void> {
+	await invoke(COMMANDS.setPackageEnabled, { id, enabled });
+}
+
 /** What `package_fetch` hands back — the exact shape the sandbox's `transform` receives. */
 export type PackageFetchResponse = { url: string; status: number; body: string };
 

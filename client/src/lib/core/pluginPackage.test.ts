@@ -6,10 +6,12 @@ import {
 	MAX_SOURCE_SAMPLES,
 	packageSensorId,
 	packageTemplateId,
+	packageTemplateThreats,
 	packageTemplates,
 	parseInstallSidecar,
 	parsePluginPackage,
 	reinstallSource,
+	templateThreatFingerprint,
 	validateSourceRequests,
 	validateSourceSamples,
 	versionsDiffer
@@ -481,6 +483,69 @@ describe('packageSensorId / consentFingerprint / enableConsentMessage', () => {
 
 	it('renders an empty message (just the trailing prompt) when nothing is consent-worthy', () => {
 		expect(enableConsentMessage({})).toBe('Enable?');
+	});
+
+	it('states template (widget-tree) facts, alone or alongside the css/network ones', () => {
+		const tpl = enableConsentMessage({ templateSummary: '1 embedded web page' });
+		expect(tpl).toContain('widgets contain 1 embedded web page');
+		expect(tpl).toContain('forced into the sandbox');
+		expect(tpl).toContain('Enable anyway?');
+		const all = enableConsentMessage({
+			cssSummary: '1 remote import',
+			templateSummary: '2 remote images (could phone home)',
+			hosts: ['a.com']
+		});
+		expect(all.split('\n')).toHaveLength(4);
+	});
+});
+
+describe('packageTemplateThreats / templateThreatFingerprint', () => {
+	const iframeNode = (id: string, config: Record<string, unknown>) => ({
+		id,
+		unit: { id, type: 'iframe', rect: { x: 0, y: 0, w: 1, h: 1 }, config }
+	});
+
+	it('forces the sandbox on at parse time and reports the remaining capabilities across templates', () => {
+		const r = parsePluginPackage(
+			'weather-pack',
+			manifest({
+				templates: [
+					{
+						id: 'web',
+						name: 'Web',
+						size: { w: 1, h: 1 },
+						tree: iframeNode('fr', { url: 'https://dash.example', sandbox: false })
+					},
+					{
+						id: 'pic',
+						name: 'Pic',
+						size: { w: 1, h: 1 },
+						tree: {
+							id: 'im',
+							unit: {
+								id: 'im',
+								type: 'image',
+								rect: { x: 0, y: 0, w: 1, h: 1 },
+								config: { src: 'https://evil.example/b.png' }
+							}
+						}
+					}
+				]
+			})
+		);
+		if (!r.ok) throw new Error(r.reason);
+		const tree = r.pkg.manifest.templates[0].tree;
+		expect(isLeaf(tree) && (tree.unit as { config: Record<string, unknown> }).config.sandbox).toBe(
+			true
+		);
+		const threats = packageTemplateThreats(r.pkg.manifest);
+		expect(threats.map((t) => t.kind)).toEqual(['iframe', 'remote-image']);
+		expect(threats.some((t) => t.kind === 'iframe-unsandboxed')).toBe(false);
+		// the fingerprint is order-insensitive but content-sensitive
+		const fp = templateThreatFingerprint(threats);
+		expect(templateThreatFingerprint([...threats].reverse())).toBe(fp);
+		expect(templateThreatFingerprint(threats.slice(1))).not.toBe(fp);
+		expect(templateThreatFingerprint([])).toBe('');
 	});
 });
 

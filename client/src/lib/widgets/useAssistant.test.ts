@@ -84,6 +84,23 @@ describe('useAssistant', () => {
 		expect(userMsg.content).not.toContain('missing.id');
 	});
 
+	it('holds a live subscription on the snapshot ids so demand-gated sensors get polled', () => {
+		// The auto list includes demand-gated ids (gpu.*, proc.*.top); with no other widget bound to
+		// them the backend would never poll them — so the hook itself must register the demand.
+		const { rerender, unmount } = renderHook((c: AssistantConfig) => useAssistant(c), {
+			initialProps: cfg({ sensors: 'auto' }),
+			wrapper
+		});
+		expect(hub.activeSensorIds()).toEqual(
+			expect.arrayContaining(['cpu.total', 'gpu.util', 'proc.cpu.top.name'])
+		);
+		// A custom CSV swaps the demand to exactly those ids.
+		rerender(cfg({ sensors: 'gpu.temp, disk.C.used' }));
+		expect(hub.activeSensorIds().sort()).toEqual(['disk.C.used', 'gpu.temp']);
+		unmount();
+		expect(hub.activeSensorIds()).toEqual([]);
+	});
+
 	it('speaks the result when speak is enabled', async () => {
 		const { result } = renderHook(() => useAssistant(cfg({ speak: true })), { wrapper });
 		await act(async () => {

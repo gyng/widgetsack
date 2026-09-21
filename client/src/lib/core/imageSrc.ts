@@ -1,5 +1,7 @@
 // Pure helpers for the Image widget. No React/Tauri — unit-tested. An image source is either a direct
 // URL (used as-is) or a bare filename resolved against the app's wallpapers/ folder by the host.
+// "Direct" means "has a scheme / is absolute" — whether it LOADS is the CSP's call (tauri.conf.json
+// `img-src`: https/data/blob/asset only; a plain http:// image is blocked by the webview).
 
 const DIRECT = /^(https?:|data:|blob:|asset:|file:|tauri:|\/\/?|\\\\)/i;
 

@@ -365,9 +365,33 @@ describe('WidgetHost context menu', () => {
 			/>
 		);
 		const box = container.querySelector('.widget') as HTMLElement;
-		fireEvent.contextMenu(box, { clientX: 12, clientY: 34 });
+		fireEvent.contextMenu(box, { clientX: 12, clientY: 34, button: 2 });
 		expect(onSelect).toHaveBeenCalledWith({ id: 'w' });
 		expect(onContextMenu).toHaveBeenCalledWith({ id: 'w', x: 12, y: 34 });
+	});
+
+	it('a keyboard-initiated contextmenu (no pointer position) anchors at the widget box', () => {
+		const onContextMenu = vi.fn();
+		const { container } = render(
+			<WidgetHost hub={hub} instance={inst} editMode onContextMenu={onContextMenu} />
+		);
+		const box = container.querySelector('.widget') as HTMLElement;
+		box.getBoundingClientRect = () => ({ left: 100, top: 50, width: 150, height: 44 }) as DOMRect;
+		fireEvent.contextMenu(box, { clientX: 0, clientY: 0, button: 0 });
+		expect(onContextMenu).toHaveBeenCalledWith({ id: 'w', x: 175, y: 66 });
+	});
+
+	it('Enter / Space on the focused edit overlay selects the widget (keyboard access)', () => {
+		const onSelect = vi.fn();
+		const { container } = render(
+			<WidgetHost hub={hub} instance={inst} editMode onSelect={onSelect} />
+		);
+		const overlay = container.querySelector('.drag-overlay') as HTMLElement;
+		fireEvent.keyDown(overlay, { key: 'Enter' });
+		fireEvent.keyDown(overlay, { key: ' ' });
+		expect(onSelect).toHaveBeenCalledTimes(2);
+		fireEvent.keyDown(overlay, { key: 'a' });
+		expect(onSelect).toHaveBeenCalledTimes(2);
 	});
 
 	it('swallows the context menu when suppression is armed (consume-once)', () => {
@@ -597,6 +621,57 @@ describe('WidgetHost drag interactions', () => {
 		fireEvent.pointerMove(overlay, { pointerId: 1, clientX: 40, clientY: 40 });
 		fireEvent.pointerUp(overlay, { pointerId: 1, clientX: 40, clientY: 40 });
 		expect(onChange).not.toHaveBeenCalled();
+		expect(onCommit).not.toHaveBeenCalled();
+	});
+
+	it('a pointercancel mid-move commits the applied edits and ends the drag', () => {
+		const onChange = vi.fn();
+		const onCommit = vi.fn();
+		const { container } = render(
+			<WidgetHost hub={hub} instance={inst} editMode onChange={onChange} onCommit={onCommit} />
+		);
+		const overlay = overlayOf(container);
+		fireEvent.pointerDown(overlay, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerMove(overlay, { pointerId: 1, clientX: 40, clientY: 10 });
+		expect(onChange).toHaveBeenCalledTimes(1);
+		fireEvent.pointerCancel(overlay, { pointerId: 1 });
+		expect(onCommit).toHaveBeenCalledTimes(1);
+		expect(container.querySelector('.widget')?.classList.contains('active')).toBe(false);
+		// The drag is over: a stray move / a trailing lostpointercapture do nothing more.
+		fireEvent.pointerMove(overlay, { pointerId: 1, clientX: 80, clientY: 10 });
+		fireEvent.lostPointerCapture(overlay, { pointerId: 1 });
+		expect(onChange).toHaveBeenCalledTimes(1);
+		expect(onCommit).toHaveBeenCalledTimes(1);
+	});
+
+	it('losing pointer capture during a flow ghost-drag aborts it without a drop; a press without movement commits nothing', () => {
+		const onDrop = vi.fn();
+		const onCommit = vi.fn();
+		const { container } = render(
+			<WidgetHost
+				hub={hub}
+				instance={inst}
+				editMode
+				movable={false}
+				flow
+				onDrop={onDrop}
+				onCommit={onCommit}
+			/>
+		);
+		const overlay = overlayOf(container);
+		fireEvent.pointerDown(overlay, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerMove(overlay, { pointerId: 1, clientX: 40, clientY: 10 });
+		expect(container.querySelector('.widget')?.classList.contains('dragging')).toBe(true);
+		fireEvent.lostPointerCapture(overlay, { pointerId: 1 });
+		expect(container.querySelector('.widget')?.classList.contains('dragging')).toBe(false);
+		expect(onDrop).not.toHaveBeenCalled();
+		// A floating press cancelled BEFORE the slop: nothing was applied, so nothing is committed.
+		const { container: c2 } = render(
+			<WidgetHost hub={hub} instance={inst} editMode onCommit={onCommit} />
+		);
+		const ov2 = overlayOf(c2);
+		fireEvent.pointerDown(ov2, { button: 0, pointerId: 2, clientX: 10, clientY: 10 });
+		fireEvent.pointerCancel(ov2, { pointerId: 2 });
 		expect(onCommit).not.toHaveBeenCalled();
 	});
 

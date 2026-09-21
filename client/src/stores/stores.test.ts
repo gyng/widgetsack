@@ -225,6 +225,16 @@ describe('handleUpdate', () => {
 		expect(mediaStore.getSnapshot().sessions[3].last_media_update).toEqual(media);
 	});
 
+	it('drops a source-less record (a late update for a session never created)', async () => {
+		const { mediaStore, handleUpdate } = await load();
+		handleUpdate({ sessionRecord: rec({ session_id: 5, source: null }) });
+		expect(mediaStore.getSnapshot().sessions).toEqual({});
+		// …and it can't overwrite a tracked session either.
+		handleUpdate({ sessionRecord: rec({ session_id: 6, source: 'live.exe' }) });
+		handleUpdate({ sessionRecord: rec({ session_id: 6, source: null }) });
+		expect(mediaStore.getSnapshot().sessions[6].source).toBe('live.exe');
+	});
+
 	it('evicts a stale record for the SAME source recreated under a new id', async () => {
 		const { mediaStore, handleUpdate } = await load();
 		handleUpdate({ sessionRecord: rec({ session_id: 1, source: 'player.exe' }) });

@@ -14,6 +14,7 @@ import { isGroup } from '../core/layoutTree';
 import { outlineRows } from '../core/layoutEdit';
 import type { LayoutOp } from './ops';
 import './Outline.css';
+import { contextMenuAnchor } from './canvas/menuPosition';
 
 type Props = {
 	root: Container;
@@ -56,7 +57,10 @@ function Outline({
 			? {
 					onContextMenu: (e: ReactMouseEvent) => {
 						e.preventDefault();
-						onNodeContextMenu({ id, x: e.clientX, y: e.clientY });
+						// A keyboard-initiated contextmenu (Menu key / Shift+F10 on the focused row) has no
+						// pointer position — anchor the menu at the row instead of the window corner.
+						const at = contextMenuAnchor(e, e.currentTarget.getBoundingClientRect());
+						onNodeContextMenu({ id, x: at.x, y: at.y });
 					}
 				}
 			: undefined;

@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { isSack, mergeLibrary, packSack, unpackSack } from './sack';
+import {
+	isSack,
+	mergeLibrary,
+	packSack,
+	sackConsentMessage,
+	sanitizeSack,
+	unpackSack
+} from './sack';
 import type { Leaf, Library, WidgetDef } from './layoutTree';
 
 const widgetLeaf = (id: string): Leaf => ({
@@ -140,5 +147,114 @@ describe('mergeLibrary', () => {
 		const { library, idMap } = mergeLibrary(into, [mkDef('a')]);
 		expect(idMap.a).toBe('a-3');
 		expect(library.defs.map((d) => d.id)).toEqual(['a', 'a-2', 'a-3']);
+	});
+});
+
+describe('mergeLibrary param hardening', () => {
+	it('drops prototype-walking param specs from incoming defs (defence in depth with setPath)', () => {
+		const def: WidgetDef = {
+			...mkDef('p'),
+			params: [
+				{ key: 'ok', target: 'unit.config.ok' },
+				{ key: 'evil', target: 'unit.__proto__.polluted' }
+			]
+		};
+		const { library } = mergeLibrary(undefined, [def]);
+		expect(library.defs[0].params).toEqual([{ key: 'ok', target: 'unit.config.ok' }]);
+		// a def without params stays without params (shape preserved); a malformed (non-array) params
+		// becomes an empty list rather than reaching the solver
+		expect('params' in mergeLibrary(undefined, [mkDef('q')]).library.defs[0]).toBe(false);
+		const junk = { ...mkDef('j'), params: 'nope' as unknown as WidgetDef['params'] };
+		expect(mergeLibrary(undefined, [junk]).library.defs[0].params).toEqual([]);
+	});
+});
+
+const iframeLeaf = (id: string, config: Record<string, unknown>): Leaf => ({
+	id,
+	unit: { id, type: 'iframe', rect: { x: 0, y: 0, w: 1, h: 1 }, config }
+});
+
+describe('sackConsentMessage', () => {
+	it('is empty for a clean sack (no theme threats, no capability-bearing widgets)', () => {
+		expect(sackConsentMessage({ kind: 'widgetsack/sack', version: 1 })).toBe('');
+		expect(
+			sackConsentMessage({
+				kind: 'widgetsack/sack',
+				version: 1,
+				theme: { name: 't', css: ':root { --np-accent: gold }' },
+				library: { version: 1, defs: [mkDef('a')] }
+			})
+		).toBe('');
+	});
+
+	it('aggregates theme CSS threats and widget-tree threats into one paragraph', () => {
+		const msg = sackConsentMessage({
+			kind: 'widgetsack/sack',
+			version: 1,
+			theme: { name: 't', css: '@import url(https://evil.example/x.css);' },
+			library: {
+				version: 1,
+				defs: [
+					mkDef('f', iframeLeaf('fr', { url: 'https://dash.example', sandbox: false })),
+					{ ...mkDef('c'), css: '.x { position: fixed }' }
+				]
+			}
+		});
+		expect(msg).toBe(
+			"This sack's theme contains 2 remote resources (could phone home).\n" +
+				'Its widgets contain 1 embedded web page (unsandboxed), 1 CSS rule that reaches outside the app.\n' +
+				'Imported theme and widget CSS runs with full access to the studio; embedded pages are ' +
+				'forced into the sandbox. Import anyway?'
+		);
+	});
+
+	it('warns about widgets alone (no theme) and tolerates a malformed library', () => {
+		const msg = sackConsentMessage({
+			kind: 'widgetsack/sack',
+			version: 1,
+			library: { version: 1, defs: [mkDef('f', iframeLeaf('fr', { url: 'https://a' }))] }
+		});
+		expect(msg.startsWith('Its widgets contain 1 embedded web page.')).toBe(true);
+		expect(
+			sackConsentMessage({
+				kind: 'widgetsack/sack',
+				version: 1,
+				library: { version: 1, defs: 'nope' as unknown as WidgetDef[] }
+			})
+		).toBe('');
+	});
+});
+
+describe('sanitizeSack', () => {
+	it('forces the iframe sandbox on and drops unsafe param specs, counting changes; input untouched', () => {
+		const sack = {
+			kind: 'widgetsack/sack' as const,
+			version: 1 as const,
+			library: {
+				version: 1,
+				defs: [
+					{
+						...mkDef('f', iframeLeaf('fr', { url: 'https://a', sandbox: false })),
+						params: [{ key: 'k', target: 'constructor.prototype.x' }]
+					},
+					mkDef('clean')
+				]
+			}
+		};
+		const before = JSON.stringify(sack);
+		const r = sanitizeSack(sack);
+		expect(r.changed).toBe(2);
+		expect(JSON.stringify(sack)).toBe(before);
+		const defs = r.sack.library!.defs;
+		expect((defs[0].child as Leaf).unit).toMatchObject({ config: { sandbox: true } });
+		expect(defs[0].params).toEqual([]);
+		expect(defs[1]).toBe(sack.library.defs[1]); // untouched def keeps its identity
+	});
+
+	it('is a no-op for a sack without a library (or a malformed one)', () => {
+		const bare = { kind: 'widgetsack/sack' as const, version: 1 as const };
+		expect(sanitizeSack(bare)).toEqual({ sack: bare, changed: 0 });
+		const bad = { ...bare, library: { version: 1, defs: 'x' as unknown as WidgetDef[] } };
+		expect(sanitizeSack(bad).sack).toBe(bad);
 	});
 });

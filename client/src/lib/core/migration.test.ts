@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { Layout as LayoutV1, WidgetInstance } from './layout';
 import { emptyRoot, type MonitorLayout } from './layoutTree';
 import { migrateMonitorKeys, migrateV1, parseLayoutAny, parseLayoutNode } from './migration';
@@ -264,13 +264,28 @@ describe('parseLayoutAny', () => {
 		expect(parseLayoutAny(null)).toBeNull();
 		expect(parseLayoutAny('nope')).toBeNull();
 		expect(parseLayoutAny({ version: 2 })).toBeNull(); // no monitors
-		expect(
-			parseLayoutAny({
-				version: 2,
-				monitors: { m: { root: { id: 'r', kind: 'bogus', children: [] } } }
-			})
-		).toBeNull(); // bad container kind fails the monitor
 		expect(parseLayoutAny({ version: 3, monitors: {} })).toBeNull(); // unknown future version
+	});
+
+	it('drops ONLY an unparseable monitor entry (named on the console) and keeps the rest', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const r = parseLayoutAny({
+			version: 2,
+			monitors: {
+				bad: { root: { id: 'r', kind: 'bogus', children: [] } }, // bad container kind
+				good: { root: { id: 'g', kind: 'col', children: [] }, floating: [] },
+				alsoBad: null
+			}
+		});
+		// Before: one broken record returned null for the WHOLE file, so every monitor fell back to
+		// the demo seed (and a preview write could then save the seed over the good ones).
+		expect(r).not.toBeNull();
+		expect(Object.keys(r!.monitors)).toEqual(['good']);
+		expect(r!.monitors.good.root.id).toBe('g');
+		expect(warn).toHaveBeenCalledTimes(2);
+		expect(warn.mock.calls[0][0]).toContain('"bad"');
+		expect(warn.mock.calls[1][0]).toContain('"alsoBad"');
+		warn.mockRestore();
 	});
 
 	it('rejects an array for monitors (must be a Record)', () => {
@@ -292,26 +307,35 @@ describe('parseLayoutAny', () => {
 		expect(parseLayoutAny({ version: 1, monitors: { default: {} } })).toBeNull();
 	});
 
-	it('returns null when a monitor entry is null (the raw === null guard)', () => {
-		expect(parseLayoutAny({ version: 2, monitors: { m: null } })).toBeNull();
+	it('drops a monitor entry that is null (the raw === null guard)', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		expect(parseLayoutAny({ version: 2, monitors: { m: null } })).toEqual({
+			version: 2,
+			monitors: {}
+		});
+		warn.mockRestore();
 	});
 
-	it('returns null when floating is present but not an array', () => {
+	it('drops a monitor whose floating is present but not an array', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		expect(
 			parseLayoutAny({
 				version: 2,
 				monitors: { m: { root: { id: 'r', kind: 'col', children: [] }, floating: 42 } }
-			})
-		).toBeNull();
+			})?.monitors
+		).toEqual({});
+		warn.mockRestore();
 	});
 
-	it('fails the monitor when the container id is not a string', () => {
+	it('fails (drops) the monitor when the container id is not a string', () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		expect(
 			parseLayoutAny({
 				version: 2,
 				monitors: { m: { root: { id: 5, kind: 'col', children: [] } } }
-			})
-		).toBeNull();
+			})?.monitors
+		).toEqual({});
+		warn.mockRestore();
 	});
 
 	it('defaults floating to [] when the key is absent (not undefined-but-present)', () => {

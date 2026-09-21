@@ -189,7 +189,7 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.agendaDisconnect:
 				return undefined;
 			case COMMANDS.agendaConfigStatus:
-				return { configured: false, url: '', title: '', pollSeconds: 1800 };
+				return { configured: false, host: '', title: '', pollSeconds: 1800 };
 
 			// --- AI provider: not configured (shape = LlmStatus). `llm_complete` returns canned layout
 			// ops so the layout assistant is exercisable under Playwright without a real model. ---

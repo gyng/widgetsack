@@ -16,14 +16,68 @@ import {
 import { DEFAULT_TOKENS, tokensToCss } from './tokens';
 
 /**
+ * Whether a CSS fragment's `{`/`}` are balanced the way the BROWSER's tokenizer will see them:
+ * braces inside `/* … *\/` comments are ignored, braces inside quoted strings are ignored — but a
+ * string ends at an unescaped NEWLINE too (a "bad string" in CSS), so `content: "` + newline can't
+ * hide a closing brace from us that the browser would honour. Returns the reason it is NOT
+ * balanced, or null when it is. Pure.
+ */
+export function cssBraceImbalance(css: string): string | null {
+	let depth = 0;
+	let quote: string | null = null;
+	const n = css.length;
+	let i = 0;
+	while (i < n) {
+		const c = css[i];
+		if (quote) {
+			if (c === '\\') {
+				i += 2; // an escaped char (incl. an escaped newline, a legal string continuation)
+				continue;
+			}
+			if (c === quote || c === '\n') quote = null; // a bare newline terminates a (bad) string
+			i++;
+			continue;
+		}
+		if (c === '/' && css[i + 1] === '*') {
+			const end = css.indexOf('*/', i + 2);
+			i = end === -1 ? n : end + 2;
+			continue;
+		}
+		if (c === '"' || c === "'") {
+			quote = c;
+		} else if (c === '{') {
+			depth++;
+		} else if (c === '}') {
+			depth--;
+			if (depth < 0) return 'a "}" closes more blocks than were opened';
+		}
+		i++;
+	}
+	return depth > 0 ? `${depth} unclosed "{"` : null;
+}
+
+/**
  * Scope a user CSS block to `selector` via native CSS nesting: `selector { <css> }`. Both
  * bare declarations (`color: red`) and nested selectors (`.value { … }`) work inside the
  * wrapper in a WebView2/Chromium runtime. Returns '' for empty/whitespace css. Pure.
  * (`@keyframes`/`@font-face` can't be nested — those belong in the global theme.)
+ *
+ * Widget/def CSS can arrive from a shared sack or a plugin package, and `} body { … } .x {` would
+ * close the wrapper early and style the WHOLE studio/overlay — so a fragment whose braces don't
+ * balance is REFUSED (returns '' and calls `report` with the reason) instead of being wrapped.
  */
-export function scopeCss(css: string | undefined, selector: string): string {
+export function scopeCss(
+	css: string | undefined,
+	selector: string,
+	report?: (reason: string) => void
+): string {
 	const c = (css ?? '').trim();
 	if (!c) return '';
+	const reason = cssBraceImbalance(c);
+	if (reason !== null) {
+		report?.(reason);
+		return '';
+	}
 	return `${selector} {\n${c}\n}`;
 }
 
@@ -45,6 +99,10 @@ export function assembleStyles(opts: {
 	library?: Library;
 	monitor: MonitorLayout;
 	includeDefaults?: boolean;
+	/** Called for each def/instance css block REFUSED by scopeCss (unbalanced braces), with the
+	 * selector it would have been scoped to — so the host can surface it instead of silently
+	 * dropping the styles. */
+	onRejectCss?: (selector: string, reason: string) => void;
 }): string {
 	const parts: string[] = [];
 
@@ -54,7 +112,8 @@ export function assembleStyles(opts: {
 	if (theme) parts.push(theme);
 
 	for (const def of opts.library?.defs ?? []) {
-		const s = scopeCss(def.css, `[data-def="${def.id}"]`);
+		const defSel = `[data-def="${def.id}"]`;
+		const s = scopeCss(def.css, defSel, (r) => opts.onRejectCss?.(defSel, r));
 		if (s) parts.push(s);
 	}
 
@@ -63,7 +122,7 @@ export function assembleStyles(opts: {
 		const sel = isGroup(lf.unit) ? `[data-group="${fullId}"]` : `[data-w="${fullId}"]`;
 		const tk = lf.unit.tokens;
 		if (tk && Object.keys(tk).length) parts.push(tokensToCss(tk, sel));
-		const s = scopeCss(lf.unit.css, sel);
+		const s = scopeCss(lf.unit.css, sel, (r) => opts.onRejectCss?.(sel, r));
 		if (s) parts.push(s);
 	};
 	const walk = (node: LayoutNode, prefix: string): void => {

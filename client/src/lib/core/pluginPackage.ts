@@ -9,7 +9,9 @@
 
 import type { LayoutNode, ParamChoice, ParamSpec } from './layoutTree';
 import { parseLayoutNode } from './migration';
+import { isSafePath } from './safePath';
 import type { Template } from './templates';
+import { sanitizeImportedTree, scanTreeThreats, type TreeThreat } from './treeThreats';
 
 /** One declarative template inside a package: the same shape as a built-in `Template`, except the
  * tree is DATA (a layout-node JSON, validated through the layout file's structural whitelist)
@@ -102,14 +104,9 @@ function isSize(v: unknown): v is { w: number; h: number } {
 }
 
 // A param target is a dotted path written into the cloned tree by solve.ts `applyParams`. Its
-// setter is already fail-closed against auto-vivification, but a hostile path could still walk
-// `__proto__`/`constructor` up into shared prototypes — reject those segments outright.
-const FORBIDDEN_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
-
-function isSafePath(v: unknown): v is string {
-	if (typeof v !== 'string' || !v.length) return false;
-	return v.split('.').every((seg) => seg.length > 0 && !FORBIDDEN_PATH_SEGMENTS.has(seg));
-}
+// setter is fail-closed against auto-vivification AND prototype walking, but a hostile
+// `__proto__`/`constructor` path is rejected here too so the template is dropped with a reason
+// (core/safePath is the one shared rule).
 
 function isParamChoice(v: unknown): v is ParamChoice {
 	if (typeof v !== 'object' || v === null) return false;
@@ -161,8 +158,12 @@ function parsePackageTemplate(raw: unknown, index: number): PackageTemplate | st
 			params.push(spec);
 		}
 	}
-	const tree = parseLayoutNode(o.tree);
-	if (tree === null) return `${at(id)}: "tree" is not a valid layout node`;
+	const parsed = parseLayoutNode(o.tree);
+	if (parsed === null) return `${at(id)}: "tree" is not a valid layout node`;
+	// A package template is a stranger's tree: any iframe unit inside it is forced into the sandbox
+	// (its other capabilities — the embedded page itself, remote images, button macros, css — are
+	// reported at enable time via `packageTemplateThreats`).
+	const tree = sanitizeImportedTree(parsed).value;
 	const size = o.size as { w: number; h: number };
 	return {
 		id,
@@ -423,10 +424,28 @@ export function consentFingerprint(hosts: readonly string[]): string {
 	return [...hosts].sort().join(' ');
 }
 
+/** Every capability-bearing unit across a package's templates (core/treeThreats): embedded web
+ * pages, remote images, buttons that run service calls, per-widget CSS. The sandbox is already
+ * forced on at parse time, so `iframe-unsandboxed` never appears here. Pure. */
+export function packageTemplateThreats(manifest: PluginPackageManifest): TreeThreat[] {
+	return manifest.templates.flatMap((t) => scanTreeThreats(t.tree));
+}
+
+/** The consent key for a package's template threats: order-insensitive over (kind, id, detail),
+ * so an unchanged package doesn't re-prompt but ANY new/changed capability invalidates consent. */
+export function templateThreatFingerprint(threats: readonly TreeThreat[]): string {
+	return threats
+		.map((t) => `${t.kind}:${t.id}:${t.detail}`)
+		.sort()
+		.join('\n');
+}
+
 /** The first-enable confirmation text: one dialog that states every consent-worthy fact (flagged
- * theme CSS and/or network polling) — the Plugins panel feeds it straight to window.confirm. */
+ * theme CSS, capability-bearing templates and/or network polling) — the Plugins panel feeds it
+ * straight to window.confirm. */
 export function enableConsentMessage(parts: {
 	cssSummary?: string;
+	templateSummary?: string;
 	hosts?: string[];
 	pollSeconds?: number;
 }): string {
@@ -437,13 +456,19 @@ export function enableConsentMessage(parts: {
 				`Package theme CSS runs with full access to the studio.`
 		);
 	}
+	if (parts.templateSummary) {
+		lines.push(
+			`This package's widgets contain ${parts.templateSummary}. ` +
+				`Embedded pages are forced into the sandbox; widget CSS runs with full access to the studio.`
+		);
+	}
 	if (parts.hosts?.length) {
 		lines.push(
 			`This package polls the network every ${parts.pollSeconds ?? DEFAULT_POLL_SECONDS}s: ` +
 				`${parts.hosts.join(', ')}.`
 		);
 	}
-	lines.push(parts.cssSummary ? 'Enable anyway?' : 'Enable?');
+	lines.push(parts.cssSummary || parts.templateSummary ? 'Enable anyway?' : 'Enable?');
 	return lines.join('\n');
 }
 

@@ -1,9 +1,11 @@
 // Self-sourcing Agenda meter (binds:'none'): the upcoming events from an ICS feed. Like Connections it
 // reads the hub from context and subscribes to the `agenda.list` JSON sensor (which demand-gates the
 // backend poll AND carries the data); the fetch/parse happen server-side (widgetsack/src/agenda.rs).
-// It self-ticks each minute so the relative "when" labels stay current. BARE DOM; styled via --np-*.
+// It rides the shared minute clock (useNow) so the relative "when" labels stay current. BARE DOM;
+// styled via --np-*.
 import { useContext, useEffect, useState, type CSSProperties } from 'react';
 import { TelemetryHubContext } from '../telemetryContext';
+import { useNow } from '../useNow';
 import {
 	parseAgendaList,
 	upcomingEvents,
@@ -19,7 +21,8 @@ type Props = { title?: string; maxRows?: number; color?: string };
 export default function Agenda({ title = '', maxRows = 6, color }: Props) {
 	const hub = useContext(TelemetryHubContext);
 	const [events, setEvents] = useState<AgendaEvent[]>([]);
-	const [now, setNow] = useState(() => Date.now());
+	// Re-evaluate "upcoming" + relative labels each minute (the shared boundary-aligned clock).
+	const now = useNow(60_000);
 
 	useEffect(() => {
 		if (!hub) return;
@@ -35,12 +38,7 @@ export default function Agenda({ title = '', maxRows = 6, color }: Props) {
 		};
 		const off = hub.sensor(LIST).subscribe(read); // demand-gate + change notification
 		read();
-		// Re-evaluate "upcoming" + relative labels each minute.
-		const t = setInterval(() => setNow(Date.now()), 60_000);
-		return () => {
-			off();
-			clearInterval(t);
-		};
+		return off;
 	}, [hub]);
 
 	const vis = upcomingEvents(events, now, maxRows);

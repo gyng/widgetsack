@@ -183,6 +183,7 @@ fn merge_layout_contents(
 #[tauri::command]
 pub async fn save_layout(
     app: tauri::AppHandle,
+    window: tauri::Window,
     state: tauri::State<'_, LayoutIoState>,
     contents: String,
     touched_monitors: Option<Vec<String>>,
@@ -226,8 +227,14 @@ pub async fn save_layout(
     }
     atomic_write(&path, &rendered)?;
     // …and tell the other windows ourselves — exactly once, instead of the 1–3 watcher events a
-    // save used to fan out (each of which also ran the external-edit respawn hook).
-    let _ = app.emit(LAYOUT_CHANGED_EVENT, ());
+    // save used to fan out (each of which also ran the external-edit respawn hook). The payload
+    // names the WRITER (this webview's window label) so the studio can tell its own preview
+    // write from another window's save and react to the latter (mirrors `LayoutChangedPayload`
+    // in client/src/lib/bridge/contract.ts; the watcher's external-edit emit carries none).
+    let _ = app.emit(
+        LAYOUT_CHANGED_EVENT,
+        serde_json::json!({ "writer": window.label() }),
+    );
     Ok(())
 }
 
@@ -1729,6 +1736,65 @@ fn host_allowed(url: &str, hosts: &[String]) -> bool {
     }
 }
 
+/// PURE SEAM: hosts a package source may never be pointed at, even when its manifest lists them —
+/// the local machine and the LAN (`localhost`, `*.localhost`, `*.local`, `*.internal`, `*.lan`,
+/// `*.home.arpa`, and any IP literal). A third-party package must not become a probe of the user's
+/// router, NAS, or Home Assistant instance. Case-insensitive; a trailing dot is ignored.
+fn is_internal_host(host: &str) -> bool {
+    let h = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if h.is_empty() || h == "localhost" {
+        return true;
+    }
+    if h.trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<std::net::IpAddr>()
+        .is_ok()
+    {
+        return true;
+    }
+    [".localhost", ".local", ".internal", ".lan", ".home.arpa"]
+        .iter()
+        .any(|suffix| h.ends_with(suffix))
+}
+
+/// Marker file that records the user's enable decision SERVER-SIDE (`plugins/<id>/.enabled`),
+/// written by `set_package_enabled` from the studio. `package_fetch` refuses to proxy for a package
+/// without it, so a webview that never went through the enable/consent gate can't use a package's
+/// allowlist as a fetch proxy. Dot-prefixed: its stem fails `valid_name`, so it is unreachable as
+/// an asset and undeclarable in a manifest (same trick as the install sidecar).
+const ENABLED_MARKER: &str = ".enabled";
+
+/// Record a package's enabled state on disk (the marker file). Studio-only: enabling is a studio
+/// action (the Plugins panel), and an overlay must not be able to flip it.
+#[tauri::command]
+pub async fn set_package_enabled(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    if window.label() != "studio" {
+        return Err("set_package_enabled is only allowed from the studio window".into());
+    }
+    if !valid_name(&id) {
+        return Err("invalid package id".to_string());
+    }
+    let dir = plugins_dir(&app)?.join(&id);
+    if !dir.join("plugin.json").is_file() {
+        return Err("package manifest not found".to_string());
+    }
+    let marker = dir.join(ENABLED_MARKER);
+    if enabled {
+        atomic_write(&marker, "enabled\n")
+    } else {
+        match fs::remove_file(&marker) {
+            Ok(()) => Ok(()),
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct PackageFetchResponse {
     pub url: String,
@@ -1738,7 +1804,8 @@ pub struct PackageFetchResponse {
 
 /// GET `url` on behalf of package `id`'s sandboxed source. Non-2xx responses are returned (with
 /// their status) rather than erroring — the sandbox's `transform` decides what a miss means; only
-/// transport/validation failures are `Err`.
+/// transport/validation failures are `Err`. Refused unless the package carries the server-side
+/// enabled marker (`set_package_enabled`) and the target host is neither local nor an IP literal.
 #[tauri::command]
 pub async fn package_fetch(
     app: tauri::AppHandle,
@@ -1748,8 +1815,12 @@ pub async fn package_fetch(
     if !valid_name(&id) {
         return Err("invalid package id".to_string());
     }
-    let raw = fs::read_to_string(plugins_dir(&app)?.join(&id).join("plugin.json"))
+    let pkg_dir = plugins_dir(&app)?.join(&id);
+    let raw = fs::read_to_string(pkg_dir.join("plugin.json"))
         .map_err(|_| "package manifest not found".to_string())?;
+    if !pkg_dir.join(ENABLED_MARKER).is_file() {
+        return Err("package is not enabled".to_string());
+    }
     let json: serde_json::Value =
         serde_json::from_str(&raw).map_err(|_| "package manifest is not valid JSON".to_string())?;
     let hosts: Vec<String> = json
@@ -1766,6 +1837,13 @@ pub async fn package_fetch(
     }
     if !host_allowed(&url, &hosts) {
         return Err(format!("url is not in the package's host allowlist: {url}"));
+    }
+    if reqwest::Url::parse(&url)
+        .ok()
+        .and_then(|u| u.host_str().map(is_internal_host))
+        .unwrap_or(true)
+    {
+        return Err(format!("url targets a local / internal host: {url}"));
     }
     let client = install_http_client()?;
     let resp = client
@@ -2541,6 +2619,36 @@ mod tests {
         assert!(!super::valid_asset_name("noext")); // no extension
         assert!(!super::valid_asset_name(".css")); // empty stem
         assert!(!super::valid_asset_name("")); // empty
+    }
+
+    #[test]
+    fn internal_hosts_are_refused_for_package_fetch() {
+        use super::is_internal_host;
+        for h in [
+            "localhost",
+            "LOCALHOST.",
+            "app.localhost",
+            "nas.local",
+            "router.lan",
+            "svc.internal",
+            "printer.home.arpa",
+            "127.0.0.1",
+            "10.0.0.5",
+            "192.168.1.1",
+            "[::1]",
+            "::1",
+            "",
+        ] {
+            assert!(is_internal_host(h), "{h} should be internal");
+        }
+        for h in [
+            "api.open-meteo.com",
+            "github.com",
+            "local.example.com",
+            "lan.example",
+        ] {
+            assert!(!is_internal_host(h), "{h} should be public");
+        }
     }
 
     #[test]

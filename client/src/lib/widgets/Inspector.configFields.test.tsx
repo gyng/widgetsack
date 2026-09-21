@@ -44,6 +44,8 @@ describe('Inspector config-field rendering (per ConfigField kind)', () => {
 		const input = within(panel()).getByRole('textbox', { name: 'label' });
 		fireEvent.input(input, { target: { value: 'CPU' } });
 		expect(lastConfigPatch(onOp)).toEqual({ label: 'CPU' });
+		// Typed fields carry an undo-coalescing key so a word is one undo step, not one per letter.
+		expect(onOp.mock.calls.at(-1)![0]).toMatchObject({ coalesce: 'patchWidget:w1:label' });
 
 		onOp.mockClear();
 		fireEvent.input(input, { target: { value: '' } });

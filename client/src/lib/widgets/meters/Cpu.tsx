@@ -4,6 +4,7 @@
 // since it needs cpu.total AND every core. `binds: 'none'`. Composes Gauge + Sparkline.
 import { useContext, useEffect, useState } from 'react';
 import { TelemetryHubContext } from '../telemetryContext';
+import { STALE_AFTER_MS } from '../../core/telemetry';
 import Gauge from './Gauge';
 import CpuCoresCanvas from './CpuCoresCanvas';
 import './Cpu.css';
@@ -46,8 +47,10 @@ export default function Cpu({
 		const readAll = (): void => {
 			const t = hub.sensor('cpu.total').getSnapshot().value;
 			setTotal(t && t.kind === 'scalar' ? t.value : null);
+			// Fresh ids only: a core that stopped reporting (hot-unplug / a stale id from an earlier
+			// session) would otherwise stay in the grid with a frozen trace.
 			const ids = hub
-				.sensorIds()
+				.sensorIds({ freshWithinMs: STALE_AFTER_MS })
 				.filter((id) => CORE_USAGE_ID.test(id))
 				.sort((a, b) => coreIndex(a) - coreIndex(b));
 			setCores(ids.map((id) => hub.sensor(id).getSnapshot().history));

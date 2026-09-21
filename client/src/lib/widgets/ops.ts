@@ -75,7 +75,9 @@ export type LayoutOp =
 	| { op: 'setBasis'; id: string; basis: Length | undefined }
 	// A leaf's placement within the box the layout gives it (per screen axis; 'fill' = span the box).
 	| { op: 'setLeafAlign'; id: string; halign: AlignH; valign: AlignV }
-	| { op: 'patchWidget'; id: string; patch: Partial<WidgetInstance> }
+	// `coalesce`: an undo-coalescing key (e.g. `patchWidget:<id>:<configKey>`) so a per-keystroke
+	// burst of edits to ONE field folds into a single undo step (useEditorModel.recordHistory).
+	| { op: 'patchWidget'; id: string; patch: Partial<WidgetInstance>; coalesce?: string }
 	| { op: 'resetWidget'; id: string } // restore config/css/sensor to the widget type's defaults
 	| { op: 'patchContainer'; id: string; patch: Partial<Container> }
 	// Outline drag-and-drop (build the tree directly, no canvas coords):

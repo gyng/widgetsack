@@ -1,15 +1,25 @@
 // Live-preview persistence (item 3): the only place that touches disk. persistToDisk re-reads
 // widgets.json to merge OTHER monitors' layouts + library + theme + tokens, folds the in-progress
-// def, and writes. In the STUDIO, a commit (saveSeq bump) debounces a preview write ~150ms via a
-// ref timer so the desktop overlays preview unsaved changes without per-keystroke disk thrash;
-// `dirty` still tracks divergence from the saved baseline. On an OVERLAY it persists immediately
-// (the original auto-save). commitSave flushes; cancelEdits/revertDraftToDisk revert; a
-// clearPreviewWrite runs on unmount. Token write is authoritative (empty -> omit tokens).
+// def, and writes. A commit (saveSeq bump) — in the studio AND in an overlay's edit mode — debounces
+// a preview write ~150ms via a ref timer so the desktop overlays preview unsaved changes without
+// per-keystroke disk thrash; `dirty` still tracks divergence from the saved baseline. commitSave
+// flushes; cancelEdits/revertDraftToDisk revert; a pending preview write is FLUSHED (not dropped)
+// on unmount so the last edit before a close still lands. Token write is authoritative (empty ->
+// omit tokens).
+//
+// persistToDisk is single-flight with a trailing rerun (core/singleFlight): it snapshots the live
+// state at its start and then awaits load_layout before writing, so a commit landing mid-write
+// would otherwise be lost (the in-flight run wrote the older state) or race it (two interleaved
+// read-merge-write passes). Collapsing the burst still lands the LAST requested state. Every
+// request also captures the monitor key it was made for: a run that starts after the studio has
+// switched monitors is skipped, so a late timer / trailing rerun can never write this editor's
+// (now empty, mid-reload) tree under the NEW key.
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from '../../bridge/contract';
 import { emptyRoot, type Library, type LayoutV2, type MonitorLayout } from '../../core/layoutTree';
 import { parseLayoutAny } from '../../core/migration';
+import { singleFlight } from '../../core/singleFlight';
 import type { Baseline, EditorState, Extra } from './types';
 
 // A frozen view of the persistence-relevant state, captured each render into a ref so the
@@ -60,7 +70,14 @@ export type Persistence = {
 	// baseline values directly so the overlays return to the last-saved state immediately.
 	writeBaseline: (b: Baseline, myMonitor: string) => Promise<boolean>;
 	schedulePreviewWrite: () => void;
+	// Drop a pending preview write (the revert paths, which write the baseline directly instead).
 	clearPreviewWrite: () => void;
+	// Run a pending preview write NOW (monitor switch / studio close): resolves once it has landed
+	// (`true`), or immediately with `true` when nothing was pending.
+	flushPreviewWrite: () => Promise<boolean>;
+	// A preview write is pending (debounce timer armed) or in flight — the studio uses it to decide
+	// whether an external layout change can be reloaded silently.
+	previewPending: () => boolean;
 };
 
 export function usePersistence(state: EditorState, myMonitor: string): Persistence {
@@ -100,8 +117,15 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 	// write — but the library set is reducer-owned. The Canvas runs `endDefEdit`/save through the
 	// reducer; for a mid-def preview write we fold a LOCAL copy here (mirrors syncEditingDef) so the
 	// on-disk library stays in sync without mutating reducer state.
-	const persistToDisk = useCallback(async (extras: Extra[]): Promise<boolean> => {
+	// The latest request's arguments: the extras to merge + the monitor key it was made for. The
+	// single-flight runner reads these at each run's START, so a trailing rerun writes the newest.
+	const request = useRef<{ extras: Extra[]; key: string }>({ extras: [], key: myMonitor });
+	const inFlight = useRef(0);
+	const persistNow = useCallback(async (): Promise<boolean> => {
+		const req = request.current;
+		const extras = req.extras;
 		const v = view.current;
+		if (v.myMonitor !== req.key) return false; // the studio switched monitors since → stale, skip
 		let monitors: LayoutV2['monitors'] = {};
 		let fileLib: Library | undefined;
 		let fileTheme: string | undefined;
@@ -170,6 +194,22 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 			return false;
 		}
 	}, []);
+	// Created once: the runner closes over the stable persistNow + the request/inFlight refs.
+	const flight = useRef<(() => Promise<boolean>) | null>(null);
+	if (!flight.current) {
+		flight.current = singleFlight(async () => {
+			inFlight.current++;
+			try {
+				return await persistNow();
+			} finally {
+				inFlight.current--;
+			}
+		});
+	}
+	const persistToDisk = useCallback((extras: Extra[]): Promise<boolean> => {
+		request.current = { extras, key: view.current.myMonitor };
+		return flight.current!();
+	}, []);
 
 	// Write a specific baseline straight to disk (revert path): merge the file's other monitors +
 	// library/theme/tokens with the baseline's values for THIS monitor. Mirrors persistToDisk but
@@ -228,14 +268,35 @@ export function usePersistence(state: EditorState, myMonitor: string): Persisten
 	}, []);
 	const schedulePreviewWrite = useCallback(() => {
 		clearTimeout(previewTimer.current);
+		// Capture the monitor the edit belongs to NOW: if the timer fires after a monitor switch,
+		// persistNow sees the key mismatch and skips instead of writing under the new key.
+		const key = view.current.myMonitor;
 		previewTimer.current = setTimeout(() => {
 			previewTimer.current = undefined;
-			persistToDisk([]);
+			request.current = { extras: [], key };
+			void flight.current!();
 		}, 150);
-	}, [persistToDisk]);
+	}, []);
+	const flushPreviewWrite = useCallback((): Promise<boolean> => {
+		if (previewTimer.current === undefined) return Promise.resolve(true);
+		clearPreviewWrite();
+		return persistToDisk([]);
+	}, [clearPreviewWrite, persistToDisk]);
+	const previewPending = useCallback(
+		() => previewTimer.current !== undefined || inFlight.current > 0,
+		[]
+	);
 
-	// clearPreviewWrite on unmount (item 4 cleanup).
-	useEffect(() => () => clearPreviewWrite(), [clearPreviewWrite]);
+	// Flush (not drop) a pending preview write on unmount: the studio closing right after an edit
+	// must still land that edit — dropping it left the overlays one edit behind the editor.
+	useEffect(() => () => void flushPreviewWrite(), [flushPreviewWrite]);
 
-	return { persistToDisk, writeBaseline, schedulePreviewWrite, clearPreviewWrite };
+	return {
+		persistToDisk,
+		writeBaseline,
+		schedulePreviewWrite,
+		clearPreviewWrite,
+		flushPreviewWrite,
+		previewPending
+	};
 }

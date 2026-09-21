@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
-import Iframe from './Iframe';
+import Iframe, { RELAXED_SANDBOX } from './Iframe';
 
 // Cast away null at the helper so call sites stay assertion-free (the repo forbids `!`); the
 // empty-URL tests still read null at runtime, which `.toBeNull()` checks fine.
@@ -71,11 +71,12 @@ describe('Iframe — frame attributes', () => {
 		expect(frame(container).getAttribute('title')).toBe('Embedded web page');
 	});
 
-	it('applies the opaque-origin sandbox by default and omits it when disabled', () => {
+	it('applies the opaque-origin sandbox by default and a relaxed (never top-navigating) one when disabled', () => {
 		const on = render(<Iframe url="https://example.com" sandbox />);
 		expect(frame(on.container).getAttribute('sandbox')).toBe('allow-scripts');
 		const off = render(<Iframe url="https://example.com" sandbox={false} />);
-		expect(frame(off.container).hasAttribute('sandbox')).toBe(false);
+		expect(frame(off.container).getAttribute('sandbox')).toBe(RELAXED_SANDBOX);
+		expect(RELAXED_SANDBOX).not.toMatch(/allow-top-navigation|allow-downloads/);
 	});
 
 	it('disables scrolling only when scroll is off', () => {

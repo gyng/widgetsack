@@ -376,6 +376,46 @@ describe('importSack', () => {
 		expect(commitOp).toHaveBeenCalledTimes(1);
 	});
 
+	it('states widget-tree threats in the SAME confirm and merges a hardened library', async () => {
+		// A def carrying an unsandboxed iframe: the one confirm must mention the embedded page, and the
+		// merged def must have its sandbox forced on (sanitizeSack) — the stranger's flag never lands.
+		const lib: Library = {
+			version: 1,
+			defs: [
+				{
+					id: 'web',
+					name: 'web',
+					size: { w: 100, h: 60 },
+					child: {
+						id: 'fr',
+						unit: {
+							id: 'fr',
+							type: 'iframe',
+							rect: { x: 0, y: 0, w: 1, h: 1 },
+							config: { url: 'https://dash.example', sandbox: false }
+						}
+					}
+				}
+			]
+		};
+		const sack = packSack({ name: 's', library: lib });
+		readSack.mockResolvedValue(JSON.stringify(sack));
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+		const { result, commitOp } = setup({ navSection: 'settings' });
+		await act(async () => {
+			await result.current.importSack('s');
+		});
+		expect(confirm).toHaveBeenCalledTimes(1);
+		expect(confirm.mock.calls[0][0]).toContain('1 embedded web page (unsandboxed)');
+		expect(commitOp).toHaveBeenCalledTimes(1);
+		const patch = commitOp.mock.calls[0][0]({
+			library: undefined,
+			tokenOverrides: {}
+		} as unknown as EditorState);
+		const merged = patch.library!.defs[0].child as { unit: { config: Record<string, unknown> } };
+		expect(merged.unit.config.sandbox).toBe(true);
+	});
+
 	it('imports a theme-ONLY sack: the commit patch carries just the selection', async () => {
 		// No library defs and no tokens → the commit patch must leave both untouched (the false arms
 		// of the library/tokens guards), carrying only the newly-adopted theme name.

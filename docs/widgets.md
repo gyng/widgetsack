@@ -120,7 +120,7 @@ A single value as formatted text (percent / rate / bytes / duration / integer) w
 
 ![Clock widget](img/widgets/clock.png)
 
-Date / time clock using a date-fns format pattern (self-sourcing).
+Date / time clock using a moment-style token format (self-sourcing).
 
 - **Sensor:** none (self-sourcing)
 - **Default size:** 160×40
@@ -128,7 +128,7 @@ Date / time clock using a date-fns format pattern (self-sourcing).
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `format` | text | "HH:mm:ss" |  | date-fns pattern, e.g. HH:mm:ss or dddd D MMMM |
+| `format` | text | "HH:mm:ss" |  | moment-style tokens: YYYY MMMM MMM MM M dddd ddd DD D HH H hh h mm m ss s A a; literals in [brackets], e.g. HH:mm:ss or dddd D MMMM |
 | `locale` | select |  | `en`, `ja`, `zh` | month/day names |
 | `label` | text |  |  |  |
 | `color` | color |  |  |  |
@@ -336,9 +336,9 @@ Self-sourcing audio spectrum (WASAPI loopback FFT): frequency bars or a scrollin
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `device` | select | "" | (runtime list) — from `audioOutputs` | which audio output to visualise (blank = system default) |
+| `device` | select | "" | (runtime list) — from `audioOutputs` | which audio output to visualise (blank = system default). App-wide: one capture stream per app, so the last spectrum widget to (re)start sets it for all |
 | `mode` | select | "bars" | `bars`, `spectrogram` | frequency bars vs a scrolling spectrogram heatmap |
-| `scale` | select | "log" | `log`, `linear` | log spreads the low frequencies (musical, default); linear is even Hz/bar |
+| `scale` | select | "log" | `log`, `linear` | log spreads the low frequencies (musical, default); linear is even Hz/bar. App-wide like device: shared by every spectrum widget |
 | `pips` | toggle | false |  | gridline markers at 100 Hz / 1 kHz / 10 kHz |
 | `bars` | number | 48 | min 8, max 128, step 1 | number of frequency bars (bars mode) |
 | `gap` | number | 0.15 | min 0, max 0.9, step 0.05 | spacing between bars (0..1) |
@@ -356,7 +356,7 @@ Embedded web page (self-hosted dashboards); optional click-through interactivity
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `url` | text | "" |  | bare domains get https://; http:// (LAN) is allowed; javascript:/data: are rejected |
+| `url` | text | "" |  | bare domains get https://; only https:// loads (the CSP blocks plain http://); javascript:/data: are rejected |
 | `refresh` | number | 0 | min 0, max 3600, step 5 | auto-reload interval in seconds (0 = never); reloads cost CPU/network |
 | `scroll` | toggle | false |  | allow scrolling inside the frame |
 | `interact` | toggle | false |  | off: clicks pass through to the desktop; on: the frame catches clicks (passive overlay only — dragging always works in edit mode) |
@@ -523,3 +523,284 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 | `showStats` | toggle | false |  | show the current resolution + refresh rate |
 | `compact` | toggle | false |  | show a compact list instead of large touch buttons |
 | `color` | color |  |  |  |
+
+### HA Sensor — `ha.sensor`
+
+![HA Sensor widget](img/widgets/ha.sensor.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 150×44
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+
+### HA Binary Sensor — `ha.binary_sensor`
+
+![HA Binary Sensor widget](img/widgets/ha.binary_sensor.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 150×44
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+
+### HA Light — `ha.light`
+
+![HA Light widget](img/widgets/ha.light.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 120×48
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+| `showBrightness` | toggle | true |  |  |
+
+### HA Switch — `ha.switch`
+
+![HA Switch widget](img/widgets/ha.switch.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 120×48
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+
+### HA Fan — `ha.fan`
+
+![HA Fan widget](img/widgets/ha.fan.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 150×56
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+| `showSpeed` | toggle | true |  |  |
+| `showOscillate` | toggle | true |  |  |
+
+### HA Climate / A-C — `ha.climate`
+
+![HA Climate / A-C widget](img/widgets/ha.climate.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 170×92
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+| `showMode` | toggle | true |  |  |
+| `showTemp` | toggle | true |  |  |
+| `showFan` | toggle | true |  |  |
+
+### HA Cover — `ha.cover`
+
+![HA Cover widget](img/widgets/ha.cover.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 150×76
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+| `showButtons` | toggle | true |  |  |
+| `showPosition` | toggle | true |  |  |
+
+### HA Lock — `ha.lock`
+
+![HA Lock widget](img/widgets/ha.lock.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 120×48
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+
+### HA Scene — `ha.scene`
+
+![HA Scene widget](img/widgets/ha.scene.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 130×40
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+
+### HA Input — `ha.input`
+
+![HA Input widget](img/widgets/ha.input.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 160×48
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+
+### HA Media Player — `ha.media_player`
+
+![HA Media Player widget](img/widgets/ha.media_player.png)
+
+- **Sensor:** binds a `json` sensor
+- **Default size:** 180×92
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+| `showTransport` | toggle | true |  |  |
+| `showVolume` | toggle | true |  |  |
+
+### Now Playing — `nowplaying`
+
+![Now Playing widget](img/widgets/nowplaying.png)
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 160×200
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text |  |  |  |
+
+### Stock Ticker — `ticker`
+
+![Stock Ticker widget](img/widgets/ticker.png)
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 180×110
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `symbol` | text | "NVDA" |  | e.g. AAPL, SPY, BTC-USD — must be in the Stocks plugin’s symbol list |
+| `label` | text | "" |  | header text (defaults to the symbol) |
+| `decimals` | number | 2 |  | price decimal places |
+| `showSparkline` | toggle | true |  | show the intraday mini-chart |
+| `invertColors` | toggle | false |  | red = up, green = down (East-Asian-market convention) |
+
+### Weather — `weather`
+
+![Weather widget](img/widgets/weather.png)
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 220×160
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showHiLo` | toggle | true |  |  |
+| `showDetail` | toggle | true |  |  |
+| `forecastDays` | number | 5 | min 0, max 7, step 1 | how many days of forecast to show below (0 = off; up to 7) |
+| `color` | color |  |  |  |
+
+### Sun & Moon — `sunmoon`
+
+![Sun & Moon widget](img/widgets/sunmoon.png)
+
+Today’s sunrise + sunset (from your weather location) and the current moon phase with illumination.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 210×64
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showSun` | toggle | true |  |  |
+| `showMoon` | toggle | true |  |  |
+| `color` | color |  |  |  |
+
+### Air Quality — `airquality`
+
+![Air Quality widget](img/widgets/airquality.png)
+
+European Air Quality Index with a colour-coded band, plus PM2.5 and the UV index — for your weather location.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 190×86
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showPm` | toggle | true |  |  |
+| `showUv` | toggle | true |  |  |
+| `color` | color |  |  |  |
+
+### RSS — `rss`
+
+![RSS widget](img/widgets/rss.png)
+
+A list of headlines from your configured RSS / Atom feed.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 260×150
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `title` | text | "" |  | optional title above the list |
+| `maxRows` | number | 8 | min 1, max 30, step 1 | how many headlines to show |
+| `color` | color |  |  |  |
+
+### Agenda — `agenda`
+
+![Agenda widget](img/widgets/agenda.png)
+
+Your upcoming calendar events from a configured ICS feed.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 240×150
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `title` | text | "" |  | optional title above the list |
+| `maxRows` | number | 6 | min 1, max 20, step 1 | how many upcoming events to show |
+| `color` | color |  |  |  |
+
+### AI Briefing — `assistant`
+
+![AI Briefing widget](img/widgets/assistant.png)
+
+A self-updating, LLM-generated briefing from your live sensors. Configure the prompt and a schedule (interval like 5m, or a cron expression). Auto-refreshes on the overlay; manual refresh in the studio. Needs an AI provider configured.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 280×96
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `prompt` | text | "Summarize my system status in one short, friendly sentence." |  | what to ask the AI (your live sensors are included automatically) |
+| `schedule` | text | "10m" |  | how often to refresh: an interval (30s, 5m, 2h), a cron expr (e.g. 0 9 * * *), or "manual" |
+| `sensors` | text | "auto" |  | comma-separated sensor ids to feed the prompt, or "auto" |
+| `speak` | toggle | false |  | speak each update (TTS) |
+| `label` | text | "AI" |  | header text |
+| `color` | color | "" |  | text colour (blank = theme) |
+
+### Transcribe / Translate — `transcribe`
+
+![Transcribe / Translate widget](img/widgets/transcribe.png)
+
+Push-to-talk speech-to-text, optionally translated to another language and read aloud, via the AI provider. Click the mic to record, click again to stop and transcribe. Needs an OpenAI-compatible provider (Whisper) configured.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 320×120
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `mode` | select | "transcribe" | `transcribe`, `translate` | transcribe speech, or transcribe then translate. Click the mic to talk (push-to-talk — never always-listening). |
+| `targetLang` | text | "English" |  | target language for translate mode (e.g. English, Spanish, 日本語) |
+| `sourceLang` | text | "auto" |  | a hint for accuracy, or "auto" to detect (e.g. auto, en, ja, es) |
+| `audioSource` | select | "" | (runtime list) — from `microphones` | which microphone to record from (blank = system default) |
+| `model` | text | "" |  | blank = provider default (whisper-1); e.g. gpt-4o-transcribe, gpt-4o-mini-transcribe |
+| `speak` | toggle | false |  | speak the result (TTS) |
+| `label` | text | "" |  | header text |
+| `color` | color | "" |  | text colour (blank = theme) |

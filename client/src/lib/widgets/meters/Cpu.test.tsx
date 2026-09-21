@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { render } from '@testing-library/react';
+import { act, render } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import Cpu from './Cpu';
 import { TelemetryHubContext } from '../telemetryContext';
@@ -67,6 +67,33 @@ describe('Cpu (per-core grid)', () => {
 		renderCpu(<Cpu />, 32, true);
 		expect((cap.props!.cores as number[][]).length).toBe(32);
 		expect(cap.props?.cols).toBe(8);
+	});
+
+	it('drops a core that stopped reporting once it is older than the staleness window', () => {
+		const hub = createTelemetryHub();
+		const tick = (ts: number, cores: number) =>
+			hub.ingestBatch([
+				{ sensor: 'cpu.total', ts_ms: ts, value: { kind: 'scalar', value: 10 } },
+				...Array.from({ length: cores }, (_, i) => ({
+					sensor: `cpu.core.${i}`,
+					ts_ms: ts,
+					value: { kind: 'scalar' as const, value: 1 }
+				}))
+			]);
+		tick(1000, 4);
+		cap.props = null;
+		render(
+			<TelemetryHubContext.Provider value={hub}>
+				<Cpu />
+			</TelemetryHubContext.Provider>
+		);
+		expect((cap.props!.cores as number[][]).length).toBe(4);
+		// Cores 2–3 go silent; the grid keeps them only while they're within the window…
+		act(() => tick(3000, 2));
+		expect((cap.props!.cores as number[][]).length).toBe(4);
+		// …and drops them once the rest have ticked on past it.
+		act(() => tick(5000, 2));
+		expect((cap.props!.cores as number[][]).length).toBe(2);
 	});
 
 	it('respects an explicit cols override (a fixed-width grid)', () => {

@@ -96,6 +96,15 @@ function ensureChannel(): Channel<SpectrumFrame> {
 			window.addEventListener('beforeunload', () => {
 				if (started) void invoke(COMMANDS.stopSpectrum).catch(() => undefined);
 			});
+		// A hidden window (minimised / occluded studio) can't show the bars, yet its subscription would
+		// keep the WASAPI loopback + FFT thread busy and push 60 Hz frames into a webview nobody sees.
+		// Pause the stream while hidden and resume (fresh start) when it's visible again.
+		if (typeof document !== 'undefined')
+			document.addEventListener('visibilitychange', () => {
+				if (document.visibilityState === 'hidden') {
+					if (started) stopStream();
+				} else if (refCount > 0 && !started) startStream();
+			});
 	}
 	return channel;
 }

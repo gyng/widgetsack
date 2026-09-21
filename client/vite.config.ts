@@ -70,8 +70,10 @@ export default defineConfig({
 				// canvas-2D / FFT-stream draw glue: the substance is imperative draw() on a 2D context
 				// happy-dom doesn't provide (getContext returns null, client sizes are 0). The pure geometry
 				// is unit-tested in cpuCoresMath / sparklineMath / spectrumMath.test.ts; acquire/release is
-				// in Spectrum.test.ts. Same class as audio/**.
+				// in Spectrum.test.ts; Sparkline's mode wiring (line/histogram/fill/axis) is asserted against
+				// a stubbed context in Sparkline.test.tsx. Same class as audio/**.
 				'src/lib/widgets/meters/CpuCoresCanvas.tsx',
+				'src/lib/widgets/meters/Sparkline.tsx',
 				'src/lib/widgets/meters/Spectrum.tsx',
 				// overlay-runtime + DOM/canvas glue (ResizeObserver / getImageData / listen-emit +
 				// window/monitor manipulation): no domain logic, not drivable under happy-dom. Pure seams
