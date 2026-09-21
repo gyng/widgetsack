@@ -3,12 +3,14 @@ import { render, waitFor, fireEvent, cleanup, act } from '@testing-library/react
 
 // Stub the Tauri-backed DDC adapter (no backend in tests): the host must still resolve the target
 // monitor, derive its rows/title/stats, and drive the optimistic switch → reconcile flow through it.
-const { listMonitorInputs, setMonitorInput, setMonitorVolume } = vi.hoisted(() => ({
+const { listMonitorInputs, setMonitorInput, setMonitorVolume, setAudioVolume } = vi.hoisted(() => ({
 	listMonitorInputs: vi.fn(),
 	setMonitorInput: vi.fn(),
-	setMonitorVolume: vi.fn()
+	setMonitorVolume: vi.fn(),
+	setAudioVolume: vi.fn()
 }));
 vi.mock('../ddc/monitors', () => ({ listMonitorInputs, setMonitorInput, setMonitorVolume }));
+vi.mock('../audio/volume', () => ({ setAudioVolume }));
 
 import MonitorSwitchHost from './MonitorSwitchHost';
 import type { MonitorInputs } from '../ddc/monitors';
@@ -29,9 +31,11 @@ const mon = (over: Partial<MonitorInputs> = {}): MonitorInputs => ({
 beforeEach(() => {
 	listMonitorInputs.mockReset();
 	setMonitorInput.mockReset();
+	setAudioVolume.mockReset();
 	setMonitorVolume.mockReset();
 	listMonitorInputs.mockResolvedValue([mon()]);
 	setMonitorInput.mockResolvedValue(true);
+	setAudioVolume.mockResolvedValue(true);
 	setMonitorVolume.mockResolvedValue(true);
 });
 
@@ -145,8 +149,48 @@ describe('MonitorSwitchHost (container wiring)', () => {
 		});
 	});
 
-	it('sets a paired monitor volume BEFORE switching input, and only for sources that have one', async () => {
+	it('ignores paired volumes by default (volume target off) — a switch changes no volume', async () => {
 		const { container } = render(<MonitorSwitchHost sources="0x11=HDMI, 0xf=DP@35" />);
+		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
+		const dp = [...container.querySelectorAll('.ms-row')].find((r) =>
+			r.textContent?.includes('DP')
+		);
+		fireEvent.click(dp as Element);
+		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x0f));
+		expect(setAudioVolume).not.toHaveBeenCalled();
+		expect(setMonitorVolume).not.toHaveBeenCalled();
+	});
+
+	it('volume target "system": the Windows volume follows a successful switch, only for sources with one', async () => {
+		const { container } = render(
+			<MonitorSwitchHost sources="0x11=HDMI, 0xf=DP@35" volumeTarget="system" />
+		);
+		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
+		const order: string[] = [];
+		setMonitorInput.mockImplementation(async () => (order.push('input'), true));
+		setAudioVolume.mockImplementation(async () => (order.push('volume'), true));
+		const dp = [...container.querySelectorAll('.ms-row')].find((r) =>
+			r.textContent?.includes('DP')
+		);
+		fireEvent.click(dp as Element);
+		await waitFor(() => expect(setAudioVolume).toHaveBeenCalledWith(0.35)); // 35% → scalar
+		expect(order).toEqual(['input', 'volume']);
+		expect(setMonitorVolume).not.toHaveBeenCalled();
+
+		setAudioVolume.mockClear();
+		setMonitorInput.mockClear();
+		const hdmi = [...container.querySelectorAll('.ms-row')].find((r) =>
+			r.textContent?.includes('HDMI')
+		);
+		await waitFor(() => expect(hdmi?.hasAttribute('disabled')).toBe(false));
+		fireEvent.click(hdmi as Element);
+		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x11));
+		expect(setAudioVolume).not.toHaveBeenCalled(); // no @volume on this source
+	});
+
+	it('volume target "monitor": the speaker volume goes out BEFORE the switch, best-effort', async () => {
+		const { container } = render(<MonitorSwitchHost sources="0xf=DP@35" volumeTarget="monitor" />);
+		// Two rows: DP from the spec, plus the active HDMI input (always shown so it can be re-selected).
 		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
 		const order: string[] = [];
 		setMonitorVolume.mockImplementation(async () => (order.push('volume'), true));
@@ -157,32 +201,42 @@ describe('MonitorSwitchHost (container wiring)', () => {
 		fireEvent.click(dp as Element);
 		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x0f));
 		expect(setMonitorVolume).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 35);
-		// The volume goes out first: after the switch the monitor may no longer answer this cable.
 		expect(order).toEqual(['volume', 'input']);
+		expect(setAudioVolume).not.toHaveBeenCalled();
 
-		setMonitorVolume.mockClear();
+		// A rejected speaker volume never blocks the switch.
+		setMonitorVolume.mockResolvedValueOnce(false);
 		setMonitorInput.mockClear();
-		const hdmi = [...container.querySelectorAll('.ms-row')].find((r) =>
-			r.textContent?.includes('HDMI')
-		);
-		await waitFor(() => expect(hdmi?.hasAttribute('disabled')).toBe(false));
-		fireEvent.click(hdmi as Element);
-		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x11));
-		expect(setMonitorVolume).not.toHaveBeenCalled(); // no @volume on this source
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		await waitFor(() => expect(dp?.hasAttribute('disabled')).toBe(false));
+		fireEvent.click(dp as Element);
+		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x0f));
+		expect(warn).toHaveBeenCalledWith('monitor volume change failed; switching input anyway');
+		warn.mockRestore();
 	});
 
-	it('still switches input when the monitor rejects the volume change', async () => {
-		setMonitorVolume.mockResolvedValue(false);
+	it('volume target "system": a failed switch leaves the volume alone; a failed volume change is logged', async () => {
+		setMonitorInput.mockResolvedValueOnce(false);
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-		const { container } = render(<MonitorSwitchHost sources="0xf=DP@35" />);
-		// Two rows: DP from the spec, plus the active HDMI input (always shown so it can be re-selected).
+		const { container } = render(<MonitorSwitchHost sources="0xf=DP@35" volumeTarget="system" />);
 		await waitFor(() => expect(container.querySelectorAll('.ms-row')).toHaveLength(2));
 		const dp = [...container.querySelectorAll('.ms-row')].find((r) =>
 			r.textContent?.includes('DP')
 		);
 		fireEvent.click(dp as Element);
-		await waitFor(() => expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x0f));
-		expect(warn).toHaveBeenCalledWith('monitor volume change failed; switching input anyway');
+		await waitFor(() =>
+			expect(warn).toHaveBeenCalledWith(
+				'monitor input switch failed; reverted to the reported input'
+			)
+		);
+		expect(setAudioVolume).not.toHaveBeenCalled();
+
+		setAudioVolume.mockResolvedValueOnce(false);
+		await waitFor(() => expect(dp?.hasAttribute('disabled')).toBe(false));
+		fireEvent.click(dp as Element);
+		await waitFor(() =>
+			expect(warn).toHaveBeenCalledWith('system volume change after input switch failed')
+		);
 		warn.mockRestore();
 	});
 

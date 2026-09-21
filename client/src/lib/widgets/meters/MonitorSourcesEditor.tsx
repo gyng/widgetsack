@@ -76,8 +76,8 @@ export default function MonitorSourcesEditor({ value, monitor, onChange }: Props
 	// from a label to keep it parseable.
 	const rename = (i: number, label: string): void =>
 		emit(rows.map((r, j) => (j === i ? { ...r, label: label.replace(/[,\n@]/g, ' ') } : r)));
-	// Optional monitor speaker volume (DDC/CI VCP 0x62) applied when this input is chosen; blank =
-	// leave the volume alone.
+	// Optional volume paired with this input (what it changes is the widget's "volume target", off by
+	// default); blank = leave it alone.
 	const setVolume = (i: number, raw: string): void => {
 		const volume = parseVolumeInput(raw);
 		emit(rows.map((r, j) => (j === i ? { ...r, volume } : r)));
@@ -131,7 +131,7 @@ export default function MonitorSourcesEditor({ value, monitor, onChange }: Props
 								value={r.volume ?? ''}
 								placeholder="vol"
 								aria-label={`${r.defaultName} volume`}
-								title="Monitor speaker volume (0–100) to set when switching to this input; blank = leave it"
+								title="Volume (0–100) paired with this input — applied only while the widget's volume target is on; blank = leave it"
 								disabled={!r.include}
 								onChange={(e) => setVolume(i, e.currentTarget.value)}
 							/>

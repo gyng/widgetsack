@@ -3,6 +3,17 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.59
+
+### Changed
+
+- **Monitor Switch: the paired volume now targets a selectable output, and is OFF by default.** A new
+  `volume target` setting on the widget chooses what a source's `@NN` volume changes: `off` (default —
+  paired volumes are ignored entirely), `system` (the Windows master volume, applied after a successful
+  switch, e.g. turn the PC down when the screen goes to a console), or `monitor` (the monitor's own
+  speakers over DDC/CI, sent just before the switch). 0.0.58 applied the monitor speaker volume
+  unconditionally whenever a source carried one.
+
 ## 0.0.58
 
 ### Added

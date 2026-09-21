@@ -11,12 +11,19 @@ import {
 	setMonitorVolume,
 	type MonitorInputs
 } from '../ddc/monitors';
-import { formatStats, monitorInputRows } from '../core/monitorInputs';
+import { setAudioVolume } from '../audio/volume';
+import {
+	formatStats,
+	monitorInputRows,
+	parseVolumeTarget,
+	volumeAction
+} from '../core/monitorInputs';
 
 // Config fields, spread onto the host as props by WidgetHost (see widget.ts `monitorswitch` meta).
 type Props = {
 	monitor?: string; // GDI device name (\\.\DISPLAYn); blank = the primary monitor
-	sources?: string; // optional `code=label` spec choosing/ordering/renaming inputs
+	sources?: string; // optional `code=label[@volume]` spec choosing/ordering/renaming inputs
+	volumeTarget?: string; // 'off' (default) | 'system' | 'monitor' — what a paired @volume changes
 	label?: string; // widget title override
 	showCurrent?: boolean;
 	showStats?: boolean;
@@ -31,6 +38,7 @@ const REFRESH_MS = 8000;
 export default function MonitorSwitchHost({
 	monitor,
 	sources,
+	volumeTarget,
 	label,
 	showCurrent = true,
 	showStats = false,
@@ -108,14 +116,22 @@ export default function MonitorSwitchHost({
 				selected: { ...current!.selected!, current_input: value }
 			})); // optimistic highlight
 			try {
-				// A paired volume (`0x12=NS2@35`) is sent FIRST: once the monitor has switched to the other
-				// device it may stop answering DDC/CI on this PC's cable. Best-effort — a rejected volume
-				// (no speakers, unsupported) must not block the switch itself.
-				const volume = rowsRef.current.find((r) => r.value === value)?.volume;
-				if (volume !== undefined && !(await setMonitorVolume(gdi, volume))) {
+				// A source's paired volume (`0x12=NS2@35`) applies only when the widget's `volumeTarget`
+				// is on (off by default). 'monitor' (the monitor's own speakers, DDC/CI) goes out BEFORE
+				// the switch — after it the monitor may stop answering this PC's cable; 'system' (the
+				// Windows master volume) follows a successful switch — e.g. turn the PC down when the
+				// screen goes to a console. Both best-effort: a failed volume change is logged only.
+				const action = volumeAction(
+					parseVolumeTarget(volumeTarget),
+					rowsRef.current.find((r) => r.value === value)?.volume
+				);
+				if (action?.target === 'monitor' && !(await setMonitorVolume(gdi, action.volume))) {
 					console.warn('monitor volume change failed; switching input anyway');
 				}
 				const ok = await setMonitorInput(gdi, value);
+				if (ok && action?.target === 'system' && !(await setAudioVolume(action.volume / 100))) {
+					console.warn('system volume change after input switch failed');
+				}
 				if (targetRef.current === target) {
 					await refresh(); // reconcile with what the monitor actually reports (snaps back on failure)
 				}
@@ -125,7 +141,7 @@ export default function MonitorSwitchHost({
 				if (mounted.current) setBusyValue(null);
 			}
 		},
-		[selected, target, refresh]
+		[selected, target, refresh, volumeTarget]
 	);
 
 	const current = showCurrent ? (selected?.current_input ?? null) : null;
