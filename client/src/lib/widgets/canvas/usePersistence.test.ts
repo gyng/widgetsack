@@ -818,7 +818,8 @@ describe('persistToDisk is single-flight with a trailing rerun (the last state w
 	}
 	const saveCalls = () => invoke.mock.calls.filter((c) => c[0] === COMMANDS.saveLayout).length;
 
-	it('requests arriving mid-run collapse into ONE trailing rerun that writes the newest state', async () => {
+	it('previews arriving mid-run collapse into ONE trailing rerun that writes the newest state', async () => {
+		vi.useFakeTimers();
 		const release = gatedLoad();
 		const { result, rerender } = renderHook(
 			({ state }: { state: EditorState }) => usePersistence(state, 'mon-A'),
@@ -827,16 +828,22 @@ describe('persistToDisk is single-flight with a trailing rerun (the last state w
 		const p1 = result.current.persistToDisk([]); // in flight (held at load_layout)
 		// Two more commits land while it runs — the editor now holds 'third'.
 		rerender({ state: editorState({ monitor: monitorWith('second') }) });
-		const p2 = result.current.persistToDisk([]);
+		act(() => result.current.schedulePreviewWrite());
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(150);
+		});
 		rerender({ state: editorState({ monitor: monitorWith('third') }) });
-		const p3 = result.current.persistToDisk([]);
+		act(() => result.current.schedulePreviewWrite());
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(150);
+		});
 		expect(result.current.previewPending()).toBe(true); // in flight counts as pending
 		release();
-		let results: boolean[] = [];
+		let ok = false;
 		await act(async () => {
-			results = await Promise.all([p1, p2, p3]);
+			ok = (await p1) && (await result.current.flushPreviewWrite());
 		});
-		expect(results).toEqual([true, true, true]);
+		expect(ok).toBe(true);
 		// Exactly two writes: the in-flight run (stale 'first') + ONE trailing rerun with the latest.
 		expect(saveCalls()).toBe(2);
 		const monitors = written().monitors as Record<string, MonitorLayout>;
@@ -879,6 +886,37 @@ describe('persistToDisk is single-flight with a trailing rerun (the last state w
 });
 
 describe('ordered persistence', () => {
+	it('a preview queued after Save cannot replace its cross-monitor move', async () => {
+		vi.useFakeTimers();
+		let release!: (value: string | null) => void;
+		invoke.mockImplementationOnce(
+			() =>
+				new Promise<string | null>((resolve) => {
+					release = resolve;
+				})
+		);
+		const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));
+		const active = result.current.persistToDisk([]);
+		const extra: Extra = { key: 'mon-B', leaf: leaf(createWidget('text', 'moved')) };
+		const save = result.current.persistToDisk([extra]);
+		act(() => result.current.schedulePreviewWrite());
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(150);
+		});
+		let saved = false;
+		void save.then((ok) => {
+			saved = ok;
+		});
+		await act(async () => {
+			release(null);
+			await Promise.all([active, save, result.current.flushPreviewWrite()]);
+		});
+		expect(saved).toBe(true);
+		const writes = invoke.mock.calls
+			.filter((call) => call[0] === COMMANDS.saveLayout)
+			.map((call) => JSON.parse(call[1].contents) as { monitors: Record<string, MonitorLayout> });
+		expect(writes.some((write) => write.monitors['mon-B']?.floating[0]?.id === 'moved')).toBe(true);
+	});
 	it('keeps a revert after active and queued previews, including global changes', async () => {
 		let release!: (value: string | null) => void;
 		invoke.mockImplementationOnce(

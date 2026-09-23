@@ -21,6 +21,13 @@
 	font-variant-numeric: tabular-nums;
 }
 
+/* Rate values share a narrow two-column row in the Network widget. Keep a long formatted value
+   on one line inside its authored height instead of wrapping below the widget's clipped bottom. */
+.np-text.rate .value {
+	font-size: 12px;
+	white-space: nowrap;
+}
+
 /* Empty-content placeholder: hidden on the passive overlay (the plain "–" shows), swapped in for the
    value ONLY inside an edit-mode host (.widget.editable — the studio / overlay edit mode) so a
    freshly added or unbound Text reads as a dashed "Text" box instead of an invisible sliver. */

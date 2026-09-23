@@ -27,7 +27,10 @@ export default function Text({ value = null, format = 'integer', label = '', col
 	const empty = isEmptyText(value, label);
 
 	return (
-		<div className={empty ? 'text np-text empty' : 'text np-text'} style={{ color: colorCss }}>
+		<div
+			className={`text np-text${empty ? ' empty' : ''}${format === 'rate' ? ' rate' : ''}`}
+			style={{ color: colorCss }}
+		>
 			{label && (
 				<span className="label" data-part="label">
 					{label}

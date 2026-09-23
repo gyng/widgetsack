@@ -8,7 +8,7 @@
 // omit tokens).
 //
 // Preview, Save, and revert share one ordered queue. Waiting previews for the same monitor
-// coalesce, while a revert is a barrier. Flush waits for active and queued work, even after
+// coalesce, while Save and revert are barriers. Flush waits for active and queued work, even after
 // the debounce timer has fired. Each preview retains its original monitor key.
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
@@ -237,7 +237,9 @@ export function usePersistence(
 	const persistToDisk = useCallback(
 		(extras: Extra[]): Promise<boolean> => {
 			const key = view.current.myMonitor;
-			return queue.current!.enqueue(() => persistNow(extras, key), key);
+			// An explicit Save must run even if a newer preview is queued behind it: it may carry
+			// cross-monitor moves which preview writes do not include.
+			return queue.current!.enqueue(() => persistNow(extras, key));
 		},
 		[persistNow]
 	);

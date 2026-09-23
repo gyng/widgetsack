@@ -70,22 +70,32 @@ export function useZoomFit(opts: {
 	});
 
 	const fit = useCallback(() => {
-		const { monSize: m, stageW: sw, stageH: sh } = sizes.current;
+		const { monSize: m, stageW, stageH } = sizes.current;
+		// A section switch can change the canvas inset in the same commit that requests fit().
+		// ResizeObserver updates stageW/H later; measure the committed stage now so the new
+		// widget-designer rail cannot leave the fitted world clipped at its sides.
+		const sw = canvasRef.current?.clientWidth || stageW;
+		const sh = canvasRef.current?.clientHeight || stageH;
 		if (!m.w || !m.h || !sw || !sh) return;
 		const zoom = Math.min(sw / m.w, sh / m.h) * 0.95;
 		setPan({ zoom, panX: (sw - m.w * zoom) / 2, panY: (sh - m.h * zoom) / 2 });
-	}, []);
+	}, [canvasRef]);
 
-	const fitRect = useCallback((rect: { x: number; y: number; w: number; h: number }) => {
-		const { stageW: sw, stageH: sh } = sizes.current;
-		if (!sw || !sh || rect.w <= 0 || rect.h <= 0) return;
-		// 24px of stage padding around the box; never zoom past 4× (the wheel's ceiling).
-		const pad = 24;
-		const zoom = Math.min(4, (sw - pad * 2) / rect.w, (sh - pad * 2) / rect.h);
-		const cx = rect.x + rect.w / 2;
-		const cy = rect.y + rect.h / 2;
-		setPan({ zoom, panX: sw / 2 - cx * zoom, panY: sh / 2 - cy * zoom });
-	}, []);
+	const fitRect = useCallback(
+		(rect: { x: number; y: number; w: number; h: number }) => {
+			const { stageW, stageH } = sizes.current;
+			const sw = canvasRef.current?.clientWidth || stageW;
+			const sh = canvasRef.current?.clientHeight || stageH;
+			if (!sw || !sh || rect.w <= 0 || rect.h <= 0) return;
+			// 24px of stage padding around the box; never zoom past 4× (the wheel's ceiling).
+			const pad = 24;
+			const zoom = Math.min(4, (sw - pad * 2) / rect.w, (sh - pad * 2) / rect.h);
+			const cx = rect.x + rect.w / 2;
+			const cy = rect.y + rect.h / 2;
+			setPan({ zoom, panX: sw / 2 - cx * zoom, panY: sh / 2 - cy * zoom });
+		},
+		[canvasRef]
+	);
 
 	// Auto-fit on first measure and whenever the edited monitor changes (not on manual zoom).
 	const lastFitKey = useRef('');

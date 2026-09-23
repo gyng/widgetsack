@@ -75,6 +75,13 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 	const [text, setText] = useState('');
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
+	const mounted = useRef(true);
+	useEffect(
+		() => () => {
+			mounted.current = false;
+		},
+		[]
+	);
 	// Latest config without retriggering the generator's identity on every keystroke. Committed after
 	// render (not during it); `generate` only reads it later, from timers/handlers.
 	const cfgRef = useRef(cfg);
@@ -89,6 +96,7 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 	useSensors(hub, ids);
 
 	const generateOnce = useCallback(async (): Promise<void> => {
+		if (!mounted.current) return;
 		setBusy(true);
 		setError('');
 		try {
@@ -98,12 +106,13 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 				maxTokens: 200
 			});
 			const trimmed = out.trim();
+			if (!mounted.current) return;
 			setText(trimmed);
 			if (cfgRef.current.speak) void speakSmart(trimmed);
 		} catch (e) {
-			setError(String(e));
+			if (mounted.current) setError(String(e));
 		} finally {
-			setBusy(false);
+			if (mounted.current) setBusy(false);
 		}
 	}, [hub]);
 	// Provider calls can outlive the shortest schedule. Collapse ticks/manual refreshes that arrive

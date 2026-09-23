@@ -183,6 +183,28 @@ describe('useAssistant', () => {
 		expect(llmComplete).not.toHaveBeenCalled();
 	});
 
+	it('unmounting during a request discards its speech and queued follow-up', async () => {
+		let resolveFirst!: (value: string) => void;
+		llmComplete.mockImplementationOnce(
+			() => new Promise<string>((resolve) => (resolveFirst = resolve))
+		);
+		const { result, unmount } = renderHook(() => useAssistant(cfg({ speak: true })), { wrapper });
+		let first!: Promise<void>;
+		let trailing!: Promise<void>;
+		act(() => {
+			first = result.current.refresh();
+			trailing = result.current.refresh();
+		});
+		expect(llmComplete).toHaveBeenCalledOnce();
+		unmount();
+		await act(async () => {
+			resolveFirst('too late');
+			await Promise.all([first, trailing]);
+		});
+		expect(speakSmart).not.toHaveBeenCalled();
+		expect(llmComplete).toHaveBeenCalledOnce();
+	});
+
 	it('does NOT auto-generate in the studio (manual refresh only)', async () => {
 		isStudioWindow.mockReturnValue(true);
 		const { result } = renderHook(() => useAssistant(cfg({ schedule: '30s' })), { wrapper });
