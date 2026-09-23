@@ -943,14 +943,14 @@ export async function onStudioCloseRequested(
 		let unlisten: () => void = () => undefined;
 		let handling = false;
 		unlisten = await win.onCloseRequested(async (event) => {
-			if (handling) return; // ignore repeat clicks while we're already processing one
-			handling = true;
 			event.preventDefault();
-			let proceed = true;
+			if (handling) return; // repeat clicks must not bypass an in-flight save
+			handling = true;
+			let proceed = false;
 			try {
 				proceed = (await decide()) !== false;
 			} catch (err) {
-				// Never trap the user in a window we couldn't decide about — let the close proceed.
+				// An unexpected save failure must not destroy the only copy of the draft.
 				console.warn('studio close decision failed', err);
 			}
 			if (!proceed) {

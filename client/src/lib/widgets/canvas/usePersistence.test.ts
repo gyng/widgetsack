@@ -386,6 +386,10 @@ describe('persistToDisk — widgets.json assembly', () => {
 		const out = written();
 		expect(out.version).toBe(2);
 		expect(Object.keys(out.monitors as object)).toEqual(['mon-A']);
+		expect(invoke).toHaveBeenLastCalledWith(
+			COMMANDS.saveLayout,
+			expect.objectContaining({ recoverCorrupt: true })
+		);
 		expect(warn).toHaveBeenCalledOnce(); // the fallback is logged, not silent
 		warn.mockRestore();
 	});
@@ -632,6 +636,10 @@ describe('writeBaseline — revert path', () => {
 		});
 		expect(ok).toBe(true);
 		expect(Object.keys(written().monitors as object)).toEqual(['mon-A']);
+		expect(invoke).toHaveBeenLastCalledWith(
+			COMMANDS.saveLayout,
+			expect.objectContaining({ recoverCorrupt: true })
+		);
 		warn.mockRestore();
 	});
 
@@ -692,12 +700,14 @@ describe('debounced preview write', () => {
 		});
 		expect(onPreviewWriteResult).toHaveBeenLastCalledWith(true);
 		saveRejects = true;
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		act(() => result.current.schedulePreviewWrite());
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(160);
 		});
 		expect(onPreviewWriteResult).toHaveBeenLastCalledWith(false);
 		expect(onPreviewWriteResult).toHaveBeenCalledTimes(2);
+		expect(warn).toHaveBeenCalledOnce();
 	});
 
 	it('clearPreviewWrite cancels a pending write', async () => {
@@ -866,4 +876,81 @@ describe('persistToDisk is single-flight with a trailing rerun (the last state w
 		const monitors = written().monitors as Record<string, MonitorLayout>;
 		expect(monitors['mon-B'].floating[0].id).toBe('moved');
 	});
+});
+
+describe('ordered persistence', () => {
+	it('keeps a revert after active and queued previews, including global changes', async () => {
+		let release!: (value: string | null) => void;
+		invoke.mockImplementationOnce(
+			() =>
+				new Promise<string | null>((r) => {
+					release = r;
+				})
+		);
+		const b: Baseline = {
+			monitor: monitorWith('saved'),
+			theme: 'saved-theme',
+			library: undefined,
+			themeLock: true,
+			tokens: {}
+		};
+		const { result, rerender } = renderHook(({ state }) => usePersistence(state, 'mon-A'), {
+			initialProps: {
+				state: editorState({
+					monitor: monitorWith('draft'),
+					selectedTheme: 'draft-theme',
+					savedBaseline: b
+				})
+			}
+		});
+		const first = result.current.persistToDisk([]);
+		const queued = result.current.persistToDisk([]);
+		const revert = result.current.writeBaseline(b, 'mon-A');
+		rerender({
+			state: editorState({ monitor: b.monitor, selectedTheme: b.theme, savedBaseline: b })
+		});
+		await act(async () => {
+			release(null);
+			await Promise.all([first, queued, revert]);
+		});
+		expect((written().monitors as Record<string, MonitorLayout>)['mon-A']).toEqual(b.monitor);
+		expect(written().theme).toBe('saved-theme');
+		expect(savedTouchedGlobals).toContain('theme');
+	});
+	it.each([false, true])(
+		'flush waits for an active preview and reports failure=%s',
+		async (fails) => {
+			vi.useFakeTimers();
+			const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+			let release!: (value: string | null) => void;
+			invoke.mockImplementationOnce(
+				() =>
+					new Promise<string | null>((r) => {
+						release = r;
+					})
+			);
+			saveRejects = fails;
+			const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));
+			result.current.schedulePreviewWrite();
+			await act(async () => {
+				await vi.advanceTimersByTimeAsync(150);
+			});
+			let settled = false;
+			const flush = result.current.flushPreviewWrite().then((ok) => {
+				settled = true;
+				return ok;
+			});
+			await act(async () => undefined);
+			expect(settled).toBe(false);
+			let ok: boolean | undefined;
+			await act(async () => {
+				release(null);
+				ok = await flush;
+			});
+			expect(ok).toBe(!fails);
+			expect(result.current.previewPending()).toBe(false);
+			expect(await result.current.flushPreviewWrite()).toBe(!fails);
+			expect(warn).toHaveBeenCalledTimes(fails ? 1 : 0);
+		}
+	);
 });

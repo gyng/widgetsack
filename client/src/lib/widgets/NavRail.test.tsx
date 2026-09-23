@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { act, fireEvent, render } from '@testing-library/react';
 
 // The Settings item's update badge mirrors the background update check (lib/appUpdate.ts). Mock
 // the adapter with a real external store so a test can flip the badge on without Tauri.
@@ -113,23 +113,25 @@ describe('NavRail', () => {
 
 describe('NavRail — update badge', () => {
 	it('badges the Settings item with the new version only when an update is known', () => {
-		const { container, rerender } = render(<NavRail active="layouts" onSelect={noop} />);
+		const { container } = render(<NavRail active="layouts" onSelect={noop} />);
 		expect(container.querySelector('.nav-badge')).toBeNull();
-		appUpdateStore.set({
-			current: '0.0.55',
-			latest: '0.0.56',
-			url: 'https://github.com/gyng/widgetsack/releases/tag/v0.0.56',
-			updateAvailable: true
-		});
-		rerender(<NavRail active="layouts" onSelect={noop} />);
+		act(() =>
+			appUpdateStore.set({
+				current: '0.0.55',
+				latest: '0.0.56',
+				url: 'https://github.com/gyng/widgetsack/releases/tag/v0.0.56',
+				updateAvailable: true
+			})
+		);
 		const badge = container.querySelector('button[data-section="settings"] .nav-badge')!;
 		expect(badge.textContent).toBe('v0.0.56');
 		expect(badge.getAttribute('title')).toContain('Update available: v0.0.56');
 		// Only the Settings item carries it.
 		expect(container.querySelectorAll('.nav-badge').length).toBe(1);
 		// An up-to-date result clears it again.
-		appUpdateStore.set({ current: '0.0.55', latest: '0.0.55', url: '', updateAvailable: false });
-		rerender(<NavRail active="layouts" onSelect={noop} />);
+		act(() =>
+			appUpdateStore.set({ current: '0.0.55', latest: '0.0.55', url: '', updateAvailable: false })
+		);
 		expect(container.querySelector('.nav-badge')).toBeNull();
 	});
 });

@@ -80,13 +80,15 @@ describe('useAppUpdate', () => {
 	it('arms the watch and re-renders on store changes; the test seam resets both', async () => {
 		invoke.mockResolvedValueOnce(null);
 		const { useAppUpdate, resetAppUpdateWatchForTests } = await load();
-		const { result } = renderHook(() => useAppUpdate());
+		const { result, unmount } = renderHook(() => useAppUpdate());
 		expect(result.current).toBeNull();
 		expect(invoke).toHaveBeenCalledWith('get_app_update');
 		await act(async () => eventHandler()({ payload: wire(true) }));
 		expect(result.current?.latest).toBe('0.0.56');
-		act(() => resetAppUpdateWatchForTests());
-		expect(result.current).toBeNull();
+		unmount();
+		resetAppUpdateWatchForTests();
+		const { appUpdateStore } = await import('./appUpdate');
+		expect(appUpdateStore.getSnapshot()).toBeNull();
 	});
 });
 

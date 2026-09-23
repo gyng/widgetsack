@@ -1349,8 +1349,8 @@ export default function Canvas({ studio = false }: Props) {
 	const undo = useCallback(() => dispatch({ type: 'undo' }), [dispatch]);
 	const redo = useCallback(() => dispatch({ type: 'redo' }), [dispatch]);
 
-	const commitSave = useCallback(async () => {
-		if (!studio) return;
+	const commitSave = useCallback(async (): Promise<boolean> => {
+		if (!studio) return true;
 		clearPreviewWrite();
 		const ok = await persistToDisk(pendingExtrasRef.current);
 		if (!ok) {
@@ -1361,7 +1361,7 @@ export default function Canvas({ studio = false }: Props) {
 				'Could not save the layout to disk — your changes are NOT saved. ' +
 					'Check that widgets.json is writable, then try again.'
 			);
-			return;
+			return false;
 		}
 		// The extras are on the other monitors' records now: clear them from the state AND from the
 		// undo history, so an undo can't re-queue one (a second Save would duplicate it there).
@@ -1371,28 +1371,29 @@ export default function Canvas({ studio = false }: Props) {
 		setSavedFlash(true);
 		if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
 		savedFlashTimer.current = window.setTimeout(() => setSavedFlash(false), 2200);
+		return true;
 	}, [studio, clearPreviewWrite, persistToDisk, dispatch]);
 	// Mirrored in the commit effect S3 (read only from the studio-close listener).
 	const pendingExtrasRef = useRef(pendingExtras);
 	const commitSaveRef = useRef(commitSave);
 
-	// Window-close guard (studio only): if there are unsaved changes, PROMPT to save / discard / keep
-	// editing instead of silently closing (the studio live-previews edits to disk, so a blind close
-	// would just keep them). Registered once; the handler reads the latest dirty/extras/save/revert
-	// via refs. `pendingExtras` (deferred cross-monitor moves) count as unsaved too.
+	// Close only after all edits reach disk. Failure keeps the editor and its retryable draft alive.
 	useEffect(() => {
 		if (!studio) return;
 		let unlisten: () => void = () => undefined;
 		onStudioCloseRequested(async () => {
-			// Always close. `window.confirm` is unreliable in the webview (it can silently return false,
-			// which previously TRAPPED the close — the ✕ did nothing), and the studio live-previews every
-			// edit straight to disk, so closing loses nothing. Persist any not-yet-written work (e.g.
-			// queued cross-monitor moves) first; an explicit discard is available via "cancel edits".
 			try {
-				if (dirtyRef.current || pendingExtrasRef.current.length > 0) await commitSaveRef.current();
-				else await flushPreviewWrite(); // e.g. an undo back to baseline still debouncing
+				if (dirtyRef.current || pendingExtrasRef.current.length > 0) {
+					if (!(await commitSaveRef.current())) return false;
+				} else if (!(await flushPreviewWrite()) && !(await commitSaveRef.current())) {
+					return false;
+				}
 			} catch (err) {
 				console.warn('save on studio close failed', err);
+				window.alert(
+					'Could not save the layout to disk — the studio will stay open. Try saving again.'
+				);
+				return false;
 			}
 			// While `main` is destroyed to reclaim its renderer (empty primary), nothing drives overlay
 			// reconcile. The studio is the editing surface, so on close it applies the final layout: spawn
@@ -1420,22 +1421,28 @@ export default function Canvas({ studio = false }: Props) {
 	// We write the baseline values DIRECTLY (writeBaseline) rather than via persistToDisk because
 	// the reducer's revert set lags a render — the disk write must use the baseline immediately.
 	const revertDraftToDisk = useCallback(async () => {
-		if (!savedBaselineRef.current) return;
+		if (!savedBaselineRef.current) return true;
 		const b = savedBaselineRef.current;
-		dispatch({ type: 'revertToBaseline' });
 		clearPreviewWrite();
-		await writeBaseline(b, myMonitorRef.current);
+		if (!(await writeBaseline(b, myMonitorRef.current))) {
+			window.alert(
+				'Could not restore the saved layout to disk — your edits are still available. Try again.'
+			);
+			return false;
+		}
+		dispatch({ type: 'revertToBaseline' });
+		return true;
 	}, [dispatch, clearPreviewWrite, writeBaseline]);
 
 	const cancelEdits = useCallback(async () => {
 		if (!studio || !dirtyRef.current || !savedBaselineRef.current) return;
 		if (!window.confirm('Discard all unsaved changes since the last save?')) return;
-		// drop out of any def edit too, clear selection, revert, re-apply theme, reset history.
+		if (!(await revertDraftToDisk())) return;
+		// Drop out of def editing only once the saved baseline has reached disk.
 		dispatch({
 			type: 'patch',
 			patch: { editingDefId: null, savedMonitor: null, selectedId: null, selectedIds: [] }
 		});
-		await revertDraftToDisk();
 		applyTheme();
 		dispatch({ type: 'resetHistory' });
 	}, [studio, dispatch, revertDraftToDisk, applyTheme]);
@@ -1452,8 +1459,8 @@ export default function Canvas({ studio = false }: Props) {
 			)
 		)
 			return;
+		if (!(await revertDraftToDisk())) return;
 		dispatch({ type: 'patch', patch: { selectedId: null, selectedIds: [] } });
-		await revertDraftToDisk();
 		dispatch({ type: 'resetHistory' });
 	}, [dispatch, revertDraftToDisk]);
 
@@ -1540,10 +1547,15 @@ export default function Canvas({ studio = false }: Props) {
 			// monitor is landed now (flushed, not dropped — an undo back to baseline still debouncing
 			// would otherwise leave the old monitor's file one edit behind); the dirty path then
 			// reverts it to the baseline on confirm, exactly as before.
-			await flushPreviewWrite();
+			if (!(await flushPreviewWrite())) {
+				window.alert(
+					'Could not save the current monitor — try saving again before switching monitors.'
+				);
+				return;
+			}
 			if (dirtyRef.current) {
 				if (!window.confirm('Discard unsaved changes to this monitor and switch?')) return;
-				await revertDraftToDisk();
+				if (!(await revertDraftToDisk())) return;
 			}
 			setMyMonitor(key);
 			// Eager latest-ref sync (mirrors the ref-sync effect below); read by later async steps in this

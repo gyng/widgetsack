@@ -14,7 +14,8 @@ use tauri::{Emitter, Manager};
 /// app's own saves from an external edit (`watch_layout`).
 #[derive(Default)]
 pub struct LayoutIoState {
-    lock: tokio::sync::Mutex<()>,
+    // The most recent successful backup path, protected by the transaction lock.
+    lock: tokio::sync::Mutex<Option<PathBuf>>,
     self_writes: std::sync::Mutex<SelfWrites>,
 }
 
@@ -176,6 +177,23 @@ fn merge_layout_contents(
     Ok(current)
 }
 
+/// Parse/merge a saved document, allowing recovery only for the exact bytes in a verified backup.
+fn merge_saved_layout(
+    raw: &str,
+    incoming: serde_json::Value,
+    touched_monitors: &[String],
+    touched_globals: &[String],
+    backup: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    match serde_json::from_str(raw) {
+        Ok(current) => merge_layout_contents(current, incoming, touched_monitors, touched_globals),
+        Err(_) if backup == Some(raw) => Ok(incoming),
+        Err(e) => Err(format!(
+            "saved layout is invalid JSON; refusing overwrite without a matching backup: {e}"
+        )),
+    }
+}
+
 /// Write the layout file, creating the config directory if needed. Editor writes identify the monitor
 /// records they changed; the backend merges those records under one lock and atomically replaces the
 /// file, so concurrent webviews cannot clobber unrelated monitors. A full-document caller (legacy-key
@@ -188,8 +206,9 @@ pub async fn save_layout(
     contents: String,
     touched_monitors: Option<Vec<String>>,
     touched_globals: Option<Vec<String>>,
+    recover_corrupt: Option<bool>,
 ) -> Result<(), String> {
-    let _guard = state.lock.lock().await;
+    let backup_path = state.lock.lock().await;
     let path = layout_path(&app)?;
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -199,14 +218,21 @@ pub async fn save_layout(
     let output = if let Some(touched) = touched_monitors {
         match fs::read_to_string(&path) {
             Ok(raw) => {
-                let current = serde_json::from_str(&raw).map_err(|e| {
-                    format!("saved layout is invalid JSON; refusing overwrite: {e}")
-                })?;
-                merge_layout_contents(
-                    current,
+                // The frontend requests recovery, but only the backend's actual backup authorizes
+                // it. Re-read that file: missing/changed backups cannot authorize an overwrite.
+                let backup = if recover_corrupt == Some(true) {
+                    backup_path
+                        .as_ref()
+                        .and_then(|path| fs::read_to_string(path).ok())
+                } else {
+                    None
+                };
+                merge_saved_layout(
+                    &raw,
                     incoming,
                     &touched,
                     touched_globals.as_deref().unwrap_or_default(),
+                    backup.as_deref(),
                 )?
             }
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => incoming,
@@ -311,7 +337,11 @@ pub async fn window_state_hints(app: tauri::AppHandle) -> Vec<WindowGeometryHint
 /// `LAYOUT_BACKUPS_KEPT` backups, pruning older ones. Returns the backup path, or `None` when
 /// there is no layout file to back up. Best-effort by design: the caller logs, never blocks on it.
 #[tauri::command]
-pub async fn backup_layout(app: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn backup_layout(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LayoutIoState>,
+) -> Result<Option<String>, String> {
+    let mut backup_path = state.lock.lock().await;
     let path = layout_path(&app)?;
     if !path.exists() {
         return Ok(None);
@@ -325,6 +355,7 @@ pub async fn backup_layout(app: tauri::AppHandle) -> Result<Option<String>, Stri
         .as_millis();
     let backup = dir.join(format!("{LAYOUT_BACKUP_PREFIX}{ts}"));
     fs::copy(&path, &backup).map_err(|e| e.to_string())?;
+    *backup_path = Some(backup.clone());
     // Prune older backups (best-effort — a leftover extra backup is harmless).
     if let Ok(entries) = fs::read_dir(dir) {
         let names: Vec<String> = entries
@@ -2136,13 +2167,32 @@ mod tests {
         ChangeOrigin, ClientLogLimiter, FontCache, LogVerdict, SelfWrites, SystemFont,
         WindowGeometryHint, atomic_write, classify_change, client_log_level, content_hash,
         drain_burst, install_http_client, install_package_directory,
-        install_package_directory_with, merge_layout_contents, parse_window_state_hints,
-        stale_backups, truncate_chars, valid_name, version_is_newer,
+        install_package_directory_with, merge_layout_contents, merge_saved_layout,
+        parse_window_state_hints, stale_backups, truncate_chars, valid_name, version_is_newer,
     };
     use crate::log::LogLevel;
     use serde_json::json;
     use std::sync::Arc;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn recovery_requires_the_exact_backed_up_contents() {
+        let incoming = json!({"version": 2, "monitors": {"a": {"floating": []}}});
+        let raw = "{broken";
+        assert!(merge_saved_layout(raw, incoming.clone(), &["a".into()], &[], None).is_err());
+        assert!(
+            merge_saved_layout(raw, incoming.clone(), &["a".into()], &[], Some("{older")).is_err()
+        );
+        assert_eq!(
+            merge_saved_layout(raw, incoming.clone(), &["a".into()], &[], Some(raw)).unwrap(),
+            incoming
+        );
+        // A valid edit after backup must be merged, never replaced as recovery.
+        let valid = r#"{"version":2,"monitors":{"b":{"floating":[]}},"theme":"keep"}"#;
+        let merged = merge_saved_layout(valid, incoming, &["a".into()], &[], Some(raw)).unwrap();
+        assert!(merged["monitors"].get("b").is_some());
+        assert_eq!(merged["theme"], "keep");
+    }
 
     #[test]
     fn self_writes_recognise_recent_content_and_forget_old() {

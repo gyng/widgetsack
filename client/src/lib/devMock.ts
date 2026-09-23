@@ -22,7 +22,7 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 	mockWindows('studio');
 
 	let evtId = 0;
-	mockIPC((cmd, args) => {
+	const handleCommand: Parameters<typeof mockIPC>[0] = (cmd, args) => {
 		switch (cmd) {
 			// --- boot: persistence / themes / controls / fonts (empty so the studio opens blank,
 			// unless the caller supplies a canned layout — the screenshot rig does) ---
@@ -261,5 +261,6 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 				console.warn('[devMock] unhandled command', cmd, args);
 				return null;
 		}
-	});
+	};
+	mockIPC(handleCommand, { shouldMockEvents: true });
 }

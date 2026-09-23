@@ -7,19 +7,15 @@
 // on unmount so the last edit before a close still lands. Token write is authoritative (empty ->
 // omit tokens).
 //
-// persistToDisk is single-flight with a trailing rerun (core/singleFlight): it snapshots the live
-// state at its start and then awaits load_layout before writing, so a commit landing mid-write
-// would otherwise be lost (the in-flight run wrote the older state) or race it (two interleaved
-// read-merge-write passes). Collapsing the burst still lands the LAST requested state. Every
-// request also captures the monitor key it was made for: a run that starts after the studio has
-// switched monitors is skipped, so a late timer / trailing rerun can never write this editor's
-// (now empty, mid-reload) tree under the NEW key.
+// Preview, Save, and revert share one ordered queue. Waiting previews for the same monitor
+// coalesce, while a revert is a barrier. Flush waits for active and queued work, even after
+// the debounce timer has fired. Each preview retains its original monitor key.
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from '../../bridge/contract';
 import { emptyRoot, type Library, type LayoutV2, type MonitorLayout } from '../../core/layoutTree';
 import { parseLayoutAny } from '../../core/migration';
-import { singleFlight } from '../../core/singleFlight';
+import { writeQueue } from '../../core/writeQueue';
 import type { Baseline, EditorState, Extra } from './types';
 
 // A frozen view of the persistence-relevant state, captured each render into a ref so the
@@ -98,6 +94,7 @@ type LayoutFile = {
 	monitors: LayoutV2['monitors'];
 	fileLib: Library | undefined;
 	fileTheme: string | undefined;
+	recoverCorrupt: boolean;
 };
 
 // Re-read widgets.json before a write. Resolves `null` (→ the write is refused) when the file can't
@@ -107,16 +104,19 @@ async function readLayoutFile(backedUp: boolean): Promise<LayoutFile | null> {
 	try {
 		const raw = await invoke<string | null>(COMMANDS.loadLayout);
 		let obj: Record<string, unknown> | null = null;
+		let recoverCorrupt = false;
 		try {
 			obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
 		} catch (err) {
 			if (!backedUp) throw err;
+			recoverCorrupt = true;
 			console.warn('widgets.json is unparseable but backed up; writing a fresh file over it', err);
 		}
 		return {
 			monitors: (obj ? parseLayoutAny(obj) : null)?.monitors ?? {},
 			fileLib: obj?.library as Library | undefined,
-			fileTheme: typeof obj?.theme === 'string' ? (obj.theme as string) : undefined
+			fileTheme: typeof obj?.theme === 'string' ? (obj.theme as string) : undefined,
+			recoverCorrupt
 		};
 	} catch (err) {
 		console.warn('load_layout failed; refusing to overwrite widgets.json', err);
@@ -170,15 +170,11 @@ export function usePersistence(
 	// write — but the library set is reducer-owned. The Canvas runs `endDefEdit`/save through the
 	// reducer; for a mid-def preview write we fold a LOCAL copy here (mirrors syncEditingDef) so the
 	// on-disk library stays in sync without mutating reducer state.
-	// The latest request's arguments: the extras to merge + the monitor key it was made for. The
-	// single-flight runner reads these at each run's START, so a trailing rerun writes the newest.
-	const request = useRef<{ extras: Extra[]; key: string }>({ extras: [], key: myMonitor });
-	const inFlight = useRef(0);
-	const persistNow = useCallback(async (): Promise<boolean> => {
-		const req = request.current;
-		const extras = req.extras;
+	const queue = useRef<ReturnType<typeof writeQueue> | null>(null);
+	if (!queue.current) queue.current = writeQueue();
+	const persistNow = useCallback(async (extras: Extra[], key: string): Promise<boolean> => {
 		const v = view.current;
-		if (v.myMonitor !== req.key) return false; // the studio switched monitors since → stale, skip
+		if (v.myMonitor !== key) return false; // the studio switched monitors since → stale, skip
 		const file = await readLayoutFile(optionsRef.current.layoutBackedUp?.() ?? false);
 		if (!file) return false;
 		const { monitors, fileLib, fileTheme } = file;
@@ -229,7 +225,8 @@ export function usePersistence(
 			await invoke(COMMANDS.saveLayout, {
 				contents: JSON.stringify(out, null, 2),
 				touchedMonitors: [...new Set([v.myMonitor, ...extras.map((extra) => extra.key)])],
-				touchedGlobals: globalFields
+				touchedGlobals: globalFields,
+				...(file.recoverCorrupt ? { recoverCorrupt: true } : {})
 			});
 			return true;
 		} catch (err) {
@@ -237,68 +234,71 @@ export function usePersistence(
 			return false;
 		}
 	}, []);
-	// Created once: the runner closes over the stable persistNow + the request/inFlight refs.
-	const flight = useRef<(() => Promise<boolean>) | null>(null);
-	if (!flight.current) {
-		flight.current = singleFlight(async () => {
-			inFlight.current++;
-			try {
-				return await persistNow();
-			} finally {
-				inFlight.current--;
-			}
-		});
-	}
-	const persistToDisk = useCallback((extras: Extra[]): Promise<boolean> => {
-		request.current = { extras, key: view.current.myMonitor };
-		return flight.current!();
-	}, []);
+	const persistToDisk = useCallback(
+		(extras: Extra[]): Promise<boolean> => {
+			const key = view.current.myMonitor;
+			return queue.current!.enqueue(() => persistNow(extras, key), key);
+		},
+		[persistNow]
+	);
 
 	// Write a specific baseline straight to disk (revert path): merge the file's other monitors +
 	// library/theme/tokens with the baseline's values for THIS monitor. Mirrors persistToDisk but
 	// sources the editor values from `b` (and the baseline is never mid-def, so no def fold).
-	const writeBaseline = useCallback(async (b: Baseline, myMonitor: string): Promise<boolean> => {
-		const v = view.current;
-		const file = await readLayoutFile(optionsRef.current.layoutBackedUp?.() ?? false);
-		if (!file) return false;
-		const { monitors, fileLib, fileTheme } = file;
-		const baseNoTheme: MonitorLayout = { ...b.monitor };
-		delete baseNoTheme.theme;
-		monitors[myMonitor] = b.themeLock ? baseNoTheme : { ...baseNoTheme, theme: b.theme };
-		const globalFields = touchedGlobals(v, b);
-		const globalTheme = globalFields.includes('theme')
-			? b.themeLock
-				? b.theme
-				: (b.globalTheme ?? fileTheme)
-			: fileTheme;
-		const tokens = b.tokens;
-		const out: Record<string, unknown> = { version: 2, monitors };
-		if (b.library !== undefined) out.library = b.library;
-		else {
-			/* v8 ignore next -- baseline libraries are initialized; fallback protects legacy v1 files. */
-			if (!globalFields.includes('library') && fileLib) out.library = fileLib;
-		}
-		if (globalTheme) out.theme = globalTheme;
-		if (!b.themeLock) out.themeLock = false; // absent ⇒ locked (the default)
-		if (tokens && Object.keys(tokens).length) out.tokens = tokens;
-		try {
-			await invoke(COMMANDS.saveLayout, {
-				contents: JSON.stringify(out, null, 2),
-				touchedMonitors: [myMonitor],
-				touchedGlobals: globalFields
-			});
-			return true;
-		} catch (err) {
-			console.warn('save_layout failed', err);
-			return false;
-		}
-	}, []);
+	const writeBaselineNow = useCallback(
+		async (b: Baseline, myMonitor: string, v: PersistView): Promise<boolean> => {
+			const file = await readLayoutFile(optionsRef.current.layoutBackedUp?.() ?? false);
+			if (!file) return false;
+			const { monitors, fileLib, fileTheme } = file;
+			const baseNoTheme: MonitorLayout = { ...b.monitor };
+			delete baseNoTheme.theme;
+			monitors[myMonitor] = b.themeLock ? baseNoTheme : { ...baseNoTheme, theme: b.theme };
+			const globalFields = touchedGlobals(v, b);
+			const globalTheme = globalFields.includes('theme')
+				? b.themeLock
+					? b.theme
+					: (b.globalTheme ?? fileTheme)
+				: fileTheme;
+			const tokens = b.tokens;
+			const out: Record<string, unknown> = { version: 2, monitors };
+			if (b.library !== undefined) out.library = b.library;
+			else {
+				/* v8 ignore next -- baseline libraries are initialized; fallback protects legacy v1 files. */
+				if (!globalFields.includes('library') && fileLib) out.library = fileLib;
+			}
+			if (globalTheme) out.theme = globalTheme;
+			if (!b.themeLock) out.themeLock = false; // absent ⇒ locked (the default)
+			if (tokens && Object.keys(tokens).length) out.tokens = tokens;
+			try {
+				await invoke(COMMANDS.saveLayout, {
+					contents: JSON.stringify(out, null, 2),
+					touchedMonitors: [myMonitor],
+					touchedGlobals: globalFields,
+					...(file.recoverCorrupt ? { recoverCorrupt: true } : {})
+				});
+				return true;
+			} catch (err) {
+				console.warn('save_layout failed', err);
+				return false;
+			}
+		},
+		[]
+	);
 
 	const previewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 	const clearPreviewWrite = useCallback(() => {
 		clearTimeout(previewTimer.current);
 		previewTimer.current = undefined;
 	}, []);
+	const writeBaseline = useCallback(
+		(b: Baseline, key: string): Promise<boolean> => {
+			clearPreviewWrite();
+			// Capture before React applies the revert, including the globals that need restoring.
+			const v = view.current;
+			return queue.current!.enqueue(() => writeBaselineNow(b, key, v));
+		},
+		[clearPreviewWrite, writeBaselineNow]
+	);
 	const schedulePreviewWrite = useCallback(() => {
 		clearTimeout(previewTimer.current);
 		// Capture the monitor the edit belongs to NOW: if the timer fires after a monitor switch,
@@ -306,17 +306,20 @@ export function usePersistence(
 		const key = view.current.myMonitor;
 		previewTimer.current = setTimeout(() => {
 			previewTimer.current = undefined;
-			request.current = { extras: [], key };
-			void flight.current!().then((ok) => optionsRef.current.onPreviewWriteResult?.(ok));
+			void queue
+				.current!.enqueue(() => persistNow([], key), key)
+				.then((ok) => optionsRef.current.onPreviewWriteResult?.(ok));
 		}, 150);
-	}, []);
-	const flushPreviewWrite = useCallback((): Promise<boolean> => {
-		if (previewTimer.current === undefined) return Promise.resolve(true);
-		clearPreviewWrite();
-		return persistToDisk([]);
+	}, [persistNow]);
+	const flushPreviewWrite = useCallback(async (): Promise<boolean> => {
+		if (previewTimer.current !== undefined) {
+			clearPreviewWrite();
+			await persistToDisk([]);
+		}
+		return queue.current!.flush();
 	}, [clearPreviewWrite, persistToDisk]);
 	const previewPending = useCallback(
-		() => previewTimer.current !== undefined || inFlight.current > 0,
+		() => previewTimer.current !== undefined || queue.current!.pending(),
 		[]
 	);
 

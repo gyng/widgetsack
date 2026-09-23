@@ -302,11 +302,12 @@ describe('StudioSettingsPanel — Startup section', () => {
 		expect((await findByRole('alert')).textContent).toContain('plugin unavailable');
 	});
 
-	it('explains the desktop edit and rescue chords', () => {
+	it('explains the desktop edit and rescue chords', async () => {
 		const { container } = render(<StudioSettingsPanel {...baseProps({ tab: 'startup' })} />);
 		expect(container.textContent).toContain('Ctrl+Alt+E');
 		expect(container.textContent).toContain('Ctrl+Alt+Shift+E');
 		expect(container.textContent).toMatch(/Rescue/);
+		await flush();
 	});
 });
 
@@ -355,13 +356,14 @@ describe('StudioSettingsPanel — About section', () => {
 		await flush();
 	});
 
-	it('shows an ellipsis placeholder when the app version is null', () => {
+	it('shows an ellipsis placeholder when the app version is null', async () => {
 		const props = baseProps({ tab: 'about', appVersion: null });
 		const { container } = render(<StudioSettingsPanel {...props} />);
 		const versionRow = [...container.querySelectorAll('.set-row')].find((r) =>
 			r.textContent?.startsWith('version')
 		) as HTMLElement;
 		expect(versionRow.querySelector('.dim')?.textContent).toBe('…');
+		await flush();
 	});
 
 	describe('AppUpdateCheck', () => {
