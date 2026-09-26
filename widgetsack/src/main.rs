@@ -561,7 +561,14 @@ async fn main() -> Result<(), ()> {
                         let _ = app.emit(bridge::ARRANGE_ZONES_EVENT, ());
                     }
                     "refit" => {
-                        // Re-fit every overlay to the CURRENT display layout (monitors moved/added/removed).
+                        // An empty primary layout destroys `main`. If a secondary also disappeared,
+                        // there may be no overlay left to reconcile it from this event. Recreate the
+                        // hidden primary driver; its startup reconciles secondaries and then reclaims
+                        // itself again when the primary layout is still empty.
+                        if app.get_webview_window("main").is_none() {
+                            command::respawn_main_hidden(app, "tray refit");
+                        }
+                        // Re-fit every surviving overlay to the current display layout.
                         let _ = app.emit(bridge::REFIT_OVERLAYS_EVENT, ());
                     }
                     "autostart" => {
