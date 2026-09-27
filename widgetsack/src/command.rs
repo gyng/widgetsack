@@ -606,7 +606,8 @@ fn client_log_limiter() -> &'static std::sync::Mutex<ClientLogLimiter> {
 /// failure that's hardest to diagnose after the fact (the overnight forensics of 2026-07-10). This
 /// lands them on disk. `level` picks the severity (see `client_log_level`); the `component` and the
 /// calling `window`'s label are attached as fields. Target is the fixed "client" subsystem (the log
-/// builders take a `&'static str` target, so the dynamic part goes in a field). Mirrors `log_diag`.
+/// builders take a `&'static str` target, so the dynamic part goes in a field). Optional structured
+/// `fields` are capped to leave room for the reserved `component` and `window` tags. Mirrors `log_diag`.
 /// `async` so it never runs on the UI thread (a sync command would), and rate-limited per
 /// (window, component, message) — see `ClientLogLimiter`.
 #[tauri::command]
@@ -615,6 +616,7 @@ pub async fn log_client(
     level: String,
     component: String,
     message: String,
+    fields: Option<std::collections::BTreeMap<String, String>>,
 ) {
     let message = truncate_chars(&message, CLIENT_LOG_MESSAGE_MAX);
     let component = truncate_chars(&component, CLIENT_LOG_COMPONENT_MAX);
@@ -637,11 +639,14 @@ pub async fn log_client(
             .field("window", label)
             .emit();
     }
-    let entry = match client_log_level(&level) {
+    let mut entry = match client_log_level(&level) {
         log::LogLevel::Error => log::error("client", message),
         log::LogLevel::Warn => log::warn("client", message),
         _ => log::info("client", message),
     };
+    for (key, value) in fields.into_iter().flatten().take(14) {
+        entry = entry.field(&key, value);
+    }
     entry
         .field("component", component)
         .field("window", label)

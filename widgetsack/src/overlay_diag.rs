@@ -2,12 +2,13 @@
 //! These run in the host process before Studio/refit can change the evidence, even if an overlay's
 //! WebView2 renderer has stopped answering the JS diagnostics bridge.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::Manager;
 
 /// Repeated tray clicks can request many after-action snapshots within 1.5 seconds. Keep only
 /// one delayed task alive at a time; every click still gets its immediate before-action snapshot.
 static AFTER_PENDING: AtomicBool = AtomicBool::new(false);
+static SNAPSHOT_SEQ: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct BoxPx {
@@ -81,9 +82,8 @@ fn log_snapshot_windows(app: &tauri::AppHandle, reason: &'static str) {
         true.into()
     }
 
-    let monitors: Vec<BoxPx> = app
-        .available_monitors()
-        .unwrap_or_default()
+    let available = app.available_monitors().unwrap_or_default();
+    let monitors: Vec<BoxPx> = available
         .iter()
         .map(|m| BoxPx {
             x: m.position().x,
@@ -92,30 +92,40 @@ fn log_snapshot_windows(app: &tauri::AppHandle, reason: &'static str) {
             h: m.size().height as i32,
         })
         .collect();
-    let monitor_text = monitors
-        .iter()
-        .map(|m| format!("{}x{}@{},{}", m.w, m.h, m.x, m.y))
-        .collect::<Vec<_>>()
-        .join("; ");
     let mut z_order = Vec::<HWND>::new();
     let z_order_ok =
         unsafe { EnumWindows(Some(collect), LPARAM(&mut z_order as *mut _ as isize)) }.is_ok();
 
     let windows = app.webview_windows();
+    let snapshot_id = SNAPSHOT_SEQ.fetch_add(1, Ordering::Relaxed) + 1;
     crate::log::info("overlay_diag", "native snapshot")
+        .field("snapshot_id", snapshot_id)
+        .field("pid", std::process::id())
         .field("reason", reason)
-        .field("monitors", &monitor_text)
-        .field(
-            "windows",
-            windows.keys().cloned().collect::<Vec<_>>().join(","),
-        )
+        .field("monitor_count", monitors.len())
+        .field("window_count", windows.len())
         .emit();
+    for (index, (monitor, box_px)) in available.iter().zip(&monitors).enumerate() {
+        crate::log::info("overlay_diag", "monitor geometry")
+            .field("snapshot_id", snapshot_id)
+            .field("pid", std::process::id())
+            .field("reason", reason)
+            .field("index", index)
+            .field("name", monitor.name().map(String::as_str).unwrap_or(""))
+            .field("x", box_px.x)
+            .field("y", box_px.y)
+            .field("width", box_px.w)
+            .field("height", box_px.h)
+            .emit();
+    }
     for (label, window) in windows {
         if label != "main" && !label.starts_with("overlay-") {
             continue;
         }
         let Ok(raw) = window.hwnd() else {
             crate::log::warn("overlay_diag", "window has no HWND")
+                .field("snapshot_id", snapshot_id)
+                .field("pid", std::process::id())
                 .field("reason", reason)
                 .field("window", label)
                 .emit();
@@ -180,28 +190,35 @@ fn log_snapshot_windows(app: &tauri::AppHandle, reason: &'static str) {
             GetLayeredWindowAttributes(hwnd, None, Some(&mut alpha), Some(&mut alpha_flags))
         }
         .is_ok();
-        let rect_text = if rect_ok {
-            format!("{}x{}@{},{}", box_px.w, box_px.h, box_px.x, box_px.y)
-        } else {
-            "unavailable".to_string()
-        };
-        let frame_text = if frame_ok {
-            format!(
-                "{}x{}@{},{}",
-                frame.right - frame.left,
-                frame.bottom - frame.top,
-                frame.left,
-                frame.top
+        // Exactly 16 fields: log.rs bounds records at 16, so do not add one without updating
+        // that cap (or splitting this event). Presentation is a separate record for this reason.
+        crate::log::info("overlay_diag", "window geometry")
+            .field("snapshot_id", snapshot_id)
+            .field("pid", std::process::id())
+            .field("reason", reason)
+            .field("window", &label)
+            .field("hwnd", format!("{:?}", hwnd))
+            .field("rect_ok", rect_ok)
+            .field("x", box_px.x)
+            .field("y", box_px.y)
+            .field("width", box_px.w)
+            .field("height", box_px.h)
+            .field("frame_ok", frame_ok)
+            .field("frame_x", frame.left)
+            .field("frame_y", frame.top)
+            .field("frame_width", frame.right - frame.left)
+            .field("frame_height", frame.bottom - frame.top)
+            .field(
+                "on_monitor",
+                rect_ok && monitors.iter().any(|m| intersects(box_px, *m)),
             )
-        } else {
-            "unavailable".to_string()
-        };
-        crate::log::info("overlay_diag", "window state")
+            .emit();
+        crate::log::info("overlay_diag", "window presentation")
+            .field("snapshot_id", snapshot_id)
+            .field("pid", std::process::id())
             .field("reason", reason)
             .field("window", label)
             .field("hwnd", format!("{:?}", hwnd))
-            .field("rect", rect_text)
-            .field("dwm_frame", frame_text)
             .field("visible", unsafe { IsWindowVisible(hwnd) }.as_bool())
             .field("minimized", unsafe { IsIconic(hwnd) }.as_bool())
             .field(
@@ -211,10 +228,6 @@ fn log_snapshot_windows(app: &tauri::AppHandle, reason: &'static str) {
                 } else {
                     "unavailable".to_string()
                 },
-            )
-            .field(
-                "on_monitor",
-                rect_ok && monitors.iter().any(|m| intersects(box_px, *m)),
             )
             .field(
                 "z_rank",

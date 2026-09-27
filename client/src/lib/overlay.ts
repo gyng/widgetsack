@@ -42,17 +42,18 @@ import {
  *  dying with the app — the whole point of last night's silent-death postmortem). Best-effort:
  *  the backend `log_client` invoke NEVER throws or recurses into this helper, so a logging
  *  failure can't itself take down the overlay. `component` names the caller's subsystem
- *  ('overlay', 'layout', …); `message` should name the window label / monitor key where relevant.
+ *  ('overlay', 'layout', …); put queryable details (role, duration, monitor key) in `fields`.
  *  Exported for the OTHER boot-path choke points (Canvas reloadLayout, useStudioInit's init catch)
  *  so no startup failure is ever console-only again. */
 export function logClient(
 	level: 'info' | 'warn' | 'error',
 	component: string,
-	message: string
+	message: string,
+	fields?: Record<string, string>
 ): void {
 	if (level === 'error') console.error(`[${component}] ${message}`);
 	else console.warn(`[${component}] ${message}`);
-	invoke(COMMANDS.logClient, { level, component, message }).catch(() => undefined);
+	invoke(COMMANDS.logClient, { level, component, message, fields }).catch(() => undefined);
 }
 
 // One backup per session: every parse-failure path funnels here, and the FIRST one wins — later

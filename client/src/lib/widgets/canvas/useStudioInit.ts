@@ -92,7 +92,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			const refit = singleFlight(async (): Promise<void> => {
 				const role = dep.studio ? 'studio' : (ownKey ?? 'main');
 				const t0 = Date.now();
-				logClient('info', 'overlay', `refit start (${role})`);
+				logClient('info', 'overlay', 'refit start', { role });
 				if (dep.studio) {
 					d.current.setMonitorOptions(await studioMonitorOptions());
 				} else if (ownKey) {
@@ -110,7 +110,10 @@ export function useStudioInit(deps: StudioInitDeps): void {
 					await d.current.updateWorkArea();
 					await d.current.reapplyPresentation();
 				}
-				logClient('info', 'overlay', `refit done (${role}) in ${Date.now() - t0}ms`);
+				logClient('info', 'overlay', 'refit done', {
+					role,
+					duration_ms: String(Date.now() - t0)
+				});
 			});
 			const triggerRefit = (): void => {
 				refit().catch((err) => logClient('error', 'overlay', `refit failed: ${String(err)}`));

@@ -226,26 +226,20 @@ fn on_display_signal(reason: &'static str) {
             let windows = handle.webview_windows();
             let labels: Vec<&str> = windows.keys().map(String::as_str).collect();
             let respawn = should_respawn_on_display_change(&labels);
-            // Always leave a trace: a display change is exactly the moment a hang or a mis-fit
-            // happens, and the log file (unlike the webview) survives it.
-            crate::log::info("displaywatch", "display recovery")
-                .field("reason", reason)
-                .field("windows", labels.join(", "))
-                .field(
-                    "action",
-                    if respawn {
-                        "refit overlays + respawn main"
-                    } else {
-                        "refit overlays"
-                    },
-                )
-                .emit();
             if respawn {
                 crate::command::respawn_main_hidden(&handle, reason);
             }
             // This reaches surviving overlays even when topology and their outer rect are identical
             // after wake. Their refit handler also reapplies click-through and the selected layer.
-            let _ = handle.emit(crate::bridge::REFIT_OVERLAYS_EVENT, ());
+            let refit_emitted = handle.emit(crate::bridge::REFIT_OVERLAYS_EVENT, ()).is_ok();
+            // Always leave a trace: a display change is exactly the moment a hang or a mis-fit
+            // happens, and the log file (unlike the webview) survives it.
+            crate::log::info("displaywatch", "display recovery")
+                .field("reason", reason)
+                .field("window_count", labels.len())
+                .field("respawn_main_requested", respawn)
+                .field("refit_emitted", refit_emitted)
+                .emit();
         });
         // Normally reset inside the closure; if the dispatch failed (event loop unavailable —
         // normally only mid-shutdown) a stuck `true` would eat every future display change.

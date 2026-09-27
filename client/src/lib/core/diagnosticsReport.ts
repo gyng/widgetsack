@@ -120,7 +120,7 @@ export function composeDiagnosticsReport(input: DiagnosticsReportInput): string 
 	const selected = selectReportLogs(input.logs);
 	lines.push(
 		'',
-		`## log (watchdog/displaywatch/overlay refit + last ${REPORT_WARN_LINES} warn/error · ${selected.length} of ${input.logs.length})`
+		`## log (watchdog/displaywatch/overlay diagnostics/refit + last ${REPORT_WARN_LINES} warn/error · ${selected.length} of ${input.logs.length})`
 	);
 	if (selected.length === 0) lines.push('(nothing captured)');
 	for (const r of selected) lines.push(formatLogLine(r));

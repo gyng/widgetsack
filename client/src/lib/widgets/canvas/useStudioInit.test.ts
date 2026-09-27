@@ -7,7 +7,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { TelemetryHub } from '../../core/telemetry';
 import type { StudioInitDeps } from './useStudioInit';
 import { useStudioInit } from './useStudioInit';
-import { overlayDrift, reconcileOverlays } from '../../overlay';
+import { logClient, overlayDrift, reconcileOverlays } from '../../overlay';
 
 const fillOwnMonitor = vi.fn((key: string): Promise<void> => Promise.resolve(void key));
 const fillPrimaryMonitor = vi.fn(() => Promise.resolve());
@@ -102,6 +102,11 @@ describe('useStudioInit display-change refit', () => {
 
 		onDisplayChange!();
 		await waitFor(() => expect(fillOwnMonitor).toHaveBeenCalledWith('DISPLAY3'));
+		await waitFor(() =>
+			expect(logClient).toHaveBeenCalledWith('info', 'overlay', 'refit start', {
+				role: 'DISPLAY3'
+			})
+		);
 		// The taskbar inset is re-read after the move: a window that moves without resizing fires
 		// no `resize`, which was the only other trigger, leaving the flow root rebased on stale data.
 		await waitFor(() => expect(deps.updateWorkArea).toHaveBeenCalledTimes(1));
