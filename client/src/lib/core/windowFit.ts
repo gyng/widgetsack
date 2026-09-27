@@ -36,6 +36,18 @@ export function fitMismatch(target: PhysicalBox, actual: PhysicalBox): string | 
 	return diffs.length ? diffs.join(', ') : null;
 }
 
+/** Hidden or minimized overlays need a refit even when Windows reports their last correct rect. */
+export function overlayDriftMismatch(
+	target: PhysicalBox,
+	actual: PhysicalBox,
+	visible: boolean,
+	minimized: boolean
+): string | null {
+	if (!visible) return 'hidden';
+	if (minimized) return 'minimized';
+	return fitMismatch(target, actual);
+}
+
 /** Apply `target` to the window (position, then size — the size last so a DPI-hop rescale inside the
  * move can't be the final word), read the geometry back, and re-apply while it differs, up to
  * `attempts` passes with `sleep` between them. Best-effort: a read-back failure counts as a clean

@@ -5,12 +5,11 @@
 //! at zero windows, so an overlay that couldn't spawn (monitor not yet enumerated at logon, a
 //! WebView2 hiccup, the 4K display switched away) eventually returns. But 30s is a long stare at an
 //! empty desktop after flipping a monitor input back. This watcher closes that gap: it listens for
-//! `WM_DISPLAYCHANGE` and — only when the app currently has NO windows — respawns `main` immediately,
-//! re-running the overlay reconcile cycle the moment a monitor comes back.
+//! `WM_DISPLAYCHANGE` and — when `main` is absent — respawns it immediately, re-running the overlay
+//! reconcile cycle the moment a monitor comes back.
 //!
-//! It acts ONLY on the zero-window case: if any webview is live, that window's own JS topology poller
-//! (overlay.ts) handles the refit, so this stands down. This covers exactly the gap where no JS is
-//! alive to notice the display returned.
+//! Studio and secondary overlays do not reconcile missing siblings. A surviving Studio window must
+//! not prevent the primary reconcile driver from restarting after a display change.
 //!
 //! Win32 anti-corruption edge (mirrors windowmgr.rs): all `unsafe` and `windows::Win32::*` calls live
 //! in this module. The watcher runs its own named thread with a `GetMessageW`/`DispatchMessageW`
@@ -29,11 +28,10 @@ const DEBOUNCE: Duration = Duration::from_secs(3);
 /// One in-flight respawn attempt per display-change burst; reset on the main thread before the check.
 static RESPAWN_PENDING: AtomicBool = AtomicBool::new(false);
 
-/// Pure seam: given the app's current window count, whether a display change should trigger a `main`
-/// respawn. Only the zero-window case — any live webview runs its own JS topology poller (overlay.ts),
-/// so this Rust fast-path exists solely for the gap where no JS is alive to react. Tested below.
-fn should_respawn_on_display_change(window_count: usize) -> bool {
-    window_count == 0
+/// Pure seam: the primary `main` window is the only overlay reconciliation driver. Studio and
+/// secondaries may survive while an overlay is missing, so their presence does not prevent respawn.
+fn should_respawn_on_display_change(labels: &[&str]) -> bool {
+    !labels.contains(&"main")
 }
 
 /// Start the display-change watcher (idempotent — a second call is a no-op). Windows-only; a no-op
@@ -144,10 +142,10 @@ unsafe extern "system" fn display_wndproc(
 }
 
 /// React to a `WM_DISPLAYCHANGE`: after a short debounce (topology changes fire bursts and the
-/// returning monitor takes a beat to enumerate), if the app currently has NO windows respawn a hidden
-/// `main` so the overlay reconcile cycle re-runs at once. If any window is live, stand down — its JS
-/// handles the refit. Best-effort; duplicate calls while an attempt is pending are no-ops. Mirrors
-/// keepalive.rs::on_zero_windows (pending guard + delayed spawn + main-thread window creation).
+/// returning monitor takes a beat to enumerate), respawn a hidden `main` when it is absent so the
+/// overlay reconcile cycle re-runs at once. Best-effort; duplicate calls while an attempt is
+/// pending are no-ops. Mirrors keepalive.rs::on_zero_windows (pending guard + delayed spawn +
+/// main-thread window creation).
 #[cfg(target_os = "windows")]
 fn on_display_change() {
     use tauri::Manager;
@@ -165,18 +163,19 @@ fn on_display_change() {
         // Window creation must run on the main thread (same constraint as keepalive/watch_layout).
         let dispatched = app.run_on_main_thread(move || {
             RESPAWN_PENDING.store(false, Ordering::SeqCst);
-            let windows = handle.webview_windows().len();
-            let respawn = should_respawn_on_display_change(windows);
+            let windows = handle.webview_windows();
+            let labels: Vec<&str> = windows.keys().map(String::as_str).collect();
+            let respawn = should_respawn_on_display_change(&labels);
             // Always leave a trace: a display change is exactly the moment a hang or a mis-fit
             // happens, and the log file (unlike the webview) survives it.
             crate::log::info("displaywatch", "display change")
-                .field("windows", windows)
+                .field("windows", labels.join(", "))
                 .field(
                     "action",
                     if respawn {
                         "respawn main"
                     } else {
-                        "stand down (live windows refit themselves)"
+                        "main already present"
                     },
                 )
                 .emit();
@@ -197,11 +196,13 @@ mod tests {
     use super::should_respawn_on_display_change;
 
     #[test]
-    fn respawns_only_when_zero_windows() {
-        // The whole point: recover the display-change gap ONLY when no window (hence no JS poller)
-        // is alive. With any window up, its own JS handles the refit and we must stand down.
-        assert!(should_respawn_on_display_change(0));
-        assert!(!should_respawn_on_display_change(1));
-        assert!(!should_respawn_on_display_change(3));
+    fn respawns_when_the_primary_reconcile_driver_is_missing() {
+        // Studio may survive a monitor disconnect while the only populated secondary overlay
+        // disappears. Its JS watcher only refreshes Studio's monitor list, so it cannot recreate
+        // the missing overlay without a fresh main window to run reconciliation.
+        assert!(should_respawn_on_display_change(&[]));
+        assert!(should_respawn_on_display_change(&["studio"]));
+        assert!(should_respawn_on_display_change(&["overlay-DISPLAY2"]));
+        assert!(!should_respawn_on_display_change(&["main", "studio"]));
     }
 }

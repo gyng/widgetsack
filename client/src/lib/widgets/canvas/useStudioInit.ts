@@ -18,6 +18,7 @@ import {
 	onOwnScaleChanged,
 	openStudio,
 	overlayDrift,
+	reconcileOverlays,
 	setMainWindowVisible,
 	studioMonitorOptions,
 	watchDisplayChanges
@@ -131,7 +132,8 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// a normal window the user places, so it gets none.
 			stopDisplayWatch = watchDisplayChanges(
 				triggerRefit,
-				dep.studio ? undefined : () => overlayDrift(ownKey)
+				dep.studio ? undefined : () => overlayDrift(ownKey),
+				dep.studio ? () => reconcileOverlays() : undefined
 			);
 			if (cancelled) {
 				unlistenRefit?.();

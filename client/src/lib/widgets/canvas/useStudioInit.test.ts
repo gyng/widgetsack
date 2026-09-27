@@ -7,7 +7,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import type { TelemetryHub } from '../../core/telemetry';
 import type { StudioInitDeps } from './useStudioInit';
 import { useStudioInit } from './useStudioInit';
-import { overlayDrift } from '../../overlay';
+import { overlayDrift, reconcileOverlays } from '../../overlay';
 
 const fillOwnMonitor = vi.fn((key: string): Promise<void> => Promise.resolve(void key));
 const fillPrimaryMonitor = vi.fn(() => Promise.resolve());
@@ -17,6 +17,7 @@ let monitorParamValue: string | null = null;
 let onDisplayChange: (() => void) | null = null;
 /** The drift probe handed alongside it (overlays only). */
 let driftProbe: (() => Promise<string | null>) | null = null;
+let onStableDisplayTick: (() => Promise<void>) | null = null;
 /** The scale-change callback the hook registered via onOwnScaleChanged (overlays only). */
 let onScaleChange: (() => void) | null = null;
 
@@ -33,12 +34,16 @@ vi.mock('../../overlay', () => ({
 	}),
 	openStudio: vi.fn(() => Promise.resolve()),
 	overlayDrift: vi.fn(async () => null),
+	reconcileOverlays: vi.fn(async () => undefined),
 	studioMonitorOptions: vi.fn(async () => []),
-	watchDisplayChanges: vi.fn((cb: () => void, probe?: () => Promise<string | null>) => {
-		onDisplayChange = cb;
-		driftProbe = probe ?? null;
-		return () => undefined;
-	})
+	watchDisplayChanges: vi.fn(
+		(cb: () => void, probe?: () => Promise<string | null>, stableTick?: () => Promise<void>) => {
+			onDisplayChange = cb;
+			driftProbe = probe ?? null;
+			onStableDisplayTick = stableTick ?? null;
+			return () => undefined;
+		}
+	)
 }));
 vi.mock('../../core/plugin', () => ({
 	startAllSources: vi.fn(async () => () => undefined)
@@ -80,6 +85,7 @@ beforeEach(() => {
 	monitorParamValue = null;
 	onDisplayChange = null;
 	driftProbe = null;
+	onStableDisplayTick = null;
 	onScaleChange = null;
 });
 
@@ -119,6 +125,13 @@ describe('useStudioInit display-change refit', () => {
 		renderHook(() => useStudioInit(makeDeps({ studio: true })));
 		await waitFor(() => expect(onDisplayChange).not.toBeNull());
 		expect(onScaleChange).toBeNull();
+	});
+
+	it('Studio reconciles missing overlays on a stable display tick after monitor wake', async () => {
+		renderHook(() => useStudioInit(makeDeps({ studio: true })));
+		await waitFor(() => expect(onStableDisplayTick).not.toBeNull());
+		await onStableDisplayTick!();
+		expect(reconcileOverlays).toHaveBeenCalledTimes(1);
 	});
 
 	it('overlays hand the poller a drift probe for their own monitor; the studio does not', async () => {

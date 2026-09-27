@@ -1,7 +1,19 @@
 import { describe, expect, it, vi } from 'vitest';
-import { driftTrigger, fitMismatch, fitWindowVerified, type PhysicalBox } from './windowFit';
+import {
+	driftTrigger,
+	fitMismatch,
+	fitWindowVerified,
+	overlayDriftMismatch,
+	type PhysicalBox
+} from './windowFit';
 
 const target: PhysicalBox = { x: 652, y: 2160, w: 2560, h: 720 };
+
+it('treats a hidden overlay as drift even when its saved geometry still fits', () => {
+	expect(overlayDriftMismatch(target, target, false, false)).toBe('hidden');
+	expect(overlayDriftMismatch(target, target, true, true)).toBe('minimized');
+	expect(overlayDriftMismatch(target, target, true, false)).toBeNull();
+});
 
 /** A fake window whose "OS" applies each set immediately, except where a test scripts drift. */
 function fakeWindow(opts: { driftOnce?: Partial<PhysicalBox>; alwaysDrift?: PhysicalBox } = {}) {

@@ -30,7 +30,12 @@ import { readOverlayPrefs, type OverlayLayer } from './widgets/canvas/overlayPre
 import type { OverlayPresentation } from './widgets/canvas/overlayPresentation';
 import { COMMANDS, EVENTS } from './bridge/contract';
 import { singleFlight } from './core/singleFlight';
-import { driftTrigger, fitMismatch, fitWindowVerified, type PhysicalBox } from './core/windowFit';
+import {
+	driftTrigger,
+	fitWindowVerified,
+	overlayDriftMismatch,
+	type PhysicalBox
+} from './core/windowFit';
 
 /** Route an overlay-lifecycle failure to BOTH this window's console (so a live devtools session
  *  still sees it) and the backend's persistent rotating log file (so it survives the webview
@@ -407,6 +412,7 @@ export async function fillOwnMonitor(key: string): Promise<void> {
 			await win.hide().catch(() => undefined);
 			return;
 		}
+		if (await win.isMinimized()) await win.unminimize();
 		await fitWindowToMonitor(win, m, `fillOwnMonitor(${key})`);
 		const prefs = readOverlayPrefs();
 		if (!prefs.debugWindowed) {
@@ -444,11 +450,9 @@ export async function onOwnScaleChanged(cb: () => void): Promise<() => void> {
 	}
 }
 
-/** How far THIS overlay window sits from the monitor it should cover (`key` = its device key, null
- * = the primary), as a `fitMismatch` string, or null when it fits exactly / can't be judged (no such
- * monitor, windowed-debug mode where the user drags overlays freely, a failed read). The topology
- * poller feeds this to `driftTrigger` so an overlay the OS re-placed after our fit (a DPI-hop
- * suggested rect, a window restored by "remember window locations") is refitted within a tick. */
+/** How THIS overlay differs from its monitor (`key` = its device key, null = primary): a geometry
+ * mismatch, 'hidden', 'minimized', or null when it fits / can't be judged. The topology poller feeds
+ * this to `driftTrigger` so a displaced or hidden overlay is restored within a tick. */
 export async function overlayDrift(key: string | null): Promise<string | null> {
 	try {
 		if (readOverlayPrefs().debugWindowed) return null;
@@ -461,10 +465,17 @@ export async function overlayDrift(key: string | null): Promise<string | null> {
 		}
 		if (!m) return null;
 		const win = getCurrentWindow();
-		const [pos, size] = await Promise.all([win.outerPosition(), win.outerSize()]);
-		return fitMismatch(
+		const [pos, size, visible, minimized] = await Promise.all([
+			win.outerPosition(),
+			win.outerSize(),
+			win.isVisible(),
+			win.isMinimized()
+		]);
+		return overlayDriftMismatch(
 			{ x: m.position.x, y: m.position.y, w: m.size.width, h: m.size.height },
-			{ x: pos.x, y: pos.y, w: size.width, h: size.height }
+			{ x: pos.x, y: pos.y, w: size.width, h: size.height },
+			visible,
+			minimized
 		);
 	} catch {
 		return null;
@@ -478,12 +489,14 @@ const DISPLAY_POLL_MS = 4000;
 /** Watch for DISPLAY TOPOLOGY changes (monitors added / removed / moved / resized) and call `onChange`.
  * Windows fires no per-window JS event for this (only DPI scale-change is exposed via onScaleChanged),
  * so poll `availableMonitors()` on a relaxed cadence + on window focus and fire when the set of monitor
- * geometries differs from the last seen. Cheap (one fast call per tick). Returns a cleanup fn. Without
+ * geometries differs from the last seen. `onStableTick` lets Studio reconcile missing overlays even
+ * when monitor wake leaves the topology unchanged. Returns a cleanup fn. Without
  * this, overlays go stale on a topology change — e.g. dragging a monitor in Windows display settings
  * leaves an overlay anchored to the old coordinates (clipped/misaligned) until the app restarts. */
 export function watchDisplayChanges(
 	onChange: () => void,
-	probe?: () => Promise<string | null>
+	probe?: () => Promise<string | null>,
+	onStableTick?: () => Promise<void>
 ): () => void {
 	const sig = (mons: Awaited<ReturnType<typeof availableMonitors>>): string =>
 		mons
@@ -541,6 +554,9 @@ export function watchDisplayChanges(
 					onChange();
 				}
 			}
+			// Studio has no overlay of its own to probe. A monitor can wake without a topology
+			// change after its secondary was destroyed; periodically reconcile missing siblings.
+			if (onStableTick) await onStableTick();
 		} catch {
 			/* transient enumeration failure — retry next tick */
 		} finally {
