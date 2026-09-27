@@ -68,10 +68,11 @@ export function filterLogs(logs: LogRecord[], filter: LogFilter): LogRecord[] {
 
 // --- the report ---
 
-/** The lines every report carries regardless of level: the stall watchdog, the display-change
- * watcher, and the overlays' refit trail — the trio that reconstructs a monitor-switch hang. */
+/** The lines every report carries regardless of level: the stall watchdog, display/power watcher,
+ * native overlay snapshots, and the overlays' refit trail. */
 export function isTraceLine(r: LogRecord): boolean {
-	if (r.target === 'watchdog' || r.target === 'displaywatch') return true;
+	if (r.target === 'watchdog' || r.target === 'displaywatch' || r.target === 'overlay_diag')
+		return true;
 	return r.target === 'client' && r.fields?.component === 'overlay' && /refit/i.test(r.message);
 }
 

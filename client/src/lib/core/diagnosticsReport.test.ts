@@ -65,9 +65,10 @@ describe('filterLogs', () => {
 });
 
 describe('isTraceLine / selectReportLogs', () => {
-	it('flags watchdog, displaywatch, and overlay refit client lines only', () => {
+	it('includes display recovery evidence in copied reports', () => {
 		expect(isTraceLine(rec({ target: 'watchdog', level: 'debug' }))).toBe(true);
 		expect(isTraceLine(rec({ target: 'displaywatch' }))).toBe(true);
+		expect(isTraceLine(rec({ target: 'overlay_diag', message: 'window state' }))).toBe(true);
 		expect(isTraceLine(overlayRefit('refit done (main) in 12ms'))).toBe(true);
 		// Overlay client lines that aren't about a refit, and other components, are not trace lines.
 		expect(isTraceLine(overlayRefit('layer applied'))).toBe(false);

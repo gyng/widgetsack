@@ -5,8 +5,10 @@
 //! at zero windows, so an overlay that couldn't spawn (monitor not yet enumerated at logon, a
 //! WebView2 hiccup, the 4K display switched away) eventually returns. But 30s is a long stare at an
 //! empty desktop after flipping a monitor input back. This watcher closes that gap: it listens for
-//! `WM_DISPLAYCHANGE` and — when `main` is absent — respawns it immediately, re-running the overlay
-//! reconcile cycle the moment a monitor comes back.
+//! `WM_DISPLAYCHANGE` and console-display-on notifications. The latter matters when the monitor
+//! wakes without changing topology: the overlay HWND may still be visible at the correct rect but
+//! lose its desktop z-order/presentation. Either signal re-fits surviving overlays, and — when
+//! `main` is absent — respawns it to re-run reconciliation.
 //!
 //! Studio and secondary overlays do not reconcile missing siblings. A surviving Studio window must
 //! not prevent the primary reconcile driver from restarting after a display change.
@@ -34,6 +36,12 @@ fn should_respawn_on_display_change(labels: &[&str]) -> bool {
     !labels.contains(&"main")
 }
 
+/// Console display notifications have three states: off (0), on (1), dim (2). Refit only when the
+/// display comes back; an off/dim notification must not wake hidden overlays onto a dark screen.
+fn should_refit_on_display_state(state: u32) -> bool {
+    state == 1
+}
+
 /// Start the display-change watcher (idempotent — a second call is a no-op). Windows-only; a no-op
 /// elsewhere. Call once in `setup`, next to `windowmgr::run_drag_watcher`.
 #[cfg(target_os = "windows")]
@@ -51,7 +59,8 @@ pub fn run_display_watcher(_app: tauri::AppHandle) {}
 static DISPLAY_APP: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
 /// Spawn the hidden-window + message-pump thread. Registers a window class, creates a HIDDEN
-/// top-level window, and pumps messages so its `display_wndproc` receives `WM_DISPLAYCHANGE`.
+/// top-level window, and pumps messages so its `display_wndproc` receives `WM_DISPLAYCHANGE` and
+/// registered console-display power notifications.
 ///
 /// NOTE — deliberately NOT a message-only (`HWND_MESSAGE`) window: message-only windows are excluded
 /// from the top-level set and do not receive broadcast/system messages like `WM_DISPLAYCHANGE`, so
@@ -63,10 +72,14 @@ fn spawn_display_pump() {
     let _ = std::thread::Builder::new()
         .name("displaywatch".into())
         .spawn(|| unsafe {
+            use windows::Win32::Foundation::HANDLE;
+            use windows::Win32::System::Power::{
+                RegisterPowerSettingNotification, UnregisterPowerSettingNotification,
+            };
             use windows::Win32::System::LibraryLoader::GetModuleHandleW;
             use windows::Win32::UI::WindowsAndMessaging::{
-                CreateWindowExW, DispatchMessageW, GetMessageW, MSG, RegisterClassW,
-                WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSW,
+                CreateWindowExW, DEVICE_NOTIFY_WINDOW_HANDLE, DispatchMessageW, GetMessageW, MSG,
+                RegisterClassW, WINDOW_EX_STYLE, WINDOW_STYLE, WNDCLASSW,
             };
             use windows::core::w;
 
@@ -107,26 +120,51 @@ fn spawn_display_pump() {
                 Some(hinstance.into()),
                 None,
             );
-            if let Err(err) = hwnd {
-                crate::log::warn(
-                    "displaywatch",
-                    "CreateWindowExW failed; display-change fast path disabled (30s keepalive still covers recovery)",
-                )
-                .field("error", err)
-                .emit();
-                return;
-            }
+            let hwnd = match hwnd {
+                Ok(hwnd) => hwnd,
+                Err(err) => {
+                    crate::log::warn(
+                        "displaywatch",
+                        "CreateWindowExW failed; display-change fast path disabled (30s keepalive still covers recovery)",
+                    )
+                    .field("error", err)
+                    .emit();
+                    return;
+                }
+            };
+            let power_notify = match RegisterPowerSettingNotification(
+                HANDLE(hwnd.0),
+                &CONSOLE_DISPLAY_STATE,
+                DEVICE_NOTIFY_WINDOW_HANDLE,
+            ) {
+                Ok(handle) => Some(handle),
+                Err(err) => {
+                    crate::log::warn("displaywatch", "display-on notification registration failed")
+                        .field("error", err)
+                        .emit();
+                    None
+                }
+            };
             // Pump: sent messages (WM_DISPLAYCHANGE is delivered as one) are dispatched to the wndproc
             // during GetMessageW; DispatchMessageW covers any posted messages too. Mirrors windowmgr.rs.
             let mut msg = MSG::default();
             while GetMessageW(&mut msg, None, 0, 0).0 > 0 {
                 let _ = DispatchMessageW(&msg);
             }
+            if let Some(handle) = power_notify {
+                let _ = UnregisterPowerSettingNotification(handle);
+            }
         });
 }
 
-/// Window procedure for the hidden watcher window: on `WM_DISPLAYCHANGE`, kick the debounced
-/// zero-window respawn; everything else falls through to the default handler.
+/// GUID_CONSOLE_DISPLAY_STATE from WinNT.h. Declared locally to avoid pulling unrelated Windows
+/// SystemServices APIs into the crate just for this notification identifier.
+#[cfg(target_os = "windows")]
+const CONSOLE_DISPLAY_STATE: windows::core::GUID =
+    windows::core::GUID::from_u128(0x6fe69556_704a_47a0_8f24_c28d936fda47);
+
+/// Window procedure for the hidden watcher window: on a topology change, display-on notification,
+/// or system resume, kick a debounced overlay recovery. Everything else uses the default handler.
 #[cfg(target_os = "windows")]
 unsafe extern "system" fn display_wndproc(
     hwnd: windows::Win32::Foundation::HWND,
@@ -134,9 +172,29 @@ unsafe extern "system" fn display_wndproc(
     wparam: windows::Win32::Foundation::WPARAM,
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::Win32::Foundation::LRESULT {
-    use windows::Win32::UI::WindowsAndMessaging::{DefWindowProcW, WM_DISPLAYCHANGE};
+    use windows::Win32::System::Power::POWERBROADCAST_SETTING;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        DefWindowProcW, PBT_APMRESUMEAUTOMATIC, PBT_POWERSETTINGCHANGE, WM_DISPLAYCHANGE,
+        WM_POWERBROADCAST,
+    };
     if msg == WM_DISPLAYCHANGE {
-        on_display_change();
+        on_display_signal("topology changed");
+    } else if msg == WM_POWERBROADCAST && wparam.0 as u32 == PBT_APMRESUMEAUTOMATIC {
+        on_display_signal("system resumed");
+    } else if msg == WM_POWERBROADCAST && wparam.0 as u32 == PBT_POWERSETTINGCHANGE && lparam.0 != 0
+    {
+        // The variable-length Data payload is a DWORD for GUID_CONSOLE_DISPLAY_STATE. Read it
+        // unaligned only when Windows says at least four bytes are present.
+        let setting = unsafe { &*(lparam.0 as *const POWERBROADCAST_SETTING) };
+        if setting.PowerSetting == CONSOLE_DISPLAY_STATE && setting.DataLength >= 4 {
+            let state = unsafe { setting.Data.as_ptr().cast::<u32>().read_unaligned() };
+            crate::log::info("displaywatch", "console display state")
+                .field("state", state)
+                .emit();
+            if should_refit_on_display_state(state) {
+                on_display_signal("console display on");
+            }
+        }
     }
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
@@ -147,8 +205,8 @@ unsafe extern "system" fn display_wndproc(
 /// pending are no-ops. Mirrors keepalive.rs::on_zero_windows (pending guard + delayed spawn +
 /// main-thread window creation).
 #[cfg(target_os = "windows")]
-fn on_display_change() {
-    use tauri::Manager;
+fn on_display_signal(reason: &'static str) {
+    use tauri::{Emitter, Manager};
 
     let Some(app) = DISPLAY_APP.get() else {
         return; // not wired yet
@@ -163,26 +221,31 @@ fn on_display_change() {
         // Window creation must run on the main thread (same constraint as keepalive/watch_layout).
         let dispatched = app.run_on_main_thread(move || {
             RESPAWN_PENDING.store(false, Ordering::SeqCst);
-            crate::overlay_diag::log_snapshot(&handle, "display change");
+            crate::overlay_diag::log_snapshot(&handle, reason);
+            crate::overlay_diag::log_after(&handle, "after display recovery");
             let windows = handle.webview_windows();
             let labels: Vec<&str> = windows.keys().map(String::as_str).collect();
             let respawn = should_respawn_on_display_change(&labels);
             // Always leave a trace: a display change is exactly the moment a hang or a mis-fit
             // happens, and the log file (unlike the webview) survives it.
-            crate::log::info("displaywatch", "display change")
+            crate::log::info("displaywatch", "display recovery")
+                .field("reason", reason)
                 .field("windows", labels.join(", "))
                 .field(
                     "action",
                     if respawn {
-                        "respawn main"
+                        "refit overlays + respawn main"
                     } else {
-                        "main already present"
+                        "refit overlays"
                     },
                 )
                 .emit();
             if respawn {
-                crate::command::respawn_main_hidden(&handle, "display change");
+                crate::command::respawn_main_hidden(&handle, reason);
             }
+            // This reaches surviving overlays even when topology and their outer rect are identical
+            // after wake. Their refit handler also reapplies click-through and the selected layer.
+            let _ = handle.emit(crate::bridge::REFIT_OVERLAYS_EVENT, ());
         });
         // Normally reset inside the closure; if the dispatch failed (event loop unavailable —
         // normally only mid-shutdown) a stuck `true` would eat every future display change.
@@ -194,7 +257,14 @@ fn on_display_change() {
 
 #[cfg(test)]
 mod tests {
-    use super::should_respawn_on_display_change;
+    use super::{should_refit_on_display_state, should_respawn_on_display_change};
+
+    #[test]
+    fn only_display_on_recovers_surviving_overlays() {
+        assert!(!should_refit_on_display_state(0));
+        assert!(should_refit_on_display_state(1));
+        assert!(!should_refit_on_display_state(2));
+    }
 
     #[test]
     fn respawns_when_the_primary_reconcile_driver_is_missing() {
