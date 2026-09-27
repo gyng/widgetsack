@@ -39,7 +39,7 @@ const BUFFER_CAP: usize = 1000;
 /// File the JSON-lines log is appended to (under the app log dir). Set in `init`.
 const LOG_FILE_NAME: &str = "widgetsack.log";
 
-/// Rotate the log file to `widgetsack.log.1` once it grows past this (~1 MB) so it can't grow
+/// Rotate the log file to `widgetsack.log.1` before a write would exceed this (1 MiB) so it can't grow
 /// unbounded. One backup is kept (the previous backup is overwritten on each rotation).
 const LOG_FILE_MAX_BYTES: u64 = 1_048_576;
 
@@ -197,8 +197,8 @@ fn enqueue_file_line(json: String) {
     }
 }
 
-/// Append one already-serialized JSON line to the rotating log file, rotating first if it has grown
-/// past the size cap. Runs on the writer thread (and, directly, from the panic hook). Best-effort:
+/// Append one already-serialized JSON line, rotating first if this write would exceed the size
+/// cap. Runs on the writer thread (and, directly, from the panic hook). Best-effort:
 /// any I/O error is swallowed (the console + buffer still have it).
 fn write_line_to_file(line: &str) {
     let Some(lock) = LOG_FILE.get() else {
@@ -211,11 +211,17 @@ fn write_line_to_file(line: &str) {
 }
 
 fn write_line_at(path: &std::path::Path, line: &str) {
-    // Rotate when the current file is over the cap: move it to `<name>.1` (overwriting any prior
-    // backup), then start a fresh primary. A missing file is fine (first write).
-    if std::fs::metadata(path).map(|m| m.len()).unwrap_or(0) >= LOG_FILE_MAX_BYTES {
+    let incoming_bytes = line.len() as u64 + 1; // newline
+    if incoming_bytes > LOG_FILE_MAX_BYTES {
+        return;
+    }
+    // Rotate before this line would cross the cap. If rotation fails (e.g. a locked backup),
+    // skip the disk write; the ring/console still retain it and the next line retries rotation.
+    if std::fs::metadata(path).map(|m| m.len()).unwrap_or(0) > LOG_FILE_MAX_BYTES - incoming_bytes {
         let backup = path.with_extension("log.1");
-        let _ = std::fs::rename(path, &backup);
+        if std::fs::rename(path, &backup).is_err() {
+            return;
+        }
     }
     if let Ok(mut f) = OpenOptions::new().create(true).append(true).open(path) {
         let _ = writeln!(f, "{line}");
@@ -312,15 +318,19 @@ fn now_ms() -> u64 {
 }
 
 fn truncate_text(mut value: String, max_bytes: usize) -> String {
-    if value.len() <= max_bytes {
-        return value;
+    if value.len() > max_bytes {
+        let mut end = max_bytes - '…'.len_utf8();
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        value.truncate(end);
+        value.push('…');
     }
-    let mut end = max_bytes - '…'.len_utf8();
-    while !value.is_char_boundary(end) {
-        end -= 1;
+    // truncate() only changes length. Release a large original allocation too, including a short
+    // string the caller created with a large reserve, before handing it to any logging sink.
+    if value.capacity() > max_bytes {
+        value = value.into_boxed_str().into_string();
     }
-    value.truncate(end);
-    value.push('…');
     value
 }
 
@@ -475,6 +485,30 @@ mod tests {
                 .all(|value| value.len() <= FIELD_VALUE_MAX_BYTES && value.ends_with('…'))
         );
         assert!(serde_json::to_string(&record).is_ok());
+    }
+
+    #[test]
+    fn truncated_text_does_not_retain_the_original_allocation() {
+        let value = truncate_text("x".repeat(1_000_000), FIELD_VALUE_MAX_BYTES);
+        assert!(value.capacity() <= FIELD_VALUE_MAX_BYTES);
+        let mut short = String::with_capacity(1_000_000);
+        short.push_str("short error");
+        assert!(truncate_text(short, FIELD_VALUE_MAX_BYTES).capacity() <= FIELD_VALUE_MAX_BYTES);
+    }
+
+    #[test]
+    fn failed_rotation_does_not_keep_growing_the_active_log() {
+        let dir = std::env::temp_dir().join(format!(
+            "widgetsack-log-blocked-{}-{}",
+            std::process::id(),
+            now_ms()
+        ));
+        std::fs::create_dir_all(dir.join("widgetsack.log.1")).unwrap();
+        let path = dir.join("widgetsack.log");
+        std::fs::write(&path, vec![b'x'; LOG_FILE_MAX_BYTES as usize]).unwrap();
+        write_line_at(&path, "must not append after failed rotation");
+        assert_eq!(std::fs::metadata(&path).unwrap().len(), LOG_FILE_MAX_BYTES);
+        std::fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

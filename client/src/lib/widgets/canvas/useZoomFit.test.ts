@@ -114,6 +114,14 @@ describe('fitRect() — zoom to content / selection', () => {
 		expect(result.current.zoom).toBe(4);
 	});
 
+	it('preserves the view when a collapsed stage is smaller than the fit padding', () => {
+		const { result } = renderHook(() =>
+			useZoomFit(baseOpts({ studio: false, stageW: 30, stageH: 48 }))
+		);
+		act(() => result.current.fitRect({ x: 0, y: 0, w: 100, h: 100 }));
+		expect(result.current).toMatchObject({ zoom: 1, panX: 0, panY: 0 });
+	});
+
 	it('is a no-op for an empty box or an unmeasured stage', () => {
 		const { result } = renderHook(() => useZoomFit(baseOpts({ studio: false })));
 		act(() => result.current.fitRect({ x: 0, y: 0, w: 0, h: 50 }));

@@ -233,13 +233,7 @@ export default function Canvas({ studio = false }: Props) {
 	// Diagnostics bridge: every window (overlay + main + studio) answers the studio's Diagnostics-panel
 	// poll with its heap/counts and obeys targeted debug commands (open devtools / toggle click-through).
 	// Mounted once here so it covers both roles. No StrictMode in this app, so a single mount is correct.
-	useEffect(() => {
-		let teardown: (() => void) | undefined;
-		void startDiagResponder(() => hub).then((un) => {
-			teardown = un;
-		});
-		return () => teardown?.();
-	}, [hub]);
+	useEffect(() => startDiagResponder(() => hub), [hub]);
 
 	// This window's monitor key. In the studio this is switchable AND sticky across reloads (restored
 	// from localStorage); overlays pin to their `?monitor=` param and ignore the stored choice.

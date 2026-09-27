@@ -29,7 +29,12 @@ fn intersects(a: BoxPx, b: BoxPx) -> bool {
         && b.y < a.y.saturating_add(a.h)
 }
 
-/// Log one line per app window and a monitor baseline. Call before a recovery action so the
+fn on_monitor(rect: Option<BoxPx>, monitors: Option<&[BoxPx]>) -> Option<bool> {
+    let rect = rect?;
+    Some(monitors?.iter().any(|m| intersects(rect, *m)))
+}
+
+/// Log monitor geometry and per-overlay geometry/presentation records. Call before a recovery action so the
 /// action itself cannot erase the state we need to diagnose. This is intentionally best-effort.
 pub fn log_snapshot(app: &tauri::AppHandle, reason: &'static str) {
     #[cfg(target_os = "windows")]
@@ -82,7 +87,9 @@ fn log_snapshot_windows(app: &tauri::AppHandle, reason: &'static str) {
         true.into()
     }
 
-    let available = app.available_monitors().unwrap_or_default();
+    let available = app.available_monitors();
+    let monitors_ok = available.is_ok();
+    let available = available.unwrap_or_default();
     let monitors: Vec<BoxPx> = available
         .iter()
         .map(|m| BoxPx {
@@ -103,6 +110,7 @@ fn log_snapshot_windows(app: &tauri::AppHandle, reason: &'static str) {
         .field("pid", std::process::id())
         .field("reason", reason)
         .field("monitor_count", monitors.len())
+        .field("monitors_ok", monitors_ok)
         .field("window_count", windows.len())
         .emit();
     for (index, (monitor, box_px)) in available.iter().zip(&monitors).enumerate() {
@@ -165,7 +173,7 @@ fn log_snapshot_windows(app: &tauri::AppHandle, reason: &'static str) {
         } else {
             None
         };
-        let overlapping_above = z_rank.map(|rank| {
+        let overlapping_above = z_rank.filter(|_| rect_ok).map(|rank| {
             z_order[..rank]
                 .iter()
                 .filter(|candidate| unsafe { IsWindowVisible(**candidate) }.as_bool())
@@ -210,7 +218,11 @@ fn log_snapshot_windows(app: &tauri::AppHandle, reason: &'static str) {
             .field("frame_height", frame.bottom - frame.top)
             .field(
                 "on_monitor",
-                rect_ok && monitors.iter().any(|m| intersects(box_px, *m)),
+                on_monitor(
+                    rect_ok.then_some(box_px),
+                    monitors_ok.then_some(monitors.as_slice()),
+                )
+                .map_or_else(|| "unavailable".to_string(), |value| value.to_string()),
             )
             .emit();
         crate::log::info("overlay_diag", "window presentation")
@@ -270,7 +282,21 @@ fn log_snapshot_windows(app: &tauri::AppHandle, reason: &'static str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{BoxPx, intersects};
+    use super::{BoxPx, intersects, on_monitor};
+
+    #[test]
+    fn failed_observation_is_not_reported_as_off_screen() {
+        let rect = BoxPx {
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 100,
+        };
+        assert_eq!(on_monitor(Some(rect), None), None);
+        assert_eq!(on_monitor(None, Some(&[rect])), None);
+        assert_eq!(on_monitor(Some(rect), Some(&[])), Some(false));
+        assert_eq!(on_monitor(Some(rect), Some(&[rect])), Some(true));
+    }
 
     #[test]
     fn detects_a_window_moved_completely_off_connected_monitors() {

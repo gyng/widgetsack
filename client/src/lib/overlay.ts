@@ -52,7 +52,8 @@ export function logClient(
 	fields?: Record<string, string>
 ): void {
 	if (level === 'error') console.error(`[${component}] ${message}`);
-	else console.warn(`[${component}] ${message}`);
+	else if (level === 'warn') console.warn(`[${component}] ${message}`);
+	else console.info(`[${component}] ${message}`);
 	invoke(COMMANDS.logClient, { level, component, message, fields }).catch(() => undefined);
 }
 
@@ -521,6 +522,7 @@ export function watchDisplayChanges(
 		ticking = true;
 		try {
 			const s = sig(await availableMonitors());
+			if (!alive) return;
 			if (last === null) {
 				// Seeding tick: record the topology AND the drift baseline without firing. The primary
 				// installs this watcher before its own initial fit (still the 300x400 boot window), so
@@ -544,7 +546,9 @@ export function watchDisplayChanges(
 			// locations" on reconnect); nothing else would ever correct that. One refit per distinct
 			// mismatch (core/windowFit driftTrigger), so a placement the OS refuses can't loop.
 			if (probe) {
-				const drift = driftTrigger(lastDrift, await probe());
+				const currentDrift = await probe();
+				if (!alive) return;
+				const drift = driftTrigger(lastDrift, currentDrift);
 				lastDrift = drift.next;
 				if (drift.fire) {
 					logClient(
@@ -557,7 +561,7 @@ export function watchDisplayChanges(
 			}
 			// Studio has no overlay of its own to probe. A monitor can wake without a topology
 			// change after its secondary was destroyed; periodically reconcile missing siblings.
-			if (onStableTick) await onStableTick();
+			if (alive && onStableTick) await onStableTick();
 		} catch {
 			/* transient enumeration failure — retry next tick */
 		} finally {

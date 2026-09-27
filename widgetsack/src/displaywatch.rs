@@ -10,8 +10,8 @@
 //! lose its desktop z-order/presentation. Either signal re-fits surviving overlays, and — when
 //! `main` is absent — respawns it to re-run reconciliation.
 //!
-//! Studio and secondary overlays do not reconcile missing siblings. A surviving Studio window must
-//! not prevent the primary reconcile driver from restarting after a display change.
+//! Studio also polls for missing siblings, but its renderer may be stalled during wake. A surviving
+//! Studio window must not prevent the native watcher from restarting the primary reconcile driver.
 //!
 //! Win32 anti-corruption edge (mirrors windowmgr.rs): all `unsafe` and `windows::Win32::*` calls live
 //! in this module. The watcher runs its own named thread with a `GetMessageW`/`DispatchMessageW`
@@ -30,8 +30,8 @@ const DEBOUNCE: Duration = Duration::from_secs(3);
 /// One in-flight respawn attempt per display-change burst; reset on the main thread before the check.
 static RESPAWN_PENDING: AtomicBool = AtomicBool::new(false);
 
-/// Pure seam: the primary `main` window is the only overlay reconciliation driver. Studio and
-/// secondaries may survive while an overlay is missing, so their presence does not prevent respawn.
+/// Pure seam: a fresh primary `main` guarantees reconciliation without depending on a surviving
+/// Studio/secondary renderer, so those windows' presence does not prevent respawn.
 fn should_respawn_on_display_change(labels: &[&str]) -> bool {
     !labels.contains(&"main")
 }
@@ -199,9 +199,8 @@ unsafe extern "system" fn display_wndproc(
     unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
 }
 
-/// React to a `WM_DISPLAYCHANGE`: after a short debounce (topology changes fire bursts and the
-/// returning monitor takes a beat to enumerate), respawn a hidden `main` when it is absent so the
-/// overlay reconcile cycle re-runs at once. Best-effort; duplicate calls while an attempt is
+/// React to topology/display-on/resume signals: after a short debounce, refit surviving overlays
+/// and respawn a hidden `main` when absent to reconcile missing siblings. Best-effort; calls while an attempt is
 /// pending are no-ops. Mirrors keepalive.rs::on_zero_windows (pending guard + delayed spawn +
 /// main-thread window creation).
 #[cfg(target_os = "windows")]
@@ -263,8 +262,7 @@ mod tests {
     #[test]
     fn respawns_when_the_primary_reconcile_driver_is_missing() {
         // Studio may survive a monitor disconnect while the only populated secondary overlay
-        // disappears. Its JS watcher only refreshes Studio's monitor list, so it cannot recreate
-        // the missing overlay without a fresh main window to run reconciliation.
+        // disappears. Native recovery must not depend on that Studio renderer still responding.
         assert!(should_respawn_on_display_change(&[]));
         assert!(should_respawn_on_display_change(&["studio"]));
         assert!(should_respawn_on_display_change(&["overlay-DISPLAY2"]));

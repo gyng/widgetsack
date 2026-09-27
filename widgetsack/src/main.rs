@@ -491,8 +491,8 @@ async fn main() -> Result<(), ()> {
             windowmgr::run_drag_watcher(app.handle().clone());
 
             // Display-change watcher: a message-pump thread that respawns `main` the instant a
-            // monitor comes back (DDC input switch / replug) IF the app is at zero windows — the fast
-            // path complementing keepalive's 30s retry. No-op off Windows.
+            // monitor comes back (DDC input switch / replug) when `main` is absent, and refits
+            // surviving overlays on display-on/resume too. No-op off Windows.
             displaywatch::run_display_watcher(app.handle().clone());
 
             // Main-thread stall watchdog: logs when the UI thread stops answering (the 2026-09-18

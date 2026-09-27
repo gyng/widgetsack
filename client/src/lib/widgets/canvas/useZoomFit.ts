@@ -89,6 +89,7 @@ export function useZoomFit(opts: {
 			if (!sw || !sh || rect.w <= 0 || rect.h <= 0) return;
 			// 24px of stage padding around the box; never zoom past 4× (the wheel's ceiling).
 			const pad = 24;
+			if (sw <= pad * 2 || sh <= pad * 2) return;
 			const zoom = Math.min(4, (sw - pad * 2) / rect.w, (sh - pad * 2) / rect.h);
 			const cx = rect.x + rect.w / 2;
 			const cy = rect.y + rect.h / 2;

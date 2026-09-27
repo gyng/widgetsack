@@ -131,14 +131,26 @@ export function collectLocalDiagnostics(hub: TelemetryHub | null): WindowDiag {
 }
 
 /** Run the per-window responder: answer the studio's heap/stats poll. Mount ONCE per window (both
- * roles). `getHub` is read lazily so the freshest hub is used. Resolves to a teardown that removes the
- * listener. (Debug ACTIONS — devtools / drop click-through — are NOT handled here: they go through the
+ * roles). `getHub` is read lazily so the freshest hub is used. Returns a teardown immediately, even
+ * while listener registration is pending. (Debug ACTIONS go through the
  * backend by-label commands so they keep working when this window's webview has crashed.) */
-export async function startDiagResponder(getHub: () => TelemetryHub | null): Promise<UnlistenFn> {
-	const offRequest = await listen(DIAG_REQUEST, () => {
-		void emitTo('studio', DIAG_REPORT, collectLocalDiagnostics(getHub())).catch(() => undefined);
-	});
-	return offRequest;
+export function startDiagResponder(getHub: () => TelemetryHub | null): UnlistenFn {
+	let alive = true;
+	let offRequest: UnlistenFn | undefined;
+	void listen(DIAG_REQUEST, () => {
+		if (alive)
+			void emitTo('studio', DIAG_REPORT, collectLocalDiagnostics(getHub())).catch(() => undefined);
+	})
+		.then((off) => {
+			if (alive) offRequest = off;
+			else off();
+		})
+		.catch((err) => console.warn('diagnostics listener registration failed', err));
+	return () => {
+		alive = false;
+		offRequest?.();
+		offRequest = undefined;
+	};
 }
 
 /** Studio side: poll every window for a fresh report (broadcast — the studio answers itself too). */
