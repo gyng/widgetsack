@@ -2,7 +2,12 @@
 //! These run in the host process before Studio/refit can change the evidence, even if an overlay's
 //! WebView2 renderer has stopped answering the JS diagnostics bridge.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
+
+/// Repeated tray clicks can request many after-action snapshots within 1.5 seconds. Keep only
+/// one delayed task alive at a time; every click still gets its immediate before-action snapshot.
+static AFTER_PENDING: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct BoxPx {
@@ -35,11 +40,23 @@ pub fn log_snapshot(app: &tauri::AppHandle, reason: &'static str) {
 /// Capture the settled native state after Studio/refit has had time to act. The snapshot itself
 /// returns to the main thread because Tauri's monitor/window getters are safest there.
 pub fn log_after(app: &tauri::AppHandle, reason: &'static str) {
+    if AFTER_PENDING.swap(true, Ordering::SeqCst) {
+        return;
+    }
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_millis(1500)).await;
         let handle = app.clone();
-        let _ = app.run_on_main_thread(move || log_snapshot(&handle, reason));
+        if app
+            .run_on_main_thread(move || {
+                log_snapshot(&handle, reason);
+                AFTER_PENDING.store(false, Ordering::SeqCst);
+            })
+            .is_err()
+        {
+            // If shutdown prevented dispatch, do not leave the guard permanently claimed.
+            AFTER_PENDING.store(false, Ordering::SeqCst);
+        }
     });
 }
 

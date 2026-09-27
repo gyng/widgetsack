@@ -44,8 +44,16 @@ const LOG_FILE_NAME: &str = "widgetsack.log";
 const LOG_FILE_MAX_BYTES: u64 = 1_048_576;
 
 /// Lines the writer thread may have queued before callers start dropping (a burst from a render
-/// loop logging at 60 Hz, or a stalled disk). Each line is a few hundred bytes — ~1 MB worst case.
-const LOG_QUEUE_CAP: usize = 4096;
+/// loop logging at 60 Hz, or a stalled disk). Record text is capped below, so this is bounded in
+/// bytes as well as in entries. Overflow is reported when the queue drains again.
+const LOG_QUEUE_CAP: usize = 256;
+
+/// Keep the disk queue and the 1000-record UI ring modest even if an external error supplies a
+/// huge message or field. Normal overlay snapshots are far below these limits.
+const MESSAGE_MAX_BYTES: usize = 2048;
+const FIELD_NAME_MAX_BYTES: usize = 64;
+const FIELD_VALUE_MAX_BYTES: usize = 256;
+const FIELD_MAX_COUNT: usize = 16;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -248,13 +256,13 @@ fn log_panic_inner(info: &std::panic::PanicHookInfo<'_>) {
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "Box<dyn Any>".to_string());
 
-    let record = LogRecord {
+    let record = bound_record(LogRecord {
         ts_ms: now_ms(),
         level: LogLevel::Error,
         target: "panic".to_string(),
         message,
         fields: BTreeMap::from([("location".to_string(), location)]),
-    };
+    });
 
     // Always to stderr + the file (the file path may be set even if the webview never wired). The
     // file lock is only TRIED: if this very thread panicked inside the writer while holding it, a
@@ -301,6 +309,35 @@ fn now_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+fn truncate_text(mut value: String, max_bytes: usize) -> String {
+    if value.len() <= max_bytes {
+        return value;
+    }
+    let mut end = max_bytes - '…'.len_utf8();
+    while !value.is_char_boundary(end) {
+        end -= 1;
+    }
+    value.truncate(end);
+    value.push('…');
+    value
+}
+
+fn bound_record(mut record: LogRecord) -> LogRecord {
+    record.message = truncate_text(record.message, MESSAGE_MAX_BYTES);
+    record.fields = record
+        .fields
+        .into_iter()
+        .take(FIELD_MAX_COUNT)
+        .map(|(key, value)| {
+            (
+                truncate_text(key, FIELD_NAME_MAX_BYTES),
+                truncate_text(value, FIELD_VALUE_MAX_BYTES),
+            )
+        })
+        .collect();
+    record
 }
 
 /// An in-progress log entry: attach `field`s, then `emit`. Build via `info`/`warn`/`error`/etc.
@@ -374,6 +411,7 @@ fn console_line(record: &LogRecord) -> String {
 }
 
 fn dispatch(record: LogRecord) {
+    let record = bound_record(record);
     // 1. console — a compact one-liner; warn/error to stderr, everything else to stdout.
     let line = console_line(&record);
     if record.level >= LogLevel::Warn {
@@ -414,6 +452,30 @@ pub fn get_logs() -> Vec<LogRecord> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bounds_large_log_records_without_breaking_utf8() {
+        let fields = (0..20)
+            .map(|n| (format!("key{n:02}"), "é".repeat(300)))
+            .collect();
+        let record = bound_record(LogRecord {
+            ts_ms: 1,
+            level: LogLevel::Info,
+            target: "overlay_diag".into(),
+            message: "😀".repeat(1000),
+            fields,
+        });
+        assert!(record.message.len() <= MESSAGE_MAX_BYTES);
+        assert!(record.message.ends_with('…'));
+        assert_eq!(record.fields.len(), FIELD_MAX_COUNT);
+        assert!(
+            record
+                .fields
+                .values()
+                .all(|value| value.len() <= FIELD_VALUE_MAX_BYTES && value.ends_with('…'))
+        );
+        assert!(serde_json::to_string(&record).is_ok());
+    }
 
     #[test]
     fn overflow_counts_drops_and_reports_them_once() {
@@ -459,6 +521,15 @@ mod tests {
                 .unwrap()
                 .len(),
             LOG_FILE_MAX_BYTES
+        );
+        // A SECOND rotation must replace the backup too, or the primary could append forever
+        // beyond the size cap. Keep this covered on Windows, where the app actually runs.
+        std::fs::write(&path, vec![b'y'; LOG_FILE_MAX_BYTES as usize]).unwrap();
+        write_line_at(&path, "four");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "four\n");
+        assert_eq!(
+            std::fs::read(dir.join("widgetsack.log.1")).unwrap(),
+            vec![b'y'; LOG_FILE_MAX_BYTES as usize]
         );
         std::fs::remove_dir_all(dir).unwrap();
     }
