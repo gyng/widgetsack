@@ -39,6 +39,7 @@ pub mod media;
 pub mod mqtt;
 pub mod navguard;
 pub mod netconn;
+pub mod overlay_diag;
 pub mod ping;
 pub mod process_diag;
 pub mod recyclebin;
@@ -66,6 +67,8 @@ pub struct AppState {
 /// the single-instance second-launch working even with no primary overlay present. Runs on the main
 /// thread (its callers are tray/single-instance handlers on the event loop).
 fn open_or_focus_studio(app: &tauri::AppHandle) {
+    overlay_diag::log_snapshot(app, "before studio open");
+    overlay_diag::log_after(app, "after studio open");
     if let Some(w) = app.get_webview_window("studio") {
         let _ = w.set_focus();
         return;
@@ -561,6 +564,8 @@ async fn main() -> Result<(), ()> {
                         let _ = app.emit(bridge::ARRANGE_ZONES_EVENT, ());
                     }
                     "refit" => {
+                        overlay_diag::log_snapshot(app, "before tray refit");
+                        overlay_diag::log_after(app, "after tray refit");
                         // An empty primary layout destroys `main`. If a secondary also disappeared,
                         // there may be no overlay left to reconcile it from this event. Recreate the
                         // hidden primary driver; its startup reconciles secondaries and then reclaims

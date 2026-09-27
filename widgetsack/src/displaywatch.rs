@@ -163,6 +163,7 @@ fn on_display_change() {
         // Window creation must run on the main thread (same constraint as keepalive/watch_layout).
         let dispatched = app.run_on_main_thread(move || {
             RESPAWN_PENDING.store(false, Ordering::SeqCst);
+            crate::overlay_diag::log_snapshot(&handle, "display change");
             let windows = handle.webview_windows();
             let labels: Vec<&str> = windows.keys().map(String::as_str).collect();
             let respawn = should_respawn_on_display_change(&labels);
