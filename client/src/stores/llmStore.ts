@@ -9,7 +9,9 @@ export const llmStore = createStore<ChatState>(emptyChat());
 
 /** Fold one streamed delta into the transcript (called by the `llm_delta` adapter). */
 export function handleDelta(delta: LlmDelta): void {
-	llmStore.update((s) => applyDelta(s, delta));
+	llmStore.update((s) =>
+		s.turns.some((t) => t.id === delta.requestId && t.streaming) ? applyDelta(s, delta) : s
+	);
 }
 
 /** Clear the transcript. */

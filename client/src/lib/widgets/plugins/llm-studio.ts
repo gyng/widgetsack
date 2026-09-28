@@ -5,7 +5,6 @@
 // calls degrade gracefully. Plugin-internal — nothing outside the AI Provider plugin imports this.
 
 import type { AssistantOp } from '../../core/llm';
-import type { MonitorLayout } from '../../core/layoutTree';
 import type { StudioApi, StudioApplyResult } from '../plugin';
 
 let api: StudioApi | null = null;
@@ -18,10 +17,22 @@ export function llmStudioReady(): boolean {
 	return api !== null;
 }
 
-export function llmStudioMonitor(): MonitorLayout | null {
-	return api?.monitor() ?? null;
-}
-
-export function applyLlmStudioOps(ops: AssistantOp[]): StudioApplyResult {
-	return api?.apply(ops) ?? { applied: 0, addedIds: [], errors: ['the editor is not ready'] };
+/** Capture the immutable layout and editor instance used to generate a proposal. */
+export function captureLlmStudioTarget() {
+	const owner = api;
+	if (!owner) return null;
+	const monitor = owner.monitor();
+	if (!monitor) return null;
+	return {
+		monitor,
+		apply(ops: AssistantOp[]): StudioApplyResult {
+			if (api !== owner || owner.monitor() !== monitor)
+				return {
+					applied: 0,
+					addedIds: [],
+					errors: ['The layout changed while generating. Generate again for the current layout.']
+				};
+			return owner.apply(ops);
+		}
+	};
 }

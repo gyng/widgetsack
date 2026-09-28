@@ -56,6 +56,7 @@ beforeEach(() => {
 	});
 });
 afterEach(() => {
+	stopSpeaking();
 	vi.unstubAllGlobals();
 	vi.clearAllMocks();
 });
@@ -148,4 +149,49 @@ describe('stopSpeaking', () => {
 		expect(() => stopSpeaking()).not.toThrow();
 		expect(cancelSpeech).toHaveBeenCalled();
 	});
+});
+
+it('ignores synthesis that finishes after a newer request or stop', async () => {
+	let resolveOld!: (value: { audio: number[]; mime: string }) => void;
+	llmSynthesize.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				resolveOld = resolve;
+			})
+	);
+	const old = speakSmart('old');
+	llmSynthesize.mockResolvedValueOnce({ audio: [2], mime: 'audio/mpeg' });
+	await speakSmart('new');
+	resolveOld({ audio: [1], mime: 'audio/mpeg' });
+	await old;
+	expect(audios).toHaveLength(1);
+	expect(audios[0].paused).toBe(false);
+	let rejectLate!: (error: Error) => void;
+	llmSynthesize.mockImplementationOnce(
+		() =>
+			new Promise((_, reject) => {
+				rejectLate = reject;
+			})
+	);
+	const late = speakSmart('cancelled');
+	stopSpeaking();
+	rejectLate(new Error('offline'));
+	await late;
+	expect(speak).not.toHaveBeenCalled();
+	expect(audios).toHaveLength(1);
+});
+it('releases failed provider playback before falling back', async () => {
+	llmSynthesize.mockResolvedValueOnce({ audio: [1], mime: 'audio/mpeg' });
+	vi.stubGlobal(
+		'Audio',
+		class extends FakeAudio {
+			play() {
+				return Promise.reject(new Error('blocked'));
+			}
+		}
+	);
+	await speakSmart('fallback');
+	expect(audios[0].paused).toBe(true);
+	expect(revoked).toContain('blob:url-1');
+	expect(speak).toHaveBeenCalledWith('fallback');
 });

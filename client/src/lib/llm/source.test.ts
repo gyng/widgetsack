@@ -90,12 +90,13 @@ describe('startLlmSource', () => {
 		expect(unlistenSpy).toHaveBeenCalledTimes(1);
 	});
 
-	it('keeps running silently when there is no Tauri runtime (listen rejects)', async () => {
+	it('reports attachment failure and permits a later retry', async () => {
 		listen = vi.fn(() => Promise.reject(new Error('no tauri')));
 		const mod = await load();
+		await expect(mod.startLlmSource()).rejects.toThrow('no tauri');
+		listen.mockResolvedValueOnce(unlistenSpy);
 		const stop = await mod.startLlmSource();
-		// No listener attached, but the stop fn is still safe to call.
-		expect(() => stop()).not.toThrow();
-		expect(unlistenSpy).not.toHaveBeenCalled();
+		stop();
+		expect(unlistenSpy).toHaveBeenCalledOnce();
 	});
 });

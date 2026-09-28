@@ -15,7 +15,7 @@ vi.mock('./source', () => ({
 }));
 
 import { useLlmChat } from './useLlmChat';
-import { resetChat } from '../../stores/llmStore';
+import { llmStore, handleDelta, resetChat } from '../../stores/llmStore';
 import { llmCancel, llmStream } from '../widgets/plugins/llm-commands';
 import { startLlmSource } from './source';
 
@@ -120,4 +120,62 @@ describe('useLlmChat', () => {
 		unmount();
 		expect(stop).toHaveBeenCalledTimes(1);
 	});
+});
+
+it('waits for listener readiness before starting a stream', async () => {
+	let ready!: (stop: () => void) => void;
+	vi.mocked(startLlmSource).mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				ready = resolve;
+			})
+	);
+	vi.mocked(llmStream).mockResolvedValueOnce(undefined);
+	const { result } = renderHook(useLlmChat);
+	let pending!: Promise<string>;
+	act(() => {
+		pending = result.current.send('hello');
+	});
+	expect(llmStream).not.toHaveBeenCalled();
+	await act(async () => {
+		ready(() => undefined);
+		await pending;
+	});
+	expect(llmStream).toHaveBeenCalledOnce();
+});
+it('settles and cancels active streams on last unmount, ignoring late tokens', async () => {
+	vi.mocked(llmStream).mockResolvedValueOnce(undefined);
+	const { result, unmount } = renderHook(useLlmChat);
+	let id = '';
+	await act(async () => {
+		id = await result.current.send('hello');
+	});
+	unmount();
+	expect(llmCancel).toHaveBeenCalledWith(id);
+	expect(llmStore.getSnapshot().turns.at(-1)?.streaming).toBe(false);
+	handleDelta({ requestId: id, token: 'late', done: false });
+	expect(llmStore.getSnapshot().turns.at(-1)?.content).toBe('');
+});
+it('cancels a stream after its start acknowledgement if reset raced with startup', async () => {
+	let acknowledge!: () => void;
+	vi.mocked(llmStream).mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				acknowledge = resolve;
+			})
+	);
+	const { result } = renderHook(useLlmChat);
+	let pending!: Promise<string>;
+	await act(async () => {
+		pending = result.current.send('hello');
+		await Promise.resolve();
+	});
+	act(() => result.current.reset());
+	await act(async () => {
+		acknowledge();
+		await pending;
+	});
+	expect(llmCancel).toHaveBeenCalledWith(await pending);
+	handleDelta({ requestId: await pending, token: 'late', done: false });
+	expect(llmStore.getSnapshot().turns).toEqual([]);
 });

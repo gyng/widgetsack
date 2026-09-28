@@ -53,44 +53,80 @@ export async function startRecording(deviceId?: string): Promise<Recorder> {
 		? { deviceId: { exact: deviceId } }
 		: true;
 	const stream = await navigator.mediaDevices.getUserMedia({ audio });
-	const mime = pickMime();
-	const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
-	const chunks: BlobPart[] = [];
-	rec.ondataavailable = (e) => {
-		if (e.data.size) chunks.push(e.data);
+
+	let released = false;
+	const cleanup = (): void => {
+		if (released) return;
+		released = true;
+		stream.getTracks().forEach((t) => t.stop());
 	};
-	rec.start();
-
-	const cleanup = (): void => stream.getTracks().forEach((t) => t.stop());
-
-	return {
-		stop: () =>
-			new Promise<Recording>((resolve, reject) => {
-				const finish = (): void => {
-					cleanup();
-					const blob = new Blob(chunks, { type: rec.mimeType || mime || 'audio/webm' });
-					blob
-						.arrayBuffer()
-						.then((buf) => resolve({ bytes: new Uint8Array(buf), mime: blob.type || 'audio/webm' }))
-						.catch(reject);
-				};
-				rec.onstop = finish;
-				rec.onerror = () => {
-					cleanup();
-					reject(new Error('recording failed'));
-				};
-				// If the recorder already stopped on its own (mic unplugged, an error, a prior stop), the
-				// onstop handler won't fire — settle now from whatever was captured so the caller never hangs.
-				if (rec.state !== 'inactive') rec.stop();
-				else finish();
-			}),
-		cancel: () => {
-			try {
-				if (rec.state !== 'inactive') rec.stop();
-			} catch {
-				// already stopped
-			}
+	try {
+		const mime = pickMime();
+		const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+		const chunks: BlobPart[] = [];
+		let terminal = false;
+		let stopRequested = false;
+		let resolve!: (recording: Recording) => void;
+		let reject!: (error: unknown) => void;
+		const completion = new Promise<Recording>((yes, no) => {
+			resolve = yes;
+			reject = no;
+		});
+		// Errors may precede the consumer's stop call; retain the rejection without leaking it.
+		void completion.catch(() => undefined);
+		const fail = (error: unknown): void => {
+			if (terminal) return;
+			terminal = true;
 			cleanup();
-		}
-	};
+			reject(error);
+		};
+		rec.ondataavailable = (e) => {
+			if (!terminal && e.data.size) chunks.push(e.data);
+		};
+		rec.onerror = () => fail(new Error('recording failed'));
+		rec.onstop = () => {
+			if (terminal) return;
+			terminal = true;
+			cleanup();
+			try {
+				const blob = new Blob(chunks, { type: rec.mimeType || mime || 'audio/webm' });
+				void blob
+					.arrayBuffer()
+					.then(
+						(buf) => resolve({ bytes: new Uint8Array(buf), mime: blob.type || 'audio/webm' }),
+						reject
+					);
+			} catch (error) {
+				reject(error);
+			}
+		};
+		rec.start();
+		return {
+			stop: () => {
+				if (!terminal && !stopRequested) {
+					stopRequested = true;
+					// Inactive may mean the final data/stop events are already queued. Our handlers were
+					// attached before start, so await them instead of reading an incomplete chunk list.
+					try {
+						if (rec.state !== 'inactive') rec.stop();
+					} catch (error) {
+						fail(error);
+					}
+				}
+				return completion;
+			},
+			cancel: () => {
+				fail(new Error('recording cancelled'));
+				try {
+					if (rec.state !== 'inactive') rec.stop();
+				} catch {
+					/* already stopped */
+				}
+				cleanup();
+			}
+		};
+	} catch (error) {
+		cleanup();
+		throw error;
+	}
 }

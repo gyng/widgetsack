@@ -18,7 +18,7 @@ import {
 	type ChatMessage
 } from '../../core/llm';
 import { listMetas } from '../../core/widget';
-import { applyLlmStudioOps, llmStudioMonitor, llmStudioReady } from './llm-studio';
+import { captureLlmStudioTarget, llmStudioReady } from './llm-studio';
 import { ingestLlmStatus } from './llm-status';
 import { useLlmChat } from '../../llm/useLlmChat';
 import { ttsAvailable } from '../../tts';
@@ -34,7 +34,8 @@ import {
 	llmTranscribe,
 	saveLlmConfig
 } from './llm-commands';
-import { sttAvailable, startRecording, type Recorder } from '../../stt';
+import { sttAvailable } from '../../stt';
+import { useRecording } from '../../useRecording';
 import type { LlmModel, LlmStatus } from './llm-types';
 
 type TestState = { kind: 'idle' } | { kind: 'ok'; msg: string } | { kind: 'err'; msg: string };
@@ -497,52 +498,18 @@ export default function LlmSettings() {
 
 function LayoutAssistant({ sensorIds }: { sensorIds: () => string[] }) {
 	const [prompt, setPrompt] = useState('');
-	const [busy, setBusy] = useState(false);
 	const [msg, setMsg] = useState('');
-	const [recording, setRecording] = useState(false);
-	const recorderRef = useRef<Recorder | null>(null);
-	const startingRef = useRef(false);
 
-	// Release the mic if the panel unmounts mid-recording (selecting another plugin closes it).
-	useEffect(
-		() => () => {
-			recorderRef.current?.cancel();
-			recorderRef.current = null;
-		},
-		[]
-	);
-
-	// Push-to-talk dictation: first click starts the mic; second stops + transcribes into the prompt.
-	const onMic = async () => {
-		if (recording) {
-			const rec = recorderRef.current;
-			recorderRef.current = null;
-			setRecording(false);
-			/* v8 ignore next -- recording=true is set only after recorderRef receives a recorder. */
-			if (!rec) return;
-			setMsg('Transcribing…');
-			try {
-				const { bytes, mime } = await rec.stop();
-				const text = (await llmTranscribe(bytes, mime)).trim();
-				setPrompt((p) => (p ? `${p} ${text}` : text).trim());
-				setMsg('');
-			} catch (err) {
-				setMsg(`Voice failed: ${String(err)}`);
-			}
-			return;
-		}
-		if (startingRef.current) return; // a getUserMedia is already pending — ignore a rapid 2nd click
-		startingRef.current = true;
-		try {
-			recorderRef.current = await startRecording();
-			setRecording(true);
-			setMsg('● Listening… click the mic again to stop.');
-		} catch (err) {
-			setMsg(`Mic unavailable: ${String(err)}`);
-		} finally {
-			startingRef.current = false;
-		}
-	};
+	const { saving: busy, error: generateError, capture, invalidate, save } = useSettingsOperations();
+	const mic = useRecording(async ({ bytes, mime }, current) => {
+		const text = (await llmTranscribe(bytes, mime)).trim();
+		if (!current()) return;
+		invalidate();
+		setPrompt((p) => (p ? p + ' ' + text : text).trim());
+		setMsg('');
+	});
+	const recording = mic.recording;
+	const onMic = () => mic.toggle();
 
 	const onGenerate = async () => {
 		const instruction = prompt.trim();
@@ -551,38 +518,47 @@ function LayoutAssistant({ sensorIds }: { sensorIds: () => string[] }) {
 			setMsg('Open the studio canvas first — the assistant edits the live layout.');
 			return;
 		}
-		const monitor = llmStudioMonitor();
-		if (!monitor) {
+		const target = captureLlmStudioTarget();
+		if (!target) {
 			setMsg('No layout to edit yet.');
 			return;
 		}
-		setBusy(true);
+		mic.clearError();
 		setMsg('');
-		try {
+		await save(async () => {
+			const current = capture();
 			const system = buildLayoutSystemPrompt(listMetas(), sensorIds());
-			const user = buildLayoutUserPrompt(instruction, monitor);
+			const user = buildLayoutUserPrompt(instruction, target.monitor);
 			const messages: ChatMessage[] = [
 				{ role: 'system', content: system },
 				{ role: 'user', content: user }
 			];
 			const reply = await llmComplete(messages, { temperature: 0 });
+			if (!current()) return;
 			const parsed = parseAssistantReply(reply);
 			if (!parsed) {
 				setMsg('The model did not return valid layout ops. Try rephrasing.');
 				return;
 			}
-			const res = applyLlmStudioOps(parsed.ops);
+			const res = target.apply(parsed.ops);
 			const tail = res.errors.length ? ` (${res.errors.join('; ')})` : '';
 			setMsg(
 				`${parsed.summary || 'Done'} — ${res.applied} change${res.applied === 1 ? '' : 's'}${tail}`
 			);
-			setPrompt('');
-		} catch (err) {
-			setMsg(`Failed: ${String(err)}`);
-		} finally {
-			setBusy(false);
-		}
+			if (res.applied) setPrompt('');
+		});
 	};
+
+	const micStatus = {
+		idle: '',
+		starting: 'Opening microphone…',
+		recording: '● Listening… click the mic again to stop.',
+		processing: 'Transcribing…'
+	}[mic.phase];
+	let feedback = msg;
+	if (micStatus) feedback = micStatus;
+	if (mic.error) feedback = 'Voice failed: ' + mic.error;
+	if (generateError) feedback = 'Failed: ' + generateError;
 
 	return (
 		<>
@@ -599,7 +575,11 @@ function LayoutAssistant({ sensorIds }: { sensorIds: () => string[] }) {
 					spellCheck={false}
 					placeholder="add a clock top-left and a memory bar under it"
 					value={prompt}
-					onChange={(e) => setPrompt(e.currentTarget.value)}
+					onChange={(e) => {
+						invalidate();
+						setPrompt(e.currentTarget.value);
+						setMsg('');
+					}}
 					onKeyDown={(e) => {
 						if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void onGenerate();
 					}}
@@ -619,13 +599,14 @@ function LayoutAssistant({ sensorIds }: { sensorIds: () => string[] }) {
 						type="button"
 						className={recording ? 'has-primary' : ''}
 						onClick={onMic}
+						disabled={mic.busy}
 						title="Dictate the request (speech-to-text)"
 					>
 						{recording ? '■ Stop' : '🎤 Speak'}
 					</button>
 				)}
 			</div>
-			{msg && <div className="has-help">{msg}</div>}
+			{feedback && <div className="has-help">{feedback}</div>}
 		</>
 	);
 }

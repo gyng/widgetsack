@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { applyLlmStudioOps, llmStudioMonitor, llmStudioReady, setLlmStudioApi } from './llm-studio';
+import { captureLlmStudioTarget, llmStudioReady, setLlmStudioApi } from './llm-studio';
 import type { StudioApi, StudioApplyResult } from '../plugin';
-import type { MonitorLayout } from '../../core/layoutTree';
+import { emptyMonitorLayout } from '../../core/layoutTree';
 
 // Reset the module-level api slot between tests so each starts from "no studio mounted".
 afterEach(() => setLlmStudioApi(null));
 
-const monitor = { id: 'm', root: { kind: 'frame', children: [] } } as unknown as MonitorLayout;
+const monitor = emptyMonitorLayout();
 
 function fakeApi(over: Partial<StudioApi> = {}): StudioApi {
 	return {
@@ -19,12 +19,7 @@ function fakeApi(over: Partial<StudioApi> = {}): StudioApi {
 describe('llm-studio bridge', () => {
 	it('reports not-ready and degrades gracefully when no studio is mounted', () => {
 		expect(llmStudioReady()).toBe(false);
-		expect(llmStudioMonitor()).toBeNull();
-		expect(applyLlmStudioOps([])).toEqual({
-			applied: 0,
-			addedIds: [],
-			errors: ['the editor is not ready']
-		});
+		expect(captureLlmStudioTarget()).toBeNull();
 	});
 
 	it('reports ready and proxies through to the stashed api once set', () => {
@@ -32,10 +27,11 @@ describe('llm-studio bridge', () => {
 		setLlmStudioApi(fakeApi({ apply }));
 
 		expect(llmStudioReady()).toBe(true);
-		expect(llmStudioMonitor()).toBe(monitor);
+		const target = captureLlmStudioTarget()!;
+		expect(target.monitor).toBe(monitor);
 
-		const ops = [{ kind: 'noop' }] as unknown as Parameters<typeof applyLlmStudioOps>[0];
-		expect(applyLlmStudioOps(ops)).toEqual({ applied: 1, addedIds: ['x'], errors: [] });
+		const ops: Parameters<typeof target.apply>[0] = [{ op: 'clear' }];
+		expect(target.apply(ops)).toEqual({ applied: 1, addedIds: ['x'], errors: [] });
 		expect(apply).toHaveBeenCalledWith(ops);
 	});
 
@@ -44,6 +40,21 @@ describe('llm-studio bridge', () => {
 		expect(llmStudioReady()).toBe(true);
 		setLlmStudioApi(null);
 		expect(llmStudioReady()).toBe(false);
-		expect(llmStudioMonitor()).toBeNull();
+		expect(captureLlmStudioTarget()).toBeNull();
 	});
+});
+
+it('refuses generated edits after the captured monitor changes or editor is replaced', () => {
+	let current = monitor;
+	const apply = vi.fn();
+	const api = fakeApi({ monitor: () => current, apply });
+	setLlmStudioApi(api);
+	const target = captureLlmStudioTarget()!;
+	current = { ...monitor };
+	expect(target.apply([{ op: 'clear' }]).applied).toBe(0);
+	expect(apply).not.toHaveBeenCalled();
+	current = monitor;
+	setLlmStudioApi(fakeApi({ apply }));
+	expect(target.apply([{ op: 'clear' }]).applied).toBe(0);
+	expect(apply).not.toHaveBeenCalled();
 });

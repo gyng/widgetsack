@@ -90,6 +90,7 @@ describe('stt', () => {
 		if (!inst) throw new Error('expected a FakeRecorder to be constructed');
 		// Simulate the recorder auto-stopping (e.g. mic unplugged) before the user clicks stop.
 		inst.state = 'inactive';
+		inst.onstop?.();
 		const result = await rec.stop(); // must settle, not hang
 		expect(result.mime).toMatch(/audio/);
 		expect(tracks[0].stop).toHaveBeenCalled(); // mic released
@@ -288,4 +289,92 @@ describe('stt', () => {
 		expect(inst.stopped).toBe(0); // no redundant stop() on an inactive recorder
 		expect(tracks[0]!.stop).toHaveBeenCalled(); // mic still released
 	});
+});
+
+it.each(['construct', 'start'])('releases acquired tracks if recorder %s fails', async (phase) => {
+	const stop = vi.fn();
+	vi.stubGlobal('navigator', {
+		mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop }] }) }
+	});
+	vi.stubGlobal(
+		'MediaRecorder',
+		class {
+			constructor() {
+				if (phase === 'construct') throw new Error('failed');
+			}
+			start() {
+				throw new Error('failed');
+			}
+		}
+	);
+	await expect(startRecording()).rejects.toThrow('failed');
+	expect(stop).toHaveBeenCalledOnce();
+});
+
+it('releases the mic on an early recorder error and reports that failure on stop', async () => {
+	const stop = vi.fn();
+	const recorders: { onerror: (() => void) | null }[] = [];
+	vi.stubGlobal('navigator', {
+		mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop }] }) }
+	});
+	vi.stubGlobal(
+		'MediaRecorder',
+		class {
+			state = 'recording';
+			onerror: (() => void) | null = null;
+			constructor() {
+				recorders.push(this);
+			}
+			start() {}
+			stop() {
+				this.state = 'inactive';
+			}
+		}
+	);
+	const capture = await startRecording();
+	recorders.at(-1)!.onerror?.();
+	expect(stop).toHaveBeenCalledOnce();
+	await expect(capture.stop()).rejects.toThrow('recording failed');
+});
+it('shares one stop completion and releases tracks on automatic stop', async () => {
+	const stop = vi.fn();
+	const recorders: { state: string; onstop: (() => void) | null }[] = [];
+	vi.stubGlobal('navigator', {
+		mediaDevices: { getUserMedia: async () => ({ getTracks: () => [{ stop }] }) }
+	});
+	vi.stubGlobal(
+		'MediaRecorder',
+		class {
+			state = 'recording';
+			onstop: (() => void) | null = null;
+			constructor() {
+				recorders.push(this);
+			}
+			start() {}
+			stop() {
+				this.state = 'inactive';
+			}
+		}
+	);
+	vi.stubGlobal(
+		'Blob',
+		class {
+			type = 'audio/webm';
+			arrayBuffer() {
+				return Promise.resolve(new ArrayBuffer(0));
+			}
+		}
+	);
+	const capture = await startRecording();
+	const first = capture.stop();
+	const second = capture.stop();
+	expect(second).toBe(first);
+	recorders.at(-1)!.onstop?.();
+	await first;
+	expect(stop).toHaveBeenCalledOnce();
+	const automatic = await startRecording();
+	recorders.at(-1)!.state = 'inactive';
+	recorders.at(-1)!.onstop?.();
+	expect(stop).toHaveBeenCalledTimes(2);
+	await automatic.stop();
 });

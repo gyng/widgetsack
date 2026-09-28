@@ -9,6 +9,7 @@ import { llmSynthesize } from './llm-commands';
 
 // One in-flight provider clip at a time (mirrors Web Speech's "newest wins"); tracked so a new clip or
 // an explicit stop can cancel it and release the object URL.
+let generation = 0;
 let current: HTMLAudioElement | null = null;
 let currentUrl: string | null = null;
 
@@ -47,17 +48,23 @@ async function playAudioBytes(bytes: number[], mime: string): Promise<void> {
 export async function speakSmart(text: string): Promise<void> {
 	const t = text.trim();
 	if (!t) return;
+	stopSpeaking();
+	const request = generation;
 	try {
 		const { audio, mime } = await llmSynthesize(t);
+		if (request !== generation) return;
 		await playAudioBytes(audio, mime);
 	} catch {
 		// No provider TTS (keyless/unsupported/no key) or a playback failure → browser fallback.
+		if (request !== generation) return;
+		stopAudio();
 		speak(t);
 	}
 }
 
 /** Stop any in-progress speech (provider clip + Web Speech). */
 export function stopSpeaking(): void {
+	generation++;
 	stopAudio();
 	cancelSpeech();
 }

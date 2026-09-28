@@ -28,14 +28,17 @@ export async function startLlmSource(): Promise<UnlistenFn> {
 				// startLlmSource does not expose its stop function until attachment resolves, so at least
 				// one reference necessarily remains here.
 				unlisten = u;
-			} catch {
-				// no Tauri runtime (plain-browser dev): streaming just won't fire.
 			} finally {
 				attaching = null;
 			}
 		})();
 	}
-	if (attaching) await attaching;
+	try {
+		if (attaching) await attaching;
+	} catch (error) {
+		refs--;
+		throw error;
+	}
 
 	let stopped = false;
 	return () => {

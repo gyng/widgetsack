@@ -390,6 +390,11 @@ Inner rings know nothing about outer rings — the domain must not import framew
   Package refresh/toggle/install/update/remove share one mutation queue in `plugins/packages.ts`.
   Settings forms use `useSettingsOperations` to prevent old loads, saves, and tests from replacing
   newer edits or showing stale feedback.
+- **AI requests own their async lifetime.** `llm/chatSession.ts` keeps the delta listener ready
+  before streaming and cancels active turns on reset or final consumer disposal. `useRecording.ts`
+  owns pending microphone acquisition and processing for both dictation UIs. Speech synthesis and
+  playback share a generation in `llm-tts.ts`; stale work must never play or fall back. Layout
+  proposals capture their editor/monitor in `llm-studio.ts` and reject a changed target before apply.
 - **React mirror:** presentational meters are inner (pure, props-only); `Canvas.tsx`, the
   `canvas/` hooks, and stores are the orchestration ring; Tauri API calls are the outer
   ring. See §6.

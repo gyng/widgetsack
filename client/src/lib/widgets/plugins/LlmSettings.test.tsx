@@ -56,6 +56,7 @@ vi.mock('./llm-tts', () => ({
 	speakSmart: vi.fn(() => Promise.resolve())
 }));
 
+vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn(async () => () => undefined) }));
 import LlmSettings from './LlmSettings';
 import {
 	controlStart,
@@ -545,7 +546,7 @@ describe('LlmSettings', () => {
 		const { container, getByText, findByText } = renderPanel();
 		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
 		fireEvent.click(getByText('🎤 Speak'));
-		expect(await findByText(/Mic unavailable: NotAllowedError/)).toBeTruthy();
+		expect(await findByText(/Voice failed: NotAllowedError/)).toBeTruthy();
 	});
 
 	it('ignores a Ctrl+Enter on an empty prompt (no completion call)', async () => {
@@ -762,4 +763,69 @@ describe('LlmSettings', () => {
 		});
 		expect(await findByText(/Listening/)).toBeTruthy();
 	});
+});
+
+it.each(['monitor', 'prompt', 'unmount'])(
+	'does not apply a generated proposal after %s changes',
+	async (change) => {
+		let current = emptyMonitorLayout();
+		const apply = vi.fn(() => ({ applied: 1, addedIds: [], errors: [] }));
+		setLlmStudioApi({ monitor: () => current, apply });
+		let resolve!: (reply: string) => void;
+		vi.mocked(llmComplete).mockImplementationOnce(
+			() =>
+				new Promise((r) => {
+					resolve = r;
+				})
+		);
+		const { container, getByText, unmount } = renderPanel();
+		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		const textarea = container.querySelector('textarea')!;
+		fireEvent.change(textarea, { target: { value: 'clear' } });
+		fireEvent.click(getByText(/Generate/));
+		await waitFor(() => expect(llmComplete).toHaveBeenCalled());
+		if (change === 'monitor') current = emptyMonitorLayout();
+		else if (change === 'prompt') fireEvent.change(textarea, { target: { value: 'new request' } });
+		else unmount();
+		await act(async () => {
+			resolve('{"ops":[{"op":"clear"}],"summary":"cleared"}');
+		});
+		expect(apply).not.toHaveBeenCalled();
+		if (change === 'prompt') expect(textarea.value).toBe('new request');
+	}
+);
+it('releases dictation acquired after the settings panel closes', async () => {
+	let ready!: (rec: Recorder) => void;
+	vi.mocked(startRecording).mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				ready = resolve;
+			})
+	);
+	const { container, getByText, unmount } = renderPanel();
+	await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+	fireEvent.click(getByText('🎤 Speak'));
+	unmount();
+	const cancel = vi.fn();
+	await act(async () => {
+		ready({ cancel, stop: vi.fn() });
+	});
+	expect(cancel).toHaveBeenCalledOnce();
+});
+
+it('replaces an old dictation error with the next generation result', async () => {
+	const monitor = emptyMonitorLayout();
+	setLlmStudioApi({
+		monitor: () => monitor,
+		apply: () => ({ applied: 1, addedIds: [], errors: [] })
+	});
+	vi.mocked(startRecording).mockRejectedValueOnce('permission denied');
+	vi.mocked(llmComplete).mockResolvedValueOnce('{"ops":[{"op":"clear"}],"summary":"Updated"}');
+	const { container, getByText, findByText } = renderPanel();
+	await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+	fireEvent.click(getByText('🎤 Speak'));
+	await findByText(/Voice failed/);
+	fireEvent.change(container.querySelector('textarea')!, { target: { value: 'clear' } });
+	fireEvent.click(getByText(/Generate/));
+	expect(await findByText(/Updated — 1 change/)).toBeTruthy();
 });
