@@ -1,10 +1,11 @@
+// Backend worker lifetime belongs to the app. Window cleanup releases only local subscriptions.
 // The Agenda data source (peer to rss-source). A Rust proxy source: the ICS fetch + parse happen
 // server-side (widgetsack/src/agenda.rs, plugins/agenda.json) and the events arrive over the EXISTING
-// `telemetry` event as an `agenda.list` JSON sample. This source only flips polling on/off and provides
+// `telemetry` event as an `agenda.list` JSON sample. This source only ensures polling is running and provides
 // the bindable-id catalog.
 
 import type { SensorCatalogEntry, SensorSource } from '../../core/plugin';
-import { agendaConnect, agendaDisconnect } from './agenda-commands';
+import { agendaConnect } from './agenda-commands';
 
 const ENTRIES: SensorCatalogEntry[] = [
 	{ id: 'agenda.status', label: 'Agenda status' },
@@ -15,9 +16,7 @@ export const agendaSource: SensorSource = {
 	id: 'agenda',
 	start: async () => {
 		await agendaConnect().catch(() => undefined);
-		return () => {
-			agendaDisconnect().catch(() => undefined);
-		};
+		return () => undefined;
 	},
 	catalog: () => ENTRIES.map((e) => e.id),
 	catalogEntries: () => ENTRIES

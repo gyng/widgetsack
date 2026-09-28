@@ -1,3 +1,4 @@
+import { useSettingsOperations } from './useSettingsOperations';
 // The MQTT plugin's settings pane (studio → Plugins → MQTT). A container (AGENTS.md §6): owns the
 // broker-config form and drives the Tauri commands via mqtt-commands.ts; the password is write-only
 // (a blank save keeps the saved one). The live badge reads the `mqtt.status` telemetry sample
@@ -8,7 +9,7 @@ import { useTelemetryHub } from '../telemetryContext';
 import { useSensor } from '../useSensor';
 import { haStatusBadge } from '../../core/haStatus';
 import { copyToClipboard } from '../../overlay';
-import { mqttConfigStatus, mqttConnect, mqttDisconnect, saveMqttConfig } from './mqtt-commands';
+import { mqttConfigStatus, mqttConnect, mqttReconnect, saveMqttConfig } from './mqtt-commands';
 import { refreshMqttCatalog } from './mqtt-source';
 import type { MqttCatalogEntry } from './mqtt-types';
 import TokenListField from './TokenListField';
@@ -35,25 +36,17 @@ export default function MqttSettings() {
 	const [insecure, setInsecure] = useState(false);
 	const [discovery, setDiscovery] = useState(false);
 	const [configured, setConfigured] = useState(false);
-	const [saving, setSaving] = useState(false);
-	const [saved, setSaved] = useState(false);
-	const [saveError, setSaveError] = useState<string | null>(null);
+	const { saving, saved, error: saveError, invalidate, capture, save } = useSettingsOperations();
 	const [entries, setEntries] = useState<MqttCatalogEntry[]>([]);
 	const [refreshing, setRefreshing] = useState(false);
 
-	// Auto-dismiss the "Saved ✓" tick like a toast (it otherwise lingers until the next edit).
-	useEffect(() => {
-		if (!saved) return;
-		const t = setTimeout(() => setSaved(false), 2500);
-		return () => clearTimeout(t);
-	}, [saved]);
-
 	useEffect(() => {
 		let alive = true;
+		const current = capture();
 		mqttConnect().catch(() => undefined);
 		mqttConfigStatus()
 			.then((s) => {
-				if (!alive) return;
+				if (!alive || !current()) return;
 				setHost(s.host);
 				setPort(s.port);
 				setUsername(s.username);
@@ -70,43 +63,36 @@ export default function MqttSettings() {
 		return () => {
 			alive = false;
 		};
-	}, []);
+	}, [capture]);
 
-	const dirtied = () => setSaved(false);
+	const dirtied = invalidate;
 	const canSubmit = host.trim().length > 0 && !saving;
 
 	const onSave = async () => {
-		/* v8 ignore next -- canSubmit=false disables the only Save control; guard protects direct calls. */
 		if (!canSubmit) return;
-		setSaving(true);
-		setSaveError(null);
-		try {
-			await saveMqttConfig({
-				host: host.trim(),
-				port,
-				username: username.trim(),
-				password,
-				clientId: clientId.trim(),
-				topics,
-				tls,
-				insecure,
-				discovery
-			});
-			await mqttDisconnect();
-			await mqttConnect();
-			setConfigured(true);
-			setPassword(''); // back to write-only / unchanged
-			setSaved(true);
-			setEntries(await refreshMqttCatalog());
-		} catch (err) {
-			// Surface the failure instead of swallowing it (was a silent try/finally → unhandled rejection).
-			setSaved(false);
-			setSaveError(err instanceof Error ? err.message : String(err));
-		} finally {
-			setSaving(false);
-		}
+		await save(
+			async () => {
+				await saveMqttConfig({
+					host: host.trim(),
+					port,
+					username: username.trim(),
+					password,
+					clientId: clientId.trim(),
+					topics,
+					tls,
+					insecure,
+					discovery
+				});
+				await mqttReconnect();
+				return refreshMqttCatalog();
+			},
+			(entries) => {
+				setConfigured(true);
+				setPassword('');
+				setEntries(entries);
+			}
+		);
 	};
-
 	const onRefresh = async () => {
 		setRefreshing(true);
 		try {
@@ -118,6 +104,7 @@ export default function MqttSettings() {
 
 	return (
 		<div className="has">
+			{saveError && <div className="has-test err">Couldn’t save: {saveError}</div>}
 			<div className="has-statusline">
 				<span className={`has-badge ${badge.tone}`} aria-live="polite">
 					● {badge.label}
@@ -273,7 +260,6 @@ export default function MqttSettings() {
 				</button>
 				{saved && <span className="has-ok">Saved ✓</span>}
 			</div>
-			{saveError && <div className="has-test err">Couldn&rsquo;t save: {saveError}</div>}
 
 			<div className="rp-hd">Topics</div>
 			<div className="has-help">

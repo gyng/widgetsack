@@ -21,3 +21,7 @@ export const saveAgendaConfig = (cfg: AgendaConfigInput): Promise<void> =>
 export const agendaConnect = (): Promise<void> => invoke(COMMANDS.agendaConnect);
 
 export const agendaDisconnect = (): Promise<void> => invoke(COMMANDS.agendaDisconnect);
+
+/** Atomically replace the app-owned worker with the saved configuration (studio only). */
+export const agendaReconnect = (): Promise<void> =>
+	invoke(COMMANDS.agendaConnect, { restart: true });

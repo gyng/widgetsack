@@ -59,3 +59,6 @@ export const haHistory = (entityId: string, start: string, end: string): Promise
  * can <img>-load — bytes are cached server-side, not shipped over the bridge. */
 export const haMediaArt = (path: string): Promise<string> =>
 	invoke<string>(COMMANDS.haMediaArt, { path });
+
+/** Atomically replace the app-owned worker with the saved configuration (studio only). */
+export const haReconnect = (): Promise<void> => invoke(COMMANDS.haConnect, { restart: true });

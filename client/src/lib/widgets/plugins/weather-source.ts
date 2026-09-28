@@ -1,10 +1,11 @@
+// Backend worker lifetime belongs to the app. Window cleanup releases only local subscriptions.
 // The weather data source (peer to stocks-source). A Rust proxy source: the fetch happens server-side
 // (widgetsack/src/weather.rs, plugins/weather.json) and the current conditions arrive over the EXISTING
-// `telemetry` event as `weather.*` samples — ingested by the unchanged hub. This source only flips
-// polling on/off and provides the (fixed) bindable-id catalog for the inspector dropdown.
+// `telemetry` event as `weather.*` samples — ingested by the unchanged hub. This source ensures
+// polling is running and provides the (fixed) bindable-id catalog for the inspector dropdown.
 
 import type { SensorCatalogEntry, SensorSource } from '../../core/plugin';
-import { weatherConnect, weatherDisconnect } from './weather-commands';
+import { weatherConnect } from './weather-commands';
 
 // The ids weather.rs emits (keep in sync with weather_to_samples). One location, so they're fixed.
 const ENTRIES: SensorCatalogEntry[] = [
@@ -22,9 +23,7 @@ export const weatherSource: SensorSource = {
 	id: 'weather',
 	start: async () => {
 		await weatherConnect().catch(() => undefined);
-		return () => {
-			weatherDisconnect().catch(() => undefined);
-		};
+		return () => undefined;
 	},
 	catalog: () => ENTRIES.map((e) => e.id),
 	catalogEntries: () => ENTRIES

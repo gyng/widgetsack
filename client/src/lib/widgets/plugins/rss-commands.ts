@@ -25,3 +25,6 @@ export const rssConnect = (): Promise<void> => invoke(COMMANDS.rssConnect);
 
 /** Stop the poll task (if any). */
 export const rssDisconnect = (): Promise<void> => invoke(COMMANDS.rssDisconnect);
+
+/** Atomically replace the app-owned worker with the saved configuration (studio only). */
+export const rssReconnect = (): Promise<void> => invoke(COMMANDS.rssConnect, { restart: true });

@@ -1,3 +1,4 @@
+import { useSettingsOperations } from './useSettingsOperations';
 // The stocks plugin's settings pane (studio → Plugins → Stocks). A container (AGENTS.md §6): owns the
 // symbol/interval form and drives the Tauri commands via stocks-commands.ts. The live badge reads the
 // `stocks.status` telemetry sample through the hub (reusing the HA status→badge mapping). Below the
@@ -12,7 +13,7 @@ import {
 	saveStocksConfig,
 	stocksConfigStatus,
 	stocksConnect,
-	stocksDisconnect
+	stocksReconnect
 } from './stocks-commands';
 import { refreshStocksCatalog, stocksSource } from './stocks-source';
 import { parseSymbols } from './stocks-symbols';
@@ -26,23 +27,15 @@ export default function StocksSettings() {
 	const [symbols, setSymbols] = useState<string[]>([]);
 	const [pollSeconds, setPollSeconds] = useState(60);
 	const [configured, setConfigured] = useState(false);
-	const [saving, setSaving] = useState(false);
-	const [saved, setSaved] = useState(false);
-	const [saveError, setSaveError] = useState<string | null>(null);
-
-	// Auto-dismiss the "Saved ✓" tick like a toast (it otherwise lingers until the next edit).
-	useEffect(() => {
-		if (!saved) return;
-		const t = setTimeout(() => setSaved(false), 2500);
-		return () => clearTimeout(t);
-	}, [saved]);
+	const { saving, saved, error: saveError, invalidate, capture, save } = useSettingsOperations();
 
 	useEffect(() => {
 		let alive = true;
+		const current = capture();
 		stocksConnect().catch(() => undefined);
 		stocksConfigStatus()
 			.then((s) => {
-				if (!alive) return;
+				if (!alive || !current()) return;
 				setSymbols(s.symbols);
 				setPollSeconds(s.pollSeconds);
 				setConfigured(s.configured);
@@ -51,36 +44,27 @@ export default function StocksSettings() {
 		return () => {
 			alive = false;
 		};
-	}, []);
+	}, [capture]);
 
-	const dirtied = () => setSaved(false);
+	const dirtied = invalidate;
 	const canSubmit = !saving;
 
 	const onSave = async () => {
-		/* v8 ignore next -- canSubmit=false disables the only Save control; guard protects direct calls. */
 		if (!canSubmit) return;
-		setSaving(true);
-		setSaveError(null);
-		try {
-			await saveStocksConfig({ provider: 'yahoo', symbols, pollSeconds });
-			await stocksDisconnect();
-			await stocksConnect();
-			await refreshStocksCatalog();
-			setConfigured(symbols.length > 0);
-			setSaved(true);
-		} catch (err) {
-			// Surface the failure instead of swallowing it (was a silent try/finally → unhandled rejection).
-			setSaved(false);
-			setSaveError(err instanceof Error ? err.message : String(err));
-		} finally {
-			setSaving(false);
-		}
+		await save(
+			async () => {
+				await saveStocksConfig({ provider: 'yahoo', symbols, pollSeconds });
+				await stocksReconnect();
+				await refreshStocksCatalog();
+			},
+			() => setConfigured(symbols.length > 0)
+		);
 	};
-
 	const ids = stocksSource.catalogEntries?.() ?? [];
 
 	return (
 		<div className="has">
+			{saveError && <div className="has-test err">Couldn’t save: {saveError}</div>}
 			<div className="has-statusline">
 				<span className={`has-badge ${badge.tone}`} aria-live="polite">
 					● {badge.label}
@@ -141,7 +125,6 @@ export default function StocksSettings() {
 				</button>
 				{saved && <span className="has-ok">Saved ✓</span>}
 			</div>
-			{saveError && <div className="has-test err">Couldn&rsquo;t save: {saveError}</div>}
 
 			<div className="rp-hd">Sensors</div>
 			<div className="has-help">

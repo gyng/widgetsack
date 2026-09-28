@@ -1,3 +1,4 @@
+import { useSettingsOperations } from './useSettingsOperations';
 // The Weather plugin's settings pane (studio → Plugins → Weather). A container (AGENTS.md §6): owns
 // the form state, drives the Tauri commands via weather-commands.ts. Open-Meteo is keyless, so this is
 // just a location + units + refresh form. The live badge reads the `weather.status` telemetry sample
@@ -10,7 +11,7 @@ import {
 	weatherConfigStatus,
 	saveWeatherConfig,
 	weatherConnect,
-	weatherDisconnect
+	weatherReconnect
 } from './weather-commands';
 
 export default function WeatherSettings() {
@@ -24,15 +25,15 @@ export default function WeatherSettings() {
 	const [unit, setUnit] = useState('celsius');
 	const [poll, setPoll] = useState(15); // minutes (the backend stores seconds)
 	const [configured, setConfigured] = useState(false);
-	const [saving, setSaving] = useState(false);
-	const [saved, setSaved] = useState(false);
+	const { saving, saved, error: saveError, invalidate, capture, save } = useSettingsOperations();
 
 	useEffect(() => {
 		let alive = true;
+		const current = capture();
 		weatherConnect().catch(() => undefined);
 		weatherConfigStatus()
 			.then((s) => {
-				if (!alive) return;
+				if (!alive || !current()) return;
 				setLat(s.latitude ? String(s.latitude) : '');
 				setLon(s.longitude ? String(s.longitude) : '');
 				setUnit(s.unit || 'celsius');
@@ -43,13 +44,7 @@ export default function WeatherSettings() {
 		return () => {
 			alive = false;
 		};
-	}, []);
-
-	useEffect(() => {
-		if (!saved) return;
-		const t = setTimeout(() => setSaved(false), 2500);
-		return () => clearTimeout(t);
-	}, [saved]);
+	}, [capture]);
 
 	const latN = parseFloat(lat);
 	const lonN = parseFloat(lon);
@@ -57,31 +52,26 @@ export default function WeatherSettings() {
 	const lonValid = Number.isFinite(lonN) && lonN >= -180 && lonN <= 180;
 	const valid = latValid && lonValid;
 
-	const dirtied = () => setSaved(false);
+	const dirtied = invalidate;
 
 	const onSave = async () => {
-		/* v8 ignore next -- invalid/saving states disable the only Save control; guard protects direct calls. */
 		if (!valid || saving) return;
-		setSaving(true);
-		try {
-			await saveWeatherConfig({
-				latitude: latN,
-				longitude: lonN,
-				unit,
-				pollSeconds: Math.max(5, poll) * 60
-			});
-			// Apply live: the running task holds the OLD config, so restart it.
-			await weatherDisconnect();
-			await weatherConnect();
-			setConfigured(true);
-			setSaved(true);
-		} finally {
-			setSaving(false);
-		}
+		await save(
+			async () => {
+				await saveWeatherConfig({
+					latitude: latN,
+					longitude: lonN,
+					unit,
+					pollSeconds: Math.max(5, poll) * 60
+				});
+				await weatherReconnect();
+			},
+			() => setConfigured(true)
+		);
 	};
-
 	return (
 		<div className="has">
+			{saveError && <div className="has-test err">Couldn’t save: {saveError}</div>}
 			<div className="has-statusline">
 				<span className={`has-badge ${badge.tone}`} aria-live="polite">
 					● {badge.label}

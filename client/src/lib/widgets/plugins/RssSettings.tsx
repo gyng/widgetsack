@@ -1,3 +1,4 @@
+import { useSettingsOperations } from './useSettingsOperations';
 // The RSS plugin's settings pane (studio → Plugins → RSS). A container (AGENTS.md §6): owns the form
 // state, drives the Tauri commands via rss-commands.ts. Public feeds, nothing secret. The live badge
 // reads the `rss.status` telemetry sample through the hub, the same path meters use. Reuses the shared
@@ -6,7 +7,7 @@ import { useEffect, useState } from 'react';
 import { useTelemetryHub } from '../telemetryContext';
 import { useSensor } from '../useSensor';
 import { haStatusBadge } from '../../core/haStatus';
-import { rssConfigStatus, saveRssConfig, rssConnect, rssDisconnect } from './rss-commands';
+import { rssConfigStatus, saveRssConfig, rssConnect, rssReconnect } from './rss-commands';
 
 export default function RssSettings() {
 	const hub = useTelemetryHub();
@@ -19,15 +20,15 @@ export default function RssSettings() {
 	const [count, setCount] = useState(8);
 	const [poll, setPoll] = useState(15); // minutes (the backend stores seconds)
 	const [configured, setConfigured] = useState(false);
-	const [saving, setSaving] = useState(false);
-	const [saved, setSaved] = useState(false);
+	const { saving, saved, error: saveError, invalidate, capture, save } = useSettingsOperations();
 
 	useEffect(() => {
 		let alive = true;
+		const current = capture();
 		rssConnect().catch(() => undefined);
 		rssConfigStatus()
 			.then((s) => {
-				if (!alive) return;
+				if (!alive || !current()) return;
 				setUrl(s.url || '');
 				setTitle(s.title || '');
 				setCount(s.count || 8);
@@ -38,40 +39,29 @@ export default function RssSettings() {
 		return () => {
 			alive = false;
 		};
-	}, []);
-
-	useEffect(() => {
-		if (!saved) return;
-		const t = setTimeout(() => setSaved(false), 2500);
-		return () => clearTimeout(t);
-	}, [saved]);
+	}, [capture]);
 
 	const valid = /^https?:\/\//i.test(url.trim());
-	const dirtied = () => setSaved(false);
+	const dirtied = invalidate;
 
 	const onSave = async () => {
-		/* v8 ignore next -- invalid/saving states disable the only Save control; guard protects direct calls. */
 		if (!valid || saving) return;
-		setSaving(true);
-		try {
-			await saveRssConfig({
-				url: url.trim(),
-				count: Math.max(1, Math.min(30, count)),
-				title,
-				pollSeconds: Math.max(5, poll) * 60
-			});
-			// Apply live: the running task holds the OLD config, so restart it.
-			await rssDisconnect();
-			await rssConnect();
-			setConfigured(true);
-			setSaved(true);
-		} finally {
-			setSaving(false);
-		}
+		await save(
+			async () => {
+				await saveRssConfig({
+					url: url.trim(),
+					count: Math.max(1, Math.min(30, count)),
+					title,
+					pollSeconds: Math.max(5, poll) * 60
+				});
+				await rssReconnect();
+			},
+			() => setConfigured(true)
+		);
 	};
-
 	return (
 		<div className="has">
+			{saveError && <div className="has-test err">Couldn’t save: {saveError}</div>}
 			<div className="has-statusline">
 				<span className={`has-badge ${badge.tone}`} aria-live="polite">
 					● {badge.label}

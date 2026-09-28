@@ -1,3 +1,4 @@
+import { useSettingsOperations } from './useSettingsOperations';
 // The Home Assistant plugin's settings pane (studio → Plugins → Home Assistant). A container
 // (AGENTS.md §6): it owns the form state and drives the Tauri commands via ha-commands.ts; the
 // token is write-only (never read back — the bridge omits it), so a blank token on save/test means
@@ -15,7 +16,7 @@ import { copyToClipboard } from '../../overlay';
 import {
 	haConfigStatus,
 	haConnect,
-	haDisconnect,
+	haReconnect,
 	haRegistrySnapshot,
 	haTestConnection,
 	saveHaConfig
@@ -42,16 +43,16 @@ export default function HaSettings() {
 	const [insecure, setInsecure] = useState(false);
 	const [basePath, setBasePath] = useState('');
 	const [configured, setConfigured] = useState(false);
-	const [saving, setSaving] = useState(false);
-	const [saved, setSaved] = useState(false);
+	const {
+		saving,
+		saved,
+		error: saveError,
+		invalidate,
+		capture,
+		save,
+		latest
+	} = useSettingsOperations();
 	const [test, setTest] = useState<TestState>({ kind: 'idle' });
-
-	// Auto-dismiss the "Saved ✓" tick like a toast (it otherwise lingers until the next edit).
-	useEffect(() => {
-		if (!saved) return;
-		const t = setTimeout(() => setSaved(false), 2500);
-		return () => clearTimeout(t);
-	}, [saved]);
 
 	// Entity browser state: the fetched entities, a search filter, and the (persisted) exposed
 	// allowlist of `ha.<entity_id>` ids that curate the inspector dropdown.
@@ -65,10 +66,11 @@ export default function HaSettings() {
 	// non-secret status, and load the entity catalog. The token field stays blank — never returned.
 	useEffect(() => {
 		let alive = true;
+		const current = capture();
 		haConnect().catch(() => undefined);
 		haConfigStatus()
 			.then((s) => {
-				if (!alive) return;
+				if (!alive || !current()) return;
 				setUrl(s.url ?? '');
 				setInsecure(s.insecure);
 				setBasePath(s.base_path);
@@ -81,7 +83,7 @@ export default function HaSettings() {
 		return () => {
 			alive = false;
 		};
-	}, []);
+	}, [capture]);
 
 	// Area > device > entity grouping (Phase 3): lazily fetched registry snapshot + the pure tree.
 	const [groupByArea, setGroupByArea] = useState(false);
@@ -215,47 +217,42 @@ export default function HaSettings() {
 
 	// Any edit invalidates the "Saved"/test feedback.
 	const dirtied = () => {
-		setSaved(false);
+		invalidate();
 		setTest({ kind: 'idle' });
 	};
 
 	const canSubmit = url.trim().length > 0 && !saving;
 
 	const onSave = async () => {
-		/* v8 ignore next -- canSubmit=false disables the only Save control; guard protects direct calls. */
 		if (!canSubmit) return;
-		setSaving(true);
-		try {
-			await saveHaConfig(url.trim(), token, insecure, basePath.trim());
-			// Apply live without a restart: the running task holds the OLD config, so disconnect
-			// first (ha_connect is idempotent and would otherwise be a no-op).
-			await haDisconnect();
-			await haConnect();
-			setConfigured(true);
-			setToken(''); // back to write-only / unchanged
-			setSaved(true);
-		} catch (err) {
-			setTest({ kind: 'err', msg: `Save failed: ${String(err)}` });
-		} finally {
-			setSaving(false);
-		}
+		setTest({ kind: 'idle' });
+		await save(
+			async () => {
+				await saveHaConfig(url.trim(), token, insecure, basePath.trim());
+				await haReconnect();
+			},
+			() => {
+				setConfigured(true);
+				setToken('');
+			}
+		);
 	};
-
 	const onTest = async () => {
 		setTest({ kind: 'testing' });
-		try {
-			const r = await haTestConnection(url.trim(), token, insecure, basePath.trim());
-			setTest({
-				kind: 'ok',
-				msg: r.ha_version ? `Connected — Home Assistant ${r.ha_version}` : 'Connected'
-			});
-		} catch (err) {
-			setTest({ kind: 'err', msg: String(err) });
-		}
+		await latest(
+			'test',
+			() => haTestConnection(url.trim(), token, insecure, basePath.trim()),
+			(r) =>
+				setTest({
+					kind: 'ok',
+					msg: r.ha_version ? `Connected — Home Assistant ${r.ha_version}` : 'Connected'
+				}),
+			(err) => setTest({ kind: 'err', msg: String(err) })
+		);
 	};
-
 	return (
 		<div className="has">
+			{saveError && <div className="has-test err">Couldn’t save: {saveError}</div>}
 			<div className="has-statusline">
 				<span className={`has-badge ${badge.tone}`} aria-live="polite">
 					● {badge.label}

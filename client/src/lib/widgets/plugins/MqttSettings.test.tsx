@@ -17,7 +17,7 @@ vi.mock('./mqtt-commands', () => ({
 	),
 	saveMqttConfig: vi.fn(() => Promise.resolve()),
 	mqttConnect: vi.fn(() => Promise.resolve()),
-	mqttDisconnect: vi.fn(() => Promise.resolve()),
+	mqttReconnect: vi.fn(() => Promise.resolve()),
 	mqttCatalog: vi.fn(() =>
 		Promise.resolve([
 			{ id: 'mqtt.zigbee2mqtt/temp', topic: 'zigbee2mqtt/temp', label: 'Temp', unit: '°C' }
@@ -31,7 +31,7 @@ import {
 	mqttCatalog,
 	mqttConfigStatus,
 	mqttConnect,
-	mqttDisconnect,
+	mqttReconnect,
 	saveMqttConfig
 } from './mqtt-commands';
 import { copyToClipboard } from '../../overlay';
@@ -74,7 +74,7 @@ describe('MqttSettings', () => {
 				})
 			)
 		);
-		await waitFor(() => expect(mqttDisconnect).toHaveBeenCalled());
+		await waitFor(() => expect(mqttReconnect).toHaveBeenCalled());
 	});
 
 	it('lists catalog topics and copies the mqtt.<topic> id', async () => {
@@ -196,7 +196,7 @@ describe('MqttSettings', () => {
 			const host = container.querySelector('input[type="text"]') as HTMLInputElement;
 			expect(host.value).toBe('broker.local');
 			fireEvent.click(getByText('Save & connect'));
-			await act(async () => {}); // flush the save → disconnect → connect → catalog chain
+			await act(async () => {}); // flush the save → restart → catalog chain
 			expect(getByText('Saved ✓')).toBeTruthy();
 			act(() => {
 				vi.advanceTimersByTime(2500);

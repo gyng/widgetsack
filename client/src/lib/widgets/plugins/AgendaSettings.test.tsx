@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 // Mock the Agenda Tauri command adapter so the panel runs without a backend. Each fn is a spy so we can
-// assert call args + ordering (Save must save → disconnect → connect). The feed URL is a secret held
+// assert call args + ordering (Save must save → restart). The feed URL is a secret held
 // write-only: the status carries only its host, and a blank field on save keeps the saved feed.
 vi.mock('./agenda-commands', () => ({
 	agendaConfigStatus: vi.fn(() =>
@@ -15,14 +15,14 @@ vi.mock('./agenda-commands', () => ({
 	),
 	saveAgendaConfig: vi.fn(() => Promise.resolve()),
 	agendaConnect: vi.fn(() => Promise.resolve()),
-	agendaDisconnect: vi.fn(() => Promise.resolve())
+	agendaReconnect: vi.fn(() => Promise.resolve())
 }));
 
 import AgendaSettings, { hostOf } from './AgendaSettings';
 import {
 	agendaConfigStatus,
 	agendaConnect,
-	agendaDisconnect,
+	agendaReconnect,
 	saveAgendaConfig
 } from './agenda-commands';
 import { createTelemetryHub, type TelemetryHub } from '../../core/telemetry';
@@ -142,13 +142,13 @@ describe('AgendaSettings', () => {
 				pollSeconds: 2700 // 45 minutes
 			})
 		);
-		await waitFor(() => expect(agendaDisconnect).toHaveBeenCalled());
-		// Restart order: save → disconnect → connect (the running task holds the old config).
+		await waitFor(() => expect(agendaReconnect).toHaveBeenCalled());
+		// Restart order: save → restart (the running task holds the old config).
 		const save = vi.mocked(saveAgendaConfig).mock.invocationCallOrder[0];
-		const disc = vi.mocked(agendaDisconnect).mock.invocationCallOrder[0];
-		const conn = vi.mocked(agendaConnect).mock.invocationCallOrder.at(-1) as number;
-		expect(save).toBeLessThan(disc);
-		expect(disc).toBeLessThan(conn);
+		const restart = vi.mocked(agendaReconnect).mock.invocationCallOrder[0];
+
+		expect(save).toBeLessThan(restart);
+
 		// the secret is cleared from the field and the placeholder now names the NEW host
 		await waitFor(() => expect(url.value).toBe(''));
 		expect(url.placeholder).toContain('saved (new.example)');
@@ -185,7 +185,7 @@ describe('AgendaSettings', () => {
 			const { getByRole, getByText, queryByText } = renderPanel();
 			await act(async () => {}); // flush the prefill promises
 			fireEvent.click(getByRole('button', { name: /Save & fetch/ }));
-			await act(async () => {}); // flush the save → disconnect → connect chain
+			await act(async () => {}); // flush the save → restart chain
 			expect(getByText('Saved ✓')).toBeTruthy();
 			act(() => {
 				vi.advanceTimersByTime(2500);

@@ -35,3 +35,6 @@ export const mqttDisconnect = (): Promise<void> => invoke(COMMANDS.mqttDisconnec
 /** Seen + discovered topics (id + friendly label + unit) for the inspector dropdown. */
 export const mqttCatalog = (): Promise<MqttCatalogEntry[]> =>
 	invoke<MqttCatalogEntry[]>(COMMANDS.mqttCatalog);
+
+/** Atomically replace the app-owned worker with the saved configuration (studio only). */
+export const mqttReconnect = (): Promise<void> => invoke(COMMANDS.mqttConnect, { restart: true });

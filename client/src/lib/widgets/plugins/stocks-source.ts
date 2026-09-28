@@ -1,11 +1,12 @@
+// Backend worker lifetime belongs to the app. Window cleanup releases only local subscriptions.
 // The stocks data source (peer to mqtt-source / ha-source). A Rust proxy source: the fetch happens
 // server-side (widgetsack/src/stocks.rs, plugins/stocks.json) and quotes arrive over the EXISTING
 // `telemetry` event as `stocks.<SYMBOL>.*` samples — ingested by the unchanged hub. This source only
-// flips polling on/off and provides the catalog (the configured symbols' bindable ids) for the
+// ensures polling is running and provides the catalog (the configured symbols' bindable ids) for the
 // inspector dropdown.
 
 import type { SensorCatalogEntry, SensorSource } from '../../core/plugin';
-import { stocksConfigStatus, stocksConnect, stocksDisconnect } from './stocks-commands';
+import { stocksConfigStatus, stocksConnect } from './stocks-commands';
 
 let symbols: string[] = [];
 
@@ -49,9 +50,7 @@ export const stocksSource: SensorSource = {
 	start: async () => {
 		await refreshStocksCatalog();
 		await stocksConnect().catch(() => undefined);
-		return () => {
-			stocksDisconnect().catch(() => undefined);
-		};
+		return () => undefined;
 	},
 	catalog: () => entriesFor(symbols).map((e) => e.id),
 	catalogEntries: () => entriesFor(symbols)

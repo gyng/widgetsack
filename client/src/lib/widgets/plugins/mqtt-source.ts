@@ -1,11 +1,12 @@
+// Backend worker lifetime belongs to the app. Window cleanup releases only local subscriptions.
 // The MQTT data source (peer to ha-source). A Rust proxy source: the broker connection + password
 // live server-side (widgetsack/src/mqtt.rs, plugins/mqtt.json), and topic payloads arrive over the
 // EXISTING `telemetry` event as `mqtt.<topic>` samples — ingested by the unchanged hub. This source
-// only flips the connection on/off and provides the catalog (seen + discovered topics) for the
+// only ensures the connection is running and provides the catalog (seen + discovered topics) for the
 // inspector dropdown; it never opens a socket or sees the password.
 
 import type { SensorCatalogEntry, SensorSource } from '../../core/plugin';
-import { mqttCatalog, mqttConnect, mqttDisconnect } from './mqtt-commands';
+import { mqttCatalog, mqttConnect } from './mqtt-commands';
 import type { MqttCatalogEntry } from './mqtt-types';
 
 let cached: MqttCatalogEntry[] = [];
@@ -32,9 +33,7 @@ export const mqttSource: SensorSource = {
 	id: 'mqtt',
 	start: async () => {
 		await refreshMqttCatalog();
-		return () => {
-			mqttDisconnect().catch(() => undefined);
-		};
+		return () => undefined;
 	},
 	catalog: () => cached.map((e) => e.id),
 	catalogEntries: () => cached.map(toEntry)

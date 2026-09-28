@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 // Mock the weather Tauri command adapter so the panel runs without a backend. Each fn is a spy so we
-// can assert call args + ordering (Save must save → disconnect → connect). Open-Meteo is keyless, so
+// can assert call args + ordering (Save must save → restart). Open-Meteo is keyless, so
 // there's no secret field — the form is just location + units + refresh.
 vi.mock('./weather-commands', () => ({
 	weatherConfigStatus: vi.fn(() =>
@@ -16,7 +16,7 @@ vi.mock('./weather-commands', () => ({
 	),
 	saveWeatherConfig: vi.fn(() => Promise.resolve()),
 	weatherConnect: vi.fn(() => Promise.resolve()),
-	weatherDisconnect: vi.fn(() => Promise.resolve())
+	weatherReconnect: vi.fn(() => Promise.resolve())
 }));
 
 import WeatherSettings from './WeatherSettings';
@@ -24,7 +24,7 @@ import {
 	saveWeatherConfig,
 	weatherConfigStatus,
 	weatherConnect,
-	weatherDisconnect
+	weatherReconnect
 } from './weather-commands';
 import { createTelemetryHub, type TelemetryHub } from '../../core/telemetry';
 import { TelemetryHubContext } from '../telemetryContext';
@@ -133,13 +133,12 @@ describe('WeatherSettings', () => {
 				pollSeconds: 1200 // 20 minutes
 			})
 		);
-		await waitFor(() => expect(weatherDisconnect).toHaveBeenCalled());
-		// Restart order: save → disconnect → connect (the running task holds the old config).
+		await waitFor(() => expect(weatherReconnect).toHaveBeenCalled());
+		// Restart order: save → restart (the running task holds the old config).
 		const save = vi.mocked(saveWeatherConfig).mock.invocationCallOrder[0];
-		const disc = vi.mocked(weatherDisconnect).mock.invocationCallOrder[0];
-		const conn = vi.mocked(weatherConnect).mock.invocationCallOrder.at(-1) as number;
-		expect(save).toBeLessThan(disc);
-		expect(disc).toBeLessThan(conn);
+		const restart = vi.mocked(weatherReconnect).mock.invocationCallOrder[0];
+
+		expect(save).toBeLessThan(restart);
 	});
 
 	it('shows the "Saved ✓" confirmation after a successful save', async () => {
@@ -171,7 +170,7 @@ describe('WeatherSettings', () => {
 			const { getByRole, getByText, queryByText } = renderPanel();
 			await act(async () => {}); // flush the prefill promises
 			fireEvent.click(getByRole('button', { name: /Save & fetch/ }));
-			await act(async () => {}); // flush the save → disconnect → connect chain
+			await act(async () => {}); // flush the save → restart chain
 			expect(getByText('Saved ✓')).toBeTruthy();
 			act(() => {
 				vi.advanceTimersByTime(2500);

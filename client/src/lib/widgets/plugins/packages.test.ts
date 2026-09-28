@@ -1159,3 +1159,36 @@ describe('CSS consent persisted map parsing', () => {
 		vi.resetModules();
 	}, 15_000);
 });
+
+it('orders a disable after an enable that is still applying its marker', async () => {
+	setFiles([
+		{
+			id: 'pack-a',
+			manifest: manifestJson({ theme: { name: 'Theme', file: 'theme.css' } }),
+			install: null
+		}
+	]);
+	assets.set('pack-a/theme.css', '.x { color: red }');
+	await refreshPackages();
+	let release!: () => void;
+	let started!: () => void;
+	const applying = new Promise<void>((resolve) => {
+		started = resolve;
+	});
+	setEnabledImpl = async (_id, enabled) => {
+		if (enabled) {
+			started();
+			await new Promise<void>((resolve) => {
+				release = resolve;
+			});
+		}
+	};
+	const enabling = togglePackage('pack-a', true);
+	await applying;
+	const disabling = togglePackage('pack-a', false);
+	release();
+	await Promise.all([enabling, disabling]);
+	expect(enabledPackages.getSnapshot()).not.toContain('pack-a');
+	expect(styleTagFor('pack-a')).toBeNull();
+	expect(listTemplateGroups().some((g) => g.group === 'Pack A')).toBe(false);
+});

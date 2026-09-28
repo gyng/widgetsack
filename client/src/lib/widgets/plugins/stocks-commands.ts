@@ -24,3 +24,7 @@ export const stocksConnect = (): Promise<void> => invoke(COMMANDS.stocksConnect)
 
 /** Stop the poll task (if any). */
 export const stocksDisconnect = (): Promise<void> => invoke(COMMANDS.stocksDisconnect);
+
+/** Atomically replace the app-owned worker with the saved configuration (studio only). */
+export const stocksReconnect = (): Promise<void> =>
+	invoke(COMMANDS.stocksConnect, { restart: true });

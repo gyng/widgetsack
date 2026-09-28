@@ -25,3 +25,7 @@ export const weatherConnect = (): Promise<void> => invoke(COMMANDS.weatherConnec
 
 /** Stop the poll task (if any). */
 export const weatherDisconnect = (): Promise<void> => invoke(COMMANDS.weatherDisconnect);
+
+/** Atomically replace the app-owned worker with the saved configuration (studio only). */
+export const weatherReconnect = (): Promise<void> =>
+	invoke(COMMANDS.weatherConnect, { restart: true });

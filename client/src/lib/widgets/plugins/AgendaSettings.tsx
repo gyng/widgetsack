@@ -1,3 +1,4 @@
+import { useSettingsOperations } from './useSettingsOperations';
 // The Agenda plugin's settings pane (studio → Plugins → Agenda). A container (AGENTS.md §6): owns the
 // form state, drives the Tauri commands via agenda-commands.ts. The ICS URL is a SECRET (a calendar's
 // private address embeds a token that reads the whole calendar), so — like the HA token field — it is
@@ -12,7 +13,7 @@ import {
 	agendaConfigStatus,
 	saveAgendaConfig,
 	agendaConnect,
-	agendaDisconnect
+	agendaReconnect
 } from './agenda-commands';
 
 /** The hostname of a feed URL for the "saved" placeholder ('' when it doesn't parse). Pure. */
@@ -35,15 +36,15 @@ export default function AgendaSettings() {
 	const [title, setTitle] = useState('');
 	const [poll, setPoll] = useState(30); // minutes (the backend stores seconds)
 	const [configured, setConfigured] = useState(false);
-	const [saving, setSaving] = useState(false);
-	const [saved, setSaved] = useState(false);
+	const { saving, saved, error: saveError, invalidate, capture, save } = useSettingsOperations();
 
 	useEffect(() => {
 		let alive = true;
+		const current = capture();
 		agendaConnect().catch(() => undefined);
 		agendaConfigStatus()
 			.then((s) => {
-				if (!alive) return;
+				if (!alive || !current()) return;
 				setSavedHost(s.host || '');
 				setTitle(s.title || '');
 				setPoll(Math.round((s.pollSeconds || 1800) / 60));
@@ -53,40 +54,32 @@ export default function AgendaSettings() {
 		return () => {
 			alive = false;
 		};
-	}, []);
-
-	useEffect(() => {
-		if (!saved) return;
-		const t = setTimeout(() => setSaved(false), 2500);
-		return () => clearTimeout(t);
-	}, [saved]);
+	}, [capture]);
 
 	// A blank URL is valid only when a feed is already saved (it means "keep it").
 	const valid = url.trim() === '' ? configured : /^(https?|webcal):\/\//i.test(url.trim());
-	const dirtied = () => setSaved(false);
+	const dirtied = invalidate;
 
 	const onSave = async () => {
-		/* v8 ignore next -- invalid/saving states disable the only Save control; guard protects direct calls. */
 		if (!valid || saving) return;
-		setSaving(true);
-		try {
-			const next = url.trim();
-			await saveAgendaConfig({ url: next, title, pollSeconds: Math.max(5, poll) * 60 });
-			await agendaDisconnect();
-			await agendaConnect();
-			if (next) {
-				setSavedHost(hostOf(next));
-				setUrl(''); // the secret never lingers in the field once it is saved
+		const next = url.trim();
+		await save(
+			async () => {
+				await saveAgendaConfig({ url: next, title, pollSeconds: Math.max(5, poll) * 60 });
+				await agendaReconnect();
+			},
+			() => {
+				if (next) {
+					setSavedHost(hostOf(next));
+					setUrl('');
+				}
+				setConfigured(true);
 			}
-			setConfigured(true);
-			setSaved(true);
-		} finally {
-			setSaving(false);
-		}
+		);
 	};
-
 	return (
 		<div className="has">
+			{saveError && <div className="has-test err">Couldn’t save: {saveError}</div>}
 			<div className="has-statusline">
 				<span className={`has-badge ${badge.tone}`} aria-live="polite">
 					● {badge.label}

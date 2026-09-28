@@ -32,6 +32,7 @@ pub mod displaywatch;
 pub mod event;
 mod file_io;
 pub mod ha;
+mod integration_task;
 pub mod keepalive;
 pub mod listener;
 pub mod llm;

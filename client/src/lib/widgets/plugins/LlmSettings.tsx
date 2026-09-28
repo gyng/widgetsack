@@ -1,3 +1,4 @@
+import { useSettingsOperations } from './useSettingsOperations';
 // The AI Provider plugin's settings pane (studio → Plugins → AI Provider). A container (AGENTS.md §6):
 // owns the provider-config form and drives the Tauri commands via llm-commands.ts; the api_key is
 // write-only (a blank save keeps the saved one). Below the form sit two consumers that prove the
@@ -58,19 +59,19 @@ export default function LlmSettings() {
 	const [temperature, setTemperature] = useState(0.7); // global
 	const [maxTokens, setMaxTokens] = useState(1024); // global
 	const [agentControl, setAgentControl] = useState(false); // global
-	const [saving, setSaving] = useState(false);
-	const [saved, setSaved] = useState(false);
+	const {
+		saving,
+		saved,
+		error: saveError,
+		invalidate,
+		capture,
+		save,
+		latest
+	} = useSettingsOperations();
 	const [dirty, setDirty] = useState(false); // form differs from the saved plugins/llm.json
 	const [test, setTest] = useState<TestState>({ kind: 'idle' });
 	const [models, setModels] = useState<LlmModel[]>([]);
 	const [modelsState, setModelsState] = useState<ModelsState>({ kind: 'idle' });
-
-	// Auto-dismiss the "Saved ✓" tick like a toast (it otherwise lingers until the next edit).
-	useEffect(() => {
-		if (!saved) return;
-		const t = setTimeout(() => setSaved(false), 2500);
-		return () => clearTimeout(t);
-	}, [saved]);
 
 	const meta = providerMeta(provider);
 	const needsKey = meta.needsKey;
@@ -99,9 +100,10 @@ export default function LlmSettings() {
 
 	useEffect(() => {
 		let alive = true;
+		const current = capture();
 		llmConfigStatus()
 			.then((s) => {
-				if (!alive) return;
+				if (!alive || !current()) return;
 				setStatus(s);
 				const active = s.active || 'openai';
 				setProvider(active);
@@ -114,13 +116,15 @@ export default function LlmSettings() {
 		return () => {
 			alive = false;
 		};
-	}, []);
+	}, [capture]);
 
 	// Any field edit marks the form dirty (and clears the Saved tick) so an "Unsaved — click Save" cue can
 	// nudge the user to persist — the #1 confusion was Test working while Chat/widgets need a saved config.
 	const dirtied = () => {
-		setSaved(false);
+		invalidate();
 		setDirty(true);
+		setTest({ kind: 'idle' });
+		setModelsState({ kind: 'idle' });
 	};
 	const onPickProvider = (id: string) => {
 		setProvider(id);
@@ -160,66 +164,66 @@ export default function LlmSettings() {
 	});
 
 	const onSave = async () => {
-		/* v8 ignore next -- canSubmit=false disables the only Save control; guard protects direct calls. */
 		if (!canSubmit) return;
-		setSaving(true);
-		try {
-			await saveLlmConfig(configBody());
-			setApiKey(''); // back to write-only
-			const next = await llmConfigStatus(); // refresh per-provider key badges + hasKey
-			setStatus(next);
-			ingestLlmStatus(hub, next); // keep the Plugins-list dot live without a restart
-			setSaved(true);
-			setDirty(false);
-		} catch (err) {
-			setTest({ kind: 'err', msg: `Save failed: ${String(err)}` });
-		} finally {
-			setSaving(false);
-		}
+		setTest({ kind: 'idle' });
+		setModelsState({ kind: 'idle' });
+		await save(
+			async () => {
+				await saveLlmConfig(configBody());
+				const next = await llmConfigStatus();
+				ingestLlmStatus(hub, next);
+				return next;
+			},
+			(next) => {
+				setApiKey('');
+				setStatus(next);
+				setDirty(false);
+			}
+		);
 	};
-
 	// Agent control is INDEPENDENT of the LLM provider key (it actuates media/HA for an external MCP
 	// agent, it doesn't call the provider), so the toggle applies + persists directly — NOT gated behind
 	// the key-dependent Save button.
 	const applyAgentControl = async (next: boolean) => {
+		if (saving) return;
 		setAgentControl(next);
-		try {
-			await saveLlmConfig(configBody({ agentControl: next }));
-			await (next ? controlStart() : controlStop());
-			setDirty(false); // configBody persisted every field, so the form now matches disk
-		} catch (err) {
-			setTest({ kind: 'err', msg: `Agent control: ${String(err)}` });
-		}
+		dirtied();
+		await save(
+			async () => {
+				await saveLlmConfig(configBody({ agentControl: next }));
+				await (next ? controlStart() : controlStop());
+			},
+			() => setDirty(false)
+		);
 	};
-
 	const onTest = async () => {
 		setTest({ kind: 'idle' });
-		try {
-			const r = await llmTestConnection(provider, baseUrl.trim(), apiKey, model.trim(), insecure);
-			setTest({ kind: 'ok', msg: `${r.model} replied: “${r.reply}”` });
-		} catch (err) {
-			setTest({ kind: 'err', msg: String(err) });
-		}
+		await latest(
+			'test',
+			() => llmTestConnection(provider, baseUrl.trim(), apiKey, model.trim(), insecure),
+			(r) => setTest({ kind: 'ok', msg: `${r.model} replied: “${r.reply}”` }),
+			(err) => setTest({ kind: 'err', msg: String(err) })
+		);
 	};
-
 	// List the provider's models for the CURRENT form (provider/url/key/insecure), so refresh works for
 	// a just-switched or not-yet-saved provider. Shows in-flight + result feedback next to the button —
 	// the prior version gave none, so an empty list or a buried error read as "nothing happens".
 	const onLoadModels = async () => {
 		setModelsState({ kind: 'loading' });
-		try {
-			const list = await llmListModels({ provider, baseUrl: baseUrl.trim(), apiKey, insecure });
-			setModels(list);
-			setModelsState(
-				list.length
-					? { kind: 'ok', msg: `Loaded ${list.length} model${list.length === 1 ? '' : 's'}` }
-					: { kind: 'err', msg: `${meta.label} returned no models (type the id manually)` }
-			);
-		} catch (err) {
-			setModelsState({ kind: 'err', msg: `Could not list models: ${String(err)}` });
-		}
+		await latest(
+			'models',
+			() => llmListModels({ provider, baseUrl: baseUrl.trim(), apiKey, insecure }),
+			(list) => {
+				setModels(list);
+				setModelsState(
+					list.length
+						? { kind: 'ok', msg: `Loaded ${list.length} model${list.length === 1 ? '' : 's'}` }
+						: { kind: 'err', msg: `${meta.label} returned no models (type the id manually)` }
+				);
+			},
+			(err) => setModelsState({ kind: 'err', msg: `Could not list models: ${String(err)}` })
+		);
 	};
-
 	// Auto-load the model list when the active provider changes (or its saved key becomes usable), so the
 	// dropdown populates without a manual "↻ Models" click. Keyed on `provider`/`hasKey` ONLY — a
 	// not-yet-saved key typed char-by-char must not fire a request per keystroke; use ↻ Models for that.
@@ -243,6 +247,7 @@ export default function LlmSettings() {
 
 	return (
 		<div className="has">
+			{saveError && <div className="has-test err">Couldn’t save: {saveError}</div>}
 			<div className="has-statusline">
 				<span className={`has-badge ${hasKey ? 'ok' : 'idle'}`}>
 					● {hasKey ? 'configured' : 'not configured'}

@@ -12,7 +12,6 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
-use tauri::async_runtime::{JoinHandle, Mutex};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use crate::sensors::{ActiveSensors, SensorSample, SensorValue, TELEMETRY_EVENT};
@@ -65,7 +64,7 @@ pub struct FeedItem {
 /// Managed state: the running poll task.
 #[derive(Default)]
 pub struct RssState {
-    handle: Mutex<Option<JoinHandle<()>>>,
+    task: crate::integration_task::IntegrationTask,
 }
 
 fn now_ms() -> u64 {
@@ -366,31 +365,36 @@ pub async fn rss_config_status<R: Runtime>(app: AppHandle<R>) -> Result<RssStatu
 /// Start the poll task if not already running. Idempotent + demand-gated.
 #[tauri::command]
 pub async fn rss_connect<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
     app: AppHandle<R>,
     state: State<'_, RssState>,
+    restart: Option<bool>,
 ) -> Result<(), String> {
-    let cfg = load_rss_config(&app)?.unwrap_or_else(|| RssConfig {
-        url: String::new(),
-        count: default_count(),
-        title: String::new(),
-        poll_interval_secs: default_interval(),
-    });
-    let mut guard = state.handle.lock().await;
-    if guard.is_some() {
-        return Ok(());
+    let restart = restart.unwrap_or(false);
+    if restart && window.label() != "studio" {
+        return Err("integration restart is only allowed from the studio window".into());
     }
-    let app_for_task = app.clone();
-    *guard = Some(tauri::async_runtime::spawn(async move {
-        run_rss_client(app_for_task, cfg).await;
-    }));
-    Ok(())
+    state
+        .task
+        .start(restart, || {
+            let cfg = load_rss_config(&app)?.unwrap_or_else(|| RssConfig {
+                url: String::new(),
+                count: default_count(),
+                title: String::new(),
+                poll_interval_secs: default_interval(),
+            });
+            let app_for_task = app.clone();
+
+            Ok(Some(async move {
+                run_rss_client(app_for_task, cfg).await;
+            }))
+        })
+        .await
 }
 
 #[tauri::command]
 pub async fn rss_disconnect(state: State<'_, RssState>) -> Result<(), String> {
-    if let Some(handle) = state.handle.lock().await.take() {
-        handle.abort();
-    }
+    state.task.stop().await;
     Ok(())
 }
 

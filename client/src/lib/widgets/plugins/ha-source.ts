@@ -1,8 +1,9 @@
+// Backend worker lifetime belongs to the app. Window cleanup releases only local subscriptions.
 // The Home Assistant data source (Phase 8c). HA is a Rust *proxy* source: the WebSocket
 // and the long-lived token live server-side (widgetsack/src/ha.rs, plugins/ha.json), and
 // entity state arrives over the EXISTING `telemetry` event as `ha.<entity_id>` samples —
 // ingested by the built-in `system` source's listener, unchanged. So this source only
-// flips the connection on/off and provides the entity catalog for the inspector dropdown;
+// ensures the connection is running and provides the entity catalog for the inspector dropdown;
 // it never opens a socket or sees the token (the more-secure model, locked 2026-06-02).
 //
 // The catalog is curated by the user's "exposed" allowlist (ha-exposed-store): once any entity
@@ -10,7 +11,7 @@
 
 import type { SensorSource, SensorCatalogEntry } from '../../core/plugin';
 import { curate } from '../../core/haExposed';
-import { haConnect, haDisconnect, listHaEntities } from './ha-commands';
+import { haConnect, listHaEntities } from './ha-commands';
 import { startHaBackfill } from './ha-backfill';
 import type { HaEntity } from './ha-types';
 import { haExposedStore } from './ha-exposed-store';
@@ -52,7 +53,6 @@ export const haSource: SensorSource = {
 		const stopBackfill = startHaBackfill(hub);
 		return () => {
 			stopBackfill();
-			haDisconnect().catch(() => undefined);
 		};
 	},
 	catalog: () => curate(allEntries(), (e) => e.id, haExposedStore.getSnapshot()).map((e) => e.id),

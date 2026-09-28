@@ -10,7 +10,7 @@ vi.mock('./ha-commands', () => ({
 	),
 	saveHaConfig: vi.fn(() => Promise.resolve()),
 	haConnect: vi.fn(() => Promise.resolve()),
-	haDisconnect: vi.fn(() => Promise.resolve()),
+	haReconnect: vi.fn(() => Promise.resolve()),
 	haTestConnection: vi.fn(() => Promise.resolve({ ha_version: '2026.6.0' })),
 	listHaEntities: vi.fn(() =>
 		Promise.resolve([
@@ -49,7 +49,7 @@ import HaSettings from './HaSettings';
 import {
 	haConfigStatus,
 	haConnect,
-	haDisconnect,
+	haReconnect,
 	haRegistrySnapshot,
 	haTestConnection,
 	listHaEntities,
@@ -94,7 +94,7 @@ describe('HaSettings', () => {
 		expect(haConnect).toHaveBeenCalled();
 	});
 
-	it('saves then reconnects in order (save → disconnect → connect)', async () => {
+	it('saves then reconnects in order (save → restart)', async () => {
 		const { getByText, container } = renderPanel();
 		const url = container.querySelector('input[type="text"]') as HTMLInputElement;
 		await waitFor(() => expect(url.value).toBe('http://ha:8123')); // wait for the async prefill
@@ -105,13 +105,13 @@ describe('HaSettings', () => {
 		await waitFor(() =>
 			expect(saveHaConfig).toHaveBeenCalledWith('http://ha:8123', 'secret-token', false, '')
 		);
-		await waitFor(() => expect(haDisconnect).toHaveBeenCalled());
-		// Disconnect-first is mandatory: ha_connect is idempotent and would no-op against the old task.
+		await waitFor(() => expect(haReconnect).toHaveBeenCalled());
+		// The restart uses the configuration that was successfully saved.
 		const save = vi.mocked(saveHaConfig).mock.invocationCallOrder[0];
-		const disc = vi.mocked(haDisconnect).mock.invocationCallOrder[0];
-		const conn = vi.mocked(haConnect).mock.invocationCallOrder.at(-1) as number;
-		expect(save).toBeLessThan(disc);
-		expect(disc).toBeLessThan(conn);
+		const restart = vi.mocked(haReconnect).mock.invocationCallOrder[0];
+
+		expect(save).toBeLessThan(restart);
+
 		// Token is cleared back to write-only after a successful save.
 		await waitFor(() => expect(token.value).toBe(''));
 	});
@@ -230,7 +230,7 @@ describe('HaSettings', () => {
 		const url = container.querySelector('input[type="text"]') as HTMLInputElement;
 		await waitFor(() => expect(url.value).toBe('http://ha:8123'));
 		fireEvent.click(getByText('Save & connect'));
-		expect(await findByText(/Save failed: disk full/)).toBeTruthy();
+		expect(await findByText(/Couldn.t save: disk full/)).toBeTruthy();
 	});
 
 	it('reports a bare "Connected" when the test returns no version', async () => {
@@ -377,7 +377,7 @@ describe('HaSettings', () => {
 			const url = container.querySelector('input[type="text"]') as HTMLInputElement;
 			expect(url.value).toBe('http://ha:8123');
 			fireEvent.click(getByText('Save & connect'));
-			await act(async () => {}); // flush the save → disconnect → connect chain
+			await act(async () => {}); // flush the save → restart chain
 			expect(getByText('Saved ✓')).toBeTruthy();
 			act(() => {
 				vi.advanceTimersByTime(2500);
@@ -437,4 +437,45 @@ describe('HaSettings', () => {
 			resolveRegistry({ areas: [], devices: [], entities: [] });
 		});
 	});
+});
+
+it('keeps a newer token and does not show Saved when the form changes during a save', async () => {
+	let release!: () => void;
+	vi.mocked(saveHaConfig).mockImplementationOnce(
+		() =>
+			new Promise<void>((resolve) => {
+				release = resolve;
+			})
+	);
+	const { container, getByText, queryByText } = renderPanel();
+	const url = container.querySelector('input[type="text"]') as HTMLInputElement;
+	await waitFor(() => expect(url.value).toBe('http://ha:8123'));
+	const token = container.querySelector('input[type="password"]') as HTMLInputElement;
+	fireEvent.change(token, { target: { value: 'submitted' } });
+	fireEvent.click(getByText('Save & connect'));
+	fireEvent.change(token, { target: { value: 'newer' } });
+	await act(async () => {
+		release();
+	});
+	await waitFor(() => expect(haReconnect).toHaveBeenCalled());
+	expect(token.value).toBe('newer');
+	expect(queryByText('Saved ✓')).toBeNull();
+});
+it('does not apply an old connection test after the URL changes', async () => {
+	let release!: (value: { ha_version: string }) => void;
+	vi.mocked(haTestConnection).mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				release = resolve;
+			})
+	);
+	const { container, getByText, queryByText } = renderPanel();
+	const url = container.querySelector('input[type="text"]') as HTMLInputElement;
+	await waitFor(() => expect(url.value).toBe('http://ha:8123'));
+	fireEvent.click(getByText('Test connection'));
+	fireEvent.change(url, { target: { value: 'http://other:8123' } });
+	await act(async () => {
+		release({ ha_version: 'old-server' });
+	});
+	expect(queryByText(/old-server/)).toBeNull();
 });

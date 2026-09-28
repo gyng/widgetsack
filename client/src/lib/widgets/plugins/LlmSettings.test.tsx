@@ -217,7 +217,7 @@ describe('LlmSettings', () => {
 		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
 		fireEvent.change(apiKeyInput(container), { target: { value: 'sk-x' } });
 		fireEvent.click(button(container, 'Save'));
-		expect(await findByText(/Save failed: disk full/)).toBeTruthy();
+		expect(await findByText(/Couldn.t save: disk full/)).toBeTruthy();
 	});
 
 	it('tests the connection without saving and reports the model + reply', async () => {
@@ -397,7 +397,7 @@ describe('LlmSettings', () => {
 			c.closest('label')?.textContent?.includes('agent control')
 		) as HTMLInputElement;
 		fireEvent.click(toggle);
-		expect(await findByText(/Agent control: locked/)).toBeTruthy();
+		expect(await findByText(/Couldn.t save: locked/)).toBeTruthy();
 		// The save rejected before the control server boot, so neither start nor stop ran.
 		expect(controlStart).not.toHaveBeenCalled();
 		expect(controlStop).not.toHaveBeenCalled();

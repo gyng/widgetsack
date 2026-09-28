@@ -22,7 +22,6 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use futures_util::{SinkExt, Stream, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
-use tauri::async_runtime::{JoinHandle, Mutex};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 use tokio_tungstenite::tungstenite::{Error as WsError, Message};
 use tokio_tungstenite::{Connector, connect_async, connect_async_tls_with_config};
@@ -125,7 +124,7 @@ pub struct HaRegistry {
 /// for that entity's next change — which for a static sensor may be hours away.
 #[derive(Default)]
 pub struct HaState {
-    handle: Mutex<Option<JoinHandle<()>>>,
+    task: crate::integration_task::IntegrationTask,
     latest: std::sync::Mutex<HashMap<String, Value>>,
     /// The last `ha.status` string emitted (`emit_status`). Status is emitted app-wide on
     /// transitions only, so a window that mounts afterwards (studio from the tray, a late
@@ -1057,28 +1056,34 @@ pub async fn ha_config_status<R: Runtime>(app: AppHandle<R>) -> Result<HaStatus,
 /// call while running is a no-op (no duplicate socket).
 #[tauri::command]
 pub async fn ha_connect<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
     app: AppHandle<R>,
     state: State<'_, HaState>,
+    restart: Option<bool>,
 ) -> Result<(), String> {
-    let cfg = match load_ha_config(&app)? {
-        Some(cfg) => cfg,
-        None => {
-            // Not configured: nothing to connect. Say so explicitly — the tiles show "not
-            // configured" only on this status, never on the mere absence of one (a window that
-            // simply hasn't heard yet must not send the user to the Plugins panel).
-            emit_status(&app, "unconfigured");
-            return Ok(());
-        }
-    };
-    let mut guard = state.handle.lock().await;
-    if guard.is_some() {
-        return Ok(());
+    let restart = restart.unwrap_or(false);
+    if restart && window.label() != "studio" {
+        return Err("integration restart is only allowed from the studio window".into());
     }
-    let app_for_task = app.clone();
-    *guard = Some(tauri::async_runtime::spawn(async move {
-        run_ha_client(app_for_task, cfg).await;
-    }));
-    Ok(())
+    state
+        .task
+        .start(restart, || {
+            let cfg = match load_ha_config(&app)? {
+                Some(cfg) => cfg,
+                None => {
+                    // Not configured: nothing to connect. Say so explicitly — the tiles show "not
+                    // configured" only on this status, never on the mere absence of one (a window that
+                    // simply hasn't heard yet must not send the user to the Plugins panel).
+                    emit_status(&app, "unconfigured");
+                    return Ok(None);
+                }
+            };
+            let app_for_task = app.clone();
+            Ok(Some(async move {
+                run_ha_client(app_for_task, cfg).await;
+            }))
+        })
+        .await
 }
 
 /// Stop the streaming WS task (if any). Aborting skips the loop's own `disconnected` emit, so
@@ -1088,8 +1093,7 @@ pub async fn ha_disconnect<R: Runtime>(
     app: AppHandle<R>,
     state: State<'_, HaState>,
 ) -> Result<(), String> {
-    if let Some(handle) = state.handle.lock().await.take() {
-        handle.abort();
+    if state.task.stop().await {
         emit_status(&app, "disconnected");
     }
     Ok(())

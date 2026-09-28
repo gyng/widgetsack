@@ -383,6 +383,13 @@ Inner rings know nothing about outer rings — the domain must not import framew
   `components/NowPlaying/source.ts`, `telemetry/source.ts`), `localStorage`
   (`createStore.ts`/`stores.ts`), and window/monitor manipulation (`overlay.ts`,
   `monitor.ts`) are all outer-ring concerns. Don't sprinkle them into domain functions.
+- **Integration workers are app-owned.** HA, MQTT, stocks, weather, RSS, and agenda use
+  `integration_task.rs` for serialized ensure/restart/stop transitions. Window source cleanup must
+  release local subscriptions only; it must not disconnect a shared backend worker. Settings use
+  the existing connect command with `restart: true` (studio-only) to replace a worker atomically.
+  Package refresh/toggle/install/update/remove share one mutation queue in `plugins/packages.ts`.
+  Settings forms use `useSettingsOperations` to prevent old loads, saves, and tests from replacing
+  newer edits or showing stale feedback.
 - **React mirror:** presentational meters are inner (pure, props-only); `Canvas.tsx`, the
   `canvas/` hooks, and stores are the orchestration ring; Tauri API calls are the outer
   ring. See §6.

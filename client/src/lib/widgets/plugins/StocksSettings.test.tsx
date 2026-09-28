@@ -14,7 +14,7 @@ vi.mock('./stocks-commands', () => ({
 	),
 	saveStocksConfig: vi.fn(() => Promise.resolve()),
 	stocksConnect: vi.fn(() => Promise.resolve()),
-	stocksDisconnect: vi.fn(() => Promise.resolve())
+	stocksReconnect: vi.fn(() => Promise.resolve())
 }));
 // Mock the source so the bindable-id list is deterministic and refreshStocksCatalog is observable.
 vi.mock('./stocks-source', () => ({
@@ -33,7 +33,7 @@ import {
 	saveStocksConfig,
 	stocksConfigStatus,
 	stocksConnect,
-	stocksDisconnect
+	stocksReconnect
 } from './stocks-commands';
 import { refreshStocksCatalog, stocksSource } from './stocks-source';
 import { copyToClipboard } from '../../overlay';
@@ -103,7 +103,7 @@ describe('StocksSettings', () => {
 		expect(poll.value).toBe('120');
 	});
 
-	it('saves the symbols + interval then restarts in order (save → disconnect → connect → refresh)', async () => {
+	it('saves the symbols + interval then restarts in order (save → restart → refresh)', async () => {
 		const { getByText, findByText } = renderPanel();
 		await findByText('AAPL price'); // wait for prefill (sensor list is unambiguous)
 		fireEvent.click(getByText('Save & refresh'));
@@ -115,15 +115,15 @@ describe('StocksSettings', () => {
 				pollSeconds: 90
 			})
 		);
-		await waitFor(() => expect(stocksDisconnect).toHaveBeenCalled());
+		await waitFor(() => expect(stocksReconnect).toHaveBeenCalled());
 		await waitFor(() => expect(refreshStocksCatalog).toHaveBeenCalled());
 		const save = vi.mocked(saveStocksConfig).mock.invocationCallOrder[0];
-		const disc = vi.mocked(stocksDisconnect).mock.invocationCallOrder[0];
-		const conn = vi.mocked(stocksConnect).mock.invocationCallOrder.at(-1) as number;
+		const restart = vi.mocked(stocksReconnect).mock.invocationCallOrder[0];
+
 		const refresh = vi.mocked(refreshStocksCatalog).mock.invocationCallOrder.at(-1) as number;
-		expect(save).toBeLessThan(disc);
-		expect(disc).toBeLessThan(conn);
-		expect(conn).toBeLessThan(refresh);
+		expect(save).toBeLessThan(restart);
+
+		expect(restart).toBeLessThan(refresh);
 		expect(await findByText('Saved ✓')).toBeTruthy();
 	});
 
@@ -174,7 +174,7 @@ describe('StocksSettings', () => {
 			const { getByText, queryByText } = renderPanel();
 			await act(async () => {}); // flush the prefill promises
 			fireEvent.click(getByText('Save & refresh'));
-			await act(async () => {}); // flush the save → disconnect → connect → refresh chain
+			await act(async () => {}); // flush the save → restart → refresh chain
 			expect(getByText('Saved ✓')).toBeTruthy();
 			act(() => {
 				vi.advanceTimersByTime(2500);

@@ -21,7 +21,6 @@ use rumqttc::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tauri::async_runtime::{JoinHandle, Mutex};
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use crate::log;
@@ -101,7 +100,7 @@ pub struct MqttCatalogEntry {
 /// `mqtt_catalog` command). The catalog is a plain Mutex map so the command reads it cheaply.
 #[derive(Default)]
 pub struct MqttState {
-    handle: Mutex<Option<JoinHandle<()>>>,
+    task: crate::integration_task::IntegrationTask,
     catalog: Arc<StdMutex<BTreeMap<String, MqttCatalogEntry>>>,
 }
 
@@ -541,31 +540,35 @@ pub async fn mqtt_config_status<R: Runtime>(app: AppHandle<R>) -> Result<MqttSta
 /// Start the MQTT client iff configured and not already running. Idempotent.
 #[tauri::command]
 pub async fn mqtt_connect<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
     app: AppHandle<R>,
     state: State<'_, MqttState>,
+    restart: Option<bool>,
 ) -> Result<(), String> {
-    let cfg = match load_mqtt_config(&app)? {
-        Some(cfg) if !cfg.host.is_empty() => cfg,
-        _ => return Ok(()), // not configured: nothing to connect
-    };
-    let mut guard = state.handle.lock().await;
-    if guard.is_some() {
-        return Ok(());
+    let restart = restart.unwrap_or(false);
+    if restart && window.label() != "studio" {
+        return Err("integration restart is only allowed from the studio window".into());
     }
-    let app_for_task = app.clone();
-    let catalog = state.catalog.clone();
-    *guard = Some(tauri::async_runtime::spawn(async move {
-        run_mqtt_client(app_for_task, cfg, catalog).await;
-    }));
-    Ok(())
+    state
+        .task
+        .start(restart, || {
+            let cfg = match load_mqtt_config(&app)? {
+                Some(cfg) if !cfg.host.is_empty() => cfg,
+                _ => return Ok(None), // not configured: nothing to connect
+            };
+            let app_for_task = app.clone();
+            let catalog = state.catalog.clone();
+            Ok(Some(async move {
+                run_mqtt_client(app_for_task, cfg, catalog).await;
+            }))
+        })
+        .await
 }
 
 /// Stop the MQTT client (if any).
 #[tauri::command]
 pub async fn mqtt_disconnect(state: State<'_, MqttState>) -> Result<(), String> {
-    if let Some(handle) = state.handle.lock().await.take() {
-        handle.abort();
-    }
+    state.task.stop().await;
     Ok(())
 }
 

@@ -310,15 +310,22 @@ async function refreshPackagesNow(): Promise<void> {
 	}
 }
 
-// Every caller shares one queue. This prevents an older async scan from committing after a newer
-// install/update/remove scan and keeps source stop/start transitions strictly ordered.
-let refreshTail: Promise<void> = Promise.resolve();
+// Refresh, toggles, and disk mutations share one queue so a delayed enable cannot restore a
+// disabled package and source stop/start transitions stay strictly ordered.
+let mutationTail: Promise<void> = Promise.resolve();
+
+function enqueueMutation<T>(run: () => Promise<T>): Promise<T> {
+	const pending = mutationTail.then(run, run);
+	// Keep the shared queue usable after a failed mutation; callers still receive the original rejection.
+	mutationTail = pending.then(
+		() => undefined,
+		() => undefined
+	);
+	return pending;
+}
 
 export function refreshPackages(): Promise<void> {
-	const pending = refreshTail.then(refreshPackagesNow, refreshPackagesNow);
-	// Keep the shared queue usable after a failed scan; callers still receive the original rejection.
-	refreshTail = pending.catch(() => undefined);
-	return pending;
+	return enqueueMutation(refreshPackagesNow);
 }
 
 let initialized = false;
@@ -343,7 +350,7 @@ export async function initPackages(hub: TelemetryHub): Promise<void> {
  * unchanged packages apply on subsequent boots. Other windows pick the change up on their next
  * reload; localStorage is shared.
  */
-export async function togglePackage(
+async function togglePackageNow(
 	id: string,
 	enabled: boolean,
 	confirmEnable: (message: string) => boolean = () => true
@@ -410,13 +417,13 @@ export type PackageOpResult = { ok: boolean; error?: string };
  * backend fetches + writes the folder; the refresh re-discovers it. Fresh installs land DISABLED
  * (the opt-in allowlist is untouched) — same trust gate as a hand-dropped folder.
  */
-export async function installPackage(source: string): Promise<PackageOpResult> {
+async function installPackageNow(source: string): Promise<PackageOpResult> {
 	try {
 		await installPluginPackage(source);
 	} catch (err) {
 		return { ok: false, error: String(err) };
 	}
-	await refreshPackages();
+	await refreshPackagesNow();
 	return { ok: true };
 }
 
@@ -447,17 +454,17 @@ export async function checkPackageUpdate(id: string): Promise<PackageUpdateStatu
  * strand its palette group under the stale name — and the closing refresh re-applies the new
  * version live.
  */
-export async function updatePackage(id: string): Promise<PackageOpResult> {
+async function updatePackageNow(id: string): Promise<PackageOpResult> {
 	const d = discovered.get(id);
 	if (!d?.install) return { ok: false, error: 'package was not installed from a URL' };
 	if (enabledPackages.getSnapshot().includes(id)) await applyPackage(d, false);
 	try {
 		await installPluginPackage(reinstallSource(d.install), id);
 	} catch (err) {
-		await refreshPackages(); // restore the (still enabled) old version's registration
+		await refreshPackagesNow(); // restore the (still enabled) old version's registration
 		return { ok: false, error: String(err) };
 	}
-	await refreshPackages();
+	await refreshPackagesNow();
 	// If the update CHANGED the hosts list (or dropped the source), the stored network consent is
 	// stale — drop it so the new hosts must be re-confirmed (toggle off/on). The fingerprint check
 	// in applyPackage already kept the new source from starting during the refresh above.
@@ -477,13 +484,13 @@ export async function updatePackage(id: string): Promise<PackageOpResult> {
  * its templates/theme, clear it from the enable allowlist AND the stored CSS consent (a future
  * re-install must re-earn trust), then delete and re-scan.
  */
-export async function removePackage(id: string): Promise<PackageOpResult> {
+async function removePackageNow(id: string): Promise<PackageOpResult> {
 	const d = discovered.get(id);
 	try {
 		await removePluginPackage(id);
 	} catch (err) {
 		// The directory still exists: preserve enabled state and both approvals byte-for-byte.
-		await refreshPackages();
+		await refreshPackagesNow();
 		return { ok: false, error: String(err) };
 	}
 	if (d) await applyPackage(d, false);
@@ -506,7 +513,7 @@ export async function removePackage(id: string): Promise<PackageOpResult> {
 		delete rest[id];
 		return rest;
 	});
-	await refreshPackages();
+	await refreshPackagesNow();
 	return { ok: true };
 }
 
@@ -522,5 +529,25 @@ export function resetPackagesForTest(): void {
 	templateConsentPackages.set({});
 	hubRef = null;
 	initialized = false;
-	refreshTail = Promise.resolve();
+	mutationTail = Promise.resolve();
+}
+
+export function togglePackage(
+	id: string,
+	enabled: boolean,
+	confirmEnable: (message: string) => boolean = () => true
+): Promise<void> {
+	return enqueueMutation(() => togglePackageNow(id, enabled, confirmEnable));
+}
+
+export function installPackage(source: string): Promise<PackageOpResult> {
+	return enqueueMutation(() => installPackageNow(source));
+}
+
+export function updatePackage(id: string): Promise<PackageOpResult> {
+	return enqueueMutation(() => updatePackageNow(id));
+}
+
+export function removePackage(id: string): Promise<PackageOpResult> {
+	return enqueueMutation(() => removePackageNow(id));
 }

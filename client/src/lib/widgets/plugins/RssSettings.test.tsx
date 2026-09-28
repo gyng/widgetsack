@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor } from '@testing-library/react';
 
 // Mock the RSS Tauri command adapter so the panel runs without a backend. Each fn is a spy so we
-// can assert call args + ordering (Save must save → disconnect → connect to apply the new config
+// can assert call args + ordering (Save must save → restart to apply the new config
 // to the running poll task). Public feeds — nothing here is secret.
 vi.mock('./rss-commands', () => ({
 	rssConfigStatus: vi.fn(() =>
@@ -16,11 +16,11 @@ vi.mock('./rss-commands', () => ({
 	),
 	saveRssConfig: vi.fn(() => Promise.resolve()),
 	rssConnect: vi.fn(() => Promise.resolve()),
-	rssDisconnect: vi.fn(() => Promise.resolve())
+	rssReconnect: vi.fn(() => Promise.resolve())
 }));
 
 import RssSettings from './RssSettings';
-import { rssConfigStatus, rssConnect, rssDisconnect, saveRssConfig } from './rss-commands';
+import { rssConfigStatus, rssConnect, rssReconnect, saveRssConfig } from './rss-commands';
 import { createTelemetryHub, type TelemetryHub } from '../../core/telemetry';
 import { TelemetryHubContext } from '../telemetryContext';
 
@@ -129,7 +129,7 @@ describe('RssSettings', () => {
 		expect((getByText('Save & fetch') as HTMLButtonElement).disabled).toBe(true);
 	});
 
-	it('saves (clamping count + minutes→seconds) then restarts in order (save → disconnect → connect)', async () => {
+	it('saves (clamping count + minutes→seconds) then restarts in order (save → restart)', async () => {
 		const { container, getByText } = renderPanel();
 		const url = container.querySelector('input[type="text"]') as HTMLInputElement;
 		await waitFor(() => expect(url.value).toBe('https://example.com/feed.xml'));
@@ -146,13 +146,12 @@ describe('RssSettings', () => {
 				pollSeconds: 1800 // 30 min × 60
 			})
 		);
-		await waitFor(() => expect(rssDisconnect).toHaveBeenCalled());
-		// disconnect-first is mandatory so the new config replaces the running task.
+		await waitFor(() => expect(rssReconnect).toHaveBeenCalled());
 		const save = vi.mocked(saveRssConfig).mock.invocationCallOrder[0];
-		const disc = vi.mocked(rssDisconnect).mock.invocationCallOrder[0];
-		const conn = vi.mocked(rssConnect).mock.invocationCallOrder.at(-1) as number;
-		expect(save).toBeLessThan(disc);
-		expect(disc).toBeLessThan(conn);
+		const restart = vi.mocked(rssReconnect).mock.invocationCallOrder[0];
+
+		expect(save).toBeLessThan(restart);
+
 		expect(await waitFor(() => getByText('Saved ✓'))).toBeTruthy();
 	});
 
@@ -182,7 +181,7 @@ describe('RssSettings', () => {
 			const { getByRole, getByText, queryByText } = renderPanel();
 			await act(async () => {}); // flush the prefill promises
 			fireEvent.click(getByRole('button', { name: /Save & fetch/ }));
-			await act(async () => {}); // flush the save → disconnect → connect chain
+			await act(async () => {}); // flush the save → restart chain
 			expect(getByText('Saved ✓')).toBeTruthy();
 			act(() => {
 				vi.advanceTimersByTime(2500);
