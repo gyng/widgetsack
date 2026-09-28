@@ -75,9 +75,9 @@ jobs:
           # flaked transiently (build succeeds, the upload errors, and the release is left with no
           # assets), and re-running it means a full ~10 min rebuild. The retried step below is the sole
           # uploader, so a transient flake just retries the cheap upload instead.
-          # tauri-action@v0's bundled CLI is too old for the v2 config schema; pin a
-          # current v2 CLI matching the tauri 2.11 crates.
-          tauriScript: npx @tauri-apps/cli@2
+          # Pin the CLI tested with our custom NSIS template. CLI upgrades must also
+          # re-sync widgetsack/windows/installer.nsi with the bundled template.
+          tauriScript: npx @tauri-apps/cli@2.11.5
       - name: Upload bundles to the release (retried)
         # Only on a tag push (workflow_dispatch builds have no release to attach to). The draft release
         # for this tag must already exist (`gh release create vX --draft …` — see docs/development.md).
