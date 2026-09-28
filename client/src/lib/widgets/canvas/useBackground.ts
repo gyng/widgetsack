@@ -5,7 +5,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { isMediaKind } from '../../core/background';
 import type { BackgroundKind, BackgroundSpec, MonitorLayout } from '../../core/layoutTree';
-import { listWallpapers, wallpaperAssetUrl } from '../../overlay';
+import { listWallpapers, wallpaperAssetUrl } from '../../bridge/wallpapers';
 import type { LayoutOp } from '../ops';
 import type { SectionId } from './studioSections';
 

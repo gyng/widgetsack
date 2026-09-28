@@ -195,11 +195,11 @@ fn flatten_latest(
 
 /// Mirror the latest sensor values to `<config root>/mcp/state.json` so the (out-of-process) MCP
 /// server can read LIVE readings — the file-based MCP can't reach this in-memory state otherwise.
-/// The root follows `command::config_root` (an extra dev instance writes under `multi/`, like every
+/// The root follows `file_io::config_root` (an extra dev instance writes under `multi/`, like every
 /// other config file). Written to an `mcp/` SUBDIR so the NonRecursive config-dir watchers never see
 /// it, and atomically (temp + rename) so a reader never sees a truncated document. Best-effort.
 fn write_state_snapshot<R: Runtime>(app: &AppHandle<R>, latest: &HashMap<String, SensorValue>) {
-    let Ok(dir) = crate::command::config_root(app) else {
+    let Ok(dir) = crate::file_io::config_root(app) else {
         return;
     };
     let mcp_dir = dir.join("mcp");
@@ -211,7 +211,7 @@ fn write_state_snapshot<R: Runtime>(app: &AppHandle<R>, latest: &HashMap<String,
         "sensors": flatten_latest(latest),
     });
     if let Ok(txt) = serde_json::to_string(&snapshot) {
-        let _ = crate::command::atomic_write(&mcp_dir.join("state.json"), &txt);
+        let _ = crate::file_io::atomic_write(&mcp_dir.join("state.json"), &txt);
     }
 }
 

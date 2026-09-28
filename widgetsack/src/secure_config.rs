@@ -30,7 +30,7 @@ pub fn read(path: &Path) -> Result<Option<String>, String> {
 pub fn write(path: &Path, contents: &str) -> Result<(), String> {
     let protected = protect(contents.as_bytes())?;
     let payload = format!("{PREFIX}{}", hex_encode(&protected));
-    crate::command::atomic_write(path, &payload)
+    crate::file_io::atomic_write(path, &payload)
 }
 
 fn hex_encode(bytes: &[u8]) -> String {

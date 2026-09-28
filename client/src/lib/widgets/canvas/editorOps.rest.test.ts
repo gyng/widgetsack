@@ -43,6 +43,7 @@ import type { EditorState } from './types';
 
 function minimalState(): EditorState {
 	return {
+		mode: { kind: 'layout' },
 		monitor: emptyMonitorLayout(),
 		library: undefined,
 		selectedId: null,
@@ -51,10 +52,6 @@ function minimalState(): EditorState {
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,

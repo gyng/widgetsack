@@ -14,7 +14,7 @@ const loadThemeCss = vi.fn<(name: string) => Promise<string>>();
 const listThemes = vi.fn<() => Promise<string[]>>();
 const saveThemeCss = vi.fn<(name: string, css: string) => Promise<void>>();
 const deleteThemeCss = vi.fn<(name: string) => Promise<void>>();
-vi.mock('../../overlay', () => ({
+vi.mock('../../bridge/themes', () => ({
 	resolveThemeCss: (...a: [string]) => resolveThemeCss(...a),
 	loadThemeCss: (...a: [string]) => loadThemeCss(...a),
 	listThemes: (...a: []) => listThemes(...a),

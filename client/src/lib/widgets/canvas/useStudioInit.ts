@@ -1,10 +1,11 @@
 // Init is NON-IDEMPOTENT (item 4): on mount run updateWorkArea + startAllSources(hub) + reloadLayout
 // + listen(layout_changed/themes_changed/toggle_edit/open_studio) + (primary) fill/reconcile. The
-// cleanup MUST call every UnlistenFn + the source stop + flushPreviewWrite. A `cancelled` flag
-// guards the async unsubscribe-after-unmount race. Assumes NO React.StrictMode — this runs once.
+// Cleanup releases a disposal scope and flushes pending writes. Resources acquired after
+// unmount are immediately released by the scope. Assumes NO React.StrictMode — this runs once.
 // Ported verbatim from the Svelte onMount/onDestroy pair (same Tauri event/command strings).
 import { useEffect, useRef } from 'react';
-import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { listen } from '@tauri-apps/api/event';
+import { disposalScope } from '../../core/disposalScope';
 import { EVENTS, type LayoutChangedPayload } from '../../bridge/contract';
 import { startAllSources } from '../../core/plugin';
 import { singleFlight } from '../../core/singleFlight';
@@ -59,16 +60,9 @@ export function useStudioInit(deps: StudioInitDeps): void {
 	});
 
 	useEffect(() => {
-		let cancelled = false;
-		let sourceStop: (() => void) | undefined;
-		let unlistenLayout: UnlistenFn | undefined;
-		let unlistenControls: UnlistenFn | undefined;
-		let unlistenThemes: UnlistenFn | undefined;
-		let unlistenStudio: UnlistenFn | undefined;
-		let unlistenEdit: UnlistenFn | undefined;
-		let unlistenRefit: UnlistenFn | undefined;
-		let unlistenScale: UnlistenFn | undefined;
-		let stopDisplayWatch: (() => void) | undefined;
+		const scope = disposalScope((err) =>
+			logClient('error', 'overlay', `cleanup failed: ${String(err)}`)
+		);
 
 		(async () => {
 			const dep = d.current;
@@ -125,39 +119,37 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// work-area read sees the window on its real monitor, not where the window-state plugin
 			// parked it.
 			if (ownKey) await refit();
-			unlistenRefit = await listen(EVENTS.refitOverlays, triggerRefit);
+			scope.add(await listen(EVENTS.refitOverlays, triggerRefit));
+			if (scope.disposed) return;
 			// #12: DPI/scale hot-plug — wired ONCE here (not inside the fit functions, where it raced
 			// the fit that moves the window across the DPI boundary) and routed through the same
 			// single-flight refit, so the poller, the tray trigger and a scale change never run
 			// concurrent setPosition/setSize sequences on this window.
-			if (!dep.studio) unlistenScale = await onOwnScaleChanged(triggerRefit);
+			if (!dep.studio) scope.add(await onOwnScaleChanged(triggerRefit));
 			// Overlays also hand the poller a drift probe (own window vs its monitor); the studio is
 			// a normal window the user places, so it gets none.
-			stopDisplayWatch = watchDisplayChanges(
-				triggerRefit,
-				dep.studio ? undefined : () => overlayDrift(ownKey),
-				dep.studio ? () => reconcileOverlays() : undefined
+			scope.add(
+				watchDisplayChanges(
+					triggerRefit,
+					dep.studio ? undefined : () => overlayDrift(ownKey),
+					dep.studio ? () => reconcileOverlays() : undefined
+				)
 			);
-			if (cancelled) {
-				unlistenRefit?.();
-				unlistenScale?.();
-				stopDisplayWatch?.();
-				return;
-			}
+			if (scope.disposed) return;
 
 			await dep.updateWorkArea();
-			sourceStop = await startAllSources(dep.hub); // built-in `system` + any plugin sources
-			if (cancelled) {
-				sourceStop?.();
-				return;
-			}
+			if (scope.disposed) return;
+			scope.add(await startAllSources(dep.hub)); // built-in `system` + any plugin sources
+			if (scope.disposed) return;
 			await dep.reloadLayout();
+			if (scope.disposed) return;
 
 			// Control remaps (controls.json): load once, then live-reload on external edits or a save
 			// from another window. Always applied (not gated by editMode) — a remap should take effect
 			// immediately everywhere.
 			await dep.reloadControls();
-			unlistenControls = await listen(EVENTS.controlsChanged, () => d.current.reloadControls());
+			if (scope.disposed) return;
+			scope.add(await listen(EVENTS.controlsChanged, () => d.current.reloadControls()));
 
 			// Live-reload external edits to widgets.json. An OVERLAY ignores them while actively editing
 			// (its own edits are what's being written); on the primary main window a reload also
@@ -166,51 +158,37 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// reflected in the editor, while a change by any other writer (an overlay in edit mode, a
 			// hand edit — no payload from the watcher) is handed to the Canvas, which reloads silently
 			// when nothing here would be lost or offers Reload / Keep mine (see externalChange.ts).
-			unlistenLayout = await listen<LayoutChangedPayload>(EVENTS.layoutChanged, (e) => {
-				if (dep.studio) {
-					if (isForeignWriter(e.payload?.writer, 'studio')) d.current.onForeignLayoutChange();
-					return;
-				}
-				if (d.current.editMode()) return;
-				d.current.reloadLayout().then(() => {
-					d.current.syncRects();
-					if (!monitorParam()) d.current.syncPrimaryOverlays();
-				});
-			});
-			if (cancelled) {
-				unlistenControls?.();
-				unlistenLayout?.();
-				return;
-			}
+			scope.add(
+				await listen<LayoutChangedPayload>(EVENTS.layoutChanged, (e) => {
+					if (dep.studio) {
+						if (isForeignWriter(e.payload?.writer, 'studio')) d.current.onForeignLayoutChange();
+						return;
+					}
+					if (d.current.editMode()) return;
+					d.current.reloadLayout().then(() => {
+						d.current.syncRects();
+						if (!monitorParam()) d.current.syncPrimaryOverlays();
+					});
+				})
+			);
+			if (scope.disposed) return;
 
 			// Themes: list them + live-reload the active theme when the folder changes.
 			const themes = await listThemes();
-			if (cancelled) {
-				unlistenControls?.();
-				unlistenLayout?.();
-				return;
-			}
+			if (scope.disposed) return;
 			d.current.setThemeList(themes);
-			unlistenThemes = await listen(EVENTS.themesChanged, () => {
-				d.current.applyTheme();
-				listThemes().then((t) => d.current.setThemeList(t));
-			});
-			if (cancelled) {
-				unlistenControls?.();
-				unlistenLayout?.();
-				unlistenThemes?.();
-				return;
-			}
+			scope.add(
+				await listen(EVENTS.themesChanged, () => {
+					d.current.applyTheme();
+					listThemes().then((t) => d.current.setThemeList(t));
+				})
+			);
+			if (scope.disposed) return;
 
 			if (dep.studio) {
 				dep.setEditModeImmediate(); // the studio is always an editor; no overlay fill/click-through
 				const opts = await studioMonitorOptions();
-				if (cancelled) {
-					unlistenControls?.();
-					unlistenLayout?.();
-					unlistenThemes?.();
-					return;
-				}
+				if (scope.disposed) return;
 				d.current.setMonitorOptions(opts);
 				return;
 			}
@@ -220,29 +198,14 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// landing during init can't run a second fit/reconcile alongside this one.
 			if (!monitorParam()) {
 				await refit();
-				unlistenStudio = await listen(EVENTS.openStudio, () => openStudio());
+				scope.add(await listen(EVENTS.openStudio, () => openStudio()));
 			}
-			if (cancelled) {
-				unlistenControls?.();
-				unlistenLayout?.();
-				unlistenThemes?.();
-				unlistenStudio?.();
-				return;
-			}
+			if (scope.disposed) return;
 			// Initial whole-window click-through is established by Canvas's presentation effect (so the
 			// main overlay starts interactive and a secondary starts click-through); here we only seed the
 			// per-widget interactive rects for a passive overlay.
 			d.current.syncRects();
-			unlistenEdit = await listen(EVENTS.toggleEdit, () =>
-				d.current.setEdit(!d.current.editMode())
-			);
-			if (cancelled) {
-				unlistenControls?.();
-				unlistenLayout?.();
-				unlistenThemes?.();
-				unlistenStudio?.();
-				unlistenEdit?.();
-			}
+			scope.add(await listen(EVENTS.toggleEdit, () => d.current.setEdit(!d.current.editMode())));
 		})().catch((err) => {
 			// The primary main window is born hidden (config `visible:false`) and only revealed once
 			// init reaches `syncPrimaryOverlays`; a secondary is born hidden and reveals itself via
@@ -254,7 +217,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 				'overlay',
 				`init failed (${d.current.studio ? 'studio' : (monitorParam() ?? 'main')}): ${String(err)}`
 			);
-			if (!cancelled && !d.current.studio) {
+			if (!scope.disposed && !d.current.studio) {
 				const key = monitorParam();
 				if (key) void fillOwnMonitor(key);
 				else void setMainWindowVisible(true).catch(() => undefined);
@@ -262,16 +225,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 		});
 
 		return () => {
-			cancelled = true;
-			sourceStop?.();
-			unlistenControls?.();
-			unlistenLayout?.();
-			unlistenThemes?.();
-			unlistenStudio?.();
-			unlistenEdit?.();
-			unlistenRefit?.();
-			unlistenScale?.();
-			stopDisplayWatch?.();
+			scope.dispose();
 			d.current.flushPreviewWrite();
 		};
 		// Run once on mount (non-idempotent). The body reads only the stable `d` ref, so the empty dep

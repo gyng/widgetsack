@@ -99,7 +99,7 @@ pub fn on_zero_windows(app: &tauri::AppHandle) {
             if !handle.webview_windows().is_empty() {
                 return;
             }
-            crate::command::respawn_main_hidden(&handle, "zero-window keep-alive");
+            crate::command::windows::respawn_main_hidden(&handle, "zero-window keep-alive");
             if handle.webview_windows().is_empty() {
                 // Creation itself failed — no window will ever close to re-trigger the cycle,
                 // so keep the retry alive by rescheduling directly.

@@ -1,3 +1,4 @@
+import { desktopMonitor, editingDefinitionId } from '../../core/editorMode';
 // The editor model's pure op helpers — ported VERBATIM from Canvas.svelte (via useEditorModel).
 // Each takes the current EditorState and returns a Patch (the new monitor/library/selection);
 // none of them touch React, history, or disk — the reducer's commit chokepoint does that. Grouped
@@ -795,8 +796,8 @@ export function defInUse(s: EditorState, defId: string): boolean {
 	};
 	// Check the REAL monitor (stashed in savedMonitor while designing another def) plus, if designing,
 	// the scoped editing tree (a composite def could embed this one) — never just the scoped tree.
-	scan(s.editingDefId != null && s.savedMonitor ? s.savedMonitor : s.monitor);
-	if (s.editingDefId != null) scan(s.monitor);
+	scan(desktopMonitor(s));
+	if (s.mode.kind !== 'layout') scan(s.monitor);
 	return used;
 }
 
@@ -812,7 +813,7 @@ export function renameDef(s: EditorState, defId: string, name: string): Patch {
 
 export function deleteDef(s: EditorState, defId: string): Patch {
 	if (!s.library) return {};
-	if (s.editingDefId === defId) {
+	if (editingDefinitionId(s.mode) === defId) {
 		console.warn(`def ${defId} is being edited; not deleted`);
 		return {};
 	}

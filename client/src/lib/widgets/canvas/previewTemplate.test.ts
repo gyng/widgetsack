@@ -1,3 +1,4 @@
+import { editingDefinitionId, previewDefinition } from '../../core/editorMode';
 // The template-preview lifecycle (read-only preview → clone, or discard) lives in the reducer. We
 // can't import the reducer directly (it's internal to the hook), so drive it through renderHook,
 // which is also the closest thing to how the Canvas uses it.
@@ -13,13 +14,13 @@ describe('template preview lifecycle', () => {
 		act(() => result.current.dispatch({ type: 'previewTemplate', templateId: CLOCK }));
 
 		const s = result.current.state;
-		expect(s.previewDef).not.toBeNull();
-		expect(s.previewDef?.name).toBe('Clock (JP weekday)');
-		expect(s.editingDefId).toBe(s.previewDef?.id); // canvas sizes to the preview
+		expect(previewDefinition(s.mode)).not.toBeNull();
+		expect(previewDefinition(s.mode)?.name).toBe('Clock (JP weekday)');
+		expect(editingDefinitionId(s.mode)).toBe(previewDefinition(s.mode)?.id); // canvas sizes to the preview
 		// The library is untouched — preview must not add a widget.
 		expect(s.library?.defs ?? []).toHaveLength(0);
 		// The real layout is stashed; the scoped monitor holds the template.
-		expect(s.savedMonitor).not.toBeNull();
+		expect(s.mode.kind === 'layout' ? null : s.mode.desktop).not.toBeNull();
 	});
 
 	it('discards the preview on endPreview (library still empty, real monitor restored)', () => {
@@ -29,9 +30,9 @@ describe('template preview lifecycle', () => {
 		act(() => result.current.dispatch({ type: 'endPreview' }));
 
 		const s = result.current.state;
-		expect(s.previewDef).toBeNull();
-		expect(s.editingDefId).toBeNull();
-		expect(s.savedMonitor).toBeNull();
+		expect(previewDefinition(s.mode)).toBeNull();
+		expect(editingDefinitionId(s.mode)).toBeNull();
+		expect(s.mode.kind === 'layout' ? null : s.mode.desktop).toBeNull();
 		expect(s.monitor).toBe(realMonitor);
 		expect(s.library?.defs ?? []).toHaveLength(0);
 	});
@@ -66,7 +67,7 @@ describe('template preview lifecycle', () => {
 		act(() => result.current.dispatch({ type: 'previewTemplate', templateId: CLOCK }));
 		act(() => result.current.dispatch({ type: 'endDefEdit' }));
 		const s = result.current.state;
-		expect(s.editingDefId).toBeNull();
+		expect(editingDefinitionId(s.mode)).toBeNull();
 		expect(s.monitor).toBe(realMonitor);
 		expect(s.library).toBeUndefined(); // no def write-back — there is no library to write to
 	});
@@ -74,12 +75,12 @@ describe('template preview lifecycle', () => {
 	it('clonePreview promotes the previewed template into the library and keeps editing it', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'previewTemplate', templateId: CLOCK }));
-		const previewId = result.current.state.previewDef?.id;
+		const previewId = previewDefinition(result.current.state.mode)?.id;
 		act(() => result.current.dispatch({ type: 'clonePreview' }));
 
 		const s = result.current.state;
-		expect(s.previewDef).toBeNull(); // no longer a preview
-		expect(s.editingDefId).toBe(previewId); // still editing the same def…
+		expect(previewDefinition(s.mode)).toBeNull(); // no longer a preview
+		expect(editingDefinitionId(s.mode)).toBe(previewId); // still editing the same def…
 		expect(s.library?.defs.map((d) => d.id)).toContain(previewId); // …now a real library def
 	});
 });

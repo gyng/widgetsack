@@ -64,7 +64,7 @@ export type ParsedPackage = {
 
 export type PackageParseResult = { ok: true; pkg: ParsedPackage } | { ok: false; reason: string };
 
-// Mirrors the Rust `valid_name` allowlist (command.rs): 1–64 chars of [A-Za-z0-9 _-], no
+// Mirrors the Rust `valid_name` allowlist (file_io.rs): 1–64 chars of [A-Za-z0-9 _-], no
 // leading/trailing space. Package + template ids become path segments / registry keys.
 function isIdToken(v: unknown): v is string {
 	return (
@@ -335,7 +335,7 @@ export function parsePluginPackage(dirId: string, raw: string): PackageParseResu
 }
 
 // ---- remote-install provenance (Phase 3) --------------------------------------------------------
-// `install_plugin_package` (command.rs) writes a `.install.json` sidecar next to the manifest:
+// `install_plugin_package` (command/packages.rs) writes a `.install.json` sidecar next to the manifest:
 // `{ source, ref, version, installedAt }`. The backend hands its RAW text back on
 // `list_plugin_packages` (`PluginPackageFile.install`); parsing it is this pure half's job.
 

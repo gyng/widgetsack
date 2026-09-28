@@ -83,30 +83,33 @@ describe('singleFlight', () => {
 		expect(fn).toHaveBeenCalledTimes(2);
 	});
 
-	it('rejects queued trailing waiters when the trailing rerun itself rejects', async () => {
-		const first = deferred<string>();
-		const failure = new Error('trailing failed');
-		let calls = 0;
-		const fn = vi.fn(() => {
-			calls++;
-			if (calls === 1) return first.promise;
-			return Promise.reject(failure);
-		});
-		const wrapped = singleFlight(fn);
-
-		const p1 = wrapped();
-		const p2 = wrapped(); // queued — becomes the trailing rerun
-		first.resolve('ok');
-
-		await expect(p1).resolves.toBe('ok');
-		await expect(p2).rejects.toBe(failure);
-		expect(fn).toHaveBeenCalledTimes(2);
-
-		// Latch released after the trailing rejection too.
-		const fn2 = vi.fn(async () => 'again');
-		const wrapped2 = singleFlight(fn2);
-		await expect(wrapped2()).resolves.toBe('again');
-	});
+	it.each([false, true])(
+		'settles trailing failures and recovers (synchronous=%s)',
+		async (sync) => {
+			const first = deferred<string>();
+			const failure = new Error('trailing failed');
+			let calls = 0;
+			const wrapped = singleFlight(() => {
+				calls++;
+				if (calls === 1) return first.promise;
+				if (calls > 2) return Promise.resolve('recovered');
+				if (sync) throw failure;
+				return Promise.reject(failure);
+			});
+			const p1 = wrapped();
+			const p2 = wrapped();
+			const p3 = wrapped();
+			const queued = Promise.allSettled([p2, p3]);
+			first.resolve('ok');
+			await expect(p1).resolves.toBe('ok');
+			expect(await queued).toEqual([
+				{ status: 'rejected', reason: failure },
+				{ status: 'rejected', reason: failure }
+			]);
+			await expect(wrapped()).resolves.toBe('recovered');
+			expect(calls).toBe(3);
+		}
+	);
 
 	it('starts a fresh run for calls that arrive after the previous run fully settled', async () => {
 		const fn = vi.fn(async () => 'x');

@@ -46,12 +46,21 @@ export function listSources(): SensorSource[] {
  * not abort app init, which now gates the (born-hidden) overlay's first reveal. */
 export async function startAllSources(hub: TelemetryHub): Promise<() => void> {
 	const results = await Promise.all(
-		listSources().map((s) =>
-			s.start(hub).catch((err): (() => void) => {
+		listSources().map(async (s) => {
+			try {
+				const stop = await s.start(hub);
+				return () => {
+					try {
+						stop();
+					} catch (err) {
+						console.warn(`source "${s.id}" failed to stop`, err);
+					}
+				};
+			} catch (err) {
 				console.warn(`source "${s.id}" failed to start`, err);
 				return () => undefined;
-			})
-		)
+			}
+		})
 	);
 	return () => results.forEach((u) => u());
 }

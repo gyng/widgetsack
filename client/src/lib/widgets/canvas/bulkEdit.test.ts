@@ -14,6 +14,7 @@ const w = (id: string, config: Record<string, unknown> = {}) =>
 
 function stub(root: Container, selectedIds: string[]): EditorState {
 	return {
+		mode: { kind: 'layout' },
 		monitor: { root, floating: [] } as MonitorLayout,
 		library: undefined,
 		selectedId: selectedIds[0] ?? null,
@@ -22,10 +23,6 @@ function stub(root: Container, selectedIds: string[]): EditorState {
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,

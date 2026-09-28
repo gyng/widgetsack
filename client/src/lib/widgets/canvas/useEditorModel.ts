@@ -1,3 +1,4 @@
+import { desktopMonitor, editedLibrary } from '../../core/editorMode';
 // The Canvas editor model (item 2): a useReducer holding {monitor, library, selection, theme,
 // tokens, def-edit, undo/redo, manual-save baseline}. NEVER mutates state in place — the core
 // layoutEdit ops already return new trees, so dirty-tracking + undo rely on reference equality
@@ -181,21 +182,23 @@ function recordHistory(next: EditorState, coalesceKey?: string, at = 0): Patch {
 	};
 }
 
-function setBaselinePatch(s: EditorState): Patch {
+function setBaselinePatch(s: EditorState, current: EditorState = s): Patch {
+	const library = editedLibrary(s);
 	return {
 		savedBaseline: {
-			monitor: s.monitor,
-			library: s.library,
+			monitor: desktopMonitor(s),
+			library,
 			theme: s.selectedTheme,
 			themeLock: s.themeLock,
 			/* v8 ignore next -- globalTheme is initialized for unlocked editor states; fallback is migration hardening. */
 			globalTheme: s.themeLock ? s.selectedTheme : (s.globalTheme ?? ''),
 			tokens: s.tokenOverrides
 		},
-		// While editing a def, re-anchor the def-edit baseline too, so a mid-def-edit Save clears the
-		// dirty indicator (the next scoped edit re-dirties it). On load/normal save editingDefId is
-		// null, so this is a no-op there.
-		...(s.editingDefId != null ? { defEditBaseline: s.monitor } : {})
+		// A completed Save advances the saved snapshot without undoing newer mode transitions or edits.
+		...(current.library === s.library ? { library } : {}),
+		...(s.mode.kind === 'definition' && current.mode === s.mode
+			? { mode: { ...current.mode, baseline: s.monitor } }
+			: {})
 	};
 }
 
@@ -228,13 +231,13 @@ type Action =
 	| { type: 'clonePreview' } // promote the previewed template into the library + keep editing it
 	| { type: 'endDefEdit' }
 	| { type: 'resetHistory' }
-	| { type: 'setBaseline' }
+	| { type: 'setBaseline'; snapshot?: EditorState }
 	| { type: 'load'; patch: Patch } // bulk set after reloadLayout (then resetHistory + setBaseline)
 	| { type: 'setTheme'; name: string } // mirror selectedTheme (applyTheme is a side-effect)
 	| { type: 'replaceMonitor'; monitor: MonitorLayout } // raw set (switchMonitor placeholder)
 	// After a Save wrote the queued cross-monitor moves: clear them from the state AND from every
 	// history entry, so an undo can't re-queue an extra that already landed on the other monitor.
-	| { type: 'extrasFlushed' }
+	| { type: 'extrasFlushed'; extras?: EditorState['pendingExtras'] }
 	| { type: 'revertToBaseline' } // Cancel / discard-on-switch: restore the saved baseline
 	| { type: 'patch'; patch: Patch }; // a plain non-committing patch (selectedIds, etc.)
 
@@ -334,7 +337,7 @@ function reduceHistory(state: EditorState, action: HistoryAction): EditorState {
 		case 'resetHistory':
 			return { ...state, ...resetHistoryPatch(state) };
 		case 'setBaseline':
-			return { ...state, ...setBaselinePatch(state) };
+			return { ...state, ...setBaselinePatch(action.snapshot ?? state, state) };
 	}
 }
 
@@ -371,7 +374,7 @@ function templateDef(templateId: string): WidgetDef | null {
 // designing a widget shouldn't place it on the layout; the whole library is persisted regardless
 // (usePersistence writes every def), and the user instantiates it via the Inspector library
 // palette. Assumes the caller already refused re-entry while another def is open (would orphan
-// savedMonitor).
+// the retained desktop).
 function enterNewDef(state: EditorState, def: WidgetDef): EditorState {
 	const library: Library = {
 		version: state.library?.version ?? 1,
@@ -381,10 +384,8 @@ function enterNewDef(state: EditorState, def: WidgetDef): EditorState {
 	const next: EditorState = {
 		...state,
 		library,
-		savedMonitor: state.monitor, // preserve the REAL monitor untouched (no instance dropped)
+		mode: { kind: 'definition', defId: def.id, desktop: state.monitor, baseline: scopedMonitor },
 		monitor: scopedMonitor,
-		defEditBaseline: scopedMonitor,
-		editingDefId: def.id,
 		selectedId: null
 	};
 	return syncPrimary({ ...next, ...resetHistoryPatch(next) }, false);
@@ -408,9 +409,9 @@ type DefEditAction = Extract<
 function reduceDefEdit(state: EditorState, action: DefEditAction): EditorState {
 	switch (action.type) {
 		case 'newWidget': {
-			// Refuse to start a new def while already editing one (would orphan savedMonitor). The UI
+			// Refuse to start a new def while already editing one (would orphan the retained desktop). The UI
 			// folds the open def (endDefEdit) before starting a new one.
-			if (state.editingDefId != null) return state;
+			if (state.mode.kind !== 'layout') return state;
 			const defId = `def-${rand()}`;
 			const def: WidgetDef = {
 				id: defId,
@@ -421,7 +422,7 @@ function reduceDefEdit(state: EditorState, action: DefEditAction): EditorState {
 			return enterNewDef(state, def);
 		}
 		case 'cloneDef': {
-			if (state.editingDefId != null) return state;
+			if (state.mode.kind !== 'layout') return state;
 			const src = state.library?.defs.find((d) => d.id === action.defId);
 			if (!src) return state;
 			const defId = `def-${rand()}`;
@@ -436,43 +437,38 @@ function reduceDefEdit(state: EditorState, action: DefEditAction): EditorState {
 			return enterNewDef(state, def);
 		}
 		case 'newFromTemplate': {
-			if (state.editingDefId != null) return state;
+			if (state.mode.kind !== 'layout') return state;
 			const def = templateDef(action.templateId);
 			return def ? enterNewDef(state, def) : state;
 		}
 		case 'previewTemplate': {
 			// Read-only preview: scope to the template like a def edit, but DON'T add it to the library
-			// (it lives in `previewDef`). The Clone button promotes it; Close discards it.
-			if (state.editingDefId != null) return state; // the UI folds any open def/preview first
+			// (it lives in the preview mode). The Clone button promotes it; Close discards it.
+			if (state.mode.kind !== 'layout') return state; // the UI folds any open def/preview first
 			const def = templateDef(action.templateId);
 			if (!def) return state;
 			const next: EditorState = {
 				...state,
-				savedMonitor: state.monitor,
+				mode: { kind: 'preview', definition: def, desktop: state.monitor },
 				monitor: scopedMonitorFromDef(def),
-				defEditBaseline: null,
-				editingDefId: def.id,
-				previewDef: def,
 				selectedId: null
 			};
 			return syncPrimary({ ...next, ...resetHistoryPatch(next) }, false);
 		}
 		case 'endPreview': {
-			if (!state.previewDef || !state.savedMonitor) return state;
+			if (state.mode.kind !== 'preview') return state;
 			const next: EditorState = {
 				...state,
-				monitor: state.savedMonitor,
-				savedMonitor: null,
-				editingDefId: null,
-				previewDef: null,
+				monitor: state.mode.desktop,
+				mode: { kind: 'layout' },
 				selectedId: null
 			};
 			return syncPrimary({ ...next, ...resetHistoryPatch(next) }, false);
 		}
 		case 'clonePreview': {
 			// Promote the previewed template into the library and keep editing it (now unlocked).
-			if (!state.previewDef) return state;
-			const def = state.previewDef;
+			if (state.mode.kind !== 'preview') return state;
+			const def = state.mode.definition;
 			const library: Library = {
 				version: state.library?.version ?? 1,
 				defs: [...(state.library?.defs ?? []), def]
@@ -480,16 +476,20 @@ function reduceDefEdit(state: EditorState, action: DefEditAction): EditorState {
 			let next: EditorState = {
 				...state,
 				library,
-				previewDef: null,
-				defEditBaseline: state.monitor // a real def-edit baseline from here on
+				mode: {
+					kind: 'definition',
+					defId: def.id,
+					desktop: state.mode.desktop,
+					baseline: state.monitor
+				} // a real def-edit baseline from here on
 			};
 			next = { ...next, ...commitPatch(next) }; // record + persist the new library def
 			return next;
 		}
 		case 'enterDefEdit': {
-			// Never re-enter while already designing — a nested enter would overwrite savedMonitor with
+			// Never re-enter while already designing — a nested enter would overwrite the retained desktop with
 			// the scoped tree and lose the real monitor layout (the UI folds the open def first).
-			if (state.editingDefId != null) return state;
+			if (state.mode.kind !== 'layout') return state;
 			const def = state.library?.defs.find((d) => d.id === action.defId);
 			if (!def) return state;
 			// scopedMonitorFromDef self-heals oversized pad/gap for this widget's canvas — so opening a
@@ -497,32 +497,25 @@ function reduceDefEdit(state: EditorState, action: DefEditAction): EditorState {
 			const scopedMonitor = scopedMonitorFromDef(def);
 			const next: EditorState = {
 				...state,
-				savedMonitor: state.monitor,
+				mode: {
+					kind: 'definition',
+					defId: action.defId,
+					desktop: state.monitor,
+					baseline: scopedMonitor
+				},
 				monitor: scopedMonitor,
-				defEditBaseline: scopedMonitor,
-				editingDefId: action.defId,
 				selectedId: null
 			};
 			return syncPrimary({ ...next, ...resetHistoryPatch(next) }, false);
 		}
 		case 'endDefEdit': {
-			if (!state.editingDefId || !state.savedMonitor) return state;
-			// syncEditingDef: write the scoped editing tree back onto its def.
-			const child = state.monitor.root;
-			const editingDefId = state.editingDefId;
-			const library: Library | undefined = state.library
-				? {
-						...state.library,
-						defs: state.library.defs.map((d) => (d.id === editingDefId ? { ...d, child } : d))
-					}
-				: state.library;
+			if (state.mode.kind === 'layout') return state;
+			const library = editedLibrary(state);
 			let next: EditorState = {
 				...state,
 				library,
-				monitor: state.savedMonitor,
-				savedMonitor: null,
-				defEditBaseline: null,
-				editingDefId: null,
+				monitor: state.mode.desktop,
+				mode: { kind: 'layout' },
 				selectedId: null
 			};
 			next = syncPrimary({ ...next, ...resetHistoryPatch(next) }, false);
@@ -553,6 +546,7 @@ function reduceLoad(state: EditorState, action: LoadAction): EditorState {
 			return {
 				...state,
 				monitor: b.monitor,
+				mode: { kind: 'layout' },
 				library: b.library,
 				selectedTheme: b.theme,
 				themeLock: b.themeLock,
@@ -565,10 +559,16 @@ function reduceLoad(state: EditorState, action: LoadAction): EditorState {
 			// The extras are on disk now (other monitors' records). Strip them from the live state and
 			// from every snapshot: an undo that restored a stale queue would re-append the same leaf
 			// to the other monitor on the next Save (a duplicate).
-			const strip = (t: Snap): Snap => (t.pendingExtras.length ? { ...t, pendingExtras: [] } : t);
+			const flushed = new Set(action.extras ?? state.pendingExtras);
+			const remaining = (extras: EditorState['pendingExtras']) =>
+				extras.filter((extra) => !flushed.has(extra));
+			const strip = (t: Snap): Snap =>
+				t.pendingExtras.some((extra) => flushed.has(extra))
+					? { ...t, pendingExtras: remaining(t.pendingExtras) }
+					: t;
 			return {
 				...state,
-				pendingExtras: [],
+				pendingExtras: remaining(state.pendingExtras),
 				undoStack: state.undoStack.map(strip),
 				redoStack: state.redoStack.map(strip),
 				lastSnap: state.lastSnap ? strip(state.lastSnap) : null
@@ -670,10 +670,7 @@ const initial = (studio: boolean, seedMonitor: MonitorLayout): EditorState => ({
 	themeLock: true, // default: one theme across all monitors (Settings unlocks per-monitor themes)
 	globalTheme: '',
 	tokenOverrides: {},
-	editingDefId: null,
-	savedMonitor: null,
-	defEditBaseline: null,
-	previewDef: null,
+	mode: { kind: 'layout' },
 	undoStack: [],
 	redoStack: [],
 	lastSnap: null,

@@ -11,7 +11,7 @@ import {
 	loadThemeCss,
 	resolveThemeCss,
 	saveThemeCss
-} from '../../overlay';
+} from '../../bridge/themes';
 import { parseTokens, swatchFromTokens, type Swatch } from '../../core/tokens';
 import { builtinById, builtinIdOf } from '../../core/builtinThemes';
 import type { EditorModel } from './useEditorModel';

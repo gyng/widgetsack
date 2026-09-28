@@ -83,7 +83,7 @@ sysinfo / nvml-wrapper (CPU, mem, swap, net, GPU)        Home Assistant (WebSock
 Studio editor (useEditorModel reducer)              widgets.json (app config dir)
    │  usePersistence: invoke("save_layout", json)      │
    ▼                                                    ▼
-backend command.rs writes widgets.json ──▶ notify file watcher ──▶ emit("layout_changed")
+backend command/layouts.rs writes widgets.json ──▶ notify file watcher ──▶ emit("layout_changed")
                                                                        │
                                             useStudioInit.ts listens ──┘ ──▶ overlays reload
 ```
@@ -116,7 +116,8 @@ widgetsack/                 Rust / Tauri backend (the workspace member)
     process_diag.rs         Host-process CPU/mem snapshot for the studio Diagnostics panel
     log.rs                  Structured LogRecord logging (console + ring buffer)
     watchdog.rs             Main-thread stall watchdog → warn lines in the log when the UI thread stops answering
-    command.rs              #[tauri::command] handlers (layout/theme/sack I/O, fonts, devtools)
+    command.rs / command/   Capability-specific Tauri handlers (layouts, themes, packages, windows, …)
+    file_io.rs              Shared config root, filename validation and atomic file replacement
   tauri.conf.json           Window config, build hooks, bundle settings (product "widgetsack")
   capabilities/             Tauri capability files
   Cargo.toml
@@ -127,6 +128,9 @@ client/                     React frontend
     lib/
       core/                 Framework-agnostic DOMAIN — pure, NO React/Tauri imports, all tested
         layout.ts / layoutTree.ts   v1 + v2 (tree) layout grammar
+        editorMode.ts               explicit layout / definition / preview modes and projections
+        layoutPersistence.ts        pure Save/Revert write planning
+        disposalScope.ts            once-only cleanup, including late-acquired resources
         layoutEdit.ts               pure tree edit ops (insert/move/remove …)
         solve.ts                    layout solver → rects + renderables
         widget.ts                   widget meta API (ConfigField, getMeta, registerMeta)
@@ -143,7 +147,7 @@ client/                     React frontend
         useSensor.ts / telemetryContext.ts / meterProps.ts / ops.ts
         meters/                     presentational widgets (props-only): Gauge, Bar, Sparkline,
                                     Clock, Text, Button, Cpu, NowPlaying, Ha*  (+ *.test.tsx)
-        canvas/                     editor hooks: useEditorModel, usePersistence, useKeyboard,
+        canvas/                     editor hooks: useEditorModel, useLayoutSession, usePersistence, useKeyboard,
                                     useStudioInit, dragIntent, dropPlacement, … (+ *.test.ts)
         plugins/                    plugin registrations + Tauri command adapters:
                                     home-assistant / now-playing / mqtt / stocks / llm (ai-provider)
@@ -156,7 +160,8 @@ client/                     React frontend
         priority.ts + .test.ts      pure source-priority sort (domain) + tests
                                     (the cover is now a backend `art://` URL — see art.rs — not raw bytes)
       telemetry/source.ts   Tauri "telemetry" adapter → TelemetryHub
-      overlay.ts            Tauri window/monitor + file bridge (isStudioWindow, reconcileOverlays…)
+      overlay.ts            Overlay geometry, presentation and reconciliation; compatibility exports
+      bridge/               Capability adapters: layouts, themes, studio lifecycle, fonts, app services
       utils/monitor.ts      monitor helpers
     stores/
       stores.ts             mediaStore + TS types mirroring Rust + handle* reducers
@@ -343,7 +348,7 @@ Inner rings know nothing about outer rings — the domain must not import framew
         │   ┌────────────────────────────────────────────┐  │
         │   │  Application / Orchestration                │  │
         │   │  • main.rs (wires channels + builder)       │  │
-        │   │  • command.rs (#[tauri::command])           │  │
+        │   │  • command/* (#[tauri::command])           │  │
         │   │  • stores.ts handle*() + mediaStore         │  │
         │   │  • Canvas.tsx + canvas/ hooks (container)   │  │
         │   │   ┌─────────────────────────────────────┐   │  │

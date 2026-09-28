@@ -1,3 +1,4 @@
+import { editingDefinitionId, definitionBaseline } from '../../core/editorMode';
 // The Canvas editor model's reducer — driven through the hook because the reducer + Action union are
 // internal to useEditorModel (only the hook, the op helpers, and editHelpers are exported). This
 // file targets the reducer paths the existing canvas tests (previewTemplate / insertTemplate /
@@ -549,9 +550,9 @@ describe('history reset + baseline', () => {
 	it('setBaseline mid-def-edit also re-anchors the def-edit baseline to the scoped monitor', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		expect(result.current.state.editingDefId).not.toBeNull();
+		expect(editingDefinitionId(result.current.state.mode)).not.toBeNull();
 		act(() => result.current.dispatch({ type: 'setBaseline' }));
-		expect(result.current.state.defEditBaseline).toBe(result.current.state.monitor);
+		expect(definitionBaseline(result.current.state.mode)).toBe(result.current.state.monitor);
 	});
 });
 
@@ -562,9 +563,9 @@ describe('def-edit sub-reducer', () => {
 		act(() => result.current.dispatch({ type: 'newWidget' }));
 		const s = result.current.state;
 		expect(s.library?.defs).toHaveLength(1);
-		expect(s.editingDefId).toBe(s.library!.defs[0].id);
-		expect(s.savedMonitor).toBe(realMonitor); // the live layout is preserved untouched
-		expect(s.defEditBaseline).toBe(s.monitor); // scoped monitor as the def-edit baseline
+		expect(editingDefinitionId(s.mode)).toBe(s.library!.defs[0].id);
+		expect(s.mode.kind === 'layout' ? null : s.mode.desktop).toBe(realMonitor); // the live layout is preserved untouched
+		expect(definitionBaseline(s.mode)).toBe(s.monitor); // scoped monitor as the def-edit baseline
 		expect(s.selectedId).toBeNull();
 		expect(s.undoStack).toEqual([]); // history reset on entering the scope
 	});
@@ -572,11 +573,11 @@ describe('def-edit sub-reducer', () => {
 	it('newWidget is refused while already editing a def (would orphan savedMonitor)', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		const firstDefId = result.current.state.editingDefId;
+		const firstDefId = editingDefinitionId(result.current.state.mode);
 		const before = result.current.state;
 		act(() => result.current.dispatch({ type: 'newWidget' }));
 		expect(result.current.state).toBe(before); // unchanged
-		expect(result.current.state.editingDefId).toBe(firstDefId);
+		expect(editingDefinitionId(result.current.state.mode)).toBe(firstDefId);
 		expect(result.current.state.library?.defs).toHaveLength(1);
 	});
 
@@ -584,7 +585,7 @@ describe('def-edit sub-reducer', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		// Seed a library def, then leave def-edit so a clone is allowed.
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		const srcId = result.current.state.editingDefId!;
+		const srcId = editingDefinitionId(result.current.state.mode)!;
 		act(() => result.current.dispatch({ type: 'endDefEdit' }));
 
 		act(() => result.current.dispatch({ type: 'cloneDef', defId: srcId }));
@@ -592,14 +593,14 @@ describe('def-edit sub-reducer', () => {
 		expect(s.library?.defs).toHaveLength(2);
 		const copy = s.library!.defs.find((d) => d.id !== srcId)!;
 		expect(copy.name.endsWith('-copy')).toBe(true);
-		expect(s.editingDefId).toBe(copy.id);
+		expect(editingDefinitionId(s.mode)).toBe(copy.id);
 	});
 
 	it('cloneDef copies the source css + params by value onto the copy', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		// Seed a def carrying css + params (the optional fields cloneDef must carry over).
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		const srcId = result.current.state.editingDefId!;
+		const srcId = editingDefinitionId(result.current.state.mode)!;
 		act(() => result.current.dispatch({ type: 'endDefEdit' }));
 		act(() => result.current.handleOp({ op: 'setDefCss', defId: srcId, css: '.a{}' }));
 		act(() =>
@@ -627,7 +628,9 @@ describe('def-edit sub-reducer', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'newWidget' }));
 		const before = result.current.state;
-		act(() => result.current.dispatch({ type: 'cloneDef', defId: before.editingDefId! }));
+		act(() =>
+			result.current.dispatch({ type: 'cloneDef', defId: editingDefinitionId(before.mode)! })
+		);
 		expect(result.current.state).toBe(before);
 	});
 
@@ -642,25 +645,25 @@ describe('def-edit sub-reducer', () => {
 	it('enterDefEdit scopes the monitor to the def and stashes the real layout', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		const defId = result.current.state.editingDefId!;
+		const defId = editingDefinitionId(result.current.state.mode)!;
 		// Fold the open def first; now re-enter via the handleOp editDef path.
 		act(() => result.current.dispatch({ type: 'endDefEdit' }));
 		const realMonitor = result.current.state.monitor;
 		act(() => result.current.handleOp({ op: 'editDef', defId }));
 		const s = result.current.state;
-		expect(s.editingDefId).toBe(defId);
-		expect(s.savedMonitor).toBe(realMonitor);
+		expect(editingDefinitionId(s.mode)).toBe(defId);
+		expect(s.mode.kind === 'layout' ? null : s.mode.desktop).toBe(realMonitor);
 		expect(s.monitor.root.id).toContain(defId); // scopedMonitorFromDef rooted the def's child
 	});
 
 	it('enterDefEdit is refused while another def is already open', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		const open = result.current.state.editingDefId;
+		const open = editingDefinitionId(result.current.state.mode);
 		const before = result.current.state;
 		act(() => result.current.dispatch({ type: 'enterDefEdit', defId: 'whatever' }));
 		expect(result.current.state).toBe(before);
-		expect(result.current.state.editingDefId).toBe(open);
+		expect(editingDefinitionId(result.current.state.mode)).toBe(open);
 	});
 
 	it('enterDefEdit is a no-op for an unknown def id', () => {
@@ -673,7 +676,7 @@ describe('def-edit sub-reducer', () => {
 	it('endDefEdit writes back only the edited def; other library defs pass through untouched', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		const firstId = result.current.state.editingDefId!;
+		const firstId = editingDefinitionId(result.current.state.mode)!;
 		act(() => result.current.dispatch({ type: 'endDefEdit' }));
 		const firstDef = result.current.state.library!.defs.find((d) => d.id === firstId)!;
 		act(() => result.current.dispatch({ type: 'newWidget' })); // a second def, now being edited
@@ -687,7 +690,7 @@ describe('def-edit sub-reducer', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		const realMonitor = result.current.state.monitor;
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		const defId = result.current.state.editingDefId!;
+		const defId = editingDefinitionId(result.current.state.mode)!;
 		const seqBefore = result.current.state.saveSeq;
 		// Edit the scoped tree (add a widget into the def's root) before folding it back.
 		act(() => result.current.handleOp({ op: 'addWidget', widgetType: 'text' }));
@@ -695,8 +698,8 @@ describe('def-edit sub-reducer', () => {
 
 		act(() => result.current.dispatch({ type: 'endDefEdit' }));
 		const s = result.current.state;
-		expect(s.editingDefId).toBeNull();
-		expect(s.savedMonitor).toBeNull();
+		expect(editingDefinitionId(s.mode)).toBeNull();
+		expect(s.mode.kind === 'layout' ? null : s.mode.desktop).toBeNull();
 		expect(s.monitor).toBe(realMonitor); // back on the real layout
 		const def = s.library!.defs.find((d) => d.id === defId)!;
 		expect(def.child).toBe(editedScopedRoot); // the scoped edit was synced into the def
@@ -723,11 +726,11 @@ describe('def-edit sub-reducer', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'newFromTemplate', templateId: 'nowplaying' }));
 		const s = result.current.state;
-		expect(s.editingDefId).not.toBeNull();
+		expect(editingDefinitionId(s.mode)).not.toBeNull();
 		expect(s.monitor.root.kind).toBe('col');
-		expect(s.monitor.root.id).toBe(`${s.editingDefId}__root`);
+		expect(s.monitor.root.id).toBe(`${editingDefinitionId(s.mode)}__root`);
 		// The def itself keeps the raw leaf child (the synthesized root is only the EDITING scope).
-		const def = s.library!.defs.find((d) => d.id === s.editingDefId)!;
+		const def = s.library!.defs.find((d) => d.id === editingDefinitionId(s.mode))!;
 		expect(isLeaf(def.child)).toBe(true);
 	});
 });
@@ -929,7 +932,7 @@ describe('handleOp switch (Inspector / Outline / menu funnel)', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		// Seed a def via newWidget → endDefEdit so the library has one.
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		const defId = result.current.state.editingDefId!;
+		const defId = editingDefinitionId(result.current.state.mode)!;
 		act(() => result.current.dispatch({ type: 'endDefEdit' }));
 		act(() => result.current.handleOp({ op: 'insertWidget', defId }));
 		const grpId = result.current.state.selectedId!;
@@ -940,7 +943,7 @@ describe('handleOp switch (Inspector / Outline / menu funnel)', () => {
 	it('renameDef / setDefSize / setDefCss / addDefParam mutate a library def; deleteDef removes it', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		const defId = result.current.state.editingDefId!;
+		const defId = editingDefinitionId(result.current.state.mode)!;
 		act(() => result.current.dispatch({ type: 'endDefEdit' }));
 
 		act(() => result.current.handleOp({ op: 'renameDef', defId, name: 'renamed' }));
@@ -1067,9 +1070,9 @@ describe('handleOp switch (Inspector / Outline / menu funnel)', () => {
 	it('endDefEdit via handleOp folds the open def back', () => {
 		const { result } = renderHook(() => useEditorModel(true, []));
 		act(() => result.current.dispatch({ type: 'newWidget' }));
-		expect(result.current.state.editingDefId).not.toBeNull();
+		expect(editingDefinitionId(result.current.state.mode)).not.toBeNull();
 		act(() => result.current.handleOp({ op: 'endDefEdit' }));
-		expect(result.current.state.editingDefId).toBeNull();
+		expect(editingDefinitionId(result.current.state.mode)).toBeNull();
 	});
 });
 
@@ -1102,5 +1105,32 @@ describe('hook identity', () => {
 		expect(result.current.handleOp).toBe(first.handleOp);
 		expect(result.current.commitOp).toBe(first.commitOp);
 		expect(result.current.mutateNoSave).toBe(first.mutateNoSave);
+	});
+});
+
+describe('saved definition snapshots', () => {
+	it('keeps the desktop and the saved definition when reverting edits after a scoped Save', () => {
+		const { result } = renderModel();
+		const desktop = result.current.state.monitor;
+		act(() => result.current.dispatch({ type: 'newWidget' }));
+		const saved = { root: container('saved-definition', 'row', []), floating: [] };
+		act(() => result.current.commitOp(() => ({ monitor: saved })));
+		act(() => result.current.dispatch({ type: 'setBaseline' }));
+		act(() => result.current.commitOp(() => ({ monitor: oneWidgetMonitor('later') })));
+		act(() => result.current.dispatch({ type: 'revertToBaseline' }));
+		expect(result.current.state.monitor).toBe(desktop);
+		expect(result.current.state.library?.defs[0].child).toBe(saved.root);
+		expect(result.current.state.mode.kind).toBe('layout');
+	});
+	it('does not reopen a definition when its Save completes after leaving the designer', () => {
+		const { result } = renderModel();
+		const desktop = result.current.state.monitor;
+		act(() => result.current.dispatch({ type: 'newWidget' }));
+		const snapshot = result.current.state;
+		act(() => result.current.dispatch({ type: 'endDefEdit' }));
+		act(() => result.current.dispatch({ type: 'setBaseline', snapshot }));
+		expect(result.current.state.mode.kind).toBe('layout');
+		expect(result.current.state.monitor).toBe(desktop);
+		expect(result.current.state.savedBaseline?.monitor).toBe(desktop);
 	});
 });

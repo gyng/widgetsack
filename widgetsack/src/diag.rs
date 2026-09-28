@@ -58,7 +58,7 @@ pub fn reveal_log_dir(app: AppHandle) -> Result<(), String> {
 /// `invoke("reveal_sacks_dir")` from its "Open sacks folder" button.
 #[tauri::command]
 pub fn reveal_sacks_dir(app: AppHandle) -> Result<(), String> {
-    let dir = crate::command::config_root(&app)?.join("sacks");
+    let dir = crate::file_io::config_root(&app)?.join("sacks");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     std::process::Command::new("explorer.exe")
         .arg(&dir)

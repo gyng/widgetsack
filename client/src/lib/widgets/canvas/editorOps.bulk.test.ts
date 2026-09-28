@@ -29,6 +29,7 @@ const gauge = (id: string): WidgetInstance => createWidget('gauge', id);
 // root(col) > [ leaf w1, leaf w2 ]
 function stateWith(selectedId: string | null, selectedIds: string[]): EditorState {
 	return {
+		mode: { kind: 'layout' },
 		monitor: {
 			...emptyMonitorLayout(),
 			root: container('root', 'col', [leaf(gauge('w1')), leaf(gauge('w2'))])
@@ -40,10 +41,6 @@ function stateWith(selectedId: string | null, selectedIds: string[]): EditorStat
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,

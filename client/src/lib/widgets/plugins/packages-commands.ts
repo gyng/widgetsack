@@ -1,6 +1,6 @@
 // The plugin-package Tauri command adapter (outer ring) — every `invoke` behind a typed function,
 // so the packages module shares the command-name strings and tests can mock this module. The
-// read commands are dumb file I/O on the app-config `plugins/` dir (command.rs) and degrade to
+// read commands are dumb file I/O on the app-config `plugins/` dir (command/packages.rs) and degrade to
 // empty/null so a broken folder can never take the studio down; the remote-install commands
 // PROPAGATE failures instead — the Plugins panel shows the reason to the user.
 

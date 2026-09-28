@@ -414,7 +414,7 @@ pub async fn save_stocks_config(
         poll_interval_secs: poll_seconds.clamp(MIN_INTERVAL, MAX_INTERVAL),
     };
     let txt = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
-    crate::command::atomic_write(&path, &txt)
+    crate::file_io::atomic_write(&path, &txt)
 }
 
 /// The (non-secret) config.

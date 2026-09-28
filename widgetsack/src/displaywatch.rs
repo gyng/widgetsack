@@ -236,7 +236,7 @@ fn recover_overlays(app: &tauri::AppHandle, reason: &'static str) {
     let labels: Vec<&str> = windows.keys().map(String::as_str).collect();
     let respawn = should_respawn_on_display_change(&labels);
     if respawn {
-        crate::command::respawn_main_hidden(app, reason);
+        crate::command::windows::respawn_main_hidden(app, reason);
     }
     // This reaches surviving overlays even when topology and their outer rect are identical
     // after wake. Their refit handler also reapplies click-through and the selected layer.

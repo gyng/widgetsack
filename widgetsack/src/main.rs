@@ -13,7 +13,7 @@ use tauri::{Emitter, Manager, State};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use tokio::sync::mpsc;
 
-use crate::command::get_initial_sessions;
+use crate::command::sessions::get_initial_sessions;
 use crate::event::emit_to_bridge;
 use crate::state::updater;
 
@@ -30,6 +30,7 @@ pub mod diag;
 pub mod display;
 pub mod displaywatch;
 pub mod event;
+mod file_io;
 pub mod ha;
 pub mod keepalive;
 pub mod listener;
@@ -115,7 +116,7 @@ fn launched_with_studio_flag() -> bool {
 /// Whether this process should run as an independent EXTRA instance — typically a dev/debug build run
 /// alongside the installed release. When set, the single-instance lock is skipped (so this process
 /// doesn't just focus the already-running one and exit) AND the config dir is isolated to a `multi/`
-/// subfolder (see `command::config_root`), so it never clobbers the release's widgets.json / themes /
+/// subfolder (see `file_io::config_root`), so it never clobbers the release's widgets.json / themes /
 /// layouts. Enabled by the `--multi` flag or `WIDGETSACK_MULTI=1`. Memoized — args/env are fixed for
 /// the process lifetime.
 pub fn multi_instance() -> bool {
@@ -257,7 +258,7 @@ async fn main() -> Result<(), ()> {
         .manage(AppState {
             sessions: Default::default(),
         })
-        .manage(command::LayoutIoState::default())
+        .manage(command::layouts::LayoutIoState::default())
         // Album-art store: covers are served to the webview over the `art` URI scheme (below)
         // instead of being shipped as JSON byte arrays. See art.rs.
         .manage(art::ArtState::default())
@@ -281,46 +282,46 @@ async fn main() -> Result<(), ()> {
         .invoke_handler(tauri::generate_handler![
             get_initial_sessions,
             is_dev_instance,
-            command::load_layout,
-            command::save_layout,
-            command::backup_layout,
-            command::window_state_hints,
+            command::layouts::load_layout,
+            command::layouts::save_layout,
+            command::layouts::backup_layout,
+            command::layouts::window_state_hints,
             keepalive::main_reclaimed,
-            command::load_controls,
-            command::save_controls,
+            command::controls::load_controls,
+            command::controls::save_controls,
             windowmgr::list_windows,
             windowmgr::snap_window,
             windowmgr::pointer_probe,
-            command::list_themes,
-            command::load_theme,
-            command::save_theme,
-            command::delete_theme,
-            command::list_wallpapers,
-            command::wallpaper_path,
-            command::open_wallpapers_dir,
-            command::list_sacks,
-            command::read_sack,
-            command::write_sack,
-            command::list_plugin_packages,
-            command::read_plugin_package_asset,
-            command::install_plugin_package,
-            command::check_plugin_package_update,
-            command::remove_plugin_package,
-            command::package_fetch,
-            command::set_package_enabled,
-            command::list_layouts,
-            command::read_layout,
-            command::save_layout_as,
-            command::delete_layout,
-            command::open_devtools,
-            command::list_window_labels,
-            command::open_devtools_for,
-            command::set_window_interactive,
-            command::rescue_windows,
-            command::reload_window,
-            command::log_diag,
-            command::log_client,
-            command::check_app_update,
+            command::themes::list_themes,
+            command::themes::load_theme,
+            command::themes::save_theme,
+            command::themes::delete_theme,
+            command::wallpapers::list_wallpapers,
+            command::wallpapers::wallpaper_path,
+            command::wallpapers::open_wallpapers_dir,
+            command::sacks::list_sacks,
+            command::sacks::read_sack,
+            command::sacks::write_sack,
+            command::packages::list_plugin_packages,
+            command::packages::read_plugin_package_asset,
+            command::packages::install_plugin_package,
+            command::packages::check_plugin_package_update,
+            command::packages::remove_plugin_package,
+            command::packages::package_fetch,
+            command::packages::set_package_enabled,
+            command::layouts::list_layouts,
+            command::layouts::read_layout,
+            command::layouts::save_layout_as,
+            command::layouts::delete_layout,
+            command::windows::open_devtools,
+            command::windows::list_window_labels,
+            command::windows::open_devtools_for,
+            command::windows::set_window_interactive,
+            command::windows::rescue_windows,
+            command::windows::reload_window,
+            command::logging::log_diag,
+            command::logging::log_client,
+            command::application::check_app_update,
             update::get_app_update,
             update::get_app_prefs,
             update::set_update_check,
@@ -328,7 +329,7 @@ async fn main() -> Result<(), ()> {
             diag::log_file_path,
             diag::reveal_log_dir,
             diag::reveal_sacks_dir,
-            command::system_fonts,
+            command::fonts::system_fonts,
             display::list_display_names,
             ddc::list_monitor_inputs,
             ddc::set_monitor_input,
@@ -462,22 +463,22 @@ async fn main() -> Result<(), ()> {
                 control::start_if_enabled(control_handle.clone(), &state).await;
             });
 
-            if let Err(err) = command::watch_layout(app.handle().clone()) {
+            if let Err(err) = command::layouts::watch_layout(app.handle().clone()) {
                 log::error("startup", "failed to start layout watcher")
                     .field("error", err)
                     .emit();
             }
 
             // Control remaps (controls.json): live-reload on external edits / cross-window saves.
-            if let Err(err) = command::watch_controls(app.handle().clone()) {
+            if let Err(err) = command::controls::watch_controls(app.handle().clone()) {
                 log::error("startup", "failed to start controls watcher")
                     .field("error", err)
                     .emit();
             }
 
             // Themes (Phase 7c): seed example themes on first run + watch the folder.
-            command::seed_themes(&app.handle().clone());
-            if let Err(err) = command::watch_themes(app.handle().clone()) {
+            command::themes::seed_themes(&app.handle().clone());
+            if let Err(err) = command::themes::watch_themes(app.handle().clone()) {
                 log::error("startup", "failed to start themes watcher")
                     .field("error", err)
                     .emit();
@@ -571,7 +572,7 @@ async fn main() -> Result<(), ()> {
                         // hidden primary driver; its startup reconciles secondaries and then reclaims
                         // itself again when the primary layout is still empty.
                         if app.get_webview_window("main").is_none() {
-                            command::respawn_main_hidden(app, "tray refit");
+                            command::windows::respawn_main_hidden(app, "tray refit");
                         }
                         // Re-fit every surviving overlay to the current display layout.
                         let _ = app.emit(bridge::REFIT_OVERLAYS_EVENT, ());
@@ -635,7 +636,7 @@ async fn main() -> Result<(), ()> {
                 app.global_shortcut()
                     .on_shortcut(rescue_shortcut, |app, _shortcut, event| {
                         if event.state() == ShortcutState::Pressed {
-                            command::rescue_all(app);
+                            command::windows::rescue_all(app);
                         }
                     })
             {

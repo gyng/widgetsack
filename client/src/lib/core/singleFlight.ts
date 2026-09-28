@@ -19,7 +19,15 @@ export function singleFlight<T>(fn: () => Promise<T>): () => Promise<T> {
 		| null = null;
 
 	const start = (): Promise<T> => {
-		const run = fn().finally(() => {
+		// A promise-returning adapter can throw before returning its promise. Normalize that
+		// failure so it cannot escape the previous run's finally and strand trailing callers.
+		let operation: Promise<T>;
+		try {
+			operation = fn();
+		} catch (err) {
+			operation = Promise.reject(err);
+		}
+		const run = operation.finally(() => {
 			current = null;
 			if (trailingWaiters) {
 				const waiters = trailingWaiters;

@@ -16,6 +16,7 @@ import { createWidget } from '../../core/widget';
 // savedMonitor) need to be real; the rest are filled to satisfy the type.
 function makeState(monitor: MonitorLayout, over: Partial<EditorState> = {}): EditorState {
 	return {
+		mode: { kind: 'layout' },
 		monitor,
 		library: { version: 1, defs: [] },
 		selectedId: null,
@@ -24,10 +25,6 @@ function makeState(monitor: MonitorLayout, over: Partial<EditorState> = {}): Edi
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,

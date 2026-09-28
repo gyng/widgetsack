@@ -22,6 +22,7 @@ const w = (id: string, tokens?: Record<string, string>) =>
 
 function stub(root: Container, floating: MonitorLayout['floating'] = []): EditorState {
 	return {
+		mode: { kind: 'layout' },
 		monitor: { root, floating } as MonitorLayout,
 		library: undefined,
 		selectedId: null,
@@ -30,10 +31,6 @@ function stub(root: Container, floating: MonitorLayout['floating'] = []): Editor
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,

@@ -8,7 +8,7 @@ import type { LayoutOp } from '../ops';
 // section's file listing, and the patch/kind/clear op dispatch.
 const listWallpapers = vi.fn();
 const wallpaperAssetUrl = vi.fn();
-vi.mock('../../overlay', () => ({
+vi.mock('../../bridge/wallpapers', () => ({
 	listWallpapers: () => listWallpapers(),
 	wallpaperAssetUrl: (n: string) => wallpaperAssetUrl(n)
 }));

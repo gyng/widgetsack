@@ -4,7 +4,7 @@
 // (drag/marquee/pan bookkeeping, measured stage size, zoom) lives in refs/hooks, not here —
 // it was never part of an undo snapshot or a disk write.
 
-import type { Library, MonitorLayout, WidgetDef } from '../../core/layoutTree';
+import type { Library, MonitorLayout } from '../../core/layoutTree';
 
 /** An undo/redo snapshot of the editable state: the {monitor, library} pair plus everything else a
  * commit can change — the queued cross-monitor moves, the token overrides, the selected theme and
@@ -21,18 +21,8 @@ export type Snap = {
 
 /** The last-persisted snapshot (studio manual-save): `dirty` compares the live editor state to
  * it; Cancel reverts to it. Captured on load and after every Save. */
-export type Baseline = {
-	monitor: MonitorLayout;
-	library: Library | undefined;
-	theme: string;
-	themeLock: boolean;
-	/** Saved global inherit-theme, distinct from `theme` when per-monitor themes are unlocked. */
-	globalTheme?: string;
-	tokens: Record<string, string>;
-};
-
-/** A floating leaf queued for ANOTHER monitor's layout (a cross-monitor move), merged on Save. */
-export type Extra = { key: string; leaf: import('../../core/layoutTree').Leaf };
+export type { Baseline, Extra } from '../../core/layoutPersistence';
+import type { Baseline, Extra } from '../../core/layoutPersistence';
 
 /** Studio monitor-switcher option (device name + logical size per per-monitor key). */
 export type MonitorOption = { key: string; label: string; name: string; w: number; h: number };
@@ -56,17 +46,7 @@ export type EditorState = {
 	/** Last loaded global inherit-theme; `selectedTheme` may instead be this monitor's override. */
 	globalTheme?: string;
 	tokenOverrides: Record<string, string>;
-	// Def editor (6b): while editing a def, `monitor` is the scoped tree and the real monitor is
-	// stashed in `savedMonitor`. `defEditBaseline` is the scoped tree as of def-edit START, so the
-	// Save indicator (`dirty`) can tell whether the in-progress def has been edited yet (Svelte got
-	// this for free because persistToDisk→syncEditingDef reassigned `library` mid-edit).
-	editingDefId: string | null;
-	savedMonitor: MonitorLayout | null;
-	defEditBaseline: MonitorLayout | null;
-	// Template preview (read-only): clicking a template previews it without cloning into the library.
-	// The transient def lives HERE (not in `library`), `editingDefId` points at it so the canvas sizes
-	// to it, and the preview is locked + discardable. The Clone button promotes it into the library.
-	previewDef: WidgetDef | null;
+	mode: import('../../core/editorMode').EditorMode;
 	// Undo/redo (item 2).
 	undoStack: Snap[];
 	redoStack: Snap[];

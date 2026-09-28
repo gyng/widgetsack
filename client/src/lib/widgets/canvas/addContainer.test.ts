@@ -5,6 +5,7 @@ import type { EditorState } from './types';
 
 function stub(root: Container, selectedId: string | null = null): EditorState {
 	return {
+		mode: { kind: 'layout' },
 		monitor: { root, floating: [] } as MonitorLayout,
 		library: undefined,
 		selectedId,
@@ -13,10 +14,6 @@ function stub(root: Container, selectedId: string | null = null): EditorState {
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,

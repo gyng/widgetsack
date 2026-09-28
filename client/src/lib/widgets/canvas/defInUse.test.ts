@@ -10,6 +10,7 @@ const instanceOf = (defId: string) =>
 function stub(over: Partial<EditorState>): EditorState {
 	const empty: MonitorLayout = { root: container('root', 'col', []), floating: [] };
 	return {
+		mode: { kind: 'layout' },
 		monitor: empty,
 		library: { version: 1, defs: [] },
 		selectedId: null,
@@ -18,10 +19,6 @@ function stub(over: Partial<EditorState>): EditorState {
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,
@@ -53,7 +50,10 @@ describe('defInUse (guards widget deletion)', () => {
 			floating: [instanceOf('def-x')]
 		};
 		const scoped: MonitorLayout = { root: container('scoped', 'col', []), floating: [] };
-		const s = stub({ editingDefId: 'def-y', savedMonitor, monitor: scoped });
+		const s = stub({
+			mode: { kind: 'definition', defId: 'def-y', desktop: savedMonitor, baseline: scoped },
+			monitor: scoped
+		});
 		expect(defInUse(s, 'def-x')).toBe(true);
 	});
 });

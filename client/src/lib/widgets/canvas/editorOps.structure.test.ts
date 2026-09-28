@@ -28,6 +28,7 @@ import type { EditorState } from './types';
 
 function minimalState(root: Container): EditorState {
 	return {
+		mode: { kind: 'layout' },
 		monitor: { root, floating: [] },
 		library: undefined,
 		selectedId: null,
@@ -36,10 +37,6 @@ function minimalState(root: Container): EditorState {
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,

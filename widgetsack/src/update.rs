@@ -5,7 +5,7 @@
 //! relabels the tray's "Update available: vX.Y.Z" item — which opens the release page through
 //! `open_url` (ShellExecuteW, restricted to the project's own https://github.com/ URLs).
 //!
-//! The manual About-panel check (`command::check_app_update`) funnels through `publish` too, so
+//! The manual About-panel check (`command::application::check_app_update`) funnels through `publish` too, so
 //! the tray + studio badge reflect whichever check ran last. Pure seams (`tray_label`,
 //! `url_allowed`, `parse_prefs`) hold the logic and the tests.
 //!
@@ -19,7 +19,7 @@ use std::time::Duration;
 use tauri::menu::MenuItem;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
-use crate::command::{AppUpdate, fetch_app_update};
+use crate::command::application::{AppUpdate, fetch_app_update};
 use crate::log;
 
 /// Tauri event carrying the latest successful `AppUpdate` to every webview. Mirrored in
@@ -66,7 +66,7 @@ pub fn parse_prefs(json: &str) -> AppPrefs {
 }
 
 fn prefs_path(app: &AppHandle) -> Option<std::path::PathBuf> {
-    crate::command::config_root(app)
+    crate::file_io::config_root(app)
         .ok()
         .map(|d| d.join(PREFS_FILE))
 }
@@ -85,7 +85,7 @@ fn save_prefs(app: &AppHandle, prefs: &AppPrefs) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let json = serde_json::to_string_pretty(prefs).map_err(|e| e.to_string())?;
-    crate::command::atomic_write(&path, &json)
+    crate::file_io::atomic_write(&path, &json)
 }
 
 /// Studio: the current preferences.

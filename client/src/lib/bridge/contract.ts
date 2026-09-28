@@ -13,7 +13,7 @@ export const EVENTS = {
 	sessionCreate: 'session_create',
 	sessionUpdate: 'session_update',
 	sessionDelete: 'session_delete',
-	// config-file watchers (command.rs)
+	// config-file watchers (command/)
 	layoutChanged: 'layout_changed',
 	themesChanged: 'themes_changed',
 	controlsChanged: 'controls_changed',
@@ -38,13 +38,13 @@ export const EVENTS = {
 /** Tauri invoke command names (TS `invoke` → the `#[tauri::command]` fns registered in
  * widgetsack/src/main.rs `invoke_handler`; a command's wire name IS its Rust fn name). */
 export const COMMANDS = {
-	// media / now-playing (command.rs, media.rs)
+	// media / now-playing (command/sessions.rs, media.rs)
 	getInitialSessions: 'get_initial_sessions',
 	// dev/extra-instance flag (main.rs) — drives the studio's "dev" badge
 	isDevInstance: 'is_dev_instance',
 	mediaControl: 'media_control',
 	mediaCapabilities: 'media_capabilities',
-	// layout persistence + saved layout profiles (command.rs)
+	// layout persistence + saved layout profiles (command/)
 	loadLayout: 'load_layout',
 	saveLayout: 'save_layout',
 	backupLayout: 'backup_layout',
@@ -55,23 +55,23 @@ export const COMMANDS = {
 	readLayout: 'read_layout',
 	saveLayoutAs: 'save_layout_as',
 	deleteLayout: 'delete_layout',
-	// control remaps (command.rs)
+	// control remaps (command/)
 	loadControls: 'load_controls',
 	saveControls: 'save_controls',
-	// themes (command.rs)
+	// themes (command/)
 	listThemes: 'list_themes',
 	loadTheme: 'load_theme',
 	saveTheme: 'save_theme',
 	deleteTheme: 'delete_theme',
-	// wallpapers (command.rs)
+	// wallpapers (command/)
 	listWallpapers: 'list_wallpapers',
 	wallpaperPath: 'wallpaper_path',
 	openWallpapersDir: 'open_wallpapers_dir',
-	// sacks (command.rs)
+	// sacks (command/)
 	listSacks: 'list_sacks',
 	readSack: 'read_sack',
 	writeSack: 'write_sack',
-	// third-party plugin packages (command.rs)
+	// third-party plugin packages (command/)
 	listPluginPackages: 'list_plugin_packages',
 	readPluginPackageAsset: 'read_plugin_package_asset',
 	installPluginPackage: 'install_plugin_package',
@@ -91,7 +91,7 @@ export const COMMANDS = {
 	listMonitorInputs: 'list_monitor_inputs',
 	setMonitorInput: 'set_monitor_input',
 	setMonitorVolume: 'set_monitor_volume',
-	// devtools / diagnostics / recovery (command.rs, process_diag.rs, log.rs)
+	// devtools / diagnostics / recovery (command/logging.rs, command/windows.rs, process_diag.rs, log.rs)
 	openDevtools: 'open_devtools',
 	listWindowLabels: 'list_window_labels',
 	openDevtoolsFor: 'open_devtools_for',
@@ -104,7 +104,7 @@ export const COMMANDS = {
 	setSubsystemProfiling: 'set_subsystem_profiling',
 	subsystemTimings: 'subsystem_timings',
 	getLogs: 'get_logs',
-	// app update check — GitHub latest release vs the running version (command.rs)
+	// app update check — GitHub latest release vs the running version (command/)
 	checkAppUpdate: 'check_app_update',
 	// background update check (update.rs): last result + open the release page in the browser
 	getAppUpdate: 'get_app_update',
@@ -116,7 +116,7 @@ export const COMMANDS = {
 	logFilePath: 'log_file_path',
 	revealLogDir: 'reveal_log_dir',
 	revealSacksDir: 'reveal_sacks_dir',
-	// fonts (command.rs)
+	// fonts (command/)
 	systemFonts: 'system_fonts',
 	// sensors / telemetry demand-gating (sensors.rs)
 	setActiveSensors: 'set_active_sensors',
@@ -186,7 +186,7 @@ export const COMMANDS = {
 } as const;
 
 /**
- * Payload of `layout_changed`. An app `save_layout` (command.rs) names the WINDOW that wrote the
+ * Payload of `layout_changed`. An app `save_layout` (command/) names the WINDOW that wrote the
  * file (its Tauri label: 'studio', 'main', 'overlay-<key>'…) so an editor can tell its own save from
  * another window's; the file watcher's emit for an external edit carries no payload (`null`).
  */

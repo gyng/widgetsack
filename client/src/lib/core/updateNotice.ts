@@ -3,7 +3,7 @@
 // wire → domain mapping and the little bits of presentation logic the About tab + nav badge share,
 // so they can't drift from each other and are unit-tested without a window.
 
-/** Result of a release check. Mirrors `AppUpdate` in widgetsack/src/command.rs (camelCased). */
+/** Result of a release check. Mirrors `AppUpdate` in widgetsack/src/command/application.rs (camelCased). */
 export type AppUpdate = {
 	current: string;
 	latest: string;

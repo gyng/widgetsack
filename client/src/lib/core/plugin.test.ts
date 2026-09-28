@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTelemetryHub } from './telemetry';
 import {
 	listSources,
@@ -9,7 +9,53 @@ import {
 	unregisterSource
 } from './plugin';
 
+afterEach(() => {
+	for (const source of listSources()) unregisterSource(source.id);
+	vi.restoreAllMocks();
+});
+
 describe('sensor sources', () => {
+	it('isolates synchronous startup failures so later sources still start', async () => {
+		const error = new Error('invalid source configuration');
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		registerSource({
+			id: 'broken',
+			start: () => {
+				throw error;
+			}
+		});
+		const stopped = vi.fn();
+		registerSource({
+			id: 'healthy',
+			start: async (hub) => {
+				hub.ingest({ sensor: 'healthy', ts_ms: 0, value: { kind: 'scalar', value: 7 } });
+				return stopped;
+			}
+		});
+		const hub = createTelemetryHub();
+		const stop = await startAllSources(hub);
+		expect(hub.sensorIds()).toContain('healthy');
+		expect(warn).toHaveBeenCalledWith('source "broken" failed to start', error);
+		stop();
+		expect(stopped).toHaveBeenCalledOnce();
+	});
+
+	it('stops every source even if an earlier cleanup throws', async () => {
+		const error = new Error('cleanup failed');
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		registerSource({
+			id: 'broken',
+			start: async () => () => {
+				throw error;
+			}
+		});
+		const stopped = vi.fn();
+		registerSource({ id: 'healthy', start: async () => stopped });
+		const stop = await startAllSources(createTelemetryHub());
+		expect(() => stop()).not.toThrow();
+		expect(stopped).toHaveBeenCalledOnce();
+		expect(warn).toHaveBeenCalledWith('source "broken" failed to stop', error);
+	});
 	it('starts all registered sources against the hub and stops them', async () => {
 		let stopped = 0;
 		registerSource({

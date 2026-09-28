@@ -1,3 +1,4 @@
+import { listen } from '@tauri-apps/api/event';
 // The init must make every window role reveal itself from its OWN webview: a secondary overlay
 // (?monitor=<key>) self-fits + shows via fillOwnMonitor — the spawn-side `tauri://created` setup
 // dies with its creator when an empty-primary `main` self-destructs (renderer reclaim), which left
@@ -239,5 +240,25 @@ describe('useStudioInit layout_changed routing', () => {
 		await waitFor(() => expect(deps.syncPrimaryOverlays).toHaveBeenCalledTimes(1));
 		expect(deps.reloadLayout).toHaveBeenCalledTimes(1);
 		expect(deps.onForeignLayoutChange).not.toHaveBeenCalled();
+	});
+});
+
+describe('useStudioInit resource ownership', () => {
+	it('unsubscribes a late listener once and does not continue startup after unmount', async () => {
+		let resolve!: (stop: () => void) => void;
+		vi.mocked(listen).mockImplementationOnce(
+			() =>
+				new Promise((r) => {
+					resolve = r;
+				})
+		);
+		const deps = makeDeps({ studio: true });
+		const { unmount } = renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(resolve).toBeDefined());
+		unmount();
+		const stop = vi.fn();
+		resolve(stop);
+		await waitFor(() => expect(stop).toHaveBeenCalledOnce());
+		expect(deps.updateWorkArea).not.toHaveBeenCalled();
 	});
 });

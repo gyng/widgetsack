@@ -74,6 +74,7 @@ function monitorWith(id = 'w1'): MonitorLayout {
 // A minimal EditorState — only the persistence-relevant slice is read by the hook.
 function editorState(over: Partial<EditorState> = {}): EditorState {
 	return {
+		mode: { kind: 'layout' },
 		monitor: monitorWith(),
 		library: undefined,
 		selectedId: null,
@@ -82,10 +83,6 @@ function editorState(over: Partial<EditorState> = {}): EditorState {
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,
@@ -231,10 +228,14 @@ describe('persistToDisk — widgets.json assembly', () => {
 		const { result } = renderHook(() =>
 			usePersistence(
 				editorState({
-					editingDefId: 'd1',
+					mode: {
+						kind: 'definition',
+						defId: 'd1',
+						desktop: realMonitor,
+						baseline: { root: editingChild, floating: [] }
+					},
 					library,
-					monitor: { root: editingChild, floating: [] }, // the scoped editing tree
-					savedMonitor: realMonitor // the real layout to persist
+					monitor: { root: editingChild, floating: [] }
 				}),
 				'mon-A'
 			)
@@ -269,10 +270,14 @@ describe('persistToDisk — widgets.json assembly', () => {
 		const { result } = renderHook(() =>
 			usePersistence(
 				editorState({
-					editingDefId: 'd1',
+					mode: {
+						kind: 'definition',
+						defId: 'd1',
+						desktop: monitorWith('real'),
+						baseline: { root: editingChild, floating: [] }
+					},
 					library,
-					monitor: { root: editingChild, floating: [] },
-					savedMonitor: monitorWith('real')
+					monitor: { root: editingChild, floating: [] }
 				}),
 				'mon-A'
 			)
@@ -675,6 +680,19 @@ describe('writeBaseline — revert path', () => {
 });
 
 describe('debounced preview write', () => {
+	it('flushing a preview after a monitor switch never writes the new monitor', async () => {
+		vi.useFakeTimers();
+		const { result, rerender } = renderHook(({ key }) => usePersistence(editorState(), key), {
+			initialProps: { key: 'mon-A' }
+		});
+		act(() => result.current.schedulePreviewWrite());
+		rerender({ key: 'mon-B' });
+		await act(async () => {
+			expect(await result.current.flushPreviewWrite()).toBe(false);
+		});
+		expect(savedContents).toBeNull();
+		expect(result.current.previewPending()).toBe(false);
+	});
 	it('schedulePreviewWrite fires a persistToDisk ~150ms later', async () => {
 		vi.useFakeTimers();
 		const { result } = renderHook(() => usePersistence(editorState(), 'mon-A'));

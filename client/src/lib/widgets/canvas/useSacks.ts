@@ -56,7 +56,7 @@ export function sackSummary(info: SackInfo): string {
 	return parts.length ? parts.join(' · ') : 'empty';
 }
 
-/** The export name rule, mirroring the backend allowlist (command.rs valid_sack_name): 1–64 chars of
+/** The export name rule, mirroring the backend allowlist (file_io.rs valid_name): 1–64 chars of
  * letters, digits, spaces, `_` and `-`. Returns the user-facing problem, or null when the name is fine. */
 export function sackNameError(name: string): string | null {
 	const n = name.trim();

@@ -1,3 +1,4 @@
+import { emptyMonitorLayout } from '../../core/layoutTree';
 // Behavior tests for the def/library + small-utility editorOps: insertWidget, insertTemplate,
 // defInUse, renameDef, deleteDef, cfgNum, clone, rand. These are PURE ops — each returns a Patch
 // (Partial<EditorState>) the reducer applies via spread; they never mutate the input. We assert on
@@ -39,6 +40,7 @@ const CLOCK = 'clock-jp'; // a built-in template id
 function state(over: Partial<EditorState> = {}): EditorState {
 	const monitor: MonitorLayout = { root: container('root', 'col', []), floating: [] };
 	return {
+		mode: { kind: 'layout' },
 		monitor,
 		library: undefined,
 		selectedId: null,
@@ -47,10 +49,6 @@ function state(over: Partial<EditorState> = {}): EditorState {
 		selectedTheme: '',
 		themeLock: true,
 		tokenOverrides: {},
-		editingDefId: null,
-		savedMonitor: null,
-		defEditBaseline: null,
-		previewDef: null,
 		undoStack: [],
 		redoStack: [],
 		lastSnap: null,
@@ -345,7 +343,10 @@ describe('defInUse', () => {
 			floating: [instanceOf('def-x')]
 		};
 		const scoped: MonitorLayout = { root: container('scoped', 'col', []), floating: [] };
-		const s = state({ editingDefId: 'def-y', savedMonitor, monitor: scoped });
+		const s = state({
+			mode: { kind: 'definition', defId: 'def-y', desktop: savedMonitor, baseline: scoped },
+			monitor: scoped
+		});
 		expect(defInUse(s, 'def-x')).toBe(true);
 	});
 
@@ -355,7 +356,10 @@ describe('defInUse', () => {
 			root: container('scoped', 'col', [instanceOf('def-x')]),
 			floating: []
 		};
-		const s = state({ editingDefId: 'def-y', savedMonitor, monitor: scoped });
+		const s = state({
+			mode: { kind: 'definition', defId: 'def-y', desktop: savedMonitor, baseline: scoped },
+			monitor: scoped
+		});
 		expect(defInUse(s, 'def-x')).toBe(true);
 	});
 });
@@ -423,8 +427,13 @@ describe('deleteDef', () => {
 	it('refuses to delete the def currently being edited (returns empty patch)', () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const s = state({
-			library: { version: 1, defs: [gaugeDef('def-1')] },
-			editingDefId: 'def-1'
+			mode: {
+				kind: 'definition',
+				defId: 'def-1',
+				desktop: emptyMonitorLayout(),
+				baseline: emptyMonitorLayout()
+			},
+			library: { version: 1, defs: [gaugeDef('def-1')] }
 		});
 		expect(deleteDef(s, 'def-1')).toEqual({});
 		expect(warn).toHaveBeenCalledOnce();

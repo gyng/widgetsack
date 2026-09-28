@@ -13,48 +13,17 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from '../../bridge/contract';
-import { emptyRoot, type Library, type LayoutV2, type MonitorLayout } from '../../core/layoutTree';
+import type { Library } from '../../core/layoutTree';
+import {
+	planLayoutSave,
+	planLayoutRevert,
+	type PersistView,
+	type LayoutFile,
+	type LayoutWritePlan
+} from '../../core/layoutPersistence';
 import { parseLayoutAny } from '../../core/migration';
 import { writeQueue } from '../../core/writeQueue';
 import type { Baseline, EditorState, Extra } from './types';
-
-// A frozen view of the persistence-relevant state, captured each render into a ref so the
-// debounced writer reads the LATEST values when it fires (no stale closure).
-type PersistView = {
-	myMonitor: string;
-	monitor: MonitorLayout;
-	library: Library | undefined;
-	selectedTheme: string;
-	themeLock: boolean;
-	globalTheme: string | undefined;
-	tokenOverrides: Record<string, string>;
-	editingDefId: string | null;
-	savedMonitor: MonitorLayout | null;
-	savedBaseline: Baseline | null;
-	studio: boolean;
-};
-
-type GlobalField = 'library' | 'theme' | 'themeLock' | 'tokens';
-
-const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-
-function touchedGlobals(
-	current: Pick<PersistView, 'selectedTheme' | 'themeLock' | 'tokenOverrides'> & {
-		library: Library | undefined;
-	},
-	baseline: Baseline | null
-): GlobalField[] {
-	if (!baseline) return ['library', 'theme', 'themeLock', 'tokens'];
-	const touched: GlobalField[] = [];
-	if (!sameJson(current.library, baseline.library)) touched.push('library');
-	if (current.themeLock !== baseline.themeLock) {
-		touched.push('theme', 'themeLock');
-	} else if (current.themeLock && current.selectedTheme !== baseline.theme) {
-		touched.push('theme');
-	}
-	if (!sameJson(current.tokenOverrides, baseline.tokens)) touched.push('tokens');
-	return touched;
-}
 
 export type Persistence = {
 	// Flush the debounced preview write now (Save): writes incl. queued cross-monitor moves. Resolves
@@ -88,15 +57,6 @@ export type PersistenceOptions = {
 	layoutBackedUp?: () => boolean;
 };
 
-// The persistence-relevant slice of the on-disk widgets.json: the OTHER monitors + the global
-// library/theme that a write merges around this monitor's record.
-type LayoutFile = {
-	monitors: LayoutV2['monitors'];
-	fileLib: Library | undefined;
-	fileTheme: string | undefined;
-	recoverCorrupt: boolean;
-};
-
 // Re-read widgets.json before a write. Resolves `null` (→ the write is refused) when the file can't
 // be read, or when it reads but doesn't parse and has NOT been backed up yet. With a backup in place
 // an unparseable file is read as empty: whatever was recoverable is already in widgets.json.bad-*.
@@ -124,6 +84,16 @@ async function readLayoutFile(backedUp: boolean): Promise<LayoutFile | null> {
 	}
 }
 
+async function writePlan({ document, ...fields }: LayoutWritePlan): Promise<boolean> {
+	try {
+		await invoke(COMMANDS.saveLayout, { contents: JSON.stringify(document, null, 2), ...fields });
+		return true;
+	} catch (err) {
+		console.warn('save_layout failed', err);
+		return false;
+	}
+}
+
 export function usePersistence(
 	state: EditorState,
 	myMonitor: string,
@@ -143,10 +113,8 @@ export function usePersistence(
 		themeLock: state.themeLock,
 		globalTheme: state.globalTheme,
 		tokenOverrides: state.tokenOverrides,
-		editingDefId: state.editingDefId,
-		savedMonitor: state.savedMonitor,
-		savedBaseline: state.savedBaseline,
-		studio: state.studio
+		mode: state.mode,
+		savedBaseline: state.savedBaseline
 	});
 	// Refresh the mirror in a commit effect (not during render); the debounced writer + Save read
 	// view.current later (via setTimeout / a button press), never synchronously in this render.
@@ -159,10 +127,8 @@ export function usePersistence(
 			themeLock: state.themeLock,
 			globalTheme: state.globalTheme,
 			tokenOverrides: state.tokenOverrides,
-			editingDefId: state.editingDefId,
-			savedMonitor: state.savedMonitor,
-			savedBaseline: state.savedBaseline,
-			studio: state.studio
+			mode: state.mode,
+			savedBaseline: state.savedBaseline
 		};
 	});
 
@@ -172,74 +138,22 @@ export function usePersistence(
 	// on-disk library stays in sync without mutating reducer state.
 	const queue = useRef<ReturnType<typeof writeQueue> | null>(null);
 	if (!queue.current) queue.current = writeQueue();
-	const persistNow = useCallback(async (extras: Extra[], key: string): Promise<boolean> => {
-		const v = view.current;
-		if (v.myMonitor !== key) return false; // the studio switched monitors since → stale, skip
-		const file = await readLayoutFile(optionsRef.current.layoutBackedUp?.() ?? false);
-		if (!file) return false;
-		const { monitors, fileLib, fileTheme } = file;
-		// While editing a def, fold the in-progress def back into the library + persist the REAL
-		// monitor (not the scoped editing tree). (Svelte's syncEditingDef() + savedMonitor swap.)
-		let library = v.library;
-		if (v.editingDefId && library) {
-			const child = v.monitor.root;
-			const defId = v.editingDefId;
-			library = {
-				...library,
-				defs: library.defs.map((d) => (d.id === defId ? { ...d, child } : d))
-			};
-		}
-		// Theme placement depends on the lock. LOCKED: the selection is the GLOBAL theme (out.theme,
-		// below) and this monitor carries no override. UNLOCKED: pin the selection on THIS monitor's
-		// record so each display can differ; other monitors keep whatever override they already had.
-		const monitorOut = v.editingDefId && v.savedMonitor ? v.savedMonitor : v.monitor;
-		const monitorNoTheme: MonitorLayout = { ...monitorOut };
-		delete monitorNoTheme.theme; // strip any stale per-monitor theme; re-add only when unlocked
-		monitors[v.myMonitor] = v.themeLock
-			? monitorNoTheme
-			: { ...monitorNoTheme, theme: v.selectedTheme };
-		for (const extra of extras) {
-			if (extra.key === v.myMonitor) continue;
-			/* v8 ignore next -- extras normally originate from existing monitor layouts; fallback repairs old drafts. */
-			const t = monitors[extra.key] ?? { root: emptyRoot(), floating: [] };
-			// Spread `t` so a non-widget monitor field (e.g. its `background`) survives the append of a
-			// pending extra leaf, instead of being rebuilt away.
-			monitors[extra.key] = { ...t, floating: [...t.floating, extra.leaf] };
-		}
-		const globalFields = touchedGlobals({ ...v, library }, v.savedBaseline);
-		const tokens = v.tokenOverrides;
-		const out: Record<string, unknown> = { version: 2, monitors };
-		if (library !== undefined) out.library = library;
-		else if (!globalFields.includes('library') && fileLib) out.library = fileLib;
-		// LOCKED → the selection IS the global theme (every monitor uses it). UNLOCKED → preserve the
-		// existing global as the inherit-default (the per-monitor override rides on the record above).
-		const globalTheme = globalFields.includes('theme')
-			? v.themeLock
-				? v.selectedTheme
-				: fileTheme
-			: fileTheme;
-		if (globalTheme) out.theme = globalTheme;
-		if (!v.themeLock) out.themeLock = false; // absent ⇒ locked (the default), so only write when off
-		if (tokens && Object.keys(tokens).length) out.tokens = tokens;
-		try {
-			await invoke(COMMANDS.saveLayout, {
-				contents: JSON.stringify(out, null, 2),
-				touchedMonitors: [...new Set([v.myMonitor, ...extras.map((extra) => extra.key)])],
-				touchedGlobals: globalFields,
-				...(file.recoverCorrupt ? { recoverCorrupt: true } : {})
-			});
-			return true;
-		} catch (err) {
-			console.warn('save_layout failed', err);
-			return false;
-		}
-	}, []);
+	const persistNow = useCallback(
+		async (extras: Extra[], key: string, v = view.current): Promise<boolean> => {
+			if (view.current.myMonitor !== key) return false; // the studio switched monitors since → stale, skip
+			const file = await readLayoutFile(optionsRef.current.layoutBackedUp?.() ?? false);
+			if (!file) return false;
+			return writePlan(planLayoutSave(file, v, extras));
+		},
+		[]
+	);
 	const persistToDisk = useCallback(
 		(extras: Extra[]): Promise<boolean> => {
-			const key = view.current.myMonitor;
+			const snapshot = view.current;
+			const key = snapshot.myMonitor;
 			// An explicit Save must run even if a newer preview is queued behind it: it may carry
 			// cross-monitor moves which preview writes do not include.
-			return queue.current!.enqueue(() => persistNow(extras, key));
+			return queue.current!.enqueue(() => persistNow(extras, key, snapshot));
 		},
 		[persistNow]
 	);
@@ -251,46 +165,15 @@ export function usePersistence(
 		async (b: Baseline, myMonitor: string, v: PersistView): Promise<boolean> => {
 			const file = await readLayoutFile(optionsRef.current.layoutBackedUp?.() ?? false);
 			if (!file) return false;
-			const { monitors, fileLib, fileTheme } = file;
-			const baseNoTheme: MonitorLayout = { ...b.monitor };
-			delete baseNoTheme.theme;
-			monitors[myMonitor] = b.themeLock ? baseNoTheme : { ...baseNoTheme, theme: b.theme };
-			const globalFields = touchedGlobals(v, b);
-			const globalTheme = globalFields.includes('theme')
-				? b.themeLock
-					? b.theme
-					: (b.globalTheme ?? fileTheme)
-				: fileTheme;
-			const tokens = b.tokens;
-			const out: Record<string, unknown> = { version: 2, monitors };
-			if (b.library !== undefined) out.library = b.library;
-			else {
-				/* v8 ignore next -- baseline libraries are initialized; fallback protects legacy v1 files. */
-				if (!globalFields.includes('library') && fileLib) out.library = fileLib;
-			}
-			if (globalTheme) out.theme = globalTheme;
-			if (!b.themeLock) out.themeLock = false; // absent ⇒ locked (the default)
-			if (tokens && Object.keys(tokens).length) out.tokens = tokens;
-			try {
-				await invoke(COMMANDS.saveLayout, {
-					contents: JSON.stringify(out, null, 2),
-					touchedMonitors: [myMonitor],
-					touchedGlobals: globalFields,
-					...(file.recoverCorrupt ? { recoverCorrupt: true } : {})
-				});
-				return true;
-			} catch (err) {
-				console.warn('save_layout failed', err);
-				return false;
-			}
+			return writePlan(planLayoutRevert(file, b, myMonitor, v));
 		},
 		[]
 	);
 
-	const previewTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+	const preview = useRef<{ timer: ReturnType<typeof setTimeout>; key: string } | null>(null);
 	const clearPreviewWrite = useCallback(() => {
-		clearTimeout(previewTimer.current);
-		previewTimer.current = undefined;
+		clearTimeout(preview.current?.timer);
+		preview.current = null;
 	}, []);
 	const writeBaseline = useCallback(
 		(b: Baseline, key: string): Promise<boolean> => {
@@ -302,26 +185,28 @@ export function usePersistence(
 		[clearPreviewWrite, writeBaselineNow]
 	);
 	const schedulePreviewWrite = useCallback(() => {
-		clearTimeout(previewTimer.current);
+		clearPreviewWrite();
 		// Capture the monitor the edit belongs to NOW: if the timer fires after a monitor switch,
 		// persistNow sees the key mismatch and skips instead of writing under the new key.
 		const key = view.current.myMonitor;
-		previewTimer.current = setTimeout(() => {
-			previewTimer.current = undefined;
+		const timer = setTimeout(() => {
+			preview.current = null;
 			void queue
 				.current!.enqueue(() => persistNow([], key), key)
 				.then((ok) => optionsRef.current.onPreviewWriteResult?.(ok));
 		}, 150);
-	}, [persistNow]);
+		preview.current = { timer, key };
+	}, [clearPreviewWrite, persistNow]);
 	const flushPreviewWrite = useCallback(async (): Promise<boolean> => {
-		if (previewTimer.current !== undefined) {
+		if (preview.current) {
+			const { key } = preview.current;
 			clearPreviewWrite();
-			await persistToDisk([]);
+			await queue.current!.enqueue(() => persistNow([], key), key);
 		}
 		return queue.current!.flush();
-	}, [clearPreviewWrite, persistToDisk]);
+	}, [clearPreviewWrite, persistNow]);
 	const previewPending = useCallback(
-		() => previewTimer.current !== undefined || queue.current!.pending(),
+		() => preview.current !== null || queue.current!.pending(),
 		[]
 	);
 
