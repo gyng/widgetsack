@@ -62,3 +62,31 @@ it('serializes acquisition and processing and invalidates processing on unmount'
 	finish();
 	await processing;
 });
+
+it('does not process audio whose stop finishes after unmount', async () => {
+	let resolve!: (value: { bytes: Uint8Array; mime: string }) => void;
+	const cancel = vi.fn();
+	vi.mocked(startRecording).mockResolvedValueOnce({
+		cancel,
+		stop: () =>
+			new Promise((r) => {
+				resolve = r;
+			})
+	});
+	const consume = vi.fn();
+	const { result, unmount } = renderHook(() => useRecording(consume));
+	await act(async () => {
+		await result.current.toggle();
+	});
+	let pending!: Promise<void>;
+	act(() => {
+		pending = result.current.toggle();
+	});
+	unmount();
+	await act(async () => {
+		resolve({ bytes: new Uint8Array(), mime: 'audio/webm' });
+		await pending;
+	});
+	expect(cancel).toHaveBeenCalledOnce();
+	expect(consume).not.toHaveBeenCalled();
+});

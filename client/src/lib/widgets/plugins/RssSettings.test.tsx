@@ -202,3 +202,11 @@ describe('RssSettings', () => {
 		expect(url.value).toBe('');
 	});
 });
+
+it('reports save failure without showing Saved', async () => {
+	vi.mocked(saveRssConfig).mockRejectedValueOnce(new Error('disk full'));
+	const { getByText, findByText } = renderPanel();
+	await waitFor(() => expect((getByText(/Save/) as HTMLButtonElement).disabled).toBe(false));
+	fireEvent.click(getByText(/Save/));
+	expect(await findByText(/Couldn.t save: disk full/)).toBeTruthy();
+});

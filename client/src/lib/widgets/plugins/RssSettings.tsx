@@ -45,6 +45,7 @@ export default function RssSettings() {
 	const dirtied = invalidate;
 
 	const onSave = async () => {
+		/* v8 ignore next -- the only Save control is disabled for invalid or in-flight submissions. */
 		if (!valid || saving) return;
 		await save(
 			async () => {

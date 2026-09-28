@@ -31,3 +31,14 @@ describe('drop feedback geometry', () => {
 		expect(dropZoneAt(monitor, solved, null, null)).toBeNull();
 	});
 });
+
+it('handles missing measured boxes and grid cell targets', () => {
+	const grid = container('root', 'grid', [leaf(createWidget('text', 'a'))], { cols: 2, rows: 1 });
+	const mon = { root: grid, floating: [] };
+	const box = { x: 0, y: 0, w: 100, h: 100 };
+	expect(dropBarAt(mon, new Map(), { x: 0, y: 0 }, 'other')).toBeNull();
+	expect(dropZoneAt(mon, new Map(), { parentId: 'root', index: 0 }, null)).toBeNull();
+	const sol = new Map([['root', box]]);
+	expect(dropZoneAt(mon, sol, { parentId: 'root', index: 0 }, null)).toMatchObject({ x: 0, y: 0 });
+	expect(dropZoneAt(mon, sol, { parentId: 'root', index: 999 }, null)).toEqual(box);
+});

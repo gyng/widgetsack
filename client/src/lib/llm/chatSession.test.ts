@@ -62,3 +62,44 @@ it('never starts a send cancelled while waiting for the listener', async () => {
 	expect(llmStream).not.toHaveBeenCalled();
 	expect(release).toHaveBeenCalledOnce();
 });
+
+import { acquireChatSession } from './chatSession';
+it('isolates cancellation and cleanup failures and makes release idempotent', async () => {
+	const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+	vi.mocked(startLlmSource).mockResolvedValueOnce(() => {
+		throw new Error('unlisten failed');
+	});
+	vi.mocked(llmCancel).mockRejectedValueOnce(new Error('cancel failed'));
+	const { result, unmount } = renderHook(useLlmChat);
+	const release = acquireChatSession();
+	await act(async () => {
+		await result.current.send('hello');
+	});
+	unmount();
+	release();
+	release();
+	await Promise.resolve();
+	expect(warn).toHaveBeenCalledWith('chat listener cleanup failed', expect.any(Error));
+	warn.mockRestore();
+});
+it('ignores a stream-start failure after reset', async () => {
+	let reject!: (error: Error) => void;
+	vi.mocked(llmStream).mockImplementationOnce(
+		() =>
+			new Promise((_, no) => {
+				reject = no;
+			})
+	);
+	const { result } = renderHook(useLlmChat);
+	let pending!: Promise<string>;
+	await act(async () => {
+		pending = result.current.send('hello');
+		await Promise.resolve();
+	});
+	act(() => result.current.reset());
+	await act(async () => {
+		reject(new Error('old'));
+		await pending;
+	});
+	expect(result.current.chat.turns).toEqual([]);
+});

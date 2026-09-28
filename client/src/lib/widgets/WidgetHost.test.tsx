@@ -835,3 +835,24 @@ describe('WidgetHost keyboard tab stops + zoom-independent resize handles', () =
 		expect(box.style.getPropertyValue('--hs')).toBe('8px');
 	});
 });
+
+it('cancels a stationary floating gesture without requesting a commit', () => {
+	const cancel = vi.fn();
+	const { container } = render(
+		<WidgetHost
+			hub={createTelemetryHub()}
+			instance={{
+				id: 'cancel-still',
+				type: 'test.scalar',
+				rect: { x: 0, y: 0, w: 100, h: 50 },
+				config: {}
+			}}
+			editMode
+			onCancel={cancel}
+		/>
+	);
+	const ov = container.querySelector('.drag-overlay')!;
+	fireEvent.pointerDown(ov, { button: 0, pointerId: 1, clientX: 0, clientY: 0 });
+	fireEvent.pointerCancel(ov, { pointerId: 1 });
+	expect(cancel).toHaveBeenCalledWith({ commit: false });
+});

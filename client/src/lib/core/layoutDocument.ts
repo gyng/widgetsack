@@ -48,9 +48,9 @@ export function decodeLayoutDocument(contents: string | null): DecodedLayoutDocu
 						)
 					)
 				: {},
-		droppedMonitors:
-			raw.monitors && typeof raw.monitors === 'object'
-				? Object.keys(raw.monitors).filter((key) => !Object.hasOwn(layout.monitors, key))
-				: []
+		// parseLayoutAny validates the monitors object before returning a layout.
+		droppedMonitors: Object.keys(raw.monitors as Record<string, unknown>).filter(
+			(key) => !Object.hasOwn(layout.monitors, key)
+		)
 	};
 }

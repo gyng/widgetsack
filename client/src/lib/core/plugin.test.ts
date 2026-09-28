@@ -156,3 +156,9 @@ describe('sensor sources', () => {
 		unregisterSource('pkg:wx'); // absent → no-op, no throw
 	});
 });
+
+it('catalogs tolerate sources that contribute no ids', () => {
+	registerSource({ id: 'empty', start: async () => () => undefined });
+	expect(sourceCatalogIds()).toEqual([]);
+	expect(sourceCatalogEntries()).toEqual([]);
+});

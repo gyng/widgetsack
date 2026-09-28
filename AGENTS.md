@@ -224,7 +224,9 @@ the working-directory-aware tools.
 
 ### Before you call a change "done"
 Run the same gates CI runs ([.github/workflows/test.yml](.github/workflows/test.yml)):
-- Client: `npm run check && npm run lint && npm run test:unit && npm run build`
+- Client: `npm run check && npm run lint && npm run test:coverage && npm run build`
+- Coverage is a CI gate: run `npm run test:coverage`, not only `test:unit`. The included unit-test
+  scope requires 100% coverage; preserve documented IO/E2E exclusions when extracting files.
 - Docs freshness (if you touched a widget meta): `npm run check:docs` — fails when
   [docs/widgets.md](docs/widgets.md) drifts from the widget registry; run `npm run gen:docs` to refresh.
 - Client E2E (if you touched the studio UI/layout): `npm run test:e2e` — Playwright drives the

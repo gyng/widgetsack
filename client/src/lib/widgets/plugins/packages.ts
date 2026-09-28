@@ -353,7 +353,7 @@ export async function initPackages(hub: TelemetryHub): Promise<void> {
 async function togglePackageNow(
 	id: string,
 	enabled: boolean,
-	confirmEnable: (message: string) => boolean = () => true
+	confirmEnable: (message: string) => boolean
 ): Promise<void> {
 	const d = discovered.get(id);
 	if (!d?.manifest) return; // unknown / unparsed → not toggleable

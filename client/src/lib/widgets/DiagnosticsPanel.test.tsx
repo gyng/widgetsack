@@ -53,6 +53,7 @@ vi.mock('../overlay', () => ({
 import DiagnosticsPanel from './DiagnosticsPanel';
 import {
 	getProcessDiagnostics,
+	listenDiagReports,
 	getSubsystemTimings,
 	listWindowLabels,
 	openDevtoolsFor,
@@ -521,4 +522,22 @@ describe('DiagnosticsPanel logs pane', () => {
 		expect(await findByText('copy failed')).toBeTruthy();
 		expect(vi.mocked(copyToClipboard).mock.calls[0][0]).toContain('(none reported)');
 	});
+});
+
+it('survives failed report-listener registration and still disposes', async () => {
+	const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+	vi.mocked(listenDiagReports).mockRejectedValueOnce(new Error('bridge unavailable'));
+	const { unmount } = render(<DiagnosticsPanel />);
+	await waitFor(() =>
+		expect(warn).toHaveBeenCalledWith(
+			'diagnostics report listener registration failed',
+			expect.any(Error)
+		)
+	);
+	unmount();
+	await act(async () => {
+		await Promise.resolve();
+	});
+	expect(setSubsystemProfiling).toHaveBeenCalledWith(false);
+	warn.mockRestore();
 });

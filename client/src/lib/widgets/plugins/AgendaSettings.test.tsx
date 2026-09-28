@@ -254,3 +254,26 @@ describe('AgendaSettings', () => {
 		expect(getByText(/Error/)).toBeTruthy();
 	});
 });
+
+it('reports save failure without showing Saved', async () => {
+	vi.mocked(saveAgendaConfig).mockRejectedValueOnce(new Error('disk full'));
+	const { getByText, findByText } = renderPanel();
+	await waitFor(() => expect((getByText(/Save/) as HTMLButtonElement).disabled).toBe(false));
+	fireEvent.click(getByText(/Save/));
+	expect(await findByText(/Couldn.t save: disk full/)).toBeTruthy();
+});
+
+it('uses a generic saved placeholder when the stored feed has no hostname', async () => {
+	vi.mocked(agendaConfigStatus).mockResolvedValueOnce({
+		configured: true,
+		host: '',
+		title: '',
+		pollSeconds: 1800
+	});
+	const { container } = renderPanel();
+	await waitFor(() =>
+		expect(
+			(container.querySelector('input[inputmode="url"]') as HTMLInputElement).placeholder
+		).toContain('saved')
+	);
+});

@@ -378,3 +378,61 @@ it('shares one stop completion and releases tracks on automatic stop', async () 
 	expect(stop).toHaveBeenCalledTimes(2);
 	await automatic.stop();
 });
+
+it.each(['queued', 'stop-error', 'blob-error', 'cancel'])(
+	'settles recorder terminal path %s once',
+	async (mode) => {
+		const tracks = [{ stop: vi.fn() }];
+		const made: Fake[] = [];
+		class Fake {
+			state = 'recording';
+			mimeType = 'audio/webm';
+			onstop: (() => void) | null = null;
+			onerror: (() => void) | null = null;
+			ondataavailable: ((event: { data: Blob }) => void) | null = null;
+			constructor() {
+				made.push(this);
+			}
+			start() {}
+			stop() {
+				if (mode === 'stop-error') throw new Error('stop failed');
+				this.state = 'inactive';
+				this.onstop?.();
+			}
+		}
+		vi.stubGlobal('MediaRecorder', Fake);
+		vi.stubGlobal('navigator', {
+			mediaDevices: { getUserMedia: async () => ({ getTracks: () => tracks }) }
+		});
+		vi.stubGlobal(
+			'Blob',
+			class {
+				type = 'audio/webm';
+				constructor() {
+					if (mode === 'blob-error') throw new Error('blob failed');
+				}
+				arrayBuffer() {
+					return Promise.resolve(new ArrayBuffer(0));
+				}
+			}
+		);
+		const capture = await startRecording();
+		const rec = made[0];
+		if (mode === 'queued') {
+			rec.state = 'inactive';
+			const pending = capture.stop();
+			rec.onstop?.();
+			await pending;
+		} else if (mode === 'cancel') {
+			capture.cancel();
+			capture.cancel();
+			rec.ondataavailable?.({ data: { size: 1 } as Blob });
+			rec.onstop?.();
+			await expect(capture.stop()).rejects.toThrow('cancelled');
+		} else
+			await expect(capture.stop()).rejects.toThrow(
+				mode === 'stop-error' ? 'stop failed' : 'blob failed'
+			);
+		expect(tracks[0].stop).toHaveBeenCalledOnce();
+	}
+);

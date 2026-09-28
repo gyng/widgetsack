@@ -829,3 +829,39 @@ it('replaces an old dictation error with the next generation result', async () =
 	fireEvent.click(getByText(/Generate/));
 	expect(await findByText(/Updated — 1 change/)).toBeTruthy();
 });
+
+it('ignores agent-control changes while saving and discards dictation after unmount', async () => {
+	let saved!: () => void;
+	vi.mocked(saveLlmConfig).mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				saved = resolve;
+			})
+	);
+	const { container, getByText, unmount } = renderPanel();
+	await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+	fireEvent.click(button(container, 'Save'));
+	const toggle = [...container.querySelectorAll('input[type="checkbox"]')].find((c) =>
+		c.closest('label')?.textContent?.includes('agent control')
+	)!;
+	fireEvent.click(toggle);
+	expect(saveLlmConfig).toHaveBeenCalledOnce();
+	await act(async () => saved());
+	let transcribed!: (text: string) => void;
+	vi.mocked(startRecording).mockResolvedValueOnce({
+		cancel: vi.fn(),
+		stop: async () => ({ bytes: new Uint8Array(), mime: 'audio/webm' })
+	});
+	vi.mocked(llmTranscribe).mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				transcribed = resolve;
+			})
+	);
+	fireEvent.click(getByText('🎤 Speak'));
+	await waitFor(() => expect(getByText('■ Stop')).toBeTruthy());
+	fireEvent.click(getByText('■ Stop'));
+	await waitFor(() => expect(llmTranscribe).toHaveBeenCalled());
+	unmount();
+	await act(async () => transcribed('late text'));
+});

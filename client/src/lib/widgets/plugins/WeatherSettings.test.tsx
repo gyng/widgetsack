@@ -234,3 +234,11 @@ describe('WeatherSettings', () => {
 		expect(unit.value).toBe('celsius');
 	});
 });
+
+it('reports save failure without showing Saved', async () => {
+	vi.mocked(saveWeatherConfig).mockRejectedValueOnce(new Error('disk full'));
+	const { getByText, findByText } = renderPanel();
+	await waitFor(() => expect((getByText(/Save/) as HTMLButtonElement).disabled).toBe(false));
+	fireEvent.click(getByText(/Save/));
+	expect(await findByText(/Couldn.t save: disk full/)).toBeTruthy();
+});

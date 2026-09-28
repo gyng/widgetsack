@@ -83,3 +83,24 @@ it('only applies the newest result within a request category', async () => {
 	await first;
 	expect(apply).toHaveBeenCalledExactlyOnceWith('new');
 });
+
+it('ignores failed saves and probes after the form changes', async () => {
+	const { result } = renderHook(useSettingsOperations);
+	const failed = vi.fn();
+	const a = deferred<void>();
+	const b = deferred<void>();
+	let saving!: Promise<void>;
+	let probe!: Promise<void>;
+	act(() => {
+		saving = result.current.save(() => a.promise);
+		probe = result.current.latest('test', () => b.promise, vi.fn(), failed);
+		result.current.invalidate();
+	});
+	await act(async () => {
+		a.reject('old save');
+		b.reject('old probe');
+		await Promise.all([saving, probe]);
+	});
+	expect(result.current.error).toBeNull();
+	expect(failed).not.toHaveBeenCalled();
+});

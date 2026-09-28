@@ -63,6 +63,9 @@ export default defineConfig({
 				'src/lib/devMock.ts',
 				// e2e-driven (Playwright)
 				'src/lib/widgets/Canvas.tsx',
+				// Extracted Canvas orchestration retains the same Playwright coverage boundary.
+				'src/lib/widgets/canvas/useCanvasDrag.ts',
+				'src/lib/widgets/canvas/useLayoutSession.ts',
 				// DOM-measurement glue: reads getBoundingClientRect off every [data-id] + reacts to
 				// Resize/MutationObserver (happy-dom returns zero rects). Its pure seam screenRectToLayout
 				// is unit-tested in core/measureMath.test.ts; the rest is runtime/e2e only.
@@ -86,6 +89,8 @@ export default defineConfig({
 				'src/lib/widgets/plugins/index.ts',
 				// Tauri IO adapters (invoke/listen/emit + window/monitor manipulation)
 				'src/lib/overlay.ts',
+				// Capability adapters extracted from overlay.ts (same invoke/window IO boundary).
+				'src/lib/bridge/{application,controls,fonts,foreignWindows,layouts,logging,sacks,studioWindow,themes,wallpapers}.ts',
 				'src/lib/diag.ts',
 				'src/lib/utils/**',
 				'src/lib/audio/**',

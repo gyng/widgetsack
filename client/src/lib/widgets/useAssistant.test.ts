@@ -238,3 +238,24 @@ describe('useAssistant', () => {
 		expect(llmComplete.mock.calls.length).toBeGreaterThan(afterSameMinute);
 	});
 });
+
+it('ignores a provider failure after unmount', async () => {
+	let reject!: (error: Error) => void;
+	llmComplete.mockImplementationOnce(
+		() =>
+			new Promise((_, no) => {
+				reject = no;
+			})
+	);
+	const { result, unmount } = renderHook(() => useAssistant(cfg()), { wrapper });
+	let pending!: Promise<void>;
+	act(() => {
+		pending = result.current.refresh();
+	});
+	unmount();
+	await act(async () => {
+		reject(new Error('late'));
+		await pending;
+	});
+	expect(speakSmart).not.toHaveBeenCalled();
+});

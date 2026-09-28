@@ -15,6 +15,7 @@ export function dropBarAt(
 		if (!r) continue;
 		if (p.x < r.x || p.x >= r.x + r.w || p.y < r.y || p.y >= r.y + r.h) continue;
 		const parent = findParent(mon.root, lf.id);
+		/* v8 ignore next -- flowLeaves only yields descendants of this same root, each with a parent. */
 		if (!parent) continue;
 		if (parent.kind === 'col') {
 			const after = p.y >= r.y + r.h / 2;

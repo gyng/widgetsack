@@ -295,3 +295,16 @@ it('finishes an interrupted group drag once and clears its active state', () => 
 	expect(onCancel).toHaveBeenCalledExactlyOnceWith({ commit: true });
 	expect(box(container).classList.contains('active')).toBe(false);
 });
+
+it.each([false, true])(
+	'pointer cancellation without an owner commits only a moved group (%s)',
+	(moved) => {
+		const commit = vi.fn();
+		const { container } = render(<GroupFrame id="grp-1" rect={rect} editMode onCommit={commit} />);
+		const ov = overlay(container);
+		fireEvent.pointerDown(ov, { button: 0, pointerId: 1, clientX: 0, clientY: 0 });
+		if (moved) fireEvent.pointerMove(ov, { pointerId: 1, clientX: 40, clientY: 0 });
+		fireEvent.pointerCancel(ov, { pointerId: 1 });
+		expect(commit).toHaveBeenCalledTimes(moved ? 1 : 0);
+	}
+);

@@ -38,6 +38,7 @@ export function useDiagnostics() {
 		});
 		void setSubsystemProfiling(true);
 		const poll = async () => {
+			/* v8 ignore next -- cleanup clears the interval; only an already-queued callback can arrive here. */
 			if (!alive) return;
 			setCosts(widgetCosts());
 			setNow(performance.now());

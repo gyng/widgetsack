@@ -165,6 +165,7 @@ export default function LlmSettings() {
 	});
 
 	const onSave = async () => {
+		/* v8 ignore next -- the only Save control is disabled for invalid or in-flight submissions. */
 		if (!canSubmit) return;
 		setTest({ kind: 'idle' });
 		setModelsState({ kind: 'idle' });

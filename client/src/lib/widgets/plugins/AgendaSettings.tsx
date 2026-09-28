@@ -61,6 +61,7 @@ export default function AgendaSettings() {
 	const dirtied = invalidate;
 
 	const onSave = async () => {
+		/* v8 ignore next -- the only Save control is disabled for invalid or in-flight submissions. */
 		if (!valid || saving) return;
 		const next = url.trim();
 		await save(
