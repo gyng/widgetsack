@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { Layout as LayoutV1, WidgetInstance } from './layout';
 import { emptyRoot, type MonitorLayout } from './layoutTree';
 import { migrateMonitorKeys, migrateV1, parseLayoutAny, parseLayoutNode } from './migration';
@@ -294,7 +294,6 @@ describe('parseLayoutAny', () => {
 	});
 
 	it('drops ONLY an unparseable monitor entry (named on the console) and keeps the rest', () => {
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const r = parseLayoutAny({
 			version: 2,
 			monitors: {
@@ -308,10 +307,6 @@ describe('parseLayoutAny', () => {
 		expect(r).not.toBeNull();
 		expect(Object.keys(r!.monitors)).toEqual(['good']);
 		expect(r!.monitors.good.root.id).toBe('g');
-		expect(warn).toHaveBeenCalledTimes(2);
-		expect(warn.mock.calls[0][0]).toContain('"bad"');
-		expect(warn.mock.calls[1][0]).toContain('"alsoBad"');
-		warn.mockRestore();
 	});
 
 	it('rejects an array for monitors (must be a Record)', () => {
@@ -334,34 +329,28 @@ describe('parseLayoutAny', () => {
 	});
 
 	it('drops a monitor entry that is null (the raw === null guard)', () => {
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		expect(parseLayoutAny({ version: 2, monitors: { m: null } })).toEqual({
 			version: 2,
 			monitors: {}
 		});
-		warn.mockRestore();
 	});
 
 	it('drops a monitor whose floating is present but not an array', () => {
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		expect(
 			parseLayoutAny({
 				version: 2,
 				monitors: { m: { root: { id: 'r', kind: 'col', children: [] }, floating: 42 } }
 			})?.monitors
 		).toEqual({});
-		warn.mockRestore();
 	});
 
 	it('fails (drops) the monitor when the container id is not a string', () => {
-		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		expect(
 			parseLayoutAny({
 				version: 2,
 				monitors: { m: { root: { id: 5, kind: 'col', children: [] } } }
 			})?.monitors
 		).toEqual({});
-		warn.mockRestore();
 	});
 
 	it('defaults floating to [] when the key is absent (not undefined-but-present)', () => {

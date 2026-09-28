@@ -1,4 +1,4 @@
-use super::http::{FETCH_CAP, install_http_client};
+use super::http::{install_http_client, read_body_capped};
 use serde::Serialize;
 
 /// GitHub releases API for the app's own repo — the manual "check for updates" source (the app
@@ -69,7 +69,6 @@ fn app_update_from_release(json: &serde_json::Value, current: &str) -> Result<Ap
 /// GitHub REST API requires a User-Agent (so the plain `fetch_text_capped` client can't be reused
 /// as-is); the body is still read under the same `FETCH_CAP` so a hostile response can't balloon.
 pub async fn fetch_app_update(app: &tauri::AppHandle) -> Result<AppUpdate, String> {
-    use futures_util::StreamExt;
     let current = app.package_info().version.to_string();
     let client = install_http_client()?;
     let resp = client
@@ -90,24 +89,9 @@ pub async fn fetch_app_update(app: &tauri::AppHandle) -> Result<AppUpdate, Strin
         }
         return Err(format!("update check failed: HTTP {status}"));
     }
-    if let Some(len) = resp.content_length()
-        && len > FETCH_CAP as u64
-    {
-        return Err(format!(
-            "update check failed: response too large ({len} bytes)"
-        ));
-    }
-    let mut buf: Vec<u8> = Vec::new();
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| format!("update check failed mid-body: {e}"))?;
-        if buf.len() + bytes.len() > FETCH_CAP {
-            return Err(format!(
-                "update check failed: response exceeded the {FETCH_CAP}-byte cap"
-            ));
-        }
-        buf.extend_from_slice(&bytes);
-    }
+    let buf = read_body_capped(resp)
+        .await
+        .map_err(|e| format!("update check failed: {e}"))?;
     let json: serde_json::Value =
         serde_json::from_slice(&buf).map_err(|e| format!("update check failed: {e}"))?;
     app_update_from_release(&json, &current)

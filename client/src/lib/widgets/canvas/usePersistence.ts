@@ -13,7 +13,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from '../../bridge/contract';
-import type { Library } from '../../core/layoutTree';
 import {
 	planLayoutSave,
 	planLayoutRevert,
@@ -21,7 +20,7 @@ import {
 	type LayoutFile,
 	type LayoutWritePlan
 } from '../../core/layoutPersistence';
-import { parseLayoutAny } from '../../core/migration';
+import { decodeLayoutDocument } from '../../core/layoutDocument';
 import { writeQueue } from '../../core/writeQueue';
 import type { Baseline, EditorState, Extra } from './types';
 
@@ -63,20 +62,17 @@ export type PersistenceOptions = {
 async function readLayoutFile(backedUp: boolean): Promise<LayoutFile | null> {
 	try {
 		const raw = await invoke<string | null>(COMMANDS.loadLayout);
-		let obj: Record<string, unknown> | null = null;
-		let recoverCorrupt = false;
-		try {
-			obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
-		} catch (err) {
-			if (!backedUp) throw err;
-			recoverCorrupt = true;
-			console.warn('widgets.json is unparseable but backed up; writing a fresh file over it', err);
-		}
+		const decoded = decodeLayoutDocument(raw);
+		const damaged =
+			decoded.kind === 'corrupt' ||
+			(decoded.kind === 'valid' && decoded.droppedMonitors.length > 0);
+		if (damaged && !backedUp) throw new Error('layout is damaged and has not been backed up');
+		if (damaged) console.warn('widgets.json is damaged but backed up; recovering the layout');
 		return {
-			monitors: (obj ? parseLayoutAny(obj) : null)?.monitors ?? {},
-			fileLib: obj?.library as Library | undefined,
-			fileTheme: typeof obj?.theme === 'string' ? (obj.theme as string) : undefined,
-			recoverCorrupt
+			monitors: decoded.kind === 'valid' ? decoded.layout.monitors : {},
+			fileLib: decoded.kind === 'valid' ? decoded.library : undefined,
+			fileTheme: decoded.kind === 'valid' ? decoded.theme : undefined,
+			recoverCorrupt: decoded.kind === 'corrupt'
 		};
 	} catch (err) {
 		console.warn('load_layout failed; refusing to overwrite widgets.json', err);

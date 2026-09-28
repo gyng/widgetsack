@@ -15,8 +15,6 @@ import {
 	lookup,
 	reparentNode,
 	replaceNodeOp,
-	setPlacementBounds,
-	setSolvedForFloat,
 	wrapLeafWith
 } from './editorOps';
 import { createWidget } from '../../core/widget';
@@ -433,10 +431,22 @@ describe('addWidget', () => {
 		expect(patch.addTarget).toBeUndefined(); // (the reducer drops the stale id itself)
 	});
 
+	it('keeps separate editor geometry contexts isolated', () => {
+		const s = minimalState();
+		const occupied = {
+			bounds: { x: 0, y: 0, w: 1920, h: 1080 },
+			solved: new Map([['flow', { x: 24, y: 24, w: 400, h: 100 }]])
+		};
+		const empty = { ...occupied, solved: new Map() };
+		const position = (geometry: typeof occupied) =>
+			(addWidget(s, 'gauge', geometry).monitor!.floating[0].unit as { rect: { x: number } }).rect.x;
+		expect(position(occupied)).toBe(432);
+		expect(position(empty)).toBe(24);
+		expect(position(occupied)).toBe(432);
+	});
+
 	describe('floating placement (first free spot)', () => {
 		it('a floating add lands on the first free spot of the stage, not the default corner', () => {
-			setSolvedForFloat(new Map());
-			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
 			const s = minimalState();
 			const a = { ...s, ...addWidget(s, 'gauge') }; // gauge 110×110 → (24,24)
 			const ra = (a.monitor.floating[0].unit as { rect: { x: number; y: number } }).rect;
@@ -448,30 +458,32 @@ describe('addWidget', () => {
 		});
 
 		it('avoids the measured (solved) rects — a docked flow widget counts as occupied too', () => {
-			setSolvedForFloat(new Map([['flow-w', { x: 24, y: 24, w: 400, h: 100 }]]));
-			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
+			const solved = new Map([['flow-w', { x: 24, y: 24, w: 400, h: 100 }]]);
+
 			const s = minimalState();
-			const next = { ...s, ...addWidget(s, 'gauge') };
+			const next = {
+				...s,
+				...addWidget(s, 'gauge', { solved, bounds: { x: 0, y: 0, w: 1920, h: 1080 } })
+			};
 			const r = (next.monitor.floating[0].unit as { rect: { x: number; y: number } }).rect;
 			expect([r.x, r.y]).toEqual([432, 24]); // 24 + 400 + 8
-			setSolvedForFloat(new Map());
 		});
 
 		it('ignores CONTAINER boxes in the solved map (the root spans the whole stage)', () => {
 			const { state } = stateWithLayout();
 			state.selectedId = null;
-			setSolvedForFloat(
-				new Map([
-					['root', { x: 0, y: 0, w: 1920, h: 1080 }],
-					['container1', { x: 16, y: 16, w: 1888, h: 1048 }],
-					['w1', { x: 24, y: 24, w: 300, h: 100 }]
-				])
-			);
-			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
-			const next = { ...state, ...addWidget(state, 'gauge') };
+			const solved = new Map([
+				['root', { x: 0, y: 0, w: 1920, h: 1080 }],
+				['container1', { x: 16, y: 16, w: 1888, h: 1048 }],
+				['w1', { x: 24, y: 24, w: 300, h: 100 }]
+			]);
+
+			const next = {
+				...state,
+				...addWidget(state, 'gauge', { solved, bounds: { x: 0, y: 0, w: 1920, h: 1080 } })
+			};
 			const r = (next.monitor.floating[0].unit as { rect: { x: number; y: number } }).rect;
 			expect([r.x, r.y]).toEqual([336, 24]); // beside w1 (24+300+8=332 → 336), not a cascade
-			setSolvedForFloat(new Map());
 		});
 
 		it('a floating leaf the solved map already measured is not counted twice (measured box wins)', () => {
@@ -479,17 +491,17 @@ describe('addWidget', () => {
 			const inst = gauge('measured');
 			s.monitor.floating = [leaf({ ...inst, rect: { x: 900, y: 900, w: 110, h: 110 } })];
 			// The measured box says it is really at the origin — the stored rect is stale mid-drag.
-			setSolvedForFloat(new Map([['measured', { x: 24, y: 24, w: 110, h: 110 }]]));
-			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
-			const next = { ...s, ...addWidget(s, 'gauge') };
+			const solved = new Map([['measured', { x: 24, y: 24, w: 110, h: 110 }]]);
+
+			const next = {
+				...s,
+				...addWidget(s, 'gauge', { solved, bounds: { x: 0, y: 0, w: 1920, h: 1080 } })
+			};
 			const r = (next.monitor.floating[1].unit as { rect: { x: number; y: number } }).rect;
 			expect([r.x, r.y]).toEqual([144, 24]); // beside the measured box, not the stale one
-			setSolvedForFloat(new Map());
 		});
 
 		it('an unmeasured floating GROUP occupies its config box (falling back to its size)', () => {
-			setSolvedForFloat(new Map());
-			setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
 			const s = minimalState();
 			const sized = group('g-sized', { w: 300, h: 60 }, leaf(gauge('gw')), {
 				config: { x: 24, y: 24, w: 500, h: 80 }

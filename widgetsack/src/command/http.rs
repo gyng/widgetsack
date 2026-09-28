@@ -23,7 +23,6 @@ pub(super) async fn fetch_text_capped(
     client: &reqwest::Client,
     url: &str,
 ) -> Result<String, String> {
-    use futures_util::StreamExt;
     let resp = client
         .get(url)
         .send()
@@ -32,26 +31,86 @@ pub(super) async fn fetch_text_capped(
     if !resp.status().is_success() {
         return Err(format!("GET {url} failed: HTTP {}", resp.status()));
     }
-    if let Some(len) = resp.content_length()
-        && len > FETCH_CAP as u64
-    {
-        return Err(format!("{url} is too large ({len} bytes; cap {FETCH_CAP})"));
-    }
-    let mut buf: Vec<u8> = Vec::new();
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| format!("GET {url} failed mid-body: {e}"))?;
-        if buf.len() + bytes.len() > FETCH_CAP {
-            return Err(format!("{url} exceeded the {FETCH_CAP}-byte download cap"));
-        }
-        buf.extend_from_slice(&bytes);
-    }
+    let buf = read_body_capped(resp)
+        .await
+        .map_err(|e| format!("GET {url}: {e}"))?;
     String::from_utf8(buf).map_err(|_| format!("{url} is not valid UTF-8"))
+}
+
+/// Read a response under the shared cap. Status policy belongs to the caller.
+pub(super) async fn read_body_capped(response: reqwest::Response) -> Result<Vec<u8>, String> {
+    let length = response.content_length();
+    read_bounded_stream(response.bytes_stream(), length, FETCH_CAP).await
+}
+
+async fn read_bounded_stream<S, B, E>(
+    stream: S,
+    length: Option<u64>,
+    limit: usize,
+) -> Result<Vec<u8>, String>
+where
+    S: futures_util::Stream<Item = Result<B, E>>,
+    B: AsRef<[u8]>,
+    E: std::fmt::Display,
+{
+    use futures_util::StreamExt;
+    if length.is_some_and(|n| n > limit as u64) {
+        return Err(format!("response too large (cap {limit} bytes)"));
+    }
+    futures_util::pin_mut!(stream);
+    let mut body = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("response failed mid-body: {e}"))?;
+        let bytes = chunk.as_ref();
+        if bytes.len() > limit - body.len() {
+            return Err(format!("response exceeded the {limit}-byte cap"));
+        }
+        body.extend_from_slice(bytes);
+    }
+    Ok(body)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn bounded_body_accepts_exact_limit_and_rejects_overflow_or_stream_failure() {
+        use futures_util::stream;
+        assert_eq!(
+            read_bounded_stream(stream::iter([Ok::<_, &str>(b"ab"), Ok(b"cd")]), None, 4)
+                .await
+                .unwrap(),
+            b"abcd"
+        );
+        assert!(
+            read_bounded_stream(stream::iter([Ok::<_, &str>(b"ab"), Ok(b"cd")]), None, 3)
+                .await
+                .unwrap_err()
+                .contains("exceeded")
+        );
+        assert!(
+            read_bounded_stream(stream::iter([Ok(b"ab"), Err("disconnected")]), None, 4)
+                .await
+                .unwrap_err()
+                .contains("disconnected")
+        );
+    }
+
+    #[tokio::test]
+    async fn oversized_declared_body_is_rejected_before_polling() {
+        let stream = futures_util::stream::poll_fn(
+            |_| -> std::task::Poll<Option<Result<Vec<u8>, String>>> {
+                panic!("must not poll an oversized body")
+            },
+        );
+        assert!(
+            read_bounded_stream(stream, Some(5), 4)
+                .await
+                .unwrap_err()
+                .contains("too large")
+        );
+    }
 
     #[tokio::test]
     async fn install_client_does_not_follow_redirects() {

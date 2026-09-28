@@ -14,9 +14,7 @@ import {
 	insertTemplate,
 	insertWidget,
 	rand,
-	renameDef,
-	setPlacementBounds,
-	setSolvedForFloat
+	renameDef
 } from './editorOps';
 import {
 	container,
@@ -185,8 +183,6 @@ describe('insertWidget', () => {
 	});
 
 	it('does NOT make the root fallback sticky: a following palette add still floats', () => {
-		setSolvedForFloat(new Map());
-		setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
 		const s = state({ library: { version: 1, defs: [gaugeDef('def-1')] } });
 		const next = { ...s, ...insertWidget(s, 'def-1') };
 		expect(next.monitor.root.children).toHaveLength(1); // docked into the root as the fallback…
@@ -239,8 +235,6 @@ describe('insertTemplate', () => {
 	});
 
 	it('with nothing selected, a following palette add floats instead of joining the root', () => {
-		setSolvedForFloat(new Map());
-		setPlacementBounds({ x: 0, y: 0, w: 1920, h: 1080 });
 		const s = state();
 		const next = { ...s, ...insertTemplate(s, CLOCK) };
 		expect(next.addTarget).toBeUndefined();

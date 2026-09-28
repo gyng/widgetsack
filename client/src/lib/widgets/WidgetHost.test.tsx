@@ -696,6 +696,7 @@ describe('WidgetHost drag interactions', () => {
 
 	it('losing pointer capture during a flow ghost-drag aborts it without a drop; a press without movement commits nothing', () => {
 		const onDrop = vi.fn();
+		const onCancel = vi.fn();
 		const onCommit = vi.fn();
 		const { container } = render(
 			<WidgetHost
@@ -705,6 +706,7 @@ describe('WidgetHost drag interactions', () => {
 				movable={false}
 				flow
 				onDrop={onDrop}
+				onCancel={onCancel}
 				onCommit={onCommit}
 			/>
 		);
@@ -715,6 +717,7 @@ describe('WidgetHost drag interactions', () => {
 		fireEvent.lostPointerCapture(overlay, { pointerId: 1 });
 		expect(container.querySelector('.widget')?.classList.contains('dragging')).toBe(false);
 		expect(onDrop).not.toHaveBeenCalled();
+		expect(onCancel).toHaveBeenCalledExactlyOnceWith({ commit: false });
 		// A floating press cancelled BEFORE the slop: nothing was applied, so nothing is committed.
 		const { container: c2 } = render(
 			<WidgetHost hub={hub} instance={inst} editMode onCommit={onCommit} />

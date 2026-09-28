@@ -80,7 +80,7 @@ sysinfo / nvml-wrapper (CPU, mem, swap, net, GPU)        Home Assistant (WebSock
 ### Data flow — layout persistence
 
 ```
-Studio editor (useEditorModel reducer)              widgets.json (app config dir)
+Studio editor (core/editorReducer via useEditorModel)              widgets.json (app config dir)
    │  usePersistence: invoke("save_layout", json)      │
    ▼                                                    ▼
 backend command/layouts.rs writes widgets.json ──▶ notify file watcher ──▶ emit("layout_changed")
@@ -132,6 +132,9 @@ client/                     React frontend
         layoutPersistence.ts        pure Save/Revert write planning
         disposalScope.ts            once-only cleanup, including late-acquired resources
         layoutEdit.ts               pure tree edit ops (insert/move/remove …)
+        editorReducer.ts / editorState.ts   selection, modes, undo/redo, saved baseline
+        layoutDocument.ts           shared layout decoding + recovery classification
+        dropFeedback.ts / spacingGuard.ts   pure editor geometry
         solve.ts                    layout solver → rects + renderables
         widget.ts                   widget meta API (ConfigField, getMeta, registerMeta)
         sack.ts                     shareable bundles (pack/unpack/mergeLibrary)
@@ -148,7 +151,7 @@ client/                     React frontend
         meters/                     presentational widgets (props-only): Gauge, Bar, Sparkline,
                                     Clock, Text, Button, Cpu, NowPlaying, Ha*  (+ *.test.tsx)
         canvas/                     editor hooks: useEditorModel, useLayoutSession, usePersistence, useKeyboard,
-                                    useStudioInit, dragIntent, dropPlacement, … (+ *.test.ts)
+                                    useStudioInit, useCanvasDrag, editorActions, dragIntent, dropPlacement, … (+ *.test.ts)
         plugins/                    plugin registrations + Tauri command adapters:
                                     home-assistant / now-playing / mqtt / stocks / llm (ai-provider)
       llm/                  LLM stream adapter + reusable useLlmChat hook

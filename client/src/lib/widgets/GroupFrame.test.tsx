@@ -281,3 +281,17 @@ describe('GroupFrame', () => {
 		expect(onHover).toHaveBeenLastCalledWith(null);
 	});
 });
+
+it('finishes an interrupted group drag once and clears its active state', () => {
+	const onCancel = vi.fn();
+	const { container } = render(
+		<GroupFrame id="grp-1" rect={rect} editMode selected onCancel={onCancel} />
+	);
+	const target = overlay(container);
+	fireEvent.pointerDown(target, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+	fireEvent.pointerMove(target, { pointerId: 1, clientX: 40, clientY: 10 });
+	fireEvent.pointerCancel(target, { pointerId: 1 });
+	fireEvent.lostPointerCapture(target, { pointerId: 1 });
+	expect(onCancel).toHaveBeenCalledExactlyOnceWith({ commit: true });
+	expect(box(container).classList.contains('active')).toBe(false);
+});

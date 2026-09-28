@@ -130,7 +130,7 @@ export function migrateMonitorKeys<T>(
 
 // ---- v2 structural validation --------------------------------------------
 
-// A structurally broken monitor entry is DROPPED (and named on the console) rather than failing the
+// A structurally broken monitor entry is DROPPED rather than failing the
 // whole file: one hand-edited or truncated record must not take every other monitor's layout down
 // with it. The caller can tell "dropped" from "absent" by checking the raw `monitors` keys — the
 // Canvas backs the file up + loads an empty root for a dropped entry instead of the demo seed.
@@ -142,7 +142,6 @@ function parseLayoutV2(obj: Record<string, unknown>): LayoutV2 | null {
 	for (const [id, mon] of Object.entries(obj.monitors as Record<string, unknown>)) {
 		const parsed = parseMonitor(mon);
 		if (parsed === null) {
-			console.warn(`widgets.json: dropping unparseable monitor entry "${id}"`);
 			continue;
 		}
 		monitors[id] = parsed;

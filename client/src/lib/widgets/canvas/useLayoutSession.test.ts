@@ -152,3 +152,61 @@ describe('layout session', () => {
 		expect(result.current.state.savedBaseline?.monitor.root.id).toBe('new');
 	});
 });
+
+it('clears removed global settings when reloading a smaller document', async () => {
+	invoke.mockResolvedValue(
+		JSON.stringify({
+			...JSON.parse(document('a', 'loaded')),
+			theme: 'dark',
+			themeLock: false,
+			tokens: { accent: 'red' },
+			library: { version: 1, defs: [] }
+		})
+	);
+	const { result } = renderHook(() => useSession('a'));
+	await act(async () => {
+		await result.current.reloadLayout();
+	});
+	expect(result.current.state.selectedTheme).toBe('dark');
+	expect(result.current.state.library).toBeDefined();
+	invoke.mockResolvedValue(document('a', 'replaced'));
+	await act(async () => {
+		await result.current.reloadLayout();
+	});
+	expect(result.current.state).toMatchObject({
+		selectedTheme: '',
+		globalTheme: '',
+		themeLock: true,
+		tokenOverrides: {}
+	});
+	expect(result.current.state.library).toBeUndefined();
+	expect(result.current.dirty).toBe(false);
+});
+
+it('keeps unsaved edits and the saved baseline when reloading fails', async () => {
+	invoke.mockResolvedValue(document('a', 'saved'));
+	const { result } = renderHook(() => useSession('a'));
+	await act(async () => {
+		await result.current.reloadLayout();
+	});
+	act(() =>
+		result.current.commitOp(() => ({
+			monitor: { root: container('edited', 'row', []), floating: [] }
+		}))
+	);
+	const baseline = result.current.state.savedBaseline;
+	const history = result.current.state.undoStack;
+	invoke.mockRejectedValue(new Error('file temporarily locked'));
+	await act(async () => {
+		await result.current.reloadLayout();
+	});
+	expect(result.current.state.savedBaseline).toBe(baseline);
+	expect(result.current.state.undoStack).toBe(history);
+	expect(result.current.state.historyReady).toBe(true);
+	expect(result.current.state.monitor.root.id).toBe('edited');
+	expect(result.current.dirty).toBe(true);
+	invoke.mockResolvedValue(document('a', 'saved'));
+	await act(async () => {
+		await result.current.flushPreviewWrite();
+	});
+});

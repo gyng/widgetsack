@@ -4,7 +4,7 @@ import { desktopMonitor, editingDefinitionId } from '../../core/editorMode';
 // none of them touch React, history, or disk — the reducer's commit chokepoint does that. Grouped
 // by concern: flow-tree edits, floating + dock, defs + library, tokens + background, widget
 // patches + bulk/selection. `floatNode` needs the live solved map at call time; the Canvas
-// injects it via setSolvedForFloat (a module-level ref) before dispatch.
+// supplies it explicitly with each operation.
 import { type Rect, type WidgetInstance } from '../../core/layout';
 import { createWidget, getMeta } from '../../core/widget';
 import {
@@ -39,7 +39,7 @@ import {
 	updateContainer,
 	updateNode
 } from '../../core/layoutEdit';
-import { intrinsicSize, type Solved } from '../../core/solve';
+import { intrinsicSize } from '../../core/solve';
 import { freshIds, getTemplate, instantiateTemplate } from '../../core/templates';
 import { dropPlacement } from './dropPlacement';
 import { firstFreeSpot } from '../../core/placement';
@@ -85,24 +85,21 @@ export function currentContainer(s: EditorState): Container | null {
 // --- floating placement (first free spot) ----------------------------------------------------
 // A palette click with no container target drops a FLOATING widget; it lands on the first free spot
 // of the stage (core/placement) rather than the default (24,24) corner every time. The stage bounds
-// and the measured rects live in the Canvas, which injects them via module refs (like setSolvedForFloat).
-let placementBounds: Rect = { x: 0, y: 0, w: 1920, h: 1080 };
-export function setPlacementBounds(b: Rect): void {
-	placementBounds = b;
-}
+// and measured rects are supplied by the editor that dispatches the operation.
+export type EditorGeometry = { bounds: Rect; solved: ReadonlyMap<string, Rect> };
 // Every rect already on the monitor: the live solved map (measured flow + floating — what the user
 // sees), plus any floating leaf the map hasn't measured yet (its stored rect / group box).
-function occupiedRects(s: EditorState): Rect[] {
+function occupiedRects(s: EditorState, solved: ReadonlyMap<string, Rect>): Rect[] {
 	// The solved map also carries every CONTAINER's box (the root spans the whole stage) — only
 	// widget / group boxes count as occupied, or nothing would ever be free.
 	const out: Rect[] = [];
-	for (const [id, r] of solvedRef) {
+	for (const [id, r] of solved) {
 		const node = findNode(s.monitor.root, id);
 		if (node && isContainer(node)) continue;
 		out.push(r);
 	}
 	for (const lf of s.monitor.floating) {
-		if (solvedRef.has(lf.id)) continue;
+		if (solved.has(lf.id)) continue;
 		if (isGroup(lf.unit)) {
 			const g = lf.unit;
 			out.push({
@@ -190,7 +187,7 @@ export function replaceNodeOp(s: EditorState, id: string, node: LayoutNode): Pat
 	};
 }
 
-export function addWidget(s: EditorState, type: string): Patch {
+export function addWidget(s: EditorState, type: string, geometry?: EditorGeometry): Patch {
 	const target = currentContainer(s);
 	const id = `${type}-${rand()}`;
 	const inst = createWidget(type, id);
@@ -204,7 +201,11 @@ export function addWidget(s: EditorState, type: string): Patch {
 			justAdded: { id, pan: true }
 		};
 	}
-	const at = firstFreeSpot(occupiedRects(s), inst.rect, placementBounds);
+	const at = firstFreeSpot(
+		occupiedRects(s, geometry?.solved ?? new Map()),
+		inst.rect,
+		geometry?.bounds ?? { x: 0, y: 0, w: 1920, h: 1080 }
+	);
 	const w = leaf({ ...inst, rect: { ...inst.rect, x: at.x, y: at.y } });
 	return {
 		monitor: { ...s.monitor, floating: [...s.monitor.floating, w] },
@@ -639,18 +640,15 @@ export function distributeFloating(s: EditorState, ids: string[], axis: Distribu
 	return applyMovedBoxes(s, distributeRects(floatingBoxes(s, ids), axis));
 }
 
-// floatNode needs `solved` at call time; the Canvas drag paths pass the solved map in, but the
-// handleOp `float` case (from Inspector/Outline/menu) has no point arg. Mirror the Svelte version:
-// it reads the live `solved` (a Canvas reactive). Here we recompute from monitor+workArea would be
-// wrong (no workArea here), so the Canvas injects `solved` via a module-level ref before dispatch.
-let solvedRef: Solved = new Map();
-export function setSolvedForFloat(s: Solved): void {
-	solvedRef = s;
-}
-export function floatNode(s: EditorState, id: string, at?: { x: number; y: number }): Patch {
+export function floatNode(
+	s: EditorState,
+	id: string,
+	at?: { x: number; y: number },
+	solved: ReadonlyMap<string, Rect> = new Map()
+): Patch {
 	const node = findNode(s.monitor.root, id);
 	if (!node || !isLeaf(node)) return {};
-	const r = solvedRef.get(id);
+	const r = solved.get(id);
 	const lf = floatingLeafFrom(node, at?.x ?? r?.x ?? 0, at?.y ?? r?.y ?? 0, r);
 	return {
 		monitor: {

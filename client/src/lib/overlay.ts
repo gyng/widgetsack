@@ -19,7 +19,8 @@ import type { Rect } from './core/layout';
 import { monitorHasWidgets } from './core/layoutTree';
 import { compareMonitorOptions, monitorOptionLabel } from './monitorLabel';
 import { gdiTag, monitorByKey, monitorDeviceKey, type StableIds } from './monitorKey';
-import { migrateMonitorKeys, parseLayoutAny } from './core/migration';
+import { migrateMonitorKeys } from './core/migration';
+import { decodeLayoutDocument } from './core/layoutDocument';
 import {
 	legacyKeyMapping,
 	type LegacyKeyMapping,
@@ -99,7 +100,15 @@ async function populatedMonitorKeys(legacyMapping?: LegacyKeyMapping): Promise<S
 	let raw: string | null = null;
 	try {
 		raw = await invoke<string | null>(COMMANDS.loadLayout);
-		const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
+		const decoded = decodeLayoutDocument(raw);
+		if (decoded.kind === 'missing') return keys;
+		if (decoded.kind === 'corrupt') throw new Error(decoded.reason);
+		if (decoded.droppedMonitors.length) {
+			requestLayoutBackup();
+			return null; // keep current windows until the damaged document is repaired
+		}
+		const obj = decoded.raw;
+		let layout = decoded.layout;
 		if (obj && legacyMapping && typeof obj.monitors === 'object' && obj.monitors !== null) {
 			const migrated = migrateMonitorKeys(
 				obj.monitors as Record<string, unknown>,
@@ -108,6 +117,12 @@ async function populatedMonitorKeys(legacyMapping?: LegacyKeyMapping): Promise<S
 			);
 			if (migrated) {
 				obj.monitors = migrated;
+				layout = {
+					...layout,
+					monitors:
+						migrateMonitorKeys(layout.monitors, legacyMapping.keys, legacyMapping.evidence) ??
+						layout.monitors
+				};
 				await invoke(COMMANDS.saveLayout, { contents: JSON.stringify(obj, null, 2) });
 				// Persist it: a layout that lands on the wrong monitor after an upgrade is a question
 				// the log file must be able to answer ("which key became which, from which enumeration").
@@ -121,7 +136,6 @@ async function populatedMonitorKeys(legacyMapping?: LegacyKeyMapping): Promise<S
 				);
 			}
 		}
-		const layout = obj ? parseLayoutAny(obj) : null;
 		if (layout) {
 			for (const [k, mon] of Object.entries(layout.monitors)) {
 				if (monitorHasWidgets(mon)) keys.add(k);

@@ -32,6 +32,7 @@ type Props = {
 	children?: ReactNode; // the group's composed FlowNode
 	onChange?: (e: { id: string; rect: Rect }) => void;
 	onCommit?: (e?: { skipFlow?: boolean }) => void;
+	onCancel?: (e: { commit: boolean }) => void;
 	onSelect?: (e: { id: string }) => void;
 	onContextMenu?: (e: { id: string; x: number; y: number }) => void;
 	onHover?: (id: string | null) => void;
@@ -52,6 +53,7 @@ export default function GroupFrame({
 	children,
 	onChange,
 	onCommit,
+	onCancel,
 	onSelect,
 	onContextMenu,
 	onHover,
@@ -145,6 +147,15 @@ export default function GroupFrame({
 		if (didMove && d.skipFlow) onSuppressContextMenu?.();
 	}
 
+	function cancel() {
+		const d = drag.current;
+		if (d.action === null) return;
+		d.action = null;
+		setAction(null);
+		if (onCancel) onCancel({ commit: d.moved });
+		else if (d.moved) onCommit?.({ skipFlow: true });
+	}
+
 	const cls = ['widget', 'floating-group'];
 	if (editMode) cls.push('editable');
 	if (selected) cls.push('selected');
@@ -179,6 +190,8 @@ export default function GroupFrame({
 						onPointerDown={(e) => begin('move', e)}
 						onPointerMove={move}
 						onPointerUp={end}
+						onPointerCancel={cancel}
+						onLostPointerCapture={cancel}
 					/>
 					{HANDLES.map((handle) => (
 						<button
@@ -189,6 +202,8 @@ export default function GroupFrame({
 							onPointerDown={(e) => begin(handle, e)}
 							onPointerMove={move}
 							onPointerUp={end}
+							onPointerCancel={cancel}
+							onLostPointerCapture={cancel}
 						/>
 					))}
 				</>

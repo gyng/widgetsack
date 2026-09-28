@@ -57,6 +57,7 @@ type Props = {
 	// `skipFlow` (set by a right-button free-move) tells the Canvas not to dock this drag into the
 	// flow/grid, regardless of the studio "into grids" toggle.
 	onCommit?: (e?: { skipFlow?: boolean }) => void;
+	onCancel?: (e: { commit: boolean }) => void;
 	onSelect?: (e: { id: string }) => void;
 	onDragOver?: (e: { id: string; x: number; y: number; skipFlow?: boolean }) => void;
 	onDrop?: (e: { id: string; x: number; y: number }) => void;
@@ -105,6 +106,7 @@ function WidgetHost({
 	groupId,
 	onChange,
 	onCommit,
+	onCancel,
 	onSelect,
 	onDragOver,
 	onDrop,
@@ -368,11 +370,9 @@ function WidgetHost({
 		const didMove = d.moved;
 		d.action = null;
 		setAction(null);
-		if (wasFlow) {
-			setGhost({ dx: 0, dy: 0 });
-			return;
-		}
-		if (didMove) onCommit?.({ skipFlow: d.skipFlow });
+		if (wasFlow) setGhost({ dx: 0, dy: 0 });
+		if (onCancel) onCancel({ commit: !wasFlow && didMove });
+		else if (!wasFlow && didMove) onCommit?.({ skipFlow: true });
 	}
 
 	const cls = ['widget'];

@@ -15,7 +15,6 @@ import {
 	floatingLeafFrom,
 	dock,
 	floatNode,
-	setSolvedForFloat,
 	lookup
 } from './editorOps';
 import { createWidget } from '../../core/widget';
@@ -541,10 +540,10 @@ describe('dock', () => {
 
 describe('floatNode', () => {
 	it('moves a flow leaf to the floating layer using the solved rect', () => {
-		setSolvedForFloat(new Map([['w1', { x: 12, y: 34, w: 100, h: 50 }]]) as Solved);
+		const solved = new Map([['w1', { x: 12, y: 34, w: 100, h: 50 }]]) as Solved;
 		const { state } = stateWithLayout();
 
-		const patch = floatNode(state, 'w1');
+		const patch = floatNode(state, 'w1', undefined, solved);
 		const mon = patch.monitor as MonitorLayout;
 		// removed from the flow tree
 		const col1 = find(find(mon.root, 'container1'), 'col1');
@@ -559,9 +558,9 @@ describe('floatNode', () => {
 	});
 
 	it('honors an explicit `at` point over the solved rect position', () => {
-		setSolvedForFloat(new Map([['w1', { x: 12, y: 34, w: 100, h: 50 }]]) as Solved);
+		const solved = new Map([['w1', { x: 12, y: 34, w: 100, h: 50 }]]) as Solved;
 		const { state } = stateWithLayout();
-		const patch = floatNode(state, 'w1', { x: 500, y: 600 });
+		const patch = floatNode(state, 'w1', { x: 500, y: 600 }, solved);
 		const mon = patch.monitor as MonitorLayout;
 		const u = mon.floating[0].unit as ReturnType<typeof gauge>;
 		expect(u.rect.x).toBe(500);
@@ -572,9 +571,9 @@ describe('floatNode', () => {
 	});
 
 	it('defaults to (0,0) when there is no solved rect and no `at`', () => {
-		setSolvedForFloat(new Map() as Solved);
+		const solved = new Map() as Solved;
 		const { state } = stateWithLayout();
-		const patch = floatNode(state, 'w1');
+		const patch = floatNode(state, 'w1', undefined, solved);
 		const mon = patch.monitor as MonitorLayout;
 		const u = mon.floating[0].unit as ReturnType<typeof gauge>;
 		expect(u.rect.x).toBe(0);
@@ -582,21 +581,21 @@ describe('floatNode', () => {
 	});
 
 	it('is a no-op for an unknown id', () => {
-		setSolvedForFloat(new Map() as Solved);
+		const solved = new Map() as Solved;
 		const { state } = stateWithLayout();
-		expect(floatNode(state, 'ghost')).toEqual({});
+		expect(floatNode(state, 'ghost', undefined, solved)).toEqual({});
 	});
 
 	it('is a no-op for a container id (only leaves float)', () => {
-		setSolvedForFloat(new Map() as Solved);
+		const solved = new Map() as Solved;
 		const { state, col1Id } = stateWithLayout();
-		expect(floatNode(state, col1Id)).toEqual({});
+		expect(floatNode(state, col1Id, undefined, solved)).toEqual({});
 	});
 
 	it('the floated leaf is findable via lookup in the resulting monitor', () => {
-		setSolvedForFloat(new Map([['w2', { x: 1, y: 2, w: 3, h: 4 }]]) as Solved);
+		const solved = new Map([['w2', { x: 1, y: 2, w: 3, h: 4 }]]) as Solved;
 		const { state } = stateWithLayout();
-		const patch = floatNode(state, 'w2');
+		const patch = floatNode(state, 'w2', undefined, solved);
 		const mon = patch.monitor as MonitorLayout;
 		const found = lookup('w2', mon);
 		expect(found).not.toBeNull();

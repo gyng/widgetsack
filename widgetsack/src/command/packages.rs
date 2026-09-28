@@ -1,4 +1,4 @@
-use super::http::{FETCH_CAP, fetch_text_capped, install_http_client};
+use super::http::{fetch_text_capped, install_http_client, read_body_capped};
 use crate::file_io::{atomic_write, config_root, valid_name};
 use serde::Serialize;
 use std::{
@@ -619,21 +619,9 @@ pub async fn package_fetch(
         .await
         .map_err(|e| format!("GET {url} failed: {e}"))?;
     let status = resp.status().as_u16();
-    if let Some(len) = resp.content_length()
-        && len > FETCH_CAP as u64
-    {
-        return Err(format!("{url} is too large ({len} bytes; cap {FETCH_CAP})"));
-    }
-    use futures_util::StreamExt;
-    let mut buf: Vec<u8> = Vec::new();
-    let mut stream = resp.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| format!("GET {url} failed mid-body: {e}"))?;
-        if buf.len() + bytes.len() > FETCH_CAP {
-            return Err(format!("{url} exceeded the {FETCH_CAP}-byte download cap"));
-        }
-        buf.extend_from_slice(&bytes);
-    }
+    let buf = read_body_capped(resp)
+        .await
+        .map_err(|e| format!("GET {url}: {e}"))?;
     let body = String::from_utf8(buf).map_err(|_| format!("{url} body is not valid UTF-8"))?;
     Ok(PackageFetchResponse { url, status, body })
 }

@@ -4,8 +4,8 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from '../../bridge/contract';
 import { disposalScope } from '../../core/disposalScope';
-import { emptyRoot, type Library } from '../../core/layoutTree';
-import { parseLayoutAny } from '../../core/migration';
+import { emptyRoot } from '../../core/layoutTree';
+import { decodeLayoutDocument } from '../../core/layoutDocument';
 import {
 	logClient,
 	onStudioCloseRequested,
@@ -163,65 +163,36 @@ export function useLayoutSession({
 		const revision = ++loadRevision.current;
 		const myMon = myMonitorRef.current;
 		const isCurrent = () => revision === loadRevision.current && myMon === myMonitorRef.current;
-		// historyReady=false up front (before the awaits) so neither the load nor any interim commit
-		// is recorded as an edit (mirrors Svelte's first line). resetHistory below re-baselines.
-		dispatch({ type: 'patch', patch: { historyReady: false } });
+		// Keep editing/history live while reading. Only a successful load replaces the baseline.
 		const patch: Partial<EditorState> = {};
 		let nextTheme: string | null = null;
-		// Assigned once load_layout resolves — the catch uses it to tell "read but unparseable"
-		// (back the file up before this session's default layout can be saved over it) from
-		// "couldn't read at all" (nothing to copy). Mirrors overlay.ts populatedMonitorKeys.
-		let raw: string | null = null;
 		try {
-			raw = await invoke<string | null>(COMMANDS.loadLayout);
+			const raw = await invoke<string | null>(COMMANDS.loadLayout);
 			if (!isCurrent()) return;
-			const obj = raw ? (JSON.parse(raw) as Record<string, unknown>) : null;
-			const saved = obj ? parseLayoutAny(obj) : null;
-			const mon = saved?.monitors[myMon];
-			// A file that READ fine but didn't parse — the whole document, or just this monitor's
-			// record (parseLayoutV2 drops an unparseable entry and keeps the rest) — is a parse
-			// failure, not a fresh install: back it up before anything can be saved over it, and
-			// load an EMPTY root rather than the demo seed (which the next preview write would
-			// have persisted in its place).
-			const rawMonitors = obj?.monitors;
-			const hadEntry =
-				!!rawMonitors && typeof rawMonitors === 'object' && myMon in (rawMonitors as object);
-			if (obj && (saved === null || (hadEntry && !mon))) {
-				logClient(
-					'error',
-					'layout',
-					`widgets.json is unparseable (${saved === null ? 'whole file' : `monitor "${myMon}"`}); backing it up and loading an empty layout`
-				);
+			const decoded = decodeLayoutDocument(raw);
+			const valid = decoded.kind === 'valid' ? decoded : null;
+			if (decoded.kind === 'corrupt' || valid?.droppedMonitors.length) {
+				logClient('error', 'layout', 'widgets.json is damaged; backing it up before editing');
 				backupLayoutFile();
-				patch.monitor = { root: emptyRoot(), floating: [] };
-			} else if (mon) patch.monitor = mon;
-			const lib = obj?.library;
-			if (lib && typeof lib === 'object' && Array.isArray((lib as { defs?: unknown }).defs)) {
-				patch.library = lib as Library;
 			}
-			// Theme: LOCKED (default) → the layout's global `theme` on every monitor; UNLOCKED → this
-			// monitor's own `theme`, falling back to the global. `themeLock` absent ⇒ locked (back-compat).
-			// An explicit '' (default tokens) on the monitor is honored — it's a string, so the ?? keeps it.
-			const lock = obj?.themeLock !== false;
-			patch.themeLock = lock;
-			patch.globalTheme = typeof obj?.theme === 'string' ? obj.theme : '';
-			const t = lock ? obj?.theme : (mon?.theme ?? obj?.theme);
-			if (typeof t === 'string' && t !== stateThemeRef.current) {
-				patch.selectedTheme = t;
-				nextTheme = t;
+			// Preserve the first-run demo only when no file exists. An existing document with no
+			// entry for this monitor represents an empty desktop, not the previous editor's tree.
+			if (decoded.kind !== 'missing' || stateRef.current.savedBaseline) {
+				patch.monitor = valid?.layout.monitors[myMon] ?? { root: emptyRoot(), floating: [] };
 			}
-			const tk = obj?.tokens;
-			patch.tokenOverrides =
-				tk && typeof tk === 'object' && !Array.isArray(tk) ? (tk as Record<string, string>) : {};
+			patch.mode = { kind: 'layout' };
+			patch.library = valid?.library;
+			patch.themeLock = valid?.themeLock ?? true;
+			patch.globalTheme = valid?.theme ?? '';
+			patch.selectedTheme = !patch.themeLock
+				? (valid?.layout.monitors[myMon]?.theme ?? patch.globalTheme)
+				: patch.globalTheme;
+			if (patch.selectedTheme !== stateThemeRef.current) nextTheme = patch.selectedTheme;
+			patch.tokenOverrides = valid?.tokens ?? {};
 		} catch (err) {
 			if (!isCurrent()) return;
-			logClient('error', 'layout', `load_layout failed; using default layout: ${String(err)}`);
-			// The file READ but is not JSON at all: same as the unparseable case above — back it up and
-			// load an EMPTY layout (not the demo seed, which the next preview write would persist over it).
-			if (raw !== null) {
-				backupLayoutFile();
-				patch.monitor = { root: emptyRoot(), floating: [] };
-			}
+			logClient('error', 'layout', `load_layout failed; keeping the current edits: ${String(err)}`);
+			return;
 		}
 		// historyReady=false during the load + interim awaits; clear pendingExtras; reset history;
 		// set baseline — all folded into one dispatch so the loaded layout is the committed baseline.

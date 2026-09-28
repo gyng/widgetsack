@@ -1,3 +1,4 @@
+import { useCanvasDrag } from './canvas/useCanvasDrag';
 import { editingDefinitionId, definitionBaseline, previewDefinition } from '../core/editorMode';
 // Canvas (organism): owns the telemetry hub, wires the backend source, and lays out this
 // monitor's widgets. Holds the versioned v2 MonitorLayout (an in-flow root tree + a floating
@@ -39,7 +40,6 @@ import {
 	type Container,
 	type Group,
 	type Leaf,
-	type MonitorLayout,
 	type WidgetDef
 } from '../core/layoutTree';
 import { demoSeed } from '../core/templates';
@@ -48,22 +48,12 @@ import {
 	collectGridPlaceholders,
 	collectRenderables,
 	collectSplitters,
-	gridCellRects,
 	resolveGroup
 } from '../core/solve';
 import { assembleStyles } from '../core/style';
 import { DEFAULT_SWATCH, extractFontFamilies, tokensToCss } from '../core/tokens';
 import BackgroundLayer from './BackgroundLayer';
-import {
-	dropTarget,
-	findNode,
-	findParent,
-	flowLeaves,
-	insertChild,
-	moveNode,
-	removeNode,
-	type Drop
-} from '../core/layoutEdit';
+import { findNode, findParent, removeNode } from '../core/layoutEdit';
 import { PANEL_SELECTOR } from './canvas/stageHit';
 import ErrorBoundary from './ErrorBoundary';
 import { dismissFirstRun, isFirstRun } from './canvas/firstRun';
@@ -92,7 +82,6 @@ import StyleLayer from './StyleLayer';
 import { startDiagResponder, startMemoryTrail } from '../diag';
 import { paletteItems } from './registry';
 import type { LayoutOp } from './ops';
-import { snapRectToPeers } from '../core/align';
 import { sensorCatalog } from '../core/sensors';
 import { getMeta } from '../core/widget';
 import { normalizeMacro, runMacro, type MacroAction } from '../core/macro';
@@ -117,12 +106,9 @@ import { listMicrophones } from '../stt';
 import {
 	useEditorModel,
 	lookup,
-	setSolvedForFloat,
-	setPlacementBounds,
 	editHelpers,
 	bulkPatchConfig,
-	bulkSetBasis,
-	patchFloating
+	bulkSetBasis
 } from './canvas/useEditorModel';
 import { useLayoutSession } from './canvas/useLayoutSession';
 import { rebaselineOnEditToggle } from './canvas/overlayEditBaseline';
@@ -152,7 +138,7 @@ import { useDefEditor } from './canvas/useDefEditor';
 import { useSplitters } from './canvas/useSplitters';
 import { useStudioInit } from './canvas/useStudioInit';
 import { recordWidgetRender } from './canvas/widgetProfile';
-import type { EditorState, Extra, MonitorOption } from './canvas/types';
+import type { Extra, MonitorOption } from './canvas/types';
 import Select from './Select';
 import type { SettingsTab } from './StudioSettingsPanel';
 import mascotUrl from '../../assets/mascot.png';
@@ -188,7 +174,6 @@ const MultiInspector = lazy(() => import('./MultiInspector'));
 type Props = { studio?: boolean };
 
 const GRID = 8;
-const ALIGN_THRESHOLD = 6;
 // What counts as a widget's interactive control for passive click-through (its rendered rect, if
 // visible, becomes a catch region). A widget with none of these but marked interactive catches over
 // its whole box. data-seekable="true" is the now-playing seek bar; data-interactive is an opt-in.
@@ -242,7 +227,7 @@ export default function Canvas({ studio = false }: Props) {
 	const seedFloating = useMemo<Leaf[]>(() => (monitorParam() ? [] : demoSeed()), []);
 
 	const model = useEditorModel(studio, seedFloating);
-	const { state, dispatch, handleOp, commitOp, mutateNoSave } = model;
+	const { state, dispatch, handleOp: dispatchOp, commitOp, mutateNoSave } = model;
 	const {
 		monitor,
 		library,
@@ -515,13 +500,15 @@ export default function Canvas({ studio = false }: Props) {
 		}
 		return m;
 	}, [measuredDom, monitor.floating, floatingGroupBox]);
-	// floatNode (via handleOp) reads the live map; keep the module ref current.
-	setSolvedForFloat(combinedSolved);
-	// A palette click with no container target places the new FLOATING widget on the first free
-	// spot of the work area (core/placement, via the same module-ref pattern as the solved map).
-	useEffect(() => {
-		if (workArea.w > 0 && workArea.h > 0) setPlacementBounds(workArea);
-	}, [workArea]);
+	const handleOp = useCallback(
+		(op: LayoutOp) => {
+			dispatchOp(op, {
+				solved: combinedSolved,
+				bounds: workArea.w > 0 && workArea.h > 0 ? workArea : { x: 0, y: 0, w: 1920, h: 1080 }
+			});
+		},
+		[dispatchOp, combinedSolved, workArea]
+	);
 	// The sticky add target (the container the last palette add went into): its node, for the chip in
 	// the stage subbar ("Adding into ▦ row · ✕") and for the Inspector's palette heading.
 	const addTargetNode = useMemo(
@@ -1321,17 +1308,6 @@ export default function Canvas({ studio = false }: Props) {
 	// Drag / drop (WidgetHost callbacks). These are transient — onChange mutates without saving;
 	// onCommit/onDrop commit (saveLayout). The drop-indicator / hint / guides are local UI state.
 	// =========================================================================================
-	const [guideXs, setGuideXs] = useState<number[]>([]);
-	const [guideYs, setGuideYs] = useState<number[]>([]);
-	const [dropIntoFlow, setDropIntoFlow] = useState(true);
-	const [dropIntoCells, setDropIntoCells] = useState(false);
-	const [dropBar, setDropBar] = useState<Rect | null>(null);
-	const [dropZone, setDropZone] = useState<Rect | null>(null);
-	const [dragHint, setDragHint] = useState<{ x: number; y: number; text: string } | null>(null);
-	// dropIndicator + draggingId are bookkeeping read synchronously across dragover→commit; refs.
-	const dropIndicatorRef = useRef<Drop | null>(null);
-	const draggingIdRef = useRef<string | null>(null);
-
 	// canvas / world coordinate transforms (port LITERALLY).
 	const toCanvas = useCallback(
 		(x: number, y: number): { x: number; y: number } => {
@@ -1363,207 +1339,33 @@ export default function Canvas({ studio = false }: Props) {
 	const monitorForDragRef = useRef(monitor);
 	const selectedIdsRef = useRef(selectedIds);
 
-	const computeDropBar = useCallback(
-		(p: { x: number; y: number }, dragging: string): Rect | null => {
-			const mon = monitorForDragRef.current;
-			const sol = solvedRef.current;
-			for (const lf of flowLeaves(mon.root)) {
-				if (lf.id === dragging) continue;
-				const r = sol.get(lf.id);
-				if (!r) continue;
-				if (p.x < r.x || p.x >= r.x + r.w || p.y < r.y || p.y >= r.y + r.h) continue;
-				const parent = findParent(mon.root, lf.id);
-				if (!parent) continue;
-				if (parent.kind === 'col') {
-					const after = p.y >= r.y + r.h / 2;
-					return { x: r.x, y: (after ? r.y + r.h : r.y) - 1, w: r.w, h: 2 };
-				}
-				const after = p.x >= r.x + r.w / 2;
-				return { x: (after ? r.x + r.w : r.x) - 1, y: r.y, w: 2, h: r.h };
-			}
-			return null;
-		},
-		[]
-	);
-
-	const computeDropZone = useCallback((drop: Drop | null, bar: Rect | null): Rect | null => {
-		if (!drop || bar) return null;
-		const mon = monitorForDragRef.current;
-		const box = solvedRef.current.get(drop.parentId);
-		if (!box) return null;
-		const parent = findNode(mon.root, drop.parentId);
-		if (parent && isContainer(parent) && parent.kind === 'grid') {
-			return gridCellRects(parent, box)[drop.index] ?? box;
-		}
-		return box;
-	}, []);
-
-	const onChange = useCallback(
-		(e: { id: string; rect: WidgetInstance['rect'] }) => {
-			const { id, rect } = e;
-			const mon = monitorForDragRef.current;
-			const selIds = selectedIdsRef.current;
-			const lf = mon.floating.find((l) => l.id === id);
-			const isGroupLeaf = !!lf && isGroup(lf.unit);
-			// Group move (item 3): translate the whole multi-selection by the per-frame delta. The
-			// dragged item's current box is its stored rect (primitive) or its config box (group).
-			if (selIds.length > 1 && selIds.includes(id)) {
-				const curRect = lf
-					? isGroupLeaf
-						? floatingGroupBox(lf)
-						: (lf.unit as WidgetInstance).rect
-					: null;
-				if (curRect) {
-					setGuideXs([]);
-					setGuideYs([]);
-					translateSelectedFloating(rect.x - curRect.x, rect.y - curRect.y);
-					return;
-				}
-			}
-			const peers = renderablesRef.current
-				.filter((r) => r.movable && r.id !== id)
-				.map((r) => r.rect);
-			const snapped = snapRectToPeers(rect, peers, ALIGN_THRESHOLD);
-			setGuideXs(snapped.guideXs);
-			setGuideYs(snapped.guideYs);
-			// A floating group's position+size live in its config (config.x/y/w/h), not a unit rect.
-			mutateNoSave((s) =>
-				isGroupLeaf
-					? patchFloatingGroupBox(s, id, snapped.rect)
-					: patchFloating(s, id, { rect: snapped.rect })
-			);
-		},
-		[translateSelectedFloating, mutateNoSave, floatingGroupBox]
-	);
-
-	// (A right-button free-move passes {skipFlow} here, but it's intentionally ignored: skipFlow is
-	// already enforced upstream in onDragOver — allowDock && !skipFlow keeps dropIndicatorRef null —
-	// so the dock branch below is simply never taken for a free-move.)
-	const onCommit = useCallback(() => {
-		setGuideXs([]);
-		setGuideYs([]);
-		setDragHint(null);
-		const dropIndicator = dropIndicatorRef.current;
-		const draggingId = draggingIdRef.current;
-		// A floating widget released over the flow tree docks into that slot.
-		if (dropIndicator && draggingId) {
-			const id = draggingId;
-			commitOp((s) => {
-				const lf = s.monitor.floating.find((l) => l.id === id);
-				if (!lf) return {};
-				const floating = s.monitor.floating.filter((l) => l.id !== id);
-				const root = dropIndicator.merge
-					? editHelpers.wrapLeafWith(s.monitor.root, dropIndicator.merge, id, lf)
-					: insertChild(s.monitor.root, dropIndicator.parentId, lf, dropIndicator.index);
-				return { monitor: { ...s.monitor, floating, root }, selectedId: id };
-			});
-		} else {
-			commitOp(() => ({})); // saveLayout() (no dock) — commit the drag's onChange edits
-		}
-		dropIndicatorRef.current = null;
-		setDropBar(null);
-		setDropZone(null);
-		draggingIdRef.current = null;
-	}, [commitOp]);
-
-	const onDragOver = useCallback(
-		(e: { id: string; x: number; y: number; skipFlow?: boolean }) => {
-			const { id } = e;
-			const w = toWorld(e.x, e.y);
-			const c = toCanvas(e.x, e.y);
-			draggingIdRef.current = id;
-			const mon = monitorForDragRef.current;
-			// A right-button free-move (skipFlow) never docks, regardless of the "into grids" toggle.
-			const allowDock =
-				(!mon.floating.some((l) => l.id === id) || dropIntoFlowRef.current) && !e.skipFlow;
-			const drop = allowDock
-				? dropTarget(mon.root, solvedRef.current, w, id, dropIntoCellsRef.current)
-				: null;
-			dropIndicatorRef.current = drop;
-			const bar = !drop || drop.into || drop.merge ? null : computeDropBar(w, id);
-			setDropBar(bar);
-			setDropZone(computeDropZone(drop, bar));
-			if (drop) {
-				const parent = findNode(mon.root, drop.parentId);
-				const kind = parent && isContainer(parent) ? parent.kind : 'flow';
-				setDragHint({ x: c.x, y: c.y, text: `▦ into ${kind}` });
-			} else {
-				// If this floating widget WOULD have docked but the "into grids" toggle is off, say so —
-				// otherwise a widget that refuses to dock reads as a bug rather than a switched-off mode.
-				const dockOff =
-					mon.floating.some((l) => l.id === id) && !dropIntoFlowRef.current && !e.skipFlow;
-				const wouldDock =
-					dockOff && dropTarget(mon.root, solvedRef.current, w, id, dropIntoCellsRef.current);
-				if (wouldDock) {
-					setDragHint({ x: c.x, y: c.y, text: '⊕ float · docking off (into grids)' });
-				} else {
-					const lf = mon.floating.find((l) => l.id === id);
-					const pos = lf && !isGroup(lf.unit) ? (lf.unit as WidgetInstance).rect : null;
-					const px = Math.round(pos ? pos.x : w.x);
-					const py = Math.round(pos ? pos.y : w.y);
-					setDragHint({ x: c.x, y: c.y, text: `⊕ float · ${px}, ${py}` });
-				}
-			}
-		},
-		[toWorld, toCanvas, computeDropBar, computeDropZone]
-	);
-	const dropIntoFlowRef = useRef(dropIntoFlow); // mirrored in the commit effect S3
-	const dropIntoCellsRef = useRef(dropIntoCells); // mirrored in the commit effect S3
-
-	const onDrop = useCallback(
-		(e: { id: string; x: number; y: number }) => {
-			const { id } = e;
-			const { x, y } = toWorld(e.x, e.y);
-			dropIndicatorRef.current = null;
-			setDropBar(null);
-			setDropZone(null);
-			draggingIdRef.current = null;
-			setDragHint(null);
-			commitOp((s) => {
-				const drop = dropTarget(
-					s.monitor.root,
-					solvedRef.current,
-					{ x, y },
-					id,
-					dropIntoCellsRef.current
-				);
-				if (drop?.merge) {
-					const dragged = findNode(s.monitor.root, id);
-					if (dragged)
-						return {
-							monitor: {
-								...s.monitor,
-								root: editHelpers.wrapLeafWith(s.monitor.root, drop.merge, id, dragged)
-							},
-							selectedId: id
-						};
-					return { selectedId: id };
-				} else if (drop) {
-					return {
-						monitor: {
-							...s.monitor,
-							root: moveNode(s.monitor.root, id, drop.parentId, drop.index)
-						},
-						selectedId: id
-					};
-				}
-				// float at the cursor (floatNode reads the live solved map via setSolvedForFloat).
-				const node = findNode(s.monitor.root, id);
-				if (!node || !isLeaf(node)) return { selectedId: id };
-				const r = solvedRef.current.get(id);
-				const lf = editHelpers.floatingLeafFrom(node, x, y, r);
-				return {
-					monitor: {
-						...s.monitor,
-						root: removeNode(s.monitor.root, id),
-						floating: [...s.monitor.floating, lf]
-					},
-					selectedId: id
-				};
-			});
-		},
-		[toWorld, commitOp]
-	);
+	const {
+		guideXs,
+		guideYs,
+		dropBar,
+		dropZone,
+		dragHint,
+		dropIntoFlow,
+		setDropIntoFlow,
+		dropIntoCells,
+		setDropIntoCells,
+		onChange,
+		onCommit,
+		onCancel,
+		onDragOver,
+		onDrop
+	} = useCanvasDrag({
+		solvedRef,
+		renderablesRef,
+		monitorForDragRef,
+		selectedIdsRef,
+		toWorld,
+		toCanvas,
+		floatingGroupBox,
+		translateSelectedFloating,
+		commitOp,
+		mutateNoSave
+	});
 
 	const onSelect = useCallback(
 		(e: { id: string }) => dispatch({ type: 'selectClick', id: e.id }),
@@ -2031,8 +1833,6 @@ export default function Canvas({ studio = false }: Props) {
 		monitorForDragRef.current = monitor;
 		selectedIdsRef.current = selectedIds;
 		selectedIdRef.current = selectedId;
-		dropIntoFlowRef.current = dropIntoFlow;
-		dropIntoCellsRef.current = dropIntoCells;
 		containerRectsRef.current = containerRects;
 		navSectionRef.current = navSection;
 		designingRef.current = designing;
@@ -2244,6 +2044,7 @@ export default function Canvas({ studio = false }: Props) {
 				scale={studio ? zoom : 1}
 				onChange={onChange}
 				onCommit={onCommit}
+				onCancel={onCancel}
 				onSelect={onSelect}
 				onDragOver={onDragOver}
 				onDrop={onDrop}
@@ -2483,6 +2284,7 @@ export default function Canvas({ studio = false }: Props) {
 										scale={studio ? zoom : 1}
 										onChange={onChange}
 										onCommit={onCommit}
+										onCancel={onCancel}
 										onSelect={onSelect}
 										onContextMenu={onWidgetContextMenu}
 										onHover={editMode ? setHoverId : undefined}
@@ -3758,36 +3560,4 @@ function disambiguate(
 		seen.set(i.label, n);
 		return n > 1 ? { id: i.id, label: `${i.label} (${n})` } : i;
 	});
-}
-
-// patchFloatingGroupBox: a floating GROUP's position + size live in its `config` (x/y/w/h), not a
-// WidgetInstance.rect — so this is the group counterpart to patchFloating (used by GroupFrame's
-// drag/resize). Setting all four covers both move and resize. Returns a patch.
-function patchFloatingGroupBox(
-	s: { monitor: MonitorLayout },
-	id: string,
-	rect: Rect
-): Partial<EditorState> {
-	return {
-		monitor: {
-			...s.monitor,
-			floating: s.monitor.floating.map((l) =>
-				l.id === id && isGroup(l.unit)
-					? {
-							...l,
-							unit: {
-								...(l.unit as Group),
-								config: {
-									...(l.unit as Group).config,
-									x: rect.x,
-									y: rect.y,
-									w: rect.w,
-									h: rect.h
-								}
-							}
-						}
-					: l
-			)
-		}
-	};
 }
