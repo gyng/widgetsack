@@ -3,6 +3,25 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.61
+
+### Fixed
+
+- Recover desktop overlays after monitor wake and display changes; keep tray-triggered re-fitting responsive.
+- Serialize layout saves, preserve unsaved drafts when a write fails, and keep network widgets within their bounds.
+- Keep shared integration workers running when individual windows close, and restart them atomically after settings changes.
+- Serialize package refreshes and mutations so a delayed enable cannot restore a disabled package.
+- Prevent delayed settings loads, saves, and connection tests from overwriting newer edits or showing stale feedback.
+- Reject AI-generated layout edits when their original editor, monitor, or layout has changed.
+- Release microphone capture on cancellation, early failure, and automatic stop; share recording lifecycle handling between dictation and transcription.
+- Prevent older speech requests from interrupting newer playback, and discard pending speech after cancellation.
+- Wait for the chat listener before starting streams; cancel active requests on reset or final consumer disposal and ignore late tokens.
+
+### Changed
+
+- Separate editor sessions, domain operations, capability adapters, and gesture cleanup to simplify maintenance.
+- Improve overlay recovery diagnostics while bounding diagnostic logging resources.
+
 ## 0.0.60
 
 ### Changed — studio UX round
