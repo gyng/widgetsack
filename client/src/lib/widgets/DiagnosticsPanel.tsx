@@ -21,34 +21,13 @@ import {
 import { LOG_LEVELS, type LogLevel, type LogRecord } from '../core/logs';
 import { getLogFilePath, getLogs, revealLogDir, subscribeLogs } from '../logs';
 import { copyToClipboard, studioMonitorOptions } from '../overlay';
-import {
-	heapUsedFraction,
-	mergeReport,
-	mergeWindowList,
-	type WindowDiag
-} from '../core/diagnostics';
+import { heapUsedFraction } from '../core/diagnostics';
 import { formatBytes } from '../core/format';
 import { formatDuration } from '../core/timer';
-import {
-	getProcessDiagnostics,
-	getSubsystemTimings,
-	listenDiagReports,
-	listWindowLabels,
-	openDevtoolsFor,
-	reloadWindow,
-	requestDiagnostics,
-	setSubsystemProfiling,
-	setWindowInteractive,
-	type ProcessDiag,
-	type SubsystemTiming
-} from '../diag';
-import { widgetCosts, resetWidgetProfile, type WidgetCost } from './canvas/widgetProfile';
+import { openDevtoolsFor, reloadWindow, setWindowInteractive } from '../diag';
+import { useDiagnostics } from './useDiagnostics';
 import './DiagnosticsPanel.css';
 
-const POLL_MS = 1500;
-// A window that hasn't reported within this window is treated as not responding (closed / crashed). It
-// stays listed (the backend still knows the OS window) so it can be rescued / inspected by label.
-const STALE_MS = 6000;
 // Log lines kept client-side (matches the backend ring buffer) and shown in the pane at once.
 const LOG_KEEP = 1000;
 const LOG_SHOW = 200;
@@ -56,22 +35,10 @@ const LOG_SHOW = 200;
 type Props = { appVersion?: string | null };
 
 export default function DiagnosticsPanel({ appVersion = null }: Props) {
-	const [reports, setReports] = useState<Record<string, WindowDiag>>({});
-	// Authoritative window labels from the backend — the source of truth for which windows exist.
-	const [labels, setLabels] = useState<string[]>([]);
-	// The native (Rust host) process's CPU% + memory — polled by command, not the per-window bridge.
-	const [proc, setProc] = useState<ProcessDiag | null>(null);
+	const { rows, proc, timings, costs, resetCosts } = useDiagnostics();
 	// Local mirror of the click-through toggle we last sent each overlay (the overlay owns the truth;
 	// this just reflects the control state).
 	const [interactive, setInteractive] = useState<Record<string, boolean>>({});
-	// This (studio) window's per-widget render cost, from the <Profiler>s Canvas wraps each widget in.
-	// Seeded lazily on mount (the interval below keeps it fresh) so render stays free of setState.
-	const [costs, setCosts] = useState<WidgetCost[]>(() => widgetCosts());
-	// Per-subsystem backend CPU timing (Rust). Demand-gated: enabled only while this panel is open.
-	const [timings, setTimings] = useState<SubsystemTiming[]>([]);
-	// Wall clock used only for staleness, refreshed on each poll — keeps `performance.now()` (impure)
-	// out of the render body while giving mergeWindowList a monotonically-advancing "now".
-	const [now, setNow] = useState(() => performance.now());
 	// Backend structured log: the backlog on mount, then the live stream (capped like the backend).
 	const [logs, setLogs] = useState<LogRecord[]>([]);
 	const [minLevel, setMinLevel] = useState<LogLevel>('warn');
@@ -98,53 +65,6 @@ export default function DiagnosticsPanel({ appVersion = null }: Props) {
 			void off.then((un) => un());
 		};
 	}, []);
-
-	useEffect(() => {
-		let alive = true;
-		const offReports = listenDiagReports((r) => {
-			if (!alive) return;
-			// Re-stamp arrival on the STUDIO clock — each window's performance.now() is its own domain, so
-			// the reporter's `at` isn't comparable across windows; the studio clock makes staleness valid.
-			setReports((prev) => mergeReport(prev, { ...r, at: performance.now() }));
-		});
-		// Poll the native process alongside the per-window heap poll (CPU% needs the repeated call to
-		// build a delta, so the first tick reads ~0 and settles after one interval).
-		const pollProc = () =>
-			void getProcessDiagnostics().then((p) => {
-				if (alive && p) setProc(p);
-			});
-		const pollLabels = () =>
-			void listWindowLabels().then((l) => {
-				if (alive && l.length) setLabels(l);
-			});
-		// Turn ON the backend per-subsystem timing while this panel is mounted (demand-gated — it's
-		// inert otherwise), and poll it alongside the rest.
-		void setSubsystemProfiling(true);
-		const pollTimings = () =>
-			void getSubsystemTimings().then((t) => {
-				if (alive) setTimings(t);
-			});
-		requestDiagnostics();
-		pollProc();
-		pollLabels();
-		pollTimings();
-		const poll = window.setInterval(() => {
-			requestDiagnostics();
-			pollProc();
-			pollLabels();
-			setCosts(widgetCosts());
-			pollTimings();
-			setNow(performance.now());
-		}, POLL_MS);
-		return () => {
-			alive = false;
-			void offReports.then((un) => un());
-			clearInterval(poll);
-			void setSubsystemProfiling(false);
-		};
-	}, []);
-
-	const rows = mergeWindowList(reports, labels, now, STALE_MS);
 
 	const toggleInteractive = (label: string, value: boolean): void => {
 		setInteractive((m) => ({ ...m, [label]: value }));
@@ -260,10 +180,7 @@ export default function DiagnosticsPanel({ appVersion = null }: Props) {
 							type="button"
 							className="diag-cost-reset"
 							title="Clear the captured render stats and start fresh"
-							onClick={() => {
-								resetWidgetProfile();
-								setCosts([]);
-							}}
+							onClick={resetCosts}
 						>
 							reset
 						</button>

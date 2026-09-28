@@ -534,13 +534,12 @@ export function watchDisplayChanges(
 			if (s !== last) {
 				// Persist the before/after topology (the log file outlives the webview): a hang or a
 				// mis-fit during an HDMI switch was otherwise invisible in the postmortem.
-				logClient('info', 'overlay', `display topology changed: [${last}] → [${s}]`);
+				logClient('info', 'overlay', 'display topology changed', { previous: last, current: s });
 				last = s;
 				displayIdsCache = null; // GDI names may have been re-numbered with it
 				onChange();
 				return;
 			}
-			last = s;
 			// Same topology — but is THIS window still where it belongs? The OS can re-place an overlay
 			// after our fit (a DPI-hop suggested rect that assumes a frame we hide, "remember window
 			// locations" on reconnect); nothing else would ever correct that. One refit per distinct
@@ -551,11 +550,9 @@ export function watchDisplayChanges(
 				const drift = driftTrigger(lastDrift, currentDrift);
 				lastDrift = drift.next;
 				if (drift.fire) {
-					logClient(
-						'info',
-						'overlay',
-						`overlay drifted off its monitor (${drift.next}); refitting`
-					);
+					logClient('info', 'overlay', 'overlay drifted off its monitor; refitting', {
+						drift: drift.next ?? 'unknown'
+					});
 					onChange();
 				}
 			}

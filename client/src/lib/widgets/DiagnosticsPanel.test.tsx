@@ -152,7 +152,7 @@ describe('DiagnosticsPanel lifecycle', () => {
 		// One poll from the mount effect.
 		expect(requestDiagnostics).toHaveBeenCalledTimes(1);
 		await act(async () => {
-			vi.advanceTimersByTime(1500); // POLL_MS — one interval tick
+			await vi.advanceTimersByTimeAsync(1500); // POLL_MS — one interval tick
 		});
 		expect(requestDiagnostics).toHaveBeenCalledTimes(2);
 		unmount();
@@ -161,6 +161,26 @@ describe('DiagnosticsPanel lifecycle', () => {
 			vi.advanceTimersByTime(3000);
 		});
 		expect(requestDiagnostics).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps at most one backend poll in flight and resumes after it completes', async () => {
+		vi.useFakeTimers();
+		let resolve!: (value: null) => void;
+		vi.mocked(getProcessDiagnostics).mockReturnValueOnce(new Promise((r) => (resolve = r)));
+		const { unmount } = render(<DiagnosticsPanel />);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(4500);
+		});
+		expect(getProcessDiagnostics).toHaveBeenCalledTimes(1);
+		expect(listWindowLabels).toHaveBeenCalledTimes(1);
+		await act(async () => {
+			resolve(null);
+		});
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(1500);
+		});
+		expect(getProcessDiagnostics).toHaveBeenCalledTimes(2);
+		unmount();
 	});
 
 	it('shows the "Polling windows…" stub when no window has reported and no labels exist', async () => {

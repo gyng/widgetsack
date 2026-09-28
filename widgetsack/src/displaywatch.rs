@@ -21,14 +21,11 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-/// Debounce after a display change before checking for zero windows. A topology change (unplug, DDC
-/// input switch, resolution change) fires a BURST of `WM_DISPLAYCHANGE`, and the returning monitor
-/// takes a beat to enumerate — wait for the dust to settle before respawning. Same pending-guard +
-/// delayed-spawn shape as keepalive.rs's `on_zero_windows`, just far shorter (this IS the fast path).
+/// Coalesce display signals for three seconds to let returning monitors enumerate before recovery.
 const DEBOUNCE: Duration = Duration::from_secs(3);
 
-/// One in-flight respawn attempt per display-change burst; reset on the main thread before the check.
-static RESPAWN_PENDING: AtomicBool = AtomicBool::new(false);
+/// One scheduled recovery per signal burst; cleared when the main-thread callback starts.
+static RECOVERY_PENDING: AtomicBool = AtomicBool::new(false);
 
 /// Pure seam: a fresh primary `main` guarantees reconciliation without depending on a surviving
 /// Studio/secondary renderer, so those windows' presence does not prevent respawn.
@@ -205,12 +202,10 @@ unsafe extern "system" fn display_wndproc(
 /// main-thread window creation).
 #[cfg(target_os = "windows")]
 fn on_display_signal(reason: &'static str) {
-    use tauri::{Emitter, Manager};
-
     let Some(app) = DISPLAY_APP.get() else {
         return; // not wired yet
     };
-    if RESPAWN_PENDING.swap(true, Ordering::SeqCst) {
+    if RECOVERY_PENDING.swap(true, Ordering::SeqCst) {
         return; // an attempt is already scheduled for this burst
     }
     let app = app.clone();
@@ -219,33 +214,41 @@ fn on_display_signal(reason: &'static str) {
         let handle = app.clone();
         // Window creation must run on the main thread (same constraint as keepalive/watch_layout).
         let dispatched = app.run_on_main_thread(move || {
-            RESPAWN_PENDING.store(false, Ordering::SeqCst);
-            crate::overlay_diag::log_snapshot(&handle, reason);
-            crate::overlay_diag::log_after(&handle, "after display recovery");
-            let windows = handle.webview_windows();
-            let labels: Vec<&str> = windows.keys().map(String::as_str).collect();
-            let respawn = should_respawn_on_display_change(&labels);
-            if respawn {
-                crate::command::respawn_main_hidden(&handle, reason);
-            }
-            // This reaches surviving overlays even when topology and their outer rect are identical
-            // after wake. Their refit handler also reapplies click-through and the selected layer.
-            let refit_emitted = handle.emit(crate::bridge::REFIT_OVERLAYS_EVENT, ()).is_ok();
-            // Always leave a trace: a display change is exactly the moment a hang or a mis-fit
-            // happens, and the log file (unlike the webview) survives it.
-            crate::log::info("displaywatch", "display recovery")
-                .field("reason", reason)
-                .field("window_count", labels.len())
-                .field("respawn_main_requested", respawn)
-                .field("refit_emitted", refit_emitted)
-                .emit();
+            RECOVERY_PENDING.store(false, Ordering::SeqCst);
+            recover_overlays(&handle, reason);
         });
         // Normally reset inside the closure; if the dispatch failed (event loop unavailable —
         // normally only mid-shutdown) a stuck `true` would eat every future display change.
         if dispatched.is_err() {
-            RESPAWN_PENDING.store(false, Ordering::SeqCst);
+            RECOVERY_PENDING.store(false, Ordering::SeqCst);
         }
     });
+}
+
+/// Run the recovery on Tauri's main thread; scheduling and burst coalescing live above.
+#[cfg(target_os = "windows")]
+fn recover_overlays(app: &tauri::AppHandle, reason: &'static str) {
+    use tauri::{Emitter, Manager};
+
+    crate::overlay_diag::log_snapshot(app, reason);
+    crate::overlay_diag::log_after(app, "after display recovery");
+    let windows = app.webview_windows();
+    let labels: Vec<&str> = windows.keys().map(String::as_str).collect();
+    let respawn = should_respawn_on_display_change(&labels);
+    if respawn {
+        crate::command::respawn_main_hidden(app, reason);
+    }
+    // This reaches surviving overlays even when topology and their outer rect are identical
+    // after wake. Their refit handler also reapplies click-through and the selected layer.
+    let refit_emitted = app.emit(crate::bridge::REFIT_OVERLAYS_EVENT, ()).is_ok();
+    // Always leave a trace: a display change is exactly the moment a hang or a mis-fit
+    // happens, and the log file (unlike the webview) survives it.
+    crate::log::info("displaywatch", "display recovery")
+        .field("reason", reason)
+        .field("window_count", labels.len())
+        .field("respawn_main_requested", respawn)
+        .field("refit_emitted", refit_emitted)
+        .emit();
 }
 
 #[cfg(test)]
