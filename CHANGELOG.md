@@ -3,6 +3,34 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.62
+
+### Added
+
+- Dashboard widgets for service health, app audio and microphone controls, task checklists,
+  sensor history, and command execution, with ready-to-use dashboard presets.
+- A studio assistant that can arrange and configure widgets. It uses an installed Pi, Codex,
+  or Claude agent when available, with bundled Pi as a fallback. Edits support undo and stay
+  in the draft until you save.
+- A dial timer: drag the knob to choose up to 60 minutes, then release to start counting down.
+- Optional smooth updates for Sparkline and Sensor History charts, with reduced-motion support.
+
+### Changed
+
+- Give the studio a consistent spacing and typography system, with locally bundled IBM Plex
+  Sans, clearer headings, and larger controls. Widget themes keep their own font choices.
+- Refine agenda, calendar, and audio mixer alignment, labels, and controls. Agenda rows show
+  locations and all-day events more clearly.
+- Simplify the Gaming preset and improve preset sizing so agenda rows remain fully visible.
+- Refresh the README, preset screenshots, widget gallery, and design-system documentation.
+- Release builds use Node 24 to package the bundled Pi runtime.
+
+### Fixed
+
+- Prevent clipped agenda rows and misaligned event details in dashboard presets.
+- Handle interrupted studio transitions without reporting optional animation failures as errors.
+- Cancel studio assistant work when a chat stops or closes, and reject stale layout edits.
+
 ## 0.0.61
 
 ### Fixed
