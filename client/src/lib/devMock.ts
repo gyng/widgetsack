@@ -24,6 +24,23 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 	let evtId = 0;
 	const handleCommand: Parameters<typeof mockIPC>[0] = (cmd, args) => {
 		switch (cmd) {
+			case COMMANDS.studioAgentStatus:
+				return {
+					defaultBackend: 'pi',
+					backends: [
+						{ id: 'pi', label: 'Pi (installed)', available: true },
+						{ id: 'codex', label: 'Codex', available: false },
+						{ id: 'claude', label: 'Claude', available: false },
+						{ id: 'pi-bundled', label: 'Pi (bundled SDK)', available: true }
+					],
+					models: [],
+					defaultModel: ''
+				};
+			case COMMANDS.studioAgentRun:
+				throw new Error('Configure an AI provider to run the studio assistant.');
+			case COMMANDS.studioAgentCancel:
+			case COMMANDS.studioAgentReply:
+				return undefined;
 			case COMMANDS.getAudioMixer:
 				return {
 					sessions: [{ id: 'mock-session', name: 'Music app', level: 0.5, muted: false }],

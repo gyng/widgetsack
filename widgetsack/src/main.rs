@@ -52,6 +52,7 @@ pub mod sensors;
 pub mod service_health;
 pub mod state;
 pub mod stocks;
+pub mod studio_agent;
 pub mod timings;
 pub mod update;
 pub mod watchdog;
@@ -242,6 +243,12 @@ async fn main() -> Result<(), ()> {
                 // without this the WASAPI loopback + FFT thread keeps running for a dead consumer.
                 let spectrum = window.app_handle().state::<audio::SpectrumState>();
                 audio::forget_window(&spectrum, window.label());
+                if window.label() == "studio" {
+                    let agent = window
+                        .app_handle()
+                        .state::<studio_agent::StudioAgentState>();
+                    studio_agent::forget_studio(&agent);
+                }
             }
             // Flush window geometry to disk when the studio OR an overlay goes away: the overlays'
             // saved rects are the evidence the layout-key migration uses to put a layout back on its
@@ -269,6 +276,7 @@ async fn main() -> Result<(), ()> {
         .manage(control::ControlState::default())
         .manage(ha::HaState::default())
         .manage(llm::LlmState::default())
+        .manage(studio_agent::StudioAgentState::default())
         .manage(mqtt::MqttState::default())
         .manage(stocks::StocksState::default())
         .manage(weather::WeatherState::default())
@@ -284,6 +292,10 @@ async fn main() -> Result<(), ()> {
         .register_uri_scheme_protocol("art", |ctx, request| art::serve_art(ctx, request))
         .invoke_handler(tauri::generate_handler![
             get_initial_sessions,
+            studio_agent::studio_agent_status,
+            studio_agent::studio_agent_run,
+            studio_agent::studio_agent_reply,
+            studio_agent::studio_agent_cancel,
             command::runner::run_widget_command,
             is_dev_instance,
             command::layouts::load_layout,

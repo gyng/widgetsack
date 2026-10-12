@@ -5,6 +5,7 @@
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
+		"build:agent": "node scripts/build-agent.mjs",
 		"preview": "vite preview",
 		"check": "tsc --noEmit",
 		"test:unit": "vitest",

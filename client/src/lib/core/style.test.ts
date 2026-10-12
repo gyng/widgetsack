@@ -75,7 +75,7 @@ describe('assembleStyles', () => {
 		expect(css).toContain('[data-def="cg"] {\n.value { fill: red }\n}');
 		expect(css).toContain('[data-w="flowA"] {\ncolor: lime\n}');
 		expect(css).toContain('[data-w="floatB"] {\nopacity: 0.5\n}');
-		expect(css).toContain('[data-group="grp"] {\nfilter: blur(1px)\n}');
+		expect(css).toContain('[data-group][data-id="grp"] {\nfilter: blur(1px)\n}');
 		// theme first, instance css after the def css
 		expect(css.indexOf(':root')).toBeLessThan(css.indexOf('[data-def='));
 		expect(css.indexOf('[data-def=')).toBeLessThan(css.indexOf('[data-w="flowA"'));
@@ -122,7 +122,7 @@ describe('assembleStyles', () => {
 			]
 		};
 		const css = assembleStyles({ monitor });
-		expect(css).toContain('[data-group="g1"] {\n\t--np-fg: #000;\n}');
+		expect(css).toContain('[data-group][data-id="g1"] {\n\t--np-fg: #000;\n}');
 	});
 
 	it('omits a scoped token block when tokens is empty', () => {

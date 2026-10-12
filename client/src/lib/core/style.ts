@@ -90,7 +90,7 @@ export function scopeCss(
  *   1. the global theme, verbatim (sets tokens + may target `np-*` hooks)
  *   2. each library def's css, scoped to `[data-def="<id>"]` (styles every instance)
  *   3. each instance's per-widget token overrides + css (`[data-w="<id>"]`) and each group
- *      instance's (`[data-group="<id>"]`), most-specific last so it wins. The scoped tokens come
+ *      instance's (`[data-group][data-id="<id>"]`), most-specific last so it wins. The scoped tokens come
  *      just before that unit's css and beat the global `:root` tokens for this widget's subtree.
  * Pure — the host carries the matching `data-w`/`data-def`/`data-group` attributes.
  */
@@ -119,7 +119,7 @@ export function assembleStyles(opts: {
 
 	const leafCss = (lf: Leaf, prefix: string): void => {
 		const fullId = prefix + lf.id;
-		const sel = isGroup(lf.unit) ? `[data-group="${fullId}"]` : `[data-w="${fullId}"]`;
+		const sel = isGroup(lf.unit) ? `[data-group][data-id="${fullId}"]` : `[data-w="${fullId}"]`;
 		const tk = lf.unit.tokens;
 		if (tk && Object.keys(tk).length) parts.push(tokensToCss(tk, sel));
 		const s = scopeCss(lf.unit.css, sel, (r) => opts.onRejectCss?.(sel, r));

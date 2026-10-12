@@ -81,6 +81,8 @@ import { SYSTEM_GROUP } from '../core/sensorList';
 import StyleLayer from './StyleLayer';
 import { startDiagResponder, startMemoryTrail } from '../diag';
 import { paletteItems } from './registry';
+import { applyStudioOps, type StudioOp } from '../core/studioAssistant';
+import type { StudioSnapshot } from '../llm/studioAgentSession';
 import type { LayoutOp } from './ops';
 import { sensorCatalog } from '../core/sensors';
 import { getMeta } from '../core/widget';
@@ -170,6 +172,7 @@ const PluginsPanel = lazy(() => import('./PluginsPanel'));
 const DesignerListPanel = lazy(() => import('./DesignerListPanel'));
 const SavedLayoutsPanel = lazy(() => import('./SavedLayoutsPanel'));
 const MultiInspector = lazy(() => import('./MultiInspector'));
+const StudioAssistantSidebar = lazy(() => import('./StudioAssistantSidebar'));
 
 type Props = { studio?: boolean };
 
@@ -309,6 +312,7 @@ export default function Canvas({ studio = false }: Props) {
 	// Studio left-rail nav: which section's panel is showing. Transient UI — never in EditorState, so
 	// it doesn't touch undo/redo or the dirty diff.
 	const [navSection, setNavSection] = useState<SectionId>('layouts');
+	const [assistantOpen, setAssistantOpen] = useState(false);
 	// The top-bar overflow (≡) menu: quick global access to the otherwise section-buried actions.
 	const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 	// id → plugin name for the Sensors browser's "from X" badges. Built only while that section is
@@ -1001,6 +1005,40 @@ export default function Canvas({ studio = false }: Props) {
 		await reconcileOverlays();
 		await setMainWindowVisible(monitorHasWidgets(monitorRef.current));
 	}, [monitorRef]);
+	const readAgentStudio = useCallback(
+		(): StudioSnapshot => ({
+			monitorKey: myMonitorRef.current,
+			monitor: monitorRef.current,
+			library,
+			widgetTypes: widgetTypes.map((item) => getMeta(item.type)),
+			sensorIds: [...new Set([...hub.sensorIds(), ...sourceCatalogIds()])]
+		}),
+		[myMonitorRef, monitorRef, library, widgetTypes, hub]
+	);
+	const applyAgentStudio = useCallback(
+		(ops: StudioOp[], expected: StudioSnapshot) => {
+			if (expected.monitorKey !== myMonitorRef.current || expected.monitor !== monitorRef.current)
+				return {
+					applied: 0,
+					addedIds: [],
+					errors: ['The layout changed. Read the studio again before editing.']
+				};
+			const result = applyStudioOps(
+				monitorRef.current,
+				ops,
+				(type) => `${type}-${editHelpers.rand()}`
+			);
+			if (result.applied) {
+				monitorRef.current = result.monitor;
+				commitOp((state) => ({
+					monitor: result.monitor,
+					selectedId: result.addedIds.at(-1) ?? state.selectedId
+				}));
+			}
+			return { applied: result.applied, addedIds: result.addedIds, errors: result.errors };
+		},
+		[commitOp, monitorRef, myMonitorRef]
+	);
 
 	// Warm the lazy panel chunks once on the studio so navigating between sections never suspends
 	// mid-session. The passive OVERLAY skips this and stays lean; on an overlay these chunks load only
@@ -2510,6 +2548,18 @@ export default function Canvas({ studio = false }: Props) {
 											Changes are live on your desktop · Save to keep · Cancel to revert
 										</span>
 									)}
+									<button
+										type="button"
+										aria-label="Studio AI assistant"
+										aria-pressed={assistantOpen}
+										disabled={designing || previewing}
+										onClick={() => {
+											navToSection('layouts');
+											setAssistantOpen((open) => !open);
+										}}
+									>
+										✦ Assistant
+									</button>
 									{/* Dev/extra-instance badge (main.rs is_dev_instance): a --multi or debug build run
 									    alongside the installed release shows this so the two are distinguishable. */}
 									{devInstance && (
@@ -3165,61 +3215,72 @@ export default function Canvas({ studio = false }: Props) {
 								onNodeContextMenu={previewing ? undefined : onOutlineContextMenu}
 							/>
 						)}
-						{(!studio || navSection === 'layouts' || designing) && !previewing && (
-							<ErrorBoundary label="Details" resetKey={selectedId} onCopy={copyToClipboard}>
-								{multiSelected ? (
-									<MultiInspector
-										items={multiItems}
-										fields={multiFields}
-										basis={multiBasis}
-										onFocus={focusOne}
-										onPatchConfig={patchSelectedConfig}
-										onSetBasis={setSelectedBasisAll}
-										onDelete={deleteSelected}
-										docked={studio}
-										floatingIds={floatingSelectedIds}
-										onOp={handleOp}
-									/>
-								) : (
-									<Inspector
-										widget={selectedWidget}
-										container={selectedContainer}
-										groupUnit={selectedGroup}
-										def={selectedDef}
-										defs={library?.defs ?? []}
-										tokens={tokenOverrides}
-										baseWidget={baseWidget}
-										baseContainer={baseContainer}
-										baseGroup={baseGroup}
-										baseTokens={savedBaseline?.tokens ?? null}
-										nodeIsNew={nodeIsNew}
-										isGridCell={isGridCell}
-										containerBox={selectedContainerBox}
-										placement={placement}
-										widgetBasis={selectedLeafBasis}
-										widgetHalign={selectedLeafHalign}
-										widgetValign={selectedLeafValign}
-										widgetTypes={widgetTypes}
-										configFields={configFields}
-										sensors={sensors}
-										sensorMeta={sensorMeta}
-										audioOutputs={audioOutputs}
-										microphones={microphones}
-										displayNames={displayNames}
-										docked={studio}
-										onOp={handleOp}
-										onDeleteDef={studio ? deleteWidget : undefined}
-										onPreviewTemplate={studio ? previewTemplate : undefined}
-										node={selectedNode}
-										onCopy={(t) => copyToClipboard(t)}
-										addTarget={addTargetContainer?.id ?? null}
-										addTargetLabel={addTargetLabel}
-										onSetAddTarget={setAddTarget}
-										onClearAddTarget={clearAddTarget}
-									/>
-								)}
+						{studio && assistantOpen && navSection === 'layouts' && !designing && !previewing && (
+							<ErrorBoundary label="Studio assistant" onCopy={copyToClipboard}>
+								<StudioAssistantSidebar
+									read={readAgentStudio}
+									apply={applyAgentStudio}
+									onClose={() => setAssistantOpen(false)}
+								/>
 							</ErrorBoundary>
 						)}
+						{(!studio || navSection === 'layouts' || designing) &&
+							!previewing &&
+							!(studio && assistantOpen && !designing) && (
+								<ErrorBoundary label="Details" resetKey={selectedId} onCopy={copyToClipboard}>
+									{multiSelected ? (
+										<MultiInspector
+											items={multiItems}
+											fields={multiFields}
+											basis={multiBasis}
+											onFocus={focusOne}
+											onPatchConfig={patchSelectedConfig}
+											onSetBasis={setSelectedBasisAll}
+											onDelete={deleteSelected}
+											docked={studio}
+											floatingIds={floatingSelectedIds}
+											onOp={handleOp}
+										/>
+									) : (
+										<Inspector
+											widget={selectedWidget}
+											container={selectedContainer}
+											groupUnit={selectedGroup}
+											def={selectedDef}
+											defs={library?.defs ?? []}
+											tokens={tokenOverrides}
+											baseWidget={baseWidget}
+											baseContainer={baseContainer}
+											baseGroup={baseGroup}
+											baseTokens={savedBaseline?.tokens ?? null}
+											nodeIsNew={nodeIsNew}
+											isGridCell={isGridCell}
+											containerBox={selectedContainerBox}
+											placement={placement}
+											widgetBasis={selectedLeafBasis}
+											widgetHalign={selectedLeafHalign}
+											widgetValign={selectedLeafValign}
+											widgetTypes={widgetTypes}
+											configFields={configFields}
+											sensors={sensors}
+											sensorMeta={sensorMeta}
+											audioOutputs={audioOutputs}
+											microphones={microphones}
+											displayNames={displayNames}
+											docked={studio}
+											onOp={handleOp}
+											onDeleteDef={studio ? deleteWidget : undefined}
+											onPreviewTemplate={studio ? previewTemplate : undefined}
+											node={selectedNode}
+											onCopy={(t) => copyToClipboard(t)}
+											addTarget={addTargetContainer?.id ?? null}
+											addTargetLabel={addTargetLabel}
+											onSetAddTarget={setAddTarget}
+											onClearAddTarget={clearAddTarget}
+										/>
+									)}
+								</ErrorBoundary>
+							)}
 						{menu && menuNode && (
 							<>
 								<button

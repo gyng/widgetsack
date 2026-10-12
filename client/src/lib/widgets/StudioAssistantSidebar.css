@@ -1,0 +1,100 @@
+.canvas.studio .studio-assistant {
+	position: fixed;
+	top: var(--bar-h);
+	right: 0;
+	bottom: var(--bar-b);
+	width: calc(var(--rail-r) - var(--pane-gap));
+	box-sizing: border-box;
+	padding: 12px;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	background: var(--ui-bg);
+	color: var(--ui-fg);
+	font: 13px/1.45 var(--ui-font, 'Segoe UI', sans-serif);
+	border-left: 1px solid var(--ui-border);
+	pointer-events: auto;
+	user-select: text;
+	z-index: 7;
+	overflow: auto;
+}
+.studio-assistant :is(button, input, select, textarea) {
+	font: inherit;
+	color: var(--ui-fg);
+	background: var(--ui-bg-2, var(--ui-bg));
+	border: 1px solid var(--ui-border);
+	border-radius: 4px;
+	padding: 6px 8px;
+}
+.studio-assistant button {
+	cursor: pointer;
+}
+.studio-assistant button:hover {
+	border-color: var(--ui-accent);
+}
+.studio-assistant :is(button, input, select, textarea):focus-visible {
+	outline: 2px solid var(--ui-accent);
+	outline-offset: 2px;
+}
+.studio-assistant :disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+.studio-assistant header,
+.assistant-actions {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+.studio-assistant header strong {
+	font-size: 15px;
+}
+.studio-assistant .assistant-options {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 8px;
+}
+.studio-assistant label {
+	display: grid;
+	gap: 4px;
+}
+.studio-assistant :is(select, input, textarea) {
+	width: 100%;
+	min-width: 0;
+	box-sizing: border-box;
+}
+.studio-assistant textarea {
+	min-height: 80px;
+	resize: vertical;
+}
+.studio-assistant form {
+	display: grid;
+	gap: 8px;
+}
+.assistant-transcript {
+	flex: 1;
+	min-height: 80px;
+	overflow: auto;
+	overflow-wrap: anywhere;
+}
+.assistant-transcript article {
+	margin-bottom: 14px;
+}
+.assistant-transcript article div {
+	white-space: pre-wrap;
+}
+.assistant-transcript article[data-role='user'] strong {
+	color: var(--ui-accent);
+}
+.studio-assistant .assistant-hint,
+.assistant-action {
+	margin: 0;
+	font-size: 12px;
+	color: var(--ui-fg-dim);
+}
+.studio-assistant [role='alert'] {
+	margin: 0;
+	color: var(--ui-danger, #f68b8b);
+	overflow-wrap: anywhere;
+}

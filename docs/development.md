@@ -78,3 +78,20 @@ asset-less release.
 
 > A release created directly as public (not a draft) still builds — `created` fires for it too —
 > but it is visible for the ~10 minutes the build takes before its asset appears.
+## Studio assistant agents
+
+The studio assistant prefers installed Pi, Codex, and Claude CLIs, in that order. The Pi SDK from
+`agent/` is the fallback and an explicit sidebar choice. Build with Node.js 24 or newer.
+In `client/`, run `npm run build:agent` before a direct
+`cargo build`, `cargo test`, or `cargo clippy`. `cargo tauri build` and `cargo tauri dev` do this automatically.
+
+The build copies a matching Node executable, the SDK, and its dependencies into the ignored
+`agent/runtime/` directory. Tauri bundles that directory as `studio-agent/`. End users do not need
+Node or a separate Pi installation. Dependency versions are locked in `agent/package-lock.json`.
+Run `npm test` in `agent/` for protocol and real SDK tests. The SDK test uses a local fake provider.
+
+The sidecar runs only for an explicit studio request. Its tool set is `studio_read` and `studio_apply`.
+The frontend validates actions and uses the editor's commit path. Each batch is undoable; stale
+snapshots cannot overwrite newer edits. No SDK extensions, context files, skills, or filesystem tools
+are loaded. Backend credentials go through the child stdin pipe, never through the webview.
+Windows job objects terminate the sidecar and its CLI children on cancellation or timeout.

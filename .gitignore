@@ -2,6 +2,8 @@
 /node_modules
 # Vitest cache (run from repo root)
 /.vite
+/agent/node_modules
+/agent/runtime
 settings.json
 .claude/
 # Playwright MCP scratch (screenshots / console logs from interactive browser sessions)

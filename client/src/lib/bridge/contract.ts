@@ -38,6 +38,10 @@ export const EVENTS = {
 /** Tauri invoke command names (TS `invoke` → the `#[tauri::command]` fns registered in
  * widgetsack/src/main.rs `invoke_handler`; a command's wire name IS its Rust fn name). */
 export const COMMANDS = {
+	studioAgentStatus: 'studio_agent_status',
+	studioAgentRun: 'studio_agent_run',
+	studioAgentReply: 'studio_agent_reply',
+	studioAgentCancel: 'studio_agent_cancel',
 	getAudioMixer: 'get_audio_mixer',
 	setAudioSession: 'set_audio_session',
 	setMicrophoneMute: 'set_microphone_mute',

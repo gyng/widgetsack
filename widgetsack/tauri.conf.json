@@ -1,7 +1,7 @@
 {
   "build": {
-    "beforeBuildCommand": "cd ../client && npm run build",
-    "beforeDevCommand": "cd ../client && npm run dev",
+    "beforeBuildCommand": "cd ../client && npm run build:agent && npm run build",
+    "beforeDevCommand": "cd ../client && npm run build:agent && npm run dev",
     "frontendDist": "../client/build",
     "devUrl": "http://localhost:1420"
   },
@@ -40,7 +40,7 @@
       "providerShortName": null,
       "signingIdentity": null
     },
-    "resources": [],
+    "resources": { "../agent/runtime/": "studio-agent/" },
     "shortDescription": "",
     "linux": {
       "deb": {
