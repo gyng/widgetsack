@@ -6,14 +6,13 @@
 
 [**Download the latest installer**](https://github.com/gyng/widgetsack/releases/latest)
 
-A desktop widget overlay for Windows. Your meters, your layout, your little control room.
+Widgetsack displays desktop widgets on transparent overlays across Windows monitors.
+Widgets show system measurements, clocks, media information, and data from Home Assistant,
+MQTT, and stock services.
 
-Show system meters, clocks, and music on a transparent overlay across your monitors.
-Arrange widgets in the built-in visual editor, **Studio**. Use CSS and design tokens
-to change their appearance. Connect Home Assistant, MQTT, or stock quotes for more live data.
-
-A sensor supplies a value. A widget shows it. The overlay lets clicks pass to the desktop,
-while widget buttons and controls remain available.
+Use Studio to arrange widgets and configure their data sources. CSS and design tokens
+control their appearance. Clicks pass through the overlay to the desktop, except on widget
+buttons and controls.
 
 ## Widget gallery
 
