@@ -46,28 +46,6 @@ enter the URL of the endpoint to check.
 The screenshots use sample data. New task lists are empty. Alerts appear when a rule triggers.
 To update these images, run `npm run gen:presets` in `client/`.
 
-### Local desktop layout
-
-| Local desktop |
-| --- |
-| <img src="docs/img/presets/local-desktop.png" width="400" alt="Local desktop preset with clocks, media, network charts, per-core CPU charts, and monitor inputs"> |
-
-Load **Built-in: Local desktop** from **Presets** to use this complete monitor layout.
-It includes clocks, media, network charts, and CPU charts. The CPU charts find the cores on your machine.
-The monitor switcher uses the primary display and finds its available inputs.
-You can also insert **Local desktop** from the widget list or import its sack from **Share**.
-
-### Smooth charts
-
-1. Open **Layout**.
-2. Select an existing **System monitor** or **Network** group.
-3. Enable **Smooth charts** in the Inspector.
-
-For a separate **CPU**, **Sparkline**, or **Sensor History** widget, open **Appearance** in the Inspector.
-Enable **Smooth charts**. System monitor and Network also have this option when you insert them.
-CPU smoothing applies to the per-core chart view.
-Smoothing changes the display. Recorded sensor values stay unchanged.
-
 ## Layout studio
 
 <p align="center">
@@ -83,8 +61,6 @@ Smoothing changes the display. Recorded sensor values stay unchanged.
 - **Sensors:** read CPU load and frequency, memory, swap, network traffic, disk use and I/O, uptime,
   battery, and process activity. Read NVIDIA GPU data through NVML. Cheap baseline sensors keep their normal refresh rate.
   Expensive sensors run when a widget or visible sensor row needs them. Recycle Bin values refresh at most every ten seconds.
-- **Charts:** enable **Smooth charts** in the Inspector to blend changes between readings.
-  Use it on CPU, Sparkline, Sensor History, or grouped charts. Recorded values stay unchanged.
 - **Timer:** choose **dial** style for a kitchen timer with a raised knob. Drag to set up to 60 minutes;
   release to start. Use a box around 220 × 280 for a comfortable grip. Digital style also supports a stopwatch.
 - **Now playing:** show Windows media through GSMTC. Sources include Spotify, foobar2000, and browsers
