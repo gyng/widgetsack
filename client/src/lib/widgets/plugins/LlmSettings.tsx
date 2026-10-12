@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 import { useSettingsOperations } from './useSettingsOperations';
 // The AI Provider plugin's settings pane (studio → Plugins → AI Provider). A container (AGENTS.md §6):
 // owns the provider-config form and drives the Tauri commands via llm-commands.ts; the api_key is
@@ -349,7 +350,11 @@ export default function LlmSettings() {
 				</button>
 			</div>
 			{modelsState.kind === 'ok' && <div className="has-test ok">{modelsState.msg}</div>}
-			{modelsState.kind === 'err' && <div className="has-test err">⚠ {modelsState.msg}</div>}
+			{modelsState.kind === 'err' && (
+				<div className="has-test err">
+					<Icon name="alert" /> {modelsState.msg}
+				</div>
+			)}
 			<small className="has-help">
 				Blank uses the provider default; ↻ Models lists what your key can access.
 			</small>
@@ -460,8 +465,9 @@ export default function LlmSettings() {
 				</label>
 				{agentControl && (
 					<div className="has-warn">
-						⚠ Opens a token-guarded server on 127.0.0.1 so an MCP agent can control media + Home
-						Assistant. Off by default; only enable if you use the MCP integration.
+						<Icon name="alert" /> Opens a token-guarded server on 127.0.0.1 so an MCP agent can
+						control media + Home Assistant. Off by default; only enable if you use the MCP
+						integration.
 					</div>
 				)}
 			</details>
@@ -487,7 +493,11 @@ export default function LlmSettings() {
 				Chat, the assistant &amp; widgets can use the provider.
 			</small>
 			{test.kind === 'ok' && <div className="has-test ok">{test.msg}</div>}
-			{test.kind === 'err' && <div className="has-test err">⚠ {test.msg}</div>}
+			{test.kind === 'err' && (
+				<div className="has-test err">
+					<Icon name="alert" /> {test.msg}
+				</div>
+			)}
 
 			<LayoutAssistant sensorIds={() => hub.sensorIds()} />
 			<ChatTester ready={activeReady} activeLabel={activeLabel} />
@@ -603,7 +613,7 @@ function LayoutAssistant({ sensorIds }: { sensorIds: () => string[] }) {
 						disabled={mic.busy}
 						title="Dictate the request (speech-to-text)"
 					>
-						{recording ? '■ Stop' : '🎤 Speak'}
+						<Icon name={recording ? 'stop' : 'mic'} /> {recording ? 'Stop' : 'Speak'}
 					</button>
 				)}
 			</div>
@@ -651,7 +661,10 @@ function ChatTester({ ready, activeLabel }: { ready: boolean; activeLabel?: stri
 							{chat.turns.map((t) => (
 								<div key={t.id} className="has-entity" style={{ display: 'block' }}>
 									<span className="has-state-dim">{t.role === 'user' ? 'you' : 'ai'}</span>{' '}
-									<span>{t.error ? `⚠ ${t.error}` : t.content || (t.streaming ? '…' : '')}</span>
+									<span>
+										{t.error && <Icon name="alert" />}
+										{t.error ? t.error : t.content || (t.streaming ? '…' : '')}
+									</span>
 									{t.role === 'assistant' && t.content && !t.streaming && ttsAvailable() && (
 										<button
 											type="button"
@@ -660,7 +673,7 @@ function ChatTester({ ready, activeLabel }: { ready: boolean; activeLabel?: stri
 											aria-label="Read aloud"
 											onClick={() => void speakSmart(t.content)}
 										>
-											🔊
+											<Icon name="speaker-high" />
 										</button>
 									)}
 								</div>

@@ -1114,7 +1114,7 @@
 /* The live-preview reminder next to Save while dirty: one quiet line, never wraps. */
 .canvas .studio-bar .save-hint {
 	margin-left: var(--space-2);
-	font-family: system-ui, sans-serif;
+	font-family: var(--ui-font);
 	font-size: var(--text-sm);
 	color: var(--ui-fg-muted);
 	white-space: nowrap;
@@ -1146,14 +1146,14 @@
 	box-shadow: 0 4px 14px var(--ui-scrim);
 	white-space: normal;
 	line-height: 1.5;
-	font-family: system-ui, sans-serif;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	z-index: 1;
 }
 .canvas .monitor-onboarding strong {
 	color: var(--ui-accent-fg);
 }
-.canvas .studio-bar .monitor-onboarding button {
+.canvas .monitor-onboarding button {
 	flex: none;
 	padding: 0 var(--space-2);
 	border: none;
@@ -1180,7 +1180,7 @@
 	transform: translate(-50%, -50%);
 	max-width: 340px;
 	padding: var(--space-5) var(--space-6);
-	font-family: system-ui, sans-serif;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	color: var(--ui-fg);
 	background: var(--ui-surface);

@@ -13,11 +13,11 @@ describe('volumePercent', () => {
 
 describe('volumeIcon', () => {
 	it('reflects mute then level buckets', () => {
-		expect(volumeIcon(0.8, true)).toBe('🔇');
-		expect(volumeIcon(0, false)).toBe('🔇');
-		expect(volumeIcon(0.2, false)).toBe('🔈');
-		expect(volumeIcon(0.5, false)).toBe('🔉');
-		expect(volumeIcon(0.9, false)).toBe('🔊');
-		expect(volumeIcon(null, false)).toBe('🔇');
+		expect(volumeIcon(0.8, true)).toBe('mute');
+		expect(volumeIcon(0, false)).toBe('mute');
+		expect(volumeIcon(0.2, false)).toBe('speaker-low');
+		expect(volumeIcon(0.5, false)).toBe('speaker');
+		expect(volumeIcon(0.9, false)).toBe('speaker-high');
+		expect(volumeIcon(null, false)).toBe('mute');
 	});
 });

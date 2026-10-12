@@ -333,6 +333,7 @@ describe('Select (combobox: deferred commit + select-all on focus)', () => {
 		// Open, arrow to highlight the first row, Enter → Downshift's pick wins (one commit, the option).
 		fireEvent.click(input);
 		fireEvent.keyDown(input, { key: 'ArrowDown' });
+		fireEvent.keyDown(input, { key: 'Home' });
 		fireEvent.keyDown(input, { key: 'Enter' });
 		expect(onChange).toHaveBeenCalledTimes(1);
 		expect(onChange).toHaveBeenCalledWith('s.0');

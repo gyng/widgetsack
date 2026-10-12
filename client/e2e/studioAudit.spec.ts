@@ -30,7 +30,10 @@ test('outline guides connect between rows and widget previews have balanced inse
 	expect(metadata!.x - preview!.x).toBeGreaterThanOrEqual(12);
 	await page.screenshot({ path: 'test-results/studio-outline-tooltip.png' });
 	const monitor = page.getByRole('combobox', { name: 'Monitor', exact: true });
-	expect((await monitor.boundingBox())!.width).toBeGreaterThanOrEqual(180);
+	expect((await monitor.boundingBox())!.width).toBeGreaterThanOrEqual(150);
+	await expect(
+		page.locator('.outline').getByRole('combobox', { name: 'Monitor', exact: true })
+	).toBeVisible();
 	await expect(monitor).toContainText(/Current monitor|Mock/);
 	await openSection(page, 'sensors');
 	const value = page.locator('.sensor-value').first();

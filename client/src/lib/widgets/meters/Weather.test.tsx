@@ -45,7 +45,7 @@ describe('Weather meter', () => {
 			/>
 		);
 		expect(container.querySelector('.wx-temp-val')?.textContent).toBe('70°F');
-		expect(container.querySelector('.wx-icon')?.textContent).toBe('🌙'); // clear, night
+		expect(container.querySelector('.wx-icon')?.querySelector('[data-icon="moon"]')).toBeTruthy(); // clear, night
 		expect(container.querySelector('.wx-detail')?.textContent).toContain('9 mph');
 	});
 
@@ -92,7 +92,7 @@ describe('Weather meter', () => {
 		expect(cols).toHaveLength(3);
 		expect(cols[0].querySelector('.wx-day-label')?.textContent).toBe('Today');
 		expect(cols[0].querySelector('.wx-day-hi')?.textContent).toBe('15°');
-		expect(cols[0].querySelector('.wx-day-icon')?.textContent).toBe('☀️'); // code 0 = clear (day)
+		expect(cols[0].querySelector('.wx-day-icon')?.querySelector('[data-icon="sun"]')).toBeTruthy(); // code 0 = clear (day)
 	});
 
 	it('omits the forecast strip when forecastDays is 0 (default)', () => {
@@ -110,7 +110,7 @@ describe('Weather meter', () => {
 
 	it('defaults to daytime icons when is_day is not reported', () => {
 		const { container } = render(<Weather sensors={{ temp: scalar(12), code: scalar(0) }} />);
-		expect(container.querySelector('.wx-icon')?.textContent).toBe('☀️');
+		expect(container.querySelector('.wx-icon')?.querySelector('[data-icon="sun"]')).toBeTruthy();
 	});
 
 	it('applies a per-instance color as the --wx-accent CSS variable', () => {

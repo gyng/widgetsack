@@ -1,3 +1,4 @@
+import Icon from './Icon';
 // Editor inspector (edit mode): a palette to add widgets, plus a properties panel for
 // the selected node — widget props (sensor / rect / config / dock·float) or container
 // props (kind / cols / gap / pad / align / justify / grow). Emits a single `op` event;
@@ -8,7 +9,8 @@ import {
 	useMemo,
 	useRef,
 	useState,
-	type DragEvent as ReactDragEvent
+	type DragEvent as ReactDragEvent,
+	type ReactNode
 } from 'react';
 import type {
 	Align,
@@ -90,6 +92,7 @@ type Props = {
 	// In the studio this docks as the full-height right rail (vs a floating box on an overlay).
 	docked?: boolean;
 	widgetTypes?: { type: string; label: string; category?: string }[]; // palette (8a)
+	paletteSetup?: Record<string, ReactNode>;
 	configFields?: ConfigField[]; // typed config schema for the selected widget (8a)
 	sensors?: string[];
 	// Optional id → display metadata, so HA (and other) sensor ids show a friendly label + unit in
@@ -107,7 +110,7 @@ type Props = {
 	// def is in use and explains the block, matching the Widget-designer list) instead of the reducer's
 	// silent no-op. Falls back to a plain `deleteDef` op when not provided (e.g. the overlay).
 	onDeleteDef?: (defId: string, name: string) => void;
-	// Jump to the widget designer's read-only preview of a built-in template (the 👁 buttons in the
+	// Jump to the widget designer's read-only preview of a built-in template (the preview buttons in the
 	// Templates palette). Supplied by the studio Canvas (useDefEditor.previewTemplate); absent on an
 	// overlay, where there is no designer to jump to.
 	onPreviewTemplate?: (templateId: string) => void;
@@ -267,7 +270,7 @@ function TemplatePreviewButton({ t, onPreview }: { t: Template; onPreview: (id: 
 			aria-label={`Preview ${t.name} in the widget designer`}
 			onClick={() => onPreview(t.id)}
 		>
-			👁
+			<Icon name="eye" />
 		</button>
 	);
 }
@@ -350,6 +353,7 @@ export default function Inspector({
 	widgetValign = undefined,
 	docked = false,
 	widgetTypes = [],
+	paletteSetup = {},
 	configFields = [],
 	sensors = [],
 	sensorMeta = {},
@@ -960,7 +964,7 @@ export default function Inspector({
 					role="tooltip"
 					style={{ top: palettePreview.top, left: palettePreview.left }}
 				>
-					<div className="pp-stage">
+					<div className="pp-stage" inert>
 						<WidgetPreview
 							type={palettePreview.type}
 							node={palettePreview.node}
@@ -969,6 +973,7 @@ export default function Inspector({
 					</div>
 					<div className="pp-meta">
 						<span className="pp-name">{palettePreview.label}</span>
+						<span className="pp-sample-note">Sample preview</span>
 						{palettePreview.desc ? <span className="pp-desc">{palettePreview.desc}</span> : null}
 						<span className="pp-hint">{palettePreview.hint}</span>
 					</div>
@@ -1008,7 +1013,10 @@ export default function Inspector({
 				{/* Widgets, grouped by meta.category (first-seen order; uncategorized falls into "Other"). */}
 				{fWidgetGroups.map((g) => (
 					<div key={g.category} className="palette">
-						<span className="hd2">{g.category}</span>
+						<div className="palette-heading">
+							<span className="hd2">{g.category}</span>
+							{paletteSetup[g.category]}
+						</div>
 						{g.items.map((w) => (
 							<button
 								key={w.type}
@@ -1048,7 +1056,7 @@ export default function Inspector({
 				))}
 
 				{/* Templates: insert a STANDALONE inline copy (the designer rail's ⎘ clones one into an
-				    editable custom widget instead). 👁 jumps to the designer's read-only preview. Groups
+				    editable custom widget instead). Preview opens to the designer's read-only preview. Groups
 				    come from the registry: built-ins first, then one per enabled plugin package. */}
 				{fTemplateGroups.map((g) => (
 					<div key={g.group} className="palette">

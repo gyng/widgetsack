@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 import { useSettingsOperations } from './useSettingsOperations';
 // The MQTT plugin's settings pane (studio → Plugins → MQTT). A container (AGENTS.md §6): owns the
 // broker-config form and drives the Tauri commands via mqtt-commands.ts; the password is write-only
@@ -229,7 +230,8 @@ export default function MqttSettings() {
 			</label>
 			{insecure && (
 				<div className="has-warn">
-					⚠ Skips certificate <em>and</em> hostname verification — only for a trusted LAN broker.
+					<Icon name="alert" /> Skips certificate <em>and</em> hostname verification — only for a
+					trusted LAN broker.
 				</div>
 			)}
 

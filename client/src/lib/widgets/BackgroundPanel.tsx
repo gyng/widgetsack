@@ -1,3 +1,4 @@
+import Icon from './Icon';
 // Background section (extracted from Canvas): per-monitor full-screen effect behind the widgets —
 // kind picker (colour / image / video / web), the background-image list (the folder on disk is
 // still `wallpapers/`; the UI says Background), fit/mute/loop/opacity/dim.
@@ -154,7 +155,13 @@ export default function BackgroundPanel({
 							disabled={autoTheme.busy}
 							aria-busy={autoTheme.busy}
 						>
-							{autoTheme.busy ? 'Reading…' : '🎨 From background'}
+							{autoTheme.busy ? (
+								'Reading…'
+							) : (
+								<>
+									<Icon name="palette" /> From background
+								</>
+							)}
 						</button>
 						{onClearTokens && (
 							<button

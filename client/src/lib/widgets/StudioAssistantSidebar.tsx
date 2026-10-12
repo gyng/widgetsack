@@ -11,11 +11,15 @@ import {
 	studioAgentStatus,
 	type AgentStatus
 } from './plugins/studio-agent-commands';
+import Select from './Select';
 import './StudioAssistantSidebar.css';
 
 type Props = {
 	read(): StudioSnapshot;
 	apply(ops: StudioOp[], expected: StudioSnapshot): StudioApplyResult;
+	verify?(
+		expected: StudioSnapshot
+	): Promise<import('../core/studioVerification').StudioVerification>;
 	onClose(): void;
 };
 export default function StudioAssistantSidebar(props: Props) {
@@ -29,7 +33,11 @@ export default function StudioAssistantSidebar(props: Props) {
 			studioAgentPorts,
 			{
 				read: () => latest.current.read(),
-				apply: (ops, expected) => latest.current.apply(ops, expected)
+				apply: (ops, expected) => latest.current.apply(ops, expected),
+				verify: (expected) =>
+					latest.current.verify
+						? latest.current.verify(expected)
+						: Promise.reject(new Error('Rendered verification is unavailable.'))
 			},
 			setState,
 			() => crypto.randomUUID()
@@ -119,12 +127,18 @@ export default function StudioAssistantSidebar(props: Props) {
 				</label>
 				<label>
 					Model (optional)
-					<input
+					<Select
+						searchable
+						allowCustom
+						options={[
+							{ value: '', label: 'Installed agent default' },
+							...(status?.models?.[backend] ?? []).map((value) => ({ value, label: value }))
+						]}
 						aria-label="Agent model"
 						value={model}
 						placeholder="Installed agent default"
 						disabled={state.busy || !available}
-						onChange={(event) => setModel(event.target.value)}
+						onChange={setModel}
 					/>
 				</label>
 				<button

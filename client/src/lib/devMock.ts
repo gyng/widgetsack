@@ -24,6 +24,24 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 	let evtId = 0;
 	const handleCommand: Parameters<typeof mockIPC>[0] = (cmd, args) => {
 		switch (cmd) {
+			case COMMANDS.mcpStatus:
+			case COMMANDS.mcpSetPreferences:
+				return {
+					enabled: !!(args as Record<string, unknown>)?.enabled,
+					browserAccess: !!(args as Record<string, unknown>)?.browserAccess,
+					running: !!(args as Record<string, unknown>)?.enabled,
+					endpoint: (args as Record<string, unknown>)?.enabled
+						? 'http://127.0.0.1:12345/mcp'
+						: null,
+					browserUrl: null,
+					config: {
+						mcpServers: { widgetsack: { command: 'C:/mock/widgetsack.exe', args: ['--mcp'] } }
+					}
+				};
+			case COMMANDS.mcpStudioClaim:
+				return true;
+			case COMMANDS.mcpStudioReply:
+				return undefined;
 			case COMMANDS.studioAgentStatus:
 				return {
 					defaultBackend: 'pi',
@@ -38,6 +56,20 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.studioAgentCancel:
 			case COMMANDS.studioAgentReply:
 				return undefined;
+			case COMMANDS.listMonitorInputs:
+				return [
+					{
+						gdi: 'mock-display',
+						stable: 'mock-primary',
+						friendly: 'Mock primary display',
+						primary: true,
+						current_input: 15,
+						supported: [15, 17, 18],
+						width: 1920,
+						height: 1080,
+						refresh_hz: 60
+					}
+				];
 			case COMMANDS.getAudioMixer:
 				return {
 					sessions: [{ id: 'mock-session', name: 'Music app', level: 0.5, muted: false }],

@@ -16,7 +16,8 @@ import {
 	useState,
 	type DragEvent as ReactDragEvent,
 	type KeyboardEvent as ReactKeyboardEvent,
-	type MouseEvent as ReactMouseEvent
+	type MouseEvent as ReactMouseEvent,
+	type ReactNode
 } from 'react';
 import { isContainer, type Container, type LayoutNode, type Leaf } from '../core/layoutTree';
 import { isGroup } from '../core/layoutTree';
@@ -29,6 +30,7 @@ import { contextMenuAnchor } from './canvas/menuPosition';
 
 type Props = {
 	root: Container;
+	header?: ReactNode;
 	floating?: Leaf[];
 	selectedId?: string | null;
 	// Cross-highlight (studio): the id hovered on the stage glows its row here; hovering a row here
@@ -63,6 +65,7 @@ export function visibleRows(rows: OutlineRow[], collapsed: ReadonlySet<string>):
 
 function Outline({
 	root,
+	header,
 	floating = [],
 	selectedId = null,
 	hoverId = null,
@@ -390,6 +393,7 @@ function Outline({
 
 	return (
 		<div className={outlineCls.join(' ')}>
+			{header}
 			<div className="hd">
 				<span>Outline{scopeLabel ? ` · ${scopeLabel}` : ''}</span>
 				<span className="add">

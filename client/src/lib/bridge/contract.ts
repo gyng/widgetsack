@@ -7,6 +7,7 @@
 export const EVENTS = {
 	// telemetry / streaming (sensors.rs + ha/mqtt/stocks; llm.rs; log.rs)
 	telemetry: 'telemetry',
+	mcpStudioRequest: 'mcp_studio_request',
 	llmDelta: 'llm_delta',
 	log: 'log',
 	// media session deltas (state.rs::updater kinds → event.rs::emit_to_bridge)
@@ -38,6 +39,10 @@ export const EVENTS = {
 /** Tauri invoke command names (TS `invoke` → the `#[tauri::command]` fns registered in
  * widgetsack/src/main.rs `invoke_handler`; a command's wire name IS its Rust fn name). */
 export const COMMANDS = {
+	mcpStatus: 'mcp_status',
+	mcpSetPreferences: 'mcp_set_preferences',
+	mcpStudioClaim: 'mcp_studio_claim',
+	mcpStudioReply: 'mcp_studio_reply',
 	studioAgentStatus: 'studio_agent_status',
 	studioAgentRun: 'studio_agent_run',
 	studioAgentReply: 'studio_agent_reply',

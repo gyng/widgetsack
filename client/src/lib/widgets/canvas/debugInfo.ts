@@ -84,8 +84,8 @@ export function buildDebugInfo(a: DebugArgs): string {
 	const issues: string[] = [];
 	for (const c of collectContainerRects(a.monitor, a.solved)) {
 		const flags: string[] = [];
-		if (c.rect.w <= 0 || c.rect.h <= 0) flags.push('⚠ COLLAPSED (zero size)');
-		if (escapesBounds(c.rect, a.workArea)) flags.push('⚠ OUT-OF-BOUNDS');
+		if (c.rect.w <= 0 || c.rect.h <= 0) flags.push('Warning: COLLAPSED (zero size)');
+		if (escapesBounds(c.rect, a.workArea)) flags.push('Warning: OUT-OF-BOUNDS');
 		const tag = flags.length ? '  ' + flags.join(' ') : '';
 		lines.push(`  ${c.id} (${c.kind}) ${fmtRect(c.rect)}${tag}`);
 		if (flags.length) issues.push(`${c.id} (${c.kind}): ${flags.join(', ')}`);

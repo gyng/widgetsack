@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Props-only media meter: renders the now-playing track it is GIVEN. The wiring — booting the GSMTC
 // feed, subscribing to mediaStore, picking the active session (priority sort), fetching transport
 // capabilities — lives in the NowPlayingHost container (../NowPlayingHost.tsx, AGENTS.md §6). Renders
@@ -351,7 +352,7 @@ export default function NowPlaying({ session, caps = null, label, onControl }: P
 								aria-pressed={shuffle}
 								onClick={(e) => act(e, 'shuffle', shuffle ? 0 : 1)}
 							>
-								🔀
+								<Icon name="shuffle" />
 							</button>
 						)}
 						{can('previous') && (
@@ -362,7 +363,7 @@ export default function NowPlaying({ session, caps = null, label, onControl }: P
 								aria-label="Previous"
 								onClick={(e) => act(e, 'previous')}
 							>
-								⏮
+								<Icon name="previous" />
 							</button>
 						)}
 						{can('playpause') && (
@@ -373,7 +374,7 @@ export default function NowPlaying({ session, caps = null, label, onControl }: P
 								aria-label="Play/pause"
 								onClick={(e) => act(e, 'playpause')}
 							>
-								{playing ? '⏸' : '▶'}
+								<Icon name={playing ? 'pause' : 'play'} />
 							</button>
 						)}
 						{can('stop') && (
@@ -384,7 +385,7 @@ export default function NowPlaying({ session, caps = null, label, onControl }: P
 								aria-label="Stop"
 								onClick={(e) => act(e, 'stop')}
 							>
-								⏹
+								<Icon name="stop" />
 							</button>
 						)}
 						{can('next') && (
@@ -395,7 +396,7 @@ export default function NowPlaying({ session, caps = null, label, onControl }: P
 								aria-label="Next"
 								onClick={(e) => act(e, 'next')}
 							>
-								⏭
+								<Icon name="next" />
 							</button>
 						)}
 						{can('repeat') && (
@@ -407,7 +408,7 @@ export default function NowPlaying({ session, caps = null, label, onControl }: P
 								aria-label={`Repeat: ${repeatMode}`}
 								onClick={(e) => act(e, 'repeat', nextRepeat)}
 							>
-								{repeatMode === 'Track' ? '🔂' : '🔁'}
+								<Icon name={repeatMode === 'Track' ? 'repeat-one' : 'repeat'} />
 							</button>
 						)}
 					</div>

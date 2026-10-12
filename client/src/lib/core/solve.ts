@@ -530,7 +530,12 @@ export function applyParams(
 		if (!(spec.key in params)) continue;
 		const targets = spec.targets ?? [spec.target ?? 'unit.config.' + spec.key];
 		for (const target of targets) {
-			setPath(child as unknown as Record<string, unknown>, target, params[spec.key]);
+			// Select controls carry strings; boolean defaults preserve the config's boolean type.
+			const value =
+				typeof spec.default === 'boolean'
+					? params[spec.key] === true || params[spec.key] === 'true'
+					: params[spec.key];
+			setPath(child as unknown as Record<string, unknown>, target, value);
 		}
 	}
 }

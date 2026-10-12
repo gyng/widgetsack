@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Recycle Bin meter (presentational, props-only). Multi-sensor: the meta binds
 // recyclebin.{items,bytes} via a sensors map; WidgetHost passes the snapshot. Shows the item count +
 // total size, with a "full" cue past an optional threshold. BARE DOM; styled via --np-* / --rb-* tokens.
@@ -25,7 +26,7 @@ export default function Recyclebin({ sensors = {}, warnGb = 0, color }: Props) {
 	return (
 		<div className="recyclebin np-recyclebin" style={vars} data-level={level}>
 			<span className="rb-icon" role="img" aria-label="Recycle Bin">
-				🗑️
+				<Icon name="trash" />
 			</span>
 			<div className="rb-body">
 				{level === 'empty' ? (

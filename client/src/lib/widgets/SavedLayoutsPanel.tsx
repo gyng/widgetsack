@@ -5,6 +5,7 @@
 // other studio panels.
 import { useState } from 'react';
 import type { PresetStatus } from './canvas/useSavedLayouts';
+import { LOCAL_DESKTOP_PRESET_NAME } from '../core/localDesktop';
 
 type Props = {
 	layoutNames: string[];
@@ -71,15 +72,17 @@ export default function SavedLayoutsPanel({
 							>
 								⤒ {n}
 							</button>
-							<button
-								type="button"
-								className="rp-danger"
-								title="Delete this preset"
-								aria-label={`Delete preset ${n}`}
-								onClick={() => onDelete(n)}
-							>
-								✕
-							</button>
+							{n !== LOCAL_DESKTOP_PRESET_NAME && (
+								<button
+									type="button"
+									className="rp-danger"
+									title="Delete this preset"
+									aria-label={`Delete preset ${n}`}
+									onClick={() => onDelete(n)}
+								>
+									✕
+								</button>
+							)}
 						</div>
 					))}
 				</div>

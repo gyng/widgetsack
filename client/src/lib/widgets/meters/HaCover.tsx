@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Interactive HA meter (molecule): a cover (blinds/garage) — open / stop / close buttons + an
 // optional position slider for covers that report current_position. Reads from the entity JSON
 // (binds: 'json'); controls emit onControl (cover.open_cover / stop_cover / close_cover /
@@ -60,7 +61,7 @@ export default function HaCover({
 						▲
 					</button>
 					<button type="button" aria-label={`Stop ${name}`} onClick={() => call('stop_cover')}>
-						■
+						<Icon name="stop" />
 					</button>
 					<button type="button" aria-label={`Close ${name}`} onClick={() => call('close_cover')}>
 						▼

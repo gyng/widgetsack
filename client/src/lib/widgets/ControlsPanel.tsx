@@ -1,3 +1,4 @@
+import Icon from './Icon';
 // Controls tab (Settings → Controls): lists every registered control (grouped), shows its effective
 // binding, lets the user rebind keyboard chords (capture the next chord), flags conflicts, and resets
 // one or all remaps. All the logic (formatTrigger, detectConflicts, mergeOverrides) lives in
@@ -142,7 +143,7 @@ export default function ControlsPanel({ overrides, onRebind, onReset, onResetAll
 										>
 											{conflictIds.has(c.id) && (
 												<span className="cp-conflict-mark" aria-hidden="true">
-													⚠{' '}
+													<Icon name="alert" />{' '}
 												</span>
 											)}
 											{capturing === c.id ? 'Press keys… (Esc cancels)' : triggerText(triggers)}

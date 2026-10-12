@@ -465,11 +465,11 @@ describe('LlmSettings', () => {
 		const { container, findByText, getByText } = renderPanel();
 		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
 		// First click starts the mic.
-		fireEvent.click(getByText('🎤 Speak'));
+		fireEvent.click(getByText('Speak'));
 		await waitFor(() => expect(startRecording).toHaveBeenCalled());
 		expect(await findByText(/Listening/)).toBeTruthy();
 		// Second click stops + transcribes the captured bytes into the prompt textarea.
-		fireEvent.click(getByText('■ Stop'));
+		fireEvent.click(getByText('Stop'));
 		await waitFor(() => expect(stop).toHaveBeenCalled());
 		await waitFor(() =>
 			expect(llmTranscribe).toHaveBeenCalledWith(new Uint8Array([1, 2]), 'audio/webm')
@@ -486,15 +486,15 @@ describe('LlmSettings', () => {
 		const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
 		fireEvent.change(textarea, { target: { value: 'existing' } });
 		vi.mocked(llmTranscribe).mockResolvedValueOnce('more');
-		fireEvent.click(getByText('🎤 Speak'));
+		fireEvent.click(getByText('Speak'));
 		await waitFor(() => expect(startRecording).toHaveBeenCalled());
-		fireEvent.click(getByText('■ Stop'));
+		fireEvent.click(getByText('Stop'));
 		await waitFor(() => expect(textarea.value).toBe('existing more'));
 		// A subsequent recording whose transcription rejects shows the failure message.
 		vi.mocked(llmTranscribe).mockRejectedValueOnce('whisper 500');
-		fireEvent.click(getByText('🎤 Speak'));
+		fireEvent.click(getByText('Speak'));
 		await waitFor(() => expect(startRecording).toHaveBeenCalledTimes(2));
-		fireEvent.click(getByText('■ Stop'));
+		fireEvent.click(getByText('Stop'));
 		expect(await findByText(/Voice failed: whisper 500/)).toBeTruthy();
 	});
 
@@ -545,7 +545,7 @@ describe('LlmSettings', () => {
 		vi.mocked(startRecording).mockRejectedValueOnce('NotAllowedError');
 		const { container, getByText, findByText } = renderPanel();
 		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
-		fireEvent.click(getByText('🎤 Speak'));
+		fireEvent.click(getByText('Speak'));
 		expect(await findByText(/Voice failed: NotAllowedError/)).toBeTruthy();
 	});
 
@@ -622,7 +622,7 @@ describe('LlmSettings', () => {
 	// --- chat tester: streamed assistant turn + read-aloud ----------------------------------
 
 	it('renders a finished assistant turn with a working read-aloud button, and sends on Enter', async () => {
-		const { container, findByPlaceholderText, findByText } = renderPanel();
+		const { container, findByPlaceholderText, findByLabelText } = renderPanel();
 		const input = (await findByPlaceholderText('Ask anything…')) as HTMLInputElement;
 		fireEvent.change(input, { target: { value: 'hi' } });
 		// Enter (no modifier) sends — covers the chat input keydown handler.
@@ -634,7 +634,7 @@ describe('LlmSettings', () => {
 			handleDelta({ requestId, token: 'a reply', done: false });
 			handleDelta({ requestId, token: '', done: true });
 		});
-		const speak = (await findByText('🔊')) as HTMLButtonElement;
+		const speak = (await findByLabelText('Read aloud')) as HTMLButtonElement;
 		fireEvent.click(speak);
 		expect(speakSmart).toHaveBeenCalledWith('a reply');
 		// Clearing the transcript removes the turns + the Clear button.
@@ -654,11 +654,11 @@ describe('LlmSettings', () => {
 		await waitFor(() => expect(llmStream).toHaveBeenCalled());
 		const requestId = vi.mocked(llmStream).mock.calls[0][0] as string;
 		act(() => handleDelta({ requestId, token: '', done: true, error: 'rate limited' }));
-		expect(await findByText(/⚠ rate limited/)).toBeTruthy();
+		expect(await findByText(/rate limited/)).toBeTruthy();
 	});
 
 	it('renders a finished assistant turn with no content as an empty line (no ellipsis, no 🔊)', async () => {
-		const { container, findByPlaceholderText, queryByText } = renderPanel();
+		const { container, findByPlaceholderText, queryByLabelText } = renderPanel();
 		const input = (await findByPlaceholderText('Ask anything…')) as HTMLInputElement;
 		fireEvent.change(input, { target: { value: 'hi' } });
 		fireEvent.keyDown(input, { key: 'Enter' });
@@ -671,7 +671,7 @@ describe('LlmSettings', () => {
 		const ai = rows[1] as HTMLElement;
 		expect(ai.textContent).toContain('ai');
 		expect(ai.textContent).not.toContain('…'); // finished — not the streaming ellipsis
-		expect(queryByText('🔊')).toBeNull(); // no content → no read-aloud button
+		expect(queryByLabelText('Read aloud')).toBeNull(); // no content → no read-aloud button
 	});
 
 	it('does not generate on a plain keypress in the assistant prompt (Ctrl/⌘+Enter only)', async () => {
@@ -751,7 +751,7 @@ describe('LlmSettings', () => {
 		);
 		const { container, getByText, findByText } = renderPanel();
 		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
-		const mic = getByText('🎤 Speak');
+		const mic = getByText('Speak');
 		fireEvent.click(mic); // starts (pending) — startingRef guards…
 		fireEvent.click(mic); // …this rapid second click from starting another recorder
 		expect(startRecording).toHaveBeenCalledTimes(1);
@@ -804,7 +804,7 @@ it('releases dictation acquired after the settings panel closes', async () => {
 	);
 	const { container, getByText, unmount } = renderPanel();
 	await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
-	fireEvent.click(getByText('🎤 Speak'));
+	fireEvent.click(getByText('Speak'));
 	unmount();
 	const cancel = vi.fn();
 	await act(async () => {
@@ -823,7 +823,7 @@ it('replaces an old dictation error with the next generation result', async () =
 	vi.mocked(llmComplete).mockResolvedValueOnce('{"ops":[{"op":"clear"}],"summary":"Updated"}');
 	const { container, getByText, findByText } = renderPanel();
 	await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
-	fireEvent.click(getByText('🎤 Speak'));
+	fireEvent.click(getByText('Speak'));
 	await findByText(/Voice failed/);
 	fireEvent.change(container.querySelector('textarea')!, { target: { value: 'clear' } });
 	fireEvent.click(getByText(/Generate/));
@@ -858,9 +858,9 @@ it('ignores agent-control changes while saving and discards dictation after unmo
 				transcribed = resolve;
 			})
 	);
-	fireEvent.click(getByText('🎤 Speak'));
-	await waitFor(() => expect(getByText('■ Stop')).toBeTruthy());
-	fireEvent.click(getByText('■ Stop'));
+	fireEvent.click(getByText('Speak'));
+	await waitFor(() => expect(getByText('Stop')).toBeTruthy());
+	fireEvent.click(getByText('Stop'));
 	await waitFor(() => expect(llmTranscribe).toHaveBeenCalled());
 	unmount();
 	await act(async () => transcribed('late text'));

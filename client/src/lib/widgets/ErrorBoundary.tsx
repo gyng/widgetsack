@@ -1,3 +1,4 @@
+import Icon from './Icon';
 // A small error boundary (class component — React has no hook equivalent) so one throwing
 // subtree (a studio rail section, the stage, a plugin's settings panel) degrades to a compact
 // inline fallback instead of unmounting the whole studio. The fallback offers a way back —
@@ -53,7 +54,7 @@ export default class ErrorBoundary extends Component<Props, State> {
 			return (
 				<div className="error-boundary" role="alert">
 					<span className="eb-msg">
-						⚠ {label} failed to render: {this.state.error}
+						<Icon name="alert" /> {label} failed to render: {this.state.error}
 					</span>
 					<span className="eb-actions">
 						<button type="button" onClick={this.reset} title="Remount this section and try again">

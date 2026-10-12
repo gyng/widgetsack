@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Battery indicator (presentational, props-only). Multi-sensor: the meta declares the battery.* id
 // map (binds:'none'), WidgetHost resolves it via useSensorMap and passes the `sensors` snapshot.
 // Renders a fill icon + percent + charging/time-left status. BARE DOM; styled in Battery.css via
@@ -47,7 +48,11 @@ export default function Battery({ sensors = {}, showStatus = true, color }: Prop
 				}`}
 			>
 				<span className="bat-fill" />
-				{charging && <span className="bat-bolt">⚡</span>}
+				{charging && (
+					<span className="bat-bolt">
+						<Icon name="bolt" />
+					</span>
+				)}
 			</div>
 			<div className="bat-text">
 				<span className="bat-pct" data-part="value">

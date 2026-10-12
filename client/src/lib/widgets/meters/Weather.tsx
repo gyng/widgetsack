@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Weather meter (presentational, props-only). Multi-sensor: the plugin meta declares the weather.* id
 // map (binds:'none'); WidgetHost resolves it (useSensorMap) and passes the `sensors` snapshot. Shows a
 // condition icon, the temperature, the condition label, today's high/low, and optional detail
@@ -53,7 +54,7 @@ export default function Weather({
 	const status = textOf(sensors.status);
 
 	const info =
-		code == null ? { label: '—', icon: '❓' } : weatherInfo(code, isDay == null || isDay >= 1);
+		code == null ? { label: '—', icon: 'help' } : weatherInfo(code, isDay == null || isDay >= 1);
 	const deg = (n: number | null) => (n == null ? '—' : `${Math.round(n)}°`);
 	const windUnit = unit === 'F' ? 'mph' : 'km/h';
 	const vars = color ? ({ '--wx-accent': color } as CSSProperties) : undefined;
@@ -85,7 +86,7 @@ export default function Weather({
 			) : (
 				<div className="wx-main">
 					<span className="wx-icon" role="img" aria-label={info.label}>
-						{info.icon}
+						<Icon name={info.icon} />
 					</span>
 					<div className="wx-temp">
 						<span className="wx-temp-val" data-part="value">
@@ -118,7 +119,7 @@ export default function Weather({
 						<div className="wx-day" key={i}>
 							<span className="wx-day-label">{d.label}</span>
 							<span className="wx-day-icon" role="img" aria-label={d.info.label}>
-								{d.info.icon}
+								<Icon name={d.info.icon} />
 							</span>
 							<span className="wx-day-hilo">
 								<span className="wx-day-hi">{deg(d.high)}</span>

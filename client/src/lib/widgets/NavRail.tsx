@@ -1,3 +1,4 @@
+import Icon from './Icon';
 // The studio's left nav strip (presentational molecule): a permanent vertical column of section
 // buttons carved from the left rail. Props-only — the active section + selection are owned by the
 // Canvas. The matching panel (Outline / designer / sensors / …) renders beside it. The one
@@ -41,7 +42,7 @@ export default function NavRail({ active, onSelect }: Props) {
 			{/* Decorative glyph: the aria-label already names the button, so hide the icon from screen
 			    readers to avoid a doubled / emoji-name announcement. */}
 			<span className="nav-icon" aria-hidden="true">
-				{s.icon}
+				<Icon name={s.icon} size={20} />
 			</span>
 			{/* Long labels ("BACKGROUND", "SHORTCUTS") drop to the compact size so they never overflow the
 			    56px strip; the class flips at 8 chars (the widest that fits at the normal size). */}

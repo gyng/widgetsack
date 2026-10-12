@@ -5,7 +5,7 @@ test('preset screenshots have matching dimensions without stretching shorter das
 }) => {
 	await page.goto('/gallery/?presets');
 	const shots = page.locator('[data-shot^="preset-"]');
-	await expect(shots).toHaveCount(4);
+	await expect(shots).toHaveCount(5);
 	const sizes = await shots.evaluateAll((nodes) =>
 		nodes.map((node) => {
 			const { width, height } = node.getBoundingClientRect();
@@ -13,7 +13,7 @@ test('preset screenshots have matching dimensions without stretching shorter das
 		})
 	);
 	for (const size of sizes) expect(size).toEqual(sizes[0]);
-	for (const group of await shots.locator('[data-group=""]').all())
+	for (const group of await shots.locator('.preset-frame > div > [data-def^="dashboard-"]').all())
 		await expect(group).toHaveCSS('width', '392px');
 	await expect(page.locator('[data-shot="preset-minimal"] [data-group=""]')).toHaveCSS(
 		'height',

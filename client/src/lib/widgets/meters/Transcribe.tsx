@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Transcribe / Translate widget (binds:'none', interactive): push-to-talk speech-to-text, optionally
 // translated and/or spoken, via the AI provider. Self-sourcing meter — the stateful capture lives in
 // useTranscribe; the presentation is the pure TranscribeView below, so it stays trivially testable.
@@ -30,7 +31,7 @@ export function TranscribeView({
 }: TranscribeViewProps) {
 	const colorCss = color || 'var(--np-fg, rgb(255, 255, 255))';
 	const placeholder = recording ? 'Listening…' : busy ? 'Transcribing…' : 'Click the mic and speak';
-	const body = error ? `⚠ ${error}` : output || placeholder;
+	const body = error ? error : output || placeholder;
 
 	return (
 		<div className="transcribe np-transcribe" data-part="root" style={{ color: colorCss }}>
@@ -49,12 +50,12 @@ export function TranscribeView({
 						title={recording ? 'Stop and transcribe' : 'Record'}
 						aria-label={recording ? 'Stop and transcribe' : 'Record'}
 					>
-						{recording ? '■' : '🎤'}
+						<Icon name={recording ? 'stop' : 'mic'} />
 					</button>
 				)}
 			</div>
 			<span className="transcribe-text" data-part="value">
-				{body}
+				{error && <Icon name="alert" />} {body}
 			</span>
 			{/* In translate mode, show the original transcript faintly beneath the translation. */}
 			{mode === 'translate' && source && !error && (

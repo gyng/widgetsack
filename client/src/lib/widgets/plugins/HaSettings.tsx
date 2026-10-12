@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 import { useSettingsOperations } from './useSettingsOperations';
 // The Home Assistant plugin's settings pane (studio → Plugins → Home Assistant). A container
 // (AGENTS.md §6): it owns the form state and drives the Tauri commands via ha-commands.ts; the
@@ -311,8 +312,8 @@ export default function HaSettings() {
 			</label>
 			{insecure && (
 				<div className="has-warn">
-					⚠ Skips certificate <em>and</em> hostname verification — only for a trusted LAN Home
-					Assistant behind a self-signed cert.
+					<Icon name="alert" /> Skips certificate <em>and</em> hostname verification — only for a
+					trusted LAN Home Assistant behind a self-signed cert.
 				</div>
 			)}
 

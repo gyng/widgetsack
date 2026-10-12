@@ -26,9 +26,13 @@ test('assistant stays open across studio sections without replacing their conten
 		await expect(sidebar.getByLabel('Message to studio assistant')).toHaveValue('My draft request');
 		const panel = page.locator('.rail-panel, .designer-list').first();
 		await expect(panel).toBeVisible();
-		const bounds = await panel.boundingBox();
-		const assistant = await sidebar.boundingBox();
-		expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(assistant!.x);
+		await expect
+			.poll(async () => {
+				const bounds = await panel.boundingBox();
+				const assistant = await sidebar.boundingBox();
+				return !!bounds && !!assistant && bounds.x + bounds.width <= assistant.x;
+			})
+			.toBe(true);
 		expect(await panel.evaluate((node) => node.scrollWidth <= node.clientWidth)).toBe(true);
 	}
 	await openSection(page, 'settings');

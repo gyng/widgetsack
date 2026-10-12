@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 import { useSettingsOperations } from './useSettingsOperations';
 // The stocks plugin's settings pane (studio → Plugins → Stocks). A container (AGENTS.md §6): owns the
 // symbol/interval form and drives the Tauri commands via stocks-commands.ts. The live badge reads the
@@ -110,8 +111,9 @@ export default function StocksSettings() {
 			</label>
 
 			<div className="has-warn">
-				⚠ Yahoo&rsquo;s endpoint is unofficial and best-effort — it can rate-limit or change without
-				notice. Polling is paused automatically while no ticker is shown.
+				<Icon name="alert" /> Yahoo&rsquo;s endpoint is unofficial and best-effort — it can
+				rate-limit or change without notice. Polling is paused automatically while no ticker is
+				shown.
 			</div>
 
 			<div className="has-actions">

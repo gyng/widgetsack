@@ -63,11 +63,11 @@ fn gen_token() -> String {
 // ---- pure seams (unit-tested) ----
 
 #[derive(Debug)]
-struct Head {
-    method: String,
+pub(crate) struct Head {
+    pub(crate) method: String,
     /// Path WITHOUT the query string.
-    path: String,
-    headers: HashMap<String, String>,
+    pub(crate) path: String,
+    pub(crate) headers: HashMap<String, String>,
 }
 
 /// Parse an HTTP request head (everything before the blank line). Header names are lowercased.
@@ -106,7 +106,7 @@ fn ct_eq(a: &[u8], b: &[u8]) -> bool {
 }
 
 /// Whether the request carries the exact `Bearer <token>` authorization (constant-time compare).
-fn bearer_ok(headers: &HashMap<String, String>, token: &str) -> bool {
+pub(crate) fn bearer_ok(headers: &HashMap<String, String>, token: &str) -> bool {
     let Some(h) = headers.get("authorization") else {
         return false;
     };
@@ -132,7 +132,7 @@ fn is_denied_service(domain: &str, service: &str) -> bool {
 }
 
 /// Whether the content type is JSON (forces a CORS preflight a drive-by page can't satisfy).
-fn is_json(headers: &HashMap<String, String>) -> bool {
+pub(crate) fn is_json(headers: &HashMap<String, String>) -> bool {
     headers
         .get("content-type")
         .map(|c| c.to_ascii_lowercase().contains("application/json"))
@@ -194,7 +194,7 @@ fn remove_control_file<R: Runtime>(app: &AppHandle<R>) {
 
 // ---- HTTP I/O ----
 
-async fn write_resp(stream: &mut TcpStream, status: &str, value: &Value) {
+pub(crate) async fn write_resp(stream: &mut TcpStream, status: &str, value: &Value) {
     let body = value.to_string();
     let resp = format!(
         "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
@@ -209,7 +209,7 @@ fn find_marker(buf: &[u8], marker: &[u8]) -> Option<usize> {
 }
 
 /// Read one request (head + body) from the connection. Caps head/body sizes.
-async fn read_request(stream: &mut TcpStream) -> Option<(Head, Vec<u8>)> {
+pub(crate) async fn read_request(stream: &mut TcpStream) -> Option<(Head, Vec<u8>)> {
     let mut buf = Vec::new();
     let mut tmp = [0u8; 2048];
     let head_end = loop {
@@ -229,14 +229,16 @@ async fn read_request(stream: &mut TcpStream) -> Option<(Head, Vec<u8>)> {
     let content_length: usize = head
         .headers
         .get("content-length")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0)
-        .min(MAX_BODY);
+        .map(|v| v.parse().ok())
+        .unwrap_or(Some(0))?;
+    if content_length > MAX_BODY || head.headers.contains_key("transfer-encoding") {
+        return None;
+    }
     let mut body = buf[head_end..].to_vec();
     while body.len() < content_length {
         let n = stream.read(&mut tmp).await.ok()?;
         if n == 0 {
-            break;
+            return None;
         }
         body.extend_from_slice(&tmp[..n]);
     }
@@ -475,6 +477,25 @@ pub async fn control_stop<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn rejects_truncated_oversized_and_unsupported_request_bodies() {
+        for request in [
+            "POST /mcp HTTP/1.1\r\nContent-Length: 5\r\n\r\n{}",
+            "POST /mcp HTTP/1.1\r\nContent-Length: 262145\r\n\r\n",
+            "POST /mcp HTTP/1.1\r\nContent-Length: bad\r\n\r\n",
+            "POST /mcp HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n",
+        ] {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let mut client = TcpStream::connect(listener.local_addr().unwrap())
+                .await
+                .unwrap();
+            let (mut server, _) = listener.accept().await.unwrap();
+            client.write_all(request.as_bytes()).await.unwrap();
+            client.shutdown().await.unwrap();
+            assert!(read_request(&mut server).await.is_none(), "{request}");
+        }
+    }
 
     #[test]
     fn parse_head_extracts_method_path_and_lowercased_headers() {

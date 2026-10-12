@@ -10,6 +10,7 @@ import {
 	type MonitorLayout
 } from './layoutTree';
 import {
+	applyParams,
 	collectContainerRects,
 	collectGridPlaceholders,
 	collectRenderables,
@@ -867,4 +868,17 @@ describe('resizeSplit', () => {
 		// combinedFr = 0 → same guard.
 		expect(resizeSplit(100, 100, 0, 0, 50)).toEqual({ frA: 0, frB: 0 });
 	});
+});
+
+it('preserves boolean parameter types for saved instances and string-based select controls', () => {
+	const child = leaf({ id: 'chart', type: 'cpu', rect: { x: 0, y: 0, w: 100, h: 50 }, config: {} });
+	for (const [value, expected] of [
+		[true, true],
+		[false, false],
+		['true', true],
+		['false', false]
+	] as const) {
+		applyParams(child, [{ key: 'smooth', default: false }], { smooth: value });
+		expect((child.unit as WidgetInstance).config.smooth).toBe(expected);
+	}
 });

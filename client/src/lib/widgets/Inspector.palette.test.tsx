@@ -55,9 +55,9 @@ describe('Inspector add-palette — templates', () => {
 	it('inserts a no-param built-in template via insertTemplate', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector onOp={onOp} />);
-		// "System monitor" is a built-in template with no params → a plain insert button.
-		fireEvent.click(within(palette()).getByRole('button', { name: /^System monitor/ }));
-		expect(onOp).toHaveBeenCalledWith({ op: 'insertTemplate', templateId: 'system' });
+		// "Now playing" is a built-in template with no params → a plain insert button.
+		fireEvent.click(within(palette()).getByRole('button', { name: /^Now playing/ }));
+		expect(onOp).toHaveBeenCalledWith({ op: 'insertTemplate', templateId: 'nowplaying' });
 	});
 
 	it('renders a param template as an options form and passes the chosen options on insert', () => {

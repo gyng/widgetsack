@@ -8,50 +8,50 @@ export function weatherInfo(code: number, isDay = true): WeatherInfo {
 	const night = !isDay;
 	switch (code) {
 		case 0:
-			return { label: 'Clear', icon: night ? '🌙' : '☀️' };
+			return { label: 'Clear', icon: night ? 'moon' : 'sun' };
 		case 1:
-			return { label: 'Mainly clear', icon: night ? '🌙' : '🌤️' };
+			return { label: 'Mainly clear', icon: night ? 'moon' : 'weather' };
 		case 2:
-			return { label: 'Partly cloudy', icon: night ? '☁️' : '⛅' };
+			return { label: 'Partly cloudy', icon: night ? 'cloud' : 'weather' };
 		case 3:
-			return { label: 'Overcast', icon: '☁️' };
+			return { label: 'Overcast', icon: 'cloud' };
 		case 45:
 		case 48:
-			return { label: 'Fog', icon: '🌫️' };
+			return { label: 'Fog', icon: 'fog' };
 		case 51:
 		case 53:
 		case 55:
-			return { label: 'Drizzle', icon: '🌦️' };
+			return { label: 'Drizzle', icon: 'rain' };
 		case 56:
 		case 57:
-			return { label: 'Freezing drizzle', icon: '🌧️' };
+			return { label: 'Freezing drizzle', icon: 'rain' };
 		case 61:
 		case 63:
 		case 65:
-			return { label: 'Rain', icon: '🌧️' };
+			return { label: 'Rain', icon: 'rain' };
 		case 66:
 		case 67:
-			return { label: 'Freezing rain', icon: '🌧️' };
+			return { label: 'Freezing rain', icon: 'rain' };
 		case 71:
 		case 73:
 		case 75:
-			return { label: 'Snow', icon: '🌨️' };
+			return { label: 'Snow', icon: 'snow' };
 		case 77:
-			return { label: 'Snow grains', icon: '🌨️' };
+			return { label: 'Snow grains', icon: 'snow' };
 		case 80:
 		case 81:
 		case 82:
-			return { label: 'Rain showers', icon: '🌦️' };
+			return { label: 'Rain showers', icon: 'rain' };
 		case 85:
 		case 86:
-			return { label: 'Snow showers', icon: '🌨️' };
+			return { label: 'Snow showers', icon: 'snow' };
 		case 95:
-			return { label: 'Thunderstorm', icon: '⛈️' };
+			return { label: 'Thunderstorm', icon: 'storm' };
 		case 96:
 		case 99:
-			return { label: 'Thunderstorm + hail', icon: '⛈️' };
+			return { label: 'Thunderstorm + hail', icon: 'rain' };
 		default:
-			return { label: '—', icon: '❓' };
+			return { label: '—', icon: 'help' };
 	}
 }
 
@@ -73,6 +73,6 @@ export function labelForecast(cells: ForecastCell[], baseMs: number): ForecastDa
 	return cells.map((c, i) => ({
 		...c,
 		label: forecastDayLabel(i, baseMs),
-		info: c.code == null ? { label: '—', icon: '❓' } : weatherInfo(c.code, true)
+		info: c.code == null ? { label: '—', icon: 'help' } : weatherInfo(c.code, true)
 	}));
 }

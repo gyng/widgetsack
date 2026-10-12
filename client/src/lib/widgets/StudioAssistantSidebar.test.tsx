@@ -43,7 +43,7 @@ describe('Studio assistant sidebar', () => {
 		});
 		fireEvent.click(screen.getByRole('button', { name: 'Refresh agents' }));
 		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
-		expect(screen.getByLabelText('Agent model')).toHaveValue('');
+		await waitFor(() => expect(screen.getByLabelText('Agent model')).toHaveValue(''));
 	});
 	it('explains missing agents and blocks sending from both keyboard and form', async () => {
 		vi.mocked(studioAgentStatus).mockResolvedValue({
@@ -68,7 +68,7 @@ describe('Studio assistant sidebar', () => {
 		});
 		const { unmount } = render(<StudioAssistantSidebar {...props()} />);
 		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('codex'));
-		expect(screen.getByLabelText('Agent model')).toHaveValue('');
+		await waitFor(() => expect(screen.getByLabelText('Agent model')).toHaveValue(''));
 		let fail: (reason: Error) => void = () => {};
 		vi.mocked(studioAgentStatus).mockImplementationOnce(
 			() =>
@@ -191,4 +191,57 @@ describe('Studio assistant sidebar', () => {
 		expect(await screen.findByRole('alert')).toHaveTextContent('Runtime missing');
 		unmount();
 	});
+});
+
+it('filters installed model suggestions, accepts a custom ID, and resets it when the backend changes', async () => {
+	vi.mocked(studioAgentStatus).mockResolvedValue({
+		...ready,
+		models: { pi: ['openai/sample-fast', 'anthropic/sample-large'] }
+	});
+	render(<StudioAssistantSidebar {...props()} />);
+	await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
+	const model = screen.getByRole('combobox', { name: 'Agent model' });
+	fireEvent.change(model, { target: { value: 'sample-fast' } });
+	expect(screen.getByRole('option', { name: 'openai/sample-fast' })).toBeTruthy();
+	expect(screen.queryByRole('option', { name: 'anthropic/sample-large' })).toBeNull();
+	fireEvent.click(screen.getByRole('option', { name: 'openai/sample-fast' }));
+	expect(model).toHaveValue('openai/sample-fast');
+	fireEvent.change(model, { target: { value: 'my-custom-model' } });
+	expect(model).toHaveValue('my-custom-model');
+	fireEvent.change(screen.getByLabelText('Agent backend'), { target: { value: 'codex' } });
+	expect(model).toHaveValue('');
+});
+
+it('uses the shared rendered verifier and explains when it is unavailable', async () => {
+	const report = {
+		ok: true,
+		measured: true,
+		checked: 1,
+		issues: [],
+		visualReviewRequired: true as const
+	};
+	for (const supported of [true, false]) {
+		let finish!: () => void;
+		vi.mocked(studioAgentPorts.run).mockImplementationOnce(
+			(_request, receive) =>
+				new Promise((resolve) => {
+					finish = resolve;
+					receive({ type: 'tool', id: 'verify', name: 'studio_verify', args: {} });
+				})
+		);
+		const p = { ...props(), ...(supported ? { verify: vi.fn().mockResolvedValue(report) } : {}) };
+		const view = render(<StudioAssistantSidebar {...p} />);
+		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
+		fireEvent.change(screen.getByLabelText('Message to studio assistant'), {
+			target: { value: 'Verify my layout' }
+		});
+		fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+		if (supported)
+			await waitFor(() =>
+				expect(studioAgentPorts.reply).toHaveBeenCalledWith(expect.any(String), 'verify', report)
+			);
+		else await screen.findByText(/Rendered verification is unavailable/);
+		await act(async () => finish());
+		view.unmount();
+	}
 });

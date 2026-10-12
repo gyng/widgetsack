@@ -1,3 +1,4 @@
+import Icon from './Icon';
 // A per-side box editor (margin / padding) for the Inspector: a lock toggle plus one (locked) or
 // four (unlocked) numeric inputs for top/right/bottom/left. Locked is the DEFAULT — convenient for
 // the common uniform case; unlock to set sides independently. Emits the compact `Pad` shape:
@@ -78,7 +79,7 @@ export default function BoxField({ label, value, max, onChange, dirty }: Props) 
 				}
 				onClick={toggleLock}
 			>
-				{showLocked ? '🔒' : '🔓'}
+				<Icon name={showLocked ? 'lock' : 'unlock'} />
 			</button>
 			{/* step=2 keeps the steppers on the canvas spacing scale (2/4/6/8/16); typed values are free. */}
 			{showLocked ? (

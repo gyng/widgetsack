@@ -1,6 +1,7 @@
+import type { Leaf } from './layoutTree';
 import { describe, expect, it } from 'vitest';
 import { decodeStudioOps, applyStudioOps } from './studioAssistant';
-import { emptyMonitorLayout as emptyMonitor, leaf, group } from './layoutTree';
+import { emptyMonitorLayout as emptyMonitor, leaf, group, container } from './layoutTree';
 import { createWidget } from './widget';
 
 describe('studio assistant actions', () => {
@@ -151,4 +152,66 @@ describe('studio assistant actions', () => {
 		expect(result.monitor.root.children).toEqual([]);
 		expect(result.monitor.floating[0].unit).toMatchObject({ css: 'color: #77c4d3;' });
 	});
+});
+
+it('edits grouped widgets by rendered ID without changing a shared definition or sibling', () => {
+	const child = container('inner', 'col', [leaf(createWidget('cpu', 'cores'))]);
+	const def = {
+		id: 'system',
+		name: 'System',
+		size: { w: 200, h: 100 },
+		child,
+		css: 'color: lime;'
+	};
+	const library = { version: 1, defs: [def] };
+	const one = group('one', def.size, child, {
+		def: def.id,
+		params: { mode: 'cores' },
+		css: 'padding: 2px;'
+	});
+	const two = group('two', def.size, child, { def: def.id });
+	const source = { root: container('root', 'col', [leaf(one)]), floating: [leaf(two)] };
+	const result = applyStudioOps(
+		source,
+		decodeStudioOps([
+			{ op: 'setConfig', id: 'one/cores', config: { smooth: true } },
+			{ op: 'setLayout', id: 'one/inner', gap: 12 },
+			{ op: 'setStyle', id: 'two/cores', css: 'opacity: .8;' },
+			{ op: 'setSensor', id: 'two/cores', sensor: 'cpu.total' }
+		]),
+		() => 'unused',
+		library
+	);
+	expect(result.applied).toBe(4);
+	expect(result.errors).toEqual([]);
+	const first = result.monitor.root.children[0] as Leaf;
+	expect(first.unit).not.toHaveProperty('def');
+	expect(first.unit.css).toBe('color: lime;\npadding: 2px;');
+	expect(def.child.children[0]).toHaveProperty('unit.config.smooth', false);
+	expect(source.root.children[0]).toEqual(leaf(one));
+});
+it('supports container spacing and rejects invalid spacing or unsupported nested actions without data loss', () => {
+	expect(() => decodeStudioOps([{ op: 'setLayout', id: 'root', gap: -1 }])).toThrow();
+	expect(() => decodeStudioOps([{ op: 'setLayout', id: 'root', gap: 1001 }])).toThrow();
+	expect(() => decodeStudioOps([{ op: 'setLayout', id: 'root', gap: NaN }])).toThrow();
+	const child = container('inner', 'col', [leaf(createWidget('clock', 'clock'))]);
+	const source = {
+		root: container('root', 'col', [leaf(group('g', { w: 100, h: 100 }, child))]),
+		floating: []
+	};
+	const result = applyStudioOps(
+		source,
+		[
+			{ op: 'setLayout', id: 'root', gap: 8 },
+			{ op: 'setLayout', id: 'g/missing', gap: 8 },
+			{ op: 'setLayout', id: 'g/clock', gap: 8 },
+			{ op: 'moveWidget', id: 'g/clock', rect: { x: 0, y: 0, w: 100, h: 100 } },
+			{ op: 'setStyle', id: 'g/inner', css: '' }
+		],
+		() => 'unused'
+	);
+	expect(result.applied).toBe(1);
+	expect(result.errors).toHaveLength(4);
+	expect(result.monitor.root.gap).toBe(8);
+	expect(result.monitor.root.children[0]).toEqual(source.root.children[0]);
 });

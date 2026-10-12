@@ -2,7 +2,7 @@
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
-pub const ADAPTER_INSTRUCTIONS: &str = "You are a studio adapter. Do not call native tools. Reply ONLY with one JSON object: {\"tool\":\"studio_read\",\"args\":{}} or {\"tool\":\"studio_apply\",\"args\":{\"ops\":[...]}} or {\"message\":\"reply to the user\"}.";
+pub const ADAPTER_INSTRUCTIONS: &str = "You are a studio adapter. Do not call native tools. Reply ONLY with one JSON object: {\"tool\":\"studio_read\",\"args\":{}} or {\"tool\":\"studio_apply\",\"args\":{\"ops\":[...]}} or {\"tool\":\"studio_verify\",\"args\":{}} or {\"message\":\"reply to the user\"}.";
 
 #[derive(Clone, Debug)]
 pub struct AgentCommand {
@@ -193,8 +193,10 @@ pub fn reply(backend: &str, output: &str) -> Result<Value, String> {
         .unwrap_or(trimmed)
         .trim();
     if let Ok(value) = serde_json::from_str::<Value>(payload) {
-        if matches!(value["tool"].as_str(), Some("studio_read" | "studio_apply"))
-            && value["args"].is_object()
+        if matches!(
+            value["tool"].as_str(),
+            Some("studio_read" | "studio_apply" | "studio_verify")
+        ) && value["args"].is_object()
         {
             return Ok(value);
         }
@@ -312,5 +314,59 @@ mod tests {
             ""
         );
         assert_eq!(args.last().unwrap(), "model & literal");
+    }
+}
+
+/// Model IDs only: never return local account, endpoint, or credential metadata.
+pub fn cached_model_ids(value: &Value) -> Vec<String> {
+    let mut ids: Vec<String> = value["models"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|model| model["slug"].as_str())
+        .chain(value["model"].as_str())
+        .filter(|id| !id.is_empty() && id.len() <= 256 && !id.chars().any(char::is_whitespace))
+        .map(str::to_owned)
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+pub fn pi_model_ids(output: &str) -> Vec<String> {
+    let mut ids: Vec<String> = output
+        .lines()
+        .filter_map(|line| {
+            let cells: Vec<_> = line.split_whitespace().collect();
+            if cells.len() < 6
+                || cells[0] == "provider"
+                || !["yes", "no"].contains(&cells[cells.len() - 1])
+            {
+                return None;
+            }
+            Some(format!("{}/{}", cells[0], cells[1]))
+        })
+        .collect();
+    ids.sort();
+    ids.dedup();
+    ids
+}
+#[cfg(test)]
+mod model_tests {
+    use super::*;
+    #[test]
+    fn model_catalogs_keep_only_ids_and_deduplicate() {
+        assert_eq!(
+            cached_model_ids(
+                &json!({"models":[{"slug":"custom-model","token":"secret"},{"slug":"custom-model"},{"slug":""},{"slug":"bad\nname"},{}],"model":"other-model"})
+            ),
+            vec!["custom-model", "other-model"]
+        );
+        assert!(cached_model_ids(&Value::Null).is_empty());
+        assert_eq!(
+            pi_model_ids(
+                "provider model context max-out thinking images\nopenai test-model 128K 8K yes yes\nopenai test-model 128K 8K yes yes\nstatus: none\n"
+            ),
+            vec!["openai/test-model"]
+        );
     }
 }

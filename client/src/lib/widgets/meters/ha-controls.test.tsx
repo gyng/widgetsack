@@ -471,7 +471,7 @@ describe('HA control fallbacks (null value, default names, off/alt states)', () 
 		);
 		// state==='paused' (active, not playing) → Play label + ▶ icon.
 		const playBtn = getByLabelText('Play Speaker');
-		expect(playBtn.textContent).toBe('▶');
+		expect(playBtn.querySelector('[data-icon="play"]')).toBeTruthy();
 		expect(getByText(/Show · S1/)).toBeTruthy();
 	});
 
@@ -495,7 +495,7 @@ describe('HA control fallbacks (null value, default names, off/alt states)', () 
 			/>
 		);
 		const mute = getByLabelText('Unmute Speaker');
-		expect(mute.textContent).toBe('🔇');
+		expect(mute.querySelector('[data-icon="mute"]')).toBeTruthy();
 		expect(mute.className).toContain('on');
 		expect(mute.getAttribute('aria-pressed')).toBe('true');
 		// No onControl → clicks/changes must not throw.

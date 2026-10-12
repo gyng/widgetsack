@@ -19,6 +19,7 @@ import { container, group, isContainer, isGroup, leaf } from './layoutTree';
 import { applyParams } from './solve';
 import { NOWPLAYING_DEFAULT_CSS, createWidget } from './widget';
 import { dashboardMetas } from './dashboardMetas';
+import { LOCAL_DESKTOP_DEF } from './localDesktop';
 
 const rand = (): string => Math.random().toString(36).slice(2, 8);
 
@@ -317,6 +318,13 @@ const CLOCK_PARAMS: ParamSpec[] = [
 ];
 
 export const TEMPLATES: Template[] = [
+	{
+		id: 'local-desktop',
+		name: 'Local desktop',
+		description: 'Clock, media, network, dynamic CPU core charts, and automatic monitor inputs',
+		size: LOCAL_DESKTOP_DEF.size,
+		tree: () => structuredClone(LOCAL_DESKTOP_DEF.child)
+	},
 	...dashboardMetas.map((meta) => ({
 		id: `dashboard-widget-${meta.type}`,
 		name: meta.label!,
@@ -357,6 +365,18 @@ export const TEMPLATES: Template[] = [
 		name: 'System monitor',
 		description: 'CPU/RAM/SWAP/GPU/VRAM + per-core sparkline grid',
 		size: { w: 170, h: 140 },
+		params: [
+			{
+				key: 'smooth',
+				label: 'Smooth charts',
+				default: false,
+				target: 'children.2.unit.config.smooth',
+				choices: [
+					{ value: 'false', label: 'Off' },
+					{ value: 'true', label: 'On' }
+				]
+			}
+		],
 		tree: systemTree
 	},
 	{
@@ -364,6 +384,18 @@ export const TEMPLATES: Template[] = [
 		name: 'Network',
 		description: 'Up/down throughput histograms + rate text',
 		size: { w: 170, h: NETWORK_H },
+		params: [
+			{
+				key: 'smooth',
+				label: 'Smooth charts',
+				default: false,
+				targets: ['children.0.unit.config.smooth', 'children.1.unit.config.smooth'],
+				choices: [
+					{ value: 'false', label: 'Off' },
+					{ value: 'true', label: 'On' }
+				]
+			}
+		],
 		tree: networkTree
 	},
 	{

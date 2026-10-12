@@ -11,11 +11,12 @@
 // leaking. The standalone Sparkline widget draws into a canvas the same way; see Sparkline.tsx.)
 import { useCallback, useEffect, useRef } from 'react';
 import { coreCellRects } from './cpuCoresMath';
-import { sparklineBars, sparklinePoints } from './sparklineMath';
+import { interpolateHistory, sparklineBars, sparklinePoints } from './sparklineMath';
 import './Cpu.css';
 
 type Props = {
 	cores: number[][];
+	smooth?: boolean;
 	cols: number; // 0 / unset → one column per core (a single full-width row)
 	color?: string;
 	seconds: number;
@@ -33,6 +34,7 @@ export default function CpuCoresCanvas(props: Props) {
 	// Latest props read by the draw without re-subscribing the ResizeObserver. Written in a commit
 	// effect (not during render) — the draw only reads it later from the ResizeObserver / telemetry tick.
 	const propsRef = useRef(props);
+	const displayed = useRef(props.cores);
 	useEffect(() => {
 		propsRef.current = props;
 	});
@@ -52,18 +54,18 @@ export default function CpuCoresCanvas(props: Props) {
 			canvas.height = h;
 		}
 		ctx.clearRect(0, 0, w, h);
-		if (p.cores.length === 0) return;
+		if (displayed.current.length === 0) return;
 
 		const cs = getComputedStyle(canvas);
 		const color = p.color || cs.getPropertyValue('--np-fg').trim() || FALLBACK_COLOR;
 		const gapPx = parseFloat(cs.getPropertyValue('--np-cpu-core-gap'));
 		const gap = (Number.isFinite(gapPx) ? gapPx : DEFAULT_GAP) * dpr;
-		const colCount = p.cols && p.cols > 0 ? Math.round(p.cols) : p.cores.length;
-		const cells = coreCellRects(p.cores.length, colCount, w, h, gap);
+		const colCount = p.cols && p.cols > 0 ? Math.round(p.cols) : displayed.current.length;
+		const cells = coreCellRects(displayed.current.length, colCount, w, h, gap);
 		const windowSlots = Math.max(1, Math.round(p.seconds));
 		const lw = Math.max(1, (p.lineWidth || 1.5) * dpr);
 
-		p.cores.forEach((history, i) => {
+		displayed.current.forEach((history, i) => {
 			const cell = cells[i];
 			if (!cell || cell.w <= 0 || cell.h <= 0) return;
 			if (p.histogram) {
@@ -100,12 +102,59 @@ export default function CpuCoresCanvas(props: Props) {
 		});
 	}, []);
 
-	// Redraw whenever the data or any draw-affecting config changes (the cores array is new each tick).
+	// Animate only a stable core grid. New/disappearing cores settle immediately.
 	useEffect(() => {
-		draw();
+		let frame: number | null = null;
+		const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+		const cancel = () => {
+			if (frame !== null) cancelAnimationFrame(frame);
+			frame = null;
+		};
+		const finish = () => {
+			cancel();
+			displayed.current = props.cores;
+			draw();
+		};
+		const from = displayed.current;
+		const changed = from.some(
+			(history, i) =>
+				history.length !== props.cores[i]?.length ||
+				history.some((value, j) => value !== props.cores[i][j])
+		);
+		if (
+			props.smooth &&
+			changed &&
+			from.length > 0 &&
+			from.length === props.cores.length &&
+			!motion.matches &&
+			document.visibilityState !== 'hidden'
+		) {
+			const start = performance.now();
+			const animate = (now: number) => {
+				const progress = (now - start) / 300;
+				if (progress >= 1) {
+					finish();
+					return;
+				}
+				displayed.current = props.cores.map((history, i) =>
+					interpolateHistory(from[i], history, progress)
+				);
+				draw();
+				frame = requestAnimationFrame(animate);
+			};
+			frame = requestAnimationFrame(animate);
+		} else finish();
+		motion.addEventListener('change', finish);
+		document.addEventListener('visibilitychange', finish);
+		return () => {
+			cancel();
+			motion.removeEventListener('change', finish);
+			document.removeEventListener('visibilitychange', finish);
+		};
 	}, [
 		draw,
 		props.cores,
+		props.smooth,
 		props.cols,
 		props.color,
 		props.seconds,

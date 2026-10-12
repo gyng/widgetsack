@@ -492,3 +492,20 @@ describe('StudioSettingsPanel — Danger section', () => {
 		expect(container.textContent).not.toContain('There is no undo');
 	});
 });
+
+vi.mock('../bridge/mcp', () => ({
+	mcpStatus: vi.fn().mockResolvedValue({
+		enabled: false,
+		browserAccess: false,
+		running: false,
+		endpoint: null,
+		browserUrl: null,
+		config: {}
+	}),
+	mcpSetPreferences: vi.fn()
+}));
+it('opens the dedicated MCP page without needing an AI provider', async () => {
+	const view = render(<StudioSettingsPanel {...baseProps({ tab: 'mcp' })} />);
+	await waitFor(() => expect(view.getByLabelText('Enable MCP')).toBeEnabled());
+	expect(view.getByLabelText('Enable MCP')).not.toBeChecked();
+});

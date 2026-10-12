@@ -40,3 +40,5 @@ pub const REFIT_OVERLAYS_EVENT: &str = "refit_overlays";
 /// Foreign-window drag watcher (windowmgr.rs → DragSnapLayer.tsx).
 pub const WIN_DRAG_START_EVENT: &str = "win_drag_start";
 pub const WIN_DRAG_END_EVENT: &str = "win_drag_end";
+
+pub const MCP_STUDIO_REQUEST: &str = "mcp_studio_request";

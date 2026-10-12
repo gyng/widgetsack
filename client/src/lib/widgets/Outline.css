@@ -44,7 +44,7 @@
 	margin: var(--space-4) 0 var(--space-2);
 }
 
-.outline .hd:first-child {
+.outline > .hd {
 	margin-top: 0;
 	flex-direction: column;
 	align-items: stretch;
@@ -294,4 +294,40 @@
 .outline button:focus-visible {
 	outline: 2px solid var(--ui-accent-fg);
 	outline-offset: -1px;
+}
+
+.layout-monitor-picker {
+	margin-bottom: var(--space-5);
+	padding-bottom: var(--space-4);
+	border-bottom: 1px solid var(--ui-border);
+}
+.layout-monitor-picker .lbl {
+	display: block;
+	font-size: var(--text-sm);
+	color: var(--ui-muted);
+	margin-bottom: var(--space-2);
+}
+.layout-monitor-picker .np-select.sb-select {
+	width: 100%;
+	min-width: 0;
+	font-size: var(--text-md);
+}
+.canvas .layout-monitor-picker .monitor-onboarding {
+	position: static;
+	width: auto;
+	margin-top: var(--space-3);
+	padding: var(--space-3);
+	box-shadow: none;
+	font-size: var(--text-sm);
+}
+
+.layout-monitor-picker .monitor-picker {
+	flex-direction: column;
+}
+.layout-monitor-picker .monitor-onboarding button {
+	flex: none;
+	border: 0;
+	background: transparent;
+	padding: 0;
+	color: var(--ui-muted);
 }

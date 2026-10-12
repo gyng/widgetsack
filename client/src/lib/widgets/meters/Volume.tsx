@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Volume meter (presentational, props-only): a mute toggle + a level slider + a % readout. The Tauri
 // wiring (read/set the system master volume) lives in the sibling VolumeHost; this just renders and
 // calls back. interactive:true on the meta so the controls work on the passive overlay. BARE DOM;
@@ -28,7 +29,9 @@ export default function Volume({ level = null, muted = false, onSet, onToggleMut
 				title={muted ? 'Unmute' : 'Mute'}
 				aria-label={muted ? 'Unmute' : 'Mute'}
 			>
-				<span className="vol-icon">{icon}</span>
+				<span className="vol-icon">
+					<Icon name={icon} />
+				</span>
 			</button>
 			<input
 				className="vol-slider"

@@ -1,6 +1,7 @@
 import type { Sack } from './sack';
 import type { LayoutNode } from './layoutTree';
 import { createWidget, NOWPLAYING_DEFAULT_CSS } from './widget';
+import { LOCAL_DESKTOP_PRESET_NAME, LOCAL_DESKTOP_SACK } from './localDesktop';
 
 function dashboard(
 	name: string,
@@ -47,6 +48,7 @@ function dashboard(
 
 /** Built-in sacks share the exact import path used by user-exported sacks; no files are overwritten. */
 export const DASHBOARD_SACKS: Record<string, Sack> = {
+	[LOCAL_DESKTOP_PRESET_NAME]: LOCAL_DESKTOP_SACK,
 	'Built-in: Work': dashboard('Work', '#77c4d3', [
 		{ type: 'clock', height: 42, config: { format: 'ddd D MMM · HH:mm' } },
 		{ type: 'agenda', height: 160, config: { maxRows: 2 } },

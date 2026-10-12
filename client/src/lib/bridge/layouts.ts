@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from './contract';
 import { logClient } from './logging';
+import { LOCAL_DESKTOP_PRESET_NAME, localDesktopPreset } from '../core/localDesktop';
 
 // One backup per session: every parse-failure path funnels here, and the FIRST one wins — later
 // calls would only re-copy the same bytes (or, worse, a default layout already saved over them).
@@ -33,15 +34,16 @@ export async function loadLayoutRaw(): Promise<string | null> {
 /** The names of saved layout profiles (file stems of `layouts/*.layout.json`). */
 export async function listLayouts(): Promise<string[]> {
 	try {
-		return await invoke<string[]>(COMMANDS.listLayouts);
+		return [LOCAL_DESKTOP_PRESET_NAME, ...(await invoke<string[]>(COMMANDS.listLayouts))];
 	} catch (err) {
 		console.warn('list_layouts failed', err);
-		return [];
+		return [LOCAL_DESKTOP_PRESET_NAME];
 	}
 }
 
 /** The raw JSON of saved layout `name`, or null if it doesn't exist / fails to read. */
 export async function readLayout(name: string): Promise<string | null> {
+	if (name === LOCAL_DESKTOP_PRESET_NAME) return JSON.stringify(localDesktopPreset());
 	try {
 		return await invoke<string | null>(COMMANDS.readLayout, { name });
 	} catch (err) {
@@ -52,6 +54,7 @@ export async function readLayout(name: string): Promise<string | null> {
 
 /** Save the current monitor's layout as profile `name`; returns the path written (or null). */
 export async function saveLayoutAs(name: string, contents: string): Promise<string | null> {
+	if (name === LOCAL_DESKTOP_PRESET_NAME) return null;
 	try {
 		return await invoke<string>(COMMANDS.saveLayoutAs, { name, contents });
 	} catch (err) {
@@ -62,6 +65,7 @@ export async function saveLayoutAs(name: string, contents: string): Promise<stri
 
 /** Delete saved layout `name` (idempotent). Returns true on success. */
 export async function deleteLayout(name: string): Promise<boolean> {
+	if (name === LOCAL_DESKTOP_PRESET_NAME) return false;
 	try {
 		await invoke(COMMANDS.deleteLayout, { name });
 		return true;

@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Interactive HA meter (molecule): a lock toggle. Reads locked/unlocked from the entity JSON
 // (binds: 'json'); a tap emits onControl (lock.lock / lock.unlock) which Canvas turns into
 // ha_call_service. Prop-only (AGENTS.md §6).
@@ -36,7 +37,7 @@ export default function HaLock({ value = null, haStatus, label, onControl }: Pro
 			onClick={() => onControl?.({ domain: 'lock', service: locked ? 'unlock' : 'lock' })}
 		>
 			<span className="icon" data-part="icon" aria-hidden="true">
-				{locked ? '🔒' : '🔓'}
+				<Icon name={locked ? 'lock' : 'unlock'} />
 			</span>
 			<span className="label" data-part="label">
 				{name}

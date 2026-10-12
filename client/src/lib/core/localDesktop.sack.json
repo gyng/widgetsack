@@ -1,0 +1,576 @@
+{
+	"kind": "widgetsack/sack",
+	"version": 1,
+	"name": "Local desktop",
+	"library": {
+		"version": 1,
+		"defs": [
+			{
+				"id": "local-desktop",
+				"name": "Local desktop",
+				"size": {
+					"w": 2560,
+					"h": 1392
+				},
+				"child": {
+					"id": "root",
+					"kind": "row",
+					"children": [
+						{
+							"id": "cell-y3qwjl",
+							"kind": "grid",
+							"children": [
+								{
+									"id": "cell-y14scx",
+									"kind": "row",
+									"children": [
+										{
+											"id": "nowplaying-p6ai6n",
+											"unit": {
+												"config": {},
+												"css": ".np-nowplaying {\n\tdisplay: flex;\n\tflex-direction: column;\n\tgap: var(--np-gap, 4px);\n\twidth: 100%;\n\theight: 100%;\n\toverflow: hidden;\n\tfont-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);\n\tcolor: var(--np-fg, rgb(255, 255, 255));\n\t/* Play/pause fade (ported from the original widget): dim when not playing, full on hover. */\n\ttransition: opacity 0.2s ease-in;\n}\n.np-nowplaying[data-playing='false'] {\n\topacity: 0.2;\n}\n.np-nowplaying[data-playing='false']:hover {\n\topacity: 1;\n}\n/* Crossfade: album-art layers overlap in the stack; on a track change the new cover fades in over\n   the previous one (removed once it has loaded), so a song change never flashes empty/black. */\n.np-thumb-stack {\n\tposition: relative;\n\tflex: 1 1 0;\n\tmin-height: 0;\n\twidth: 100%;\n}\n.np-thumb {\n\tposition: absolute;\n\tinset: 0;\n\twidth: 100%;\n\theight: 100%;\n\tobject-fit: contain;\n\tobject-position: left;\n\t/* Two independent fades: a snappy opacity crossfade (data-loaded) + a slower desaturate-to-grey\n\t   that marks the previous track's cover as stale the instant the song changes (data-leaving). */\n\topacity: 0;\n\tfilter: grayscale(0);\n\ttransition: opacity 0.12s ease-out, filter 0.45s ease-out;\n\twill-change: opacity, filter;\n}\n.np-thumb[data-loaded='true'] {\n\topacity: 1;\n}\n/* Song-change cue: the outgoing cover greys out (like the paused dim) \u2014 separate from, and slower\n   than, the opacity crossfade \u2014 while the new track's cover fades in over it in full colour. */\n.np-thumb[data-leaving='true'] {\n\tfilter: grayscale(1);\n}\n.np-title,\n.np-artist {\n\tflex: 0 0 auto;\n\tfont-size: 52px;\n\t/* >1 so descenders (g, y, p) aren't clipped by the line's overflow:hidden (ellipsis). */\n\tline-height: 1.2;\n\twhite-space: nowrap;\n\toverflow: hidden;\n\ttext-overflow: ellipsis;\n}\n/* Breathing room above the title (separating it from the album art) and below the artist\n   (separating it from the widget's bottom edge). Themeable via the --np-*-gap vars. */\n.np-title {\n\tmargin-top: var(--np-title-gap, 8px);\n}\n.np-artist {\n\tmargin-bottom: var(--np-artist-gap, 8px);\n}\n.np-progress,\n.np-times,\n.np-controls {\n\tdisplay: none;\n\tflex: 0 0 auto;\n}\n.np-progress {\n\theight: 3px;\n\tbackground: var(--np-track, rgba(255, 255, 255, 0.15));\n}\n.np-progress-fill {\n\theight: 100%;\n\tbackground: var(--np-accent, rgb(119, 196, 211));\n}\n.np-times {\n\tjustify-content: space-between;\n}\n.np-controls {\n\tgap: 8px;\n}",
+												"id": "nowplaying-p6ai6n",
+												"interactive": true,
+												"rect": {
+													"h": 200,
+													"w": 160,
+													"x": 24,
+													"y": 24
+												},
+												"type": "nowplaying"
+											},
+											"basis": {
+												"fr": 1
+											}
+										}
+									],
+									"basis": {
+										"fr": 1
+									},
+									"align": "stretch"
+								},
+								{
+									"id": "cell-w12wu2",
+									"kind": "col",
+									"children": [],
+									"basis": {
+										"fr": 1
+									},
+									"align": "stretch"
+								},
+								{
+									"id": "cell-wee2gw",
+									"kind": "row",
+									"children": [
+										{
+											"id": "cell-bqrq8t",
+											"kind": "col",
+											"children": [],
+											"basis": {
+												"fr": 1.41
+											},
+											"align": "stretch"
+										},
+										{
+											"id": "cell-ojjye7",
+											"kind": "col",
+											"children": [
+												{
+													"id": "grp-59vj5s",
+													"unit": {
+														"child": {
+															"align": "stretch",
+															"children": [
+																{
+																	"basis": "content",
+																	"halign": "left",
+																	"id": "analogclock-vet69m",
+																	"margin": {
+																		"b": 8,
+																		"l": 0,
+																		"r": 0,
+																		"t": 0
+																	},
+																	"unit": {
+																		"config": {
+																			"showCap": false,
+																			"showNumbers": false,
+																			"showSeconds": true,
+																			"showTicks": false
+																		},
+																		"id": "analogclock-vet69m",
+																		"rect": {
+																			"h": 30,
+																			"w": 30,
+																			"x": 0,
+																			"y": 0
+																		},
+																		"type": "analogclock"
+																	}
+																},
+																{
+																	"basis": "content",
+																	"id": "clock-7mxifj",
+																	"unit": {
+																		"config": {
+																			"format": "HHmm"
+																		},
+																		"id": "clock-7mxifj",
+																		"rect": {
+																			"h": 34,
+																			"w": 150,
+																			"x": 0,
+																			"y": 0
+																		},
+																		"type": "clock"
+																	}
+																},
+																{
+																	"basis": "content",
+																	"id": "clock-qr8bwj",
+																	"unit": {
+																		"config": {
+																			"format": "ddd",
+																			"locale": "ja"
+																		},
+																		"id": "clock-qr8bwj",
+																		"rect": {
+																			"h": 34,
+																			"w": 60,
+																			"x": 0,
+																			"y": 0
+																		},
+																		"type": "clock"
+																	}
+																},
+																{
+																	"align": "end",
+																	"basis": "content",
+																	"children": [
+																		{
+																			"basis": "content",
+																			"id": "clock-rkgwhi",
+																			"unit": {
+																				"config": {
+																					"format": "D",
+																					"locale": "en"
+																				},
+																				"id": "clock-rkgwhi",
+																				"rect": {
+																					"h": 22,
+																					"w": 30,
+																					"x": 0,
+																					"y": 0
+																				},
+																				"type": "clock"
+																			}
+																		},
+																		{
+																			"basis": "content",
+																			"id": "clock-1cj45k",
+																			"unit": {
+																				"config": {
+																					"format": "MMMM",
+																					"locale": "en"
+																				},
+																				"css": "text-transform: uppercase;",
+																				"id": "clock-1cj45k",
+																				"rect": {
+																					"h": 22,
+																					"w": 100,
+																					"x": 0,
+																					"y": 0
+																				},
+																				"type": "clock"
+																			}
+																		}
+																	],
+																	"gap": 6,
+																	"id": "row-ola4p4",
+																	"kind": "row"
+																}
+															],
+															"gap": 2,
+															"id": "col-vausil",
+															"kind": "col"
+														},
+														"id": "grp-59vj5s",
+														"kind": "group",
+														"name": "Clock (JP weekday)",
+														"size": {
+															"h": 150,
+															"w": 170
+														},
+														"css": ""
+													}
+												},
+												{
+													"id": "grp-uh1czg",
+													"unit": {
+														"child": {
+															"align": "stretch",
+															"children": [
+																{
+																	"basis": "content",
+																	"children": [
+																		{
+																			"basis": {
+																				"fr": 1
+																			},
+																			"id": "text-buc5t7",
+																			"unit": {
+																				"config": {
+																					"format": "integer",
+																					"label": "CPU"
+																				},
+																				"id": "text-buc5t7",
+																				"rect": {
+																					"h": 16,
+																					"w": 50,
+																					"x": 0,
+																					"y": 0
+																				},
+																				"sensor": "cpu.total",
+																				"type": "text"
+																			}
+																		},
+																		{
+																			"basis": {
+																				"fr": 1
+																			},
+																			"id": "text-cenll8",
+																			"unit": {
+																				"config": {
+																					"format": "integer",
+																					"label": "RAM"
+																				},
+																				"id": "text-cenll8",
+																				"rect": {
+																					"h": 16,
+																					"w": 50,
+																					"x": 0,
+																					"y": 0
+																				},
+																				"sensor": "mem.used",
+																				"type": "text"
+																			}
+																		},
+																		{
+																			"basis": {
+																				"fr": 1
+																			},
+																			"id": "text-0bdgfd",
+																			"unit": {
+																				"config": {
+																					"format": "integer",
+																					"label": "SWAP"
+																				},
+																				"id": "text-0bdgfd",
+																				"rect": {
+																					"h": 16,
+																					"w": 50,
+																					"x": 0,
+																					"y": 0
+																				},
+																				"sensor": "swap.used",
+																				"type": "text"
+																			}
+																		}
+																	],
+																	"gap": 6,
+																	"id": "row-hceuok",
+																	"kind": "row"
+																},
+																{
+																	"basis": "content",
+																	"children": [
+																		{
+																			"basis": {
+																				"fr": 1
+																			},
+																			"id": "text-wytole",
+																			"unit": {
+																				"config": {
+																					"format": "integer",
+																					"label": "GPU"
+																				},
+																				"id": "text-wytole",
+																				"rect": {
+																					"h": 16,
+																					"w": 50,
+																					"x": 0,
+																					"y": 0
+																				},
+																				"sensor": "gpu.util",
+																				"type": "text"
+																			}
+																		},
+																		{
+																			"basis": {
+																				"fr": 1
+																			},
+																			"id": "text-vepzcs",
+																			"unit": {
+																				"config": {
+																					"format": "integer",
+																					"label": "VRAM"
+																				},
+																				"id": "text-vepzcs",
+																				"rect": {
+																					"h": 16,
+																					"w": 50,
+																					"x": 0,
+																					"y": 0
+																				},
+																				"sensor": "gpu.vram",
+																				"type": "text"
+																			}
+																		},
+																		{
+																			"basis": {
+																				"fr": 1
+																			},
+																			"children": [],
+																			"id": "col-a9uqb6",
+																			"kind": "col"
+																		}
+																	],
+																	"gap": 6,
+																	"id": "row-a0lle8",
+																	"kind": "row"
+																},
+																{
+																	"basis": {
+																		"fr": 1
+																	},
+																	"id": "cpu-zysyki",
+																	"margin": {
+																		"b": 0,
+																		"l": 0,
+																		"r": 0,
+																		"t": 8
+																	},
+																	"unit": {
+																		"config": {
+																			"cols": 8,
+																			"lineWidth": 1,
+																			"mode": "cores",
+																			"seconds": 20
+																		},
+																		"id": "cpu-zysyki",
+																		"rect": {
+																			"h": 70,
+																			"w": 150,
+																			"x": 0,
+																			"y": 0
+																		},
+																		"type": "cpu"
+																	}
+																}
+															],
+															"gap": 4,
+															"id": "col-5cp53j",
+															"kind": "col"
+														},
+														"id": "grp-uh1czg",
+														"kind": "group",
+														"name": "System monitor",
+														"size": {
+															"h": 140,
+															"w": 170
+														},
+														"css": ""
+													}
+												},
+												{
+													"id": "grp-yqd1ka",
+													"unit": {
+														"child": {
+															"align": "stretch",
+															"children": [
+																{
+																	"basis": 60,
+																	"id": "sparkline-ecs3yl",
+																	"margin": {
+																		"b": 4,
+																		"l": 0,
+																		"r": 0,
+																		"t": 0
+																	},
+																	"unit": {
+																		"config": {
+																			"color": "var(--np-accent)",
+																			"histogram": true,
+																			"min": 0,
+																			"seconds": 90
+																		},
+																		"id": "sparkline-ecs3yl",
+																		"rect": {
+																			"h": 60,
+																			"w": 150,
+																			"x": 0,
+																			"y": 0
+																		},
+																		"sensor": "net.up",
+																		"type": "sparkline"
+																	}
+																},
+																{
+																	"basis": 60,
+																	"id": "sparkline-bspv2a",
+																	"margin": {
+																		"b": 8,
+																		"l": 0,
+																		"r": 0,
+																		"t": 0
+																	},
+																	"unit": {
+																		"config": {
+																			"color": "var(--np-label)",
+																			"histogram": true,
+																			"min": 0,
+																			"seconds": 90
+																		},
+																		"id": "sparkline-bspv2a",
+																		"rect": {
+																			"h": 60,
+																			"w": 150,
+																			"x": 0,
+																			"y": 0
+																		},
+																		"sensor": "net.down",
+																		"type": "sparkline"
+																	}
+																},
+																{
+																	"basis": "content",
+																	"children": [
+																		{
+																			"basis": {
+																				"fr": 1
+																			},
+																			"id": "text-tis0g9",
+																			"unit": {
+																				"config": {
+																					"color": "var(--np-accent)",
+																					"format": "rate",
+																					"label": "\u25b2"
+																				},
+																				"css": ".np-text { justify-content: flex-end; }",
+																				"id": "text-tis0g9",
+																				"rect": {
+																					"h": 16,
+																					"w": 75,
+																					"x": 0,
+																					"y": 0
+																				},
+																				"sensor": "net.up",
+																				"type": "text"
+																			}
+																		},
+																		{
+																			"basis": {
+																				"fr": 1
+																			},
+																			"id": "text-g730zb",
+																			"unit": {
+																				"config": {
+																					"color": "var(--np-label)",
+																					"format": "rate",
+																					"label": "\u25bc"
+																				},
+																				"id": "text-g730zb",
+																				"rect": {
+																					"h": 16,
+																					"w": 75,
+																					"x": 0,
+																					"y": 0
+																				},
+																				"sensor": "net.down",
+																				"type": "text"
+																			}
+																		}
+																	],
+																	"gap": 6,
+																	"id": "row-z0kjsp",
+																	"kind": "row"
+																}
+															],
+															"gap": 0,
+															"id": "col-9c1tdt",
+															"kind": "col"
+														},
+														"id": "grp-yqd1ka",
+														"kind": "group",
+														"name": "Network",
+														"size": {
+															"h": 104,
+															"w": 170
+														},
+														"css": ""
+													},
+													"basis": "content",
+													"margin": {
+														"b": 0,
+														"l": 0,
+														"r": 0,
+														"t": 8
+													}
+												},
+												{
+													"id": "monitorswitch-31ftpz",
+													"unit": {
+														"config": {
+															"compact": false,
+															"showCurrent": true,
+															"showStats": true,
+															"sources": "",
+															"monitor": "",
+															"volumeDevice": ""
+														},
+														"id": "monitorswitch-31ftpz",
+														"interactive": true,
+														"rect": {
+															"h": 150,
+															"w": 220,
+															"x": 2344,
+															"y": 560
+														},
+														"type": "monitorswitch"
+													},
+													"margin": {
+														"b": 0,
+														"l": 0,
+														"r": 0,
+														"t": 16
+													}
+												}
+											],
+											"basis": {
+												"fr": 0.59
+											},
+											"align": "stretch"
+										}
+									],
+									"basis": {
+										"fr": 1
+									},
+									"align": "stretch"
+								}
+							],
+							"basis": {
+								"fr": 1
+							},
+							"cols": 3,
+							"align": "stretch"
+						}
+					],
+					"basis": {
+						"fr": 1
+					},
+					"align": "stretch"
+				}
+			}
+		]
+	}
+}

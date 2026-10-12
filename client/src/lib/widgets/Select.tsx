@@ -240,7 +240,7 @@ function SelectCombobox({
 		// In free-text mode the value changes on every keystroke, so a CONTROLLED selectedItem would flip
 		// to null (no exact match) and Downshift would reset the input to itemToString(null)='' — clearing
 		// each character. Leave selection uncontrolled there; the menu highlight is computed manually below.
-		selectedItem: allowCustom ? null : selectedItem,
+		selectedItem: allowCustom ? undefined : selectedItem,
 		itemToString: (o) => (o ? (allowCustom ? o.value : o.label) : ''),
 		onInputValueChange: ({ inputValue: iv, type }) => {
 			/* v8 ignore next -- Downshift supplies a string for input-change notifications. */

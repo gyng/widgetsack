@@ -59,7 +59,8 @@ describe('templates', () => {
 			'gauge',
 			'button',
 			'analogclock',
-			'cpu'
+			'cpu',
+			'monitorswitch'
 		]);
 		for (const t of TEMPLATES) {
 			const ls = leaves(t.tree());
@@ -192,7 +193,7 @@ describe('resolveTemplateOptions', () => {
 	});
 
 	it('resolves a template with no params to an empty map', () => {
-		expect(resolveTemplateOptions(tplOf('system'))).toEqual({});
+		expect(resolveTemplateOptions(tplOf('nowplaying'))).toEqual({});
 	});
 });
 
@@ -398,4 +399,18 @@ describe('template registry (register / unregister / list / subscribe)', () => {
 		registerTemplates(PLUGIN_GROUP, [sample]);
 		expect(notified).toBe(0);
 	});
+});
+
+it('applies Smooth charts to every chart in System monitor and Network, including off', () => {
+	for (const id of ['system', 'network']) {
+		const template = getTemplate(id)!;
+		for (const smooth of ['true', 'false']) {
+			const charts = leaves(instantiateTemplate(template, { smooth })).filter((w) =>
+				['cpu', 'sparkline'].includes(w.type)
+			);
+			expect(charts.length).toBe(id === 'system' ? 1 : 2);
+			expect(charts.every((w) => w.config.smooth === (smooth === 'true'))).toBe(true);
+		}
+		expect(resolveTemplateOptions(template).smooth).toBe('false');
+	}
 });

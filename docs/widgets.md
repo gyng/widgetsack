@@ -214,6 +214,7 @@ Self-sourcing CPU widget: a per-core sparkline grid or one combined gauge.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
+| `smooth` | toggle | false |  | animate between telemetry ticks; respects reduced motion |
 | `mode` | select | "cores" | `cores`, `combined` | per-core sparkline grid vs one combined gauge |
 | `seconds` | number | 30 | min 5, step 5 | seconds of history to show |
 | `label` | text |  |  | caption for the combined gauge |

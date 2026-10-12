@@ -3,8 +3,9 @@ import { DASHBOARD_SACKS } from './dashboardSacks';
 import { unpackSack, mergeLibrary } from './sack';
 import { isContainer } from './layoutTree';
 describe('dashboard sacks', () => {
-	it('ships four importable reusable dashboards with unique IDs and coherent dimensions', () => {
+	it('ships five importable reusable dashboards with unique IDs and coherent dimensions', () => {
 		expect(Object.keys(DASHBOARD_SACKS)).toEqual([
+			'Built-in: Local desktop',
 			'Built-in: Work',
 			'Built-in: Gaming',
 			'Built-in: Home',

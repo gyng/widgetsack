@@ -3,6 +3,34 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.64
+
+### Added
+
+- Control Studio from an external agent through native MCP. Read layouts, apply undoable edits,
+  verify widget geometry, and capture Studio screenshots without opening the assistant sidebar.
+- Add an MCP settings page with configuration instructions and optional browser access.
+  Browser tools are off by default and require an app restart when enabled.
+- Ship the Local desktop preset. Discover monitor inputs and CPU cores on the current machine.
+- Add smooth chart options to the built-in System monitor and Network widgets.
+
+### Changed
+
+- Replace placeholder emoji with consistent SVG icons. Improve widget preview samples and add
+  direct configuration links with visible setup status for Home Assistant and AI Provider.
+- Move the monitor picker above the Layout outline. Add searchable model suggestions while
+  keeping custom model IDs available in the Studio assistant.
+- Require agent layout verification after edits. Support edits inside grouped widgets while
+  preserving shared definitions and sibling instances.
+- Refresh preset screenshots with matching image sizes and document native MCP setup.
+
+### Fixed
+
+- Include floating widgets in layout verification. Detect missing renders, clipping, invalid sizes,
+  and widgets outside the work area. Keep visual review explicit.
+- Keep custom model text after selecting a suggestion. Reject stale MCP edits after the layout,
+  monitor, or editor target changes.
+
 ## 0.0.63
 
 ### Changed

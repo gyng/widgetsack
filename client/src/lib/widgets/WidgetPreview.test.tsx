@@ -1,32 +1,48 @@
 import { describe, expect, it } from 'vitest';
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import WidgetPreview from './WidgetPreview';
 import { createWidget } from '../core/widget';
 import { container, leaf } from '../core/layoutTree';
 
 // WidgetPreview is a molecule: it renders palette entries through the REAL FlowNode + WidgetHost
 // against a seeded telemetry hub. We don't mock the render layer (ThemePreview's test renders the
-// same WidgetHost happily in happy-dom) — we assert the host's OWN decisions: the NO_DEMO
-// placeholder branch, type→one-leaf-tree normalisation, the def/template tree path, the
+// same WidgetHost happily in happy-dom) — we assert offline samples, type→one-leaf-tree normalisation, the def/template tree path, the
 // scale-to-fit math, and the null (nothing to draw) branch.
 
 const stage = (c: HTMLElement): HTMLElement | null =>
 	c.querySelector('div[style*="transform-origin"]') as HTMLElement | null;
 
-describe('WidgetPreview — NO_DEMO placeholder', () => {
-	it('renders the "shows live data" placeholder for a backend/device-bound type (no meter)', () => {
-		const { getByText, container: c } = render(<WidgetPreview type="spectrum" />);
-		expect(getByText('shows live data')).toBeTruthy();
-		// The real widget render path (a FlowNode data-id slot) must NOT be present.
-		expect(c.querySelector('[data-id]')).toBeNull();
+describe('WidgetPreview — offline samples', () => {
+	it('draws an audio sample without starting a device stream', () => {
+		const { container } = render(<WidgetPreview type="spectrum" />);
+		expect(container.querySelector('svg')).toBeTruthy();
+		expect(container.querySelector('[data-id="preview-spectrum"]')).toBeTruthy();
 	});
-
-	it('treats nowplaying / image / iframe / monitorswitch as NO_DEMO too', () => {
-		// Each render is scoped to its own container (the prior renders persist in the shared document).
-		for (const type of ['nowplaying', 'image', 'iframe', 'monitorswitch']) {
-			const { container: c } = render(<WidgetPreview type={type} />);
-			expect(c.textContent).toBe('shows live data');
-			expect(c.querySelector('[data-id]')).toBeNull();
+	it('shows representative content for device and provider widgets, including inside templates', () => {
+		for (const type of [
+			'nowplaying',
+			'image',
+			'iframe',
+			'monitorswitch',
+			'assistant',
+			'audiomixer',
+			'servicehealth',
+			'volume',
+			'aichat',
+			'transcribe',
+			'spacer',
+			'ha.media_player',
+			'audioswitch'
+		]) {
+			const node = leaf(createWidget(type, 'offline-sample'));
+			const { container } = render(<WidgetPreview node={node} size={{ w: 300, h: 180 }} />);
+			expect(container.querySelector('[data-id="offline-sample"]')).toBeTruthy();
+			expect(
+				container.querySelector('[data-id="offline-sample"]')?.childNodes.length
+			).toBeGreaterThan(0);
+			expect(container.textContent).not.toContain('shows live data');
+			const control = container.querySelector('button');
+			if (control) fireEvent.click(control);
 		}
 	});
 });
@@ -41,13 +57,13 @@ describe('WidgetPreview — single widget type', () => {
 	});
 
 	it('renders a demoable type at scale 1 (box == native size → no transform)', () => {
-		const { container: c } = render(<WidgetPreview type="gauge" w={180} h={100} />);
+		const { container: c } = render(<WidgetPreview type="gauge" w={110} h={110} />);
 		const st = stage(c);
 		expect(st).toBeTruthy();
 		// scale === 1 → transform omitted; the inner stage carries the box size.
 		expect(st!.style.transform).toBe('');
-		expect(st!.style.width).toBe('180px');
-		expect(st!.style.height).toBe('100px');
+		expect(st!.style.width).toBe('110px');
+		expect(st!.style.height).toBe('110px');
 	});
 });
 
@@ -96,4 +112,18 @@ describe('WidgetPreview — nothing to draw', () => {
 		const { container: c } = render(<WidgetPreview node={node} />);
 		expect(c.firstChild).toBeNull();
 	});
+});
+
+it('binds HA samples and gives unregistered types a bounded fallback size', () => {
+	const ha = render(<WidgetPreview type="ha.sensor" />);
+	expect(ha.container.querySelector('[data-id="preview-ha.sensor"]')).toBeTruthy();
+	const unknown = render(<WidgetPreview type="unknown" w={120} h={90} />);
+	expect(stage(unknown.container)?.style.width).toBe('120px');
+});
+it('scopes authored preview styles so they cannot restyle the canvas', () => {
+	const widget = createWidget('text', 'shared');
+	widget.css = 'color: lime;';
+	const { container } = render(<WidgetPreview node={leaf(widget)} size={{ w: 120, h: 90 }} />);
+	expect(container.querySelector('style')?.textContent).toContain('[data-preview=');
+	expect(container.querySelector('style')?.textContent).toContain('[data-w="shared"]');
 });

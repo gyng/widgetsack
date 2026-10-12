@@ -1,4 +1,5 @@
 import { decodeStudioOps, STUDIO_AGENT_INSTRUCTIONS, type StudioOp } from '../core/studioAssistant';
+import type { StudioVerification } from '../core/studioVerification';
 import type { MonitorLayout } from '../core/layoutTree';
 import type { StudioApplyResult } from '../widgets/plugin';
 
@@ -13,7 +14,13 @@ export type AgentRequest = {
 	prompt: string;
 	systemPrompt: string;
 };
-export type StudioSnapshot = { monitorKey: string; monitor: MonitorLayout; [key: string]: unknown };
+export type StudioSnapshot = {
+	monitorKey: string;
+	monitor: MonitorLayout;
+	editorTarget?: string;
+	editable?: boolean;
+	[key: string]: unknown;
+};
 export type AgentPorts = {
 	run(request: AgentRequest, receive: (event: AgentEvent) => void): Promise<void>;
 	reply(requestId: string, toolId: string, result: unknown): Promise<void>;
@@ -38,6 +45,7 @@ export function createStudioAgentSession(
 	studio: {
 		read(): StudioSnapshot;
 		apply(ops: StudioOp[], expected: StudioSnapshot): StudioApplyResult;
+		verify?(expected: StudioSnapshot): Promise<StudioVerification>;
 	},
 	publish: (state: AgentState) => void,
 	makeId: () => string
@@ -65,7 +73,7 @@ export function createStudioAgentSession(
 		const snapshot = studio.read();
 		const run = {
 			id: makeId(),
-			target: snapshot.monitorKey,
+			target: snapshot.editorTarget ?? snapshot.monitorKey,
 			expected: null as StudioSnapshot | null
 		};
 		active = run;
@@ -95,12 +103,15 @@ export function createStudioAgentSession(
 				let result: unknown;
 				try {
 					const current = studio.read();
-					if (current.monitorKey !== run.target)
-						throw new Error('The active monitor changed. Send a new request for this monitor.');
+					if ((current.editorTarget ?? current.monitorKey) !== run.target)
+						throw new Error(
+							'The active monitor changed or the editor target changed. Send a new request.'
+						);
 					if (event.name === 'studio_read') {
 						run.expected = current;
 						result = current;
 					} else if (event.name === 'studio_apply') {
+						if (current.editable === false) throw new Error('This editor target is read-only.');
 						if (!run.expected) throw new Error('Read the studio before editing.');
 						const ops = decodeStudioOps((event.args as { ops?: unknown } | null)?.ops);
 						result = studio.apply(ops, run.expected);
@@ -112,6 +123,27 @@ export function createStudioAgentSession(
 								`${applied.applied} action(s) applied${applied.errors.length ? ` · ${applied.errors.join('; ')}` : ''}`
 							]
 						});
+					} else if (event.name === 'studio_verify') {
+						if (!studio.verify) throw new Error('Rendered verification is unavailable.');
+						void studio
+							.verify(current)
+							.then((result) => {
+								if (active !== run) return;
+								update({
+									actions: [
+										...state.actions,
+										`${result.checked} layout node(s) checked · ${result.issues.length} issue(s) · visual review required`
+									]
+								});
+								return ports.reply(run.id, event.id, result);
+							})
+							.catch((error) => {
+								if (active === run) {
+									update({ error: String(error) });
+									void ports.reply(run.id, event.id, { error: String(error) }).catch(() => {});
+								}
+							});
+						return;
 					} else throw new Error('Unknown studio tool');
 				} catch (error) {
 					result = { error: String(error) };

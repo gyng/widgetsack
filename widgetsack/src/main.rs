@@ -38,6 +38,7 @@ pub mod keepalive;
 pub mod listener;
 pub mod llm;
 pub mod log;
+pub mod mcp;
 pub mod media;
 pub mod mqtt;
 pub mod navguard;
@@ -154,6 +155,19 @@ fn window_state_flags() -> tauri_plugin_window_state::StateFlags {
 
 #[tokio::main]
 async fn main() -> Result<(), ()> {
+    if std::env::args().any(|arg| arg == "--mcp") {
+        let args: Vec<_> = std::env::args().collect();
+        let path = args
+            .windows(2)
+            .find(|pair| pair[0] == "--mcp-descriptor")
+            .map(|pair| std::path::PathBuf::from(&pair[1]));
+        return mcp::stdio_bridge(path)
+            .await
+            .map_err(|error| eprintln!("{error}"));
+    }
+    let mut context = tauri::generate_context!();
+    let browser_port = mcp::configure_browser(&mut context);
+
     // Route panics through the logging pipeline (stderr + rotating file + webview) so a panic on
     // any thread is never silent. Installed before anything else, so even a panic during startup
     // (before `log::init` wires the app handle) still hits stderr + the file.
@@ -275,6 +289,7 @@ async fn main() -> Result<(), ()> {
         .manage(art::ArtState::default())
         .manage(clickthrough::InteractiveRects::default())
         .manage(control::ControlState::default())
+        .manage(mcp::McpState::new(browser_port))
         .manage(ha::HaState::default())
         .manage(llm::LlmState::default())
         .manage(studio_agent::StudioAgentState::default())
@@ -412,6 +427,10 @@ async fn main() -> Result<(), ()> {
             llm::llm_cancel,
             llm::llm_transcribe,
             llm::llm_synthesize,
+            mcp::mcp_status,
+            mcp::mcp_set_preferences,
+            mcp::mcp_studio_claim,
+            mcp::mcp_studio_reply,
             control::control_start,
             control::control_stop,
             process_diag::process_diagnostics,
@@ -476,6 +495,10 @@ async fn main() -> Result<(), ()> {
                 ping::run_ping_source(ping_handle).await;
             });
 
+            let mcp_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                mcp::restore(mcp_handle).await;
+            });
             // Agent-control server: OPT-IN (off unless LlmConfig.agent_control is true). Started on
             // demand so a fresh install never opens a port.
             let control_handle = app.handle().clone();
@@ -668,7 +691,7 @@ async fn main() -> Result<(), ()> {
 
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while running tauri application")
         // Tray app: zero windows is a VALID state and must not end the process. It is reached by
         // design — an empty-primary `main` self-destructs to reclaim its renderer, so a layout

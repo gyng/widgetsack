@@ -15,7 +15,7 @@ describe('TopProcess meter', () => {
 		expect(container.querySelector('.tp-label')?.textContent).toBe('Top CPU');
 		expect(container.querySelector('.tp-name')?.textContent).toBe('chrome.exe');
 		expect(container.querySelector('.tp-value')?.textContent).toBe('23%');
-		expect(container.querySelector('.tp-icon')?.textContent).toBe('🔥');
+		expect(container.querySelector('.tp-icon')?.querySelector('[data-icon="bolt"]')).toBeTruthy();
 	});
 
 	it('formats disk as a per-second rate and gpu as bytes', () => {

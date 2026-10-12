@@ -21,11 +21,11 @@ describe('moonPhase', () => {
 
 describe('moonInfo', () => {
 	it('names + illuminates the cardinal phases', () => {
-		expect(moonInfo(0)).toMatchObject({ name: 'New', icon: '🌑' });
+		expect(moonInfo(0)).toMatchObject({ name: 'New', icon: 'moon-new' });
 		expect(moonInfo(0).illumination).toBeCloseTo(0, 3);
-		expect(moonInfo(0.5)).toMatchObject({ name: 'Full', icon: '🌕' });
+		expect(moonInfo(0.5)).toMatchObject({ name: 'Full', icon: 'moon-full' });
 		expect(moonInfo(0.5).illumination).toBeCloseTo(1, 3);
-		expect(moonInfo(0.25)).toMatchObject({ name: 'First quarter', icon: '🌓' });
+		expect(moonInfo(0.25)).toMatchObject({ name: 'First quarter', icon: 'moon-first-quarter' });
 		expect(moonInfo(0.25).illumination).toBeCloseTo(0.5, 3);
 	});
 });

@@ -45,9 +45,19 @@ Configure Weather and Agenda in their plugin settings. For the Home Assistant he
 enter the URL of the endpoint to check.
 
 The screenshots use sample data and a configured health endpoint. New task lists are empty.
+| Local desktop |
+| --- |
+| <img src="docs/img/presets/local-desktop.png" width="400" alt="Local desktop preset with clocks, media, network charts, per-core CPU charts, and monitor inputs"> |
+
 Alerts appear when a rule triggers. To update these images, run `npm run gen:presets` in `client/`.
 
 To save a monitor's full arrangement for later use, use the studio's **Presets** section.
+Load **Built-in: Local desktop** for a ready-made layout with clocks, media, network charts,
+and per-core CPU charts. The charts use the CPU cores on your machine. The monitor switcher
+uses the primary display and discovers its available inputs. You can also add this layout
+from **Local desktop** in the widget list or import its sack from **Share**.
+In **Layout**, choose a monitor above the outline. The **System monitor** and **Network**
+templates have a **Smooth charts** option. Set it to **On** for softer transitions between ticks.
 
 ## Layout studio
 
@@ -218,3 +228,9 @@ dual licensed as above, without any additional terms or conditions.
 <p align="center">
   <img src="branding/icon-transparent.png" alt="widgetsack logo — a maneki-neko holding a money sack and a little CRT" width="168" height="168">
 </p>
+
+## Your agent, your choice
+
+Use **Settings → MCP** to connect an external agent. The native bridge needs no Node runtime.
+It can read and edit layouts, check rendered geometry, and capture a Studio screenshot.
+Browser access is an optional setting. See [MCP setup and tools](docs/mcp.md).

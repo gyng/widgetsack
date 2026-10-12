@@ -15,10 +15,10 @@ export type TopMetricInfo = {
 };
 
 export const TOP_METRICS: TopMetricInfo[] = [
-	{ id: 'cpu', label: 'CPU', icon: '🔥', format: 'percent', suffix: 'pct' },
-	{ id: 'mem', label: 'RAM', icon: '🧠', format: 'bytes', suffix: 'bytes' },
-	{ id: 'disk', label: 'Disk', icon: '💾', format: 'rate', suffix: 'bytes' },
-	{ id: 'gpu', label: 'GPU', icon: '🎮', format: 'bytes', suffix: 'bytes' }
+	{ id: 'cpu', label: 'CPU', icon: 'bolt', format: 'percent', suffix: 'pct' },
+	{ id: 'mem', label: 'RAM', icon: 'chip', format: 'bytes', suffix: 'bytes' },
+	{ id: 'disk', label: 'Disk', icon: 'disk', format: 'rate', suffix: 'bytes' },
+	{ id: 'gpu', label: 'GPU', icon: 'gpu', format: 'bytes', suffix: 'bytes' }
 ];
 
 /** The chosen metric (defaults to CPU for an unknown value). */

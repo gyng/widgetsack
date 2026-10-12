@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { gotoStudio } from './helpers';
+import { addWidget, gotoStudio } from './helpers';
 
 // The clock-cluster TEMPLATE OPTIONS, end to end (the pure resolve/apply logic is unit-tested in
 // core/templates.test.ts). In the Inspector's Templates palette the clock renders as an options card
@@ -50,4 +50,26 @@ test('clock template options: English weekday applies on insert', async ({ page 
 	// The weekday clock (2nd, `ddd`) is an English short day now, not the default Japanese glyph (月…).
 	const weekday = page.locator('.np-clock .value').nth(1);
 	await expect(weekday).toHaveText(/^(Sun|Mon|Tue|Wed|Thu|Fri|Sat)$/);
+});
+
+test('System monitor and Network offer smooth charts on insertion', async ({ page }) => {
+	await gotoStudio(page);
+	await addWidget(page, 'Clock');
+	const summary = page.locator('.inspector .add-panel > summary');
+	for (const name of ['System monitor', 'Network']) {
+		if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
+		const option = page.getByRole('combobox', { name: `${name} — Smooth charts`, exact: true });
+		await expect(option).toContainText('Off');
+		await option.click();
+		await page.getByRole('option', { name: 'On', exact: true }).click();
+		await expect(option).toContainText('On');
+		await page
+			.locator('.tpl-opts')
+			.filter({ has: page.locator('.tpl-opts-name', { hasText: name }) })
+			.locator('.tpl-opts-insert')
+			.click();
+		await expect(
+			page.getByRole('button', { name: `Move ${name} widget`, exact: true })
+		).toBeVisible();
+	}
 });

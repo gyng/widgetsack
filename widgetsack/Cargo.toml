@@ -1,7 +1,7 @@
 [package]
 name = "widgetsack"
 # Keep in lockstep with tauri.conf.json's version (the bundle/updater source of truth).
-version = "0.0.63"
+version = "0.0.64"
 description = "widgetsack desktop widget platform"
 authors = ["you"]
 license = "MIT OR Apache-2.0"
@@ -67,6 +67,8 @@ winreg = "0.55"
 # The #[interface] macro (audio.rs IPolicyConfig: set the default audio endpoint) expands to
 # ::windows_core paths, so the crate must be a direct dependency. Pinned to windows 0.61's core.
 windows-core = "0.61"
+# Already used by Tauri; captures only this app's Studio webview.
+webview2-com = "0.38.2"
 # WASAPI loopback capture for the audio spectrum widget. Safe-ish bindings over windows-rs that
 # encapsulate GetMixFormat / SampleType (float vs int) / the loopback init flags. Kept at the
 # audio.rs edge (anti-corruption layer, like win-gsmtc for media). Windows-only.

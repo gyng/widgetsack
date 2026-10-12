@@ -17,6 +17,7 @@ type Props = {
 	seconds?: number;
 	histogram?: boolean;
 	lineWidth?: number;
+	smooth?: boolean;
 };
 
 // Per-core USAGE ids only: `cpu.core.<n>`. The trailing `\d+$` deliberately EXCLUDES the per-core
@@ -34,6 +35,7 @@ export default function Cpu({
 	color,
 	seconds = 30,
 	histogram = false,
+	smooth = false,
 	lineWidth
 }: Props) {
 	const hub = useContext(TelemetryHubContext);
@@ -70,6 +72,7 @@ export default function Cpu({
 	return (
 		<CpuCoresCanvas
 			cores={cores}
+			smooth={smooth}
 			cols={cols != null && cols > 0 ? Math.round(cols) : 8}
 			color={color}
 			seconds={seconds}

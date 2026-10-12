@@ -119,3 +119,13 @@
 	color: var(--ui-danger, #f68b8b);
 	overflow-wrap: anywhere;
 }
+
+.studio-assistant .np-select-input,
+.studio-assistant .np-select-caret {
+	border: none;
+	background: transparent;
+	min-height: 0;
+}
+.studio-assistant .np-select-caret {
+	padding: 0 var(--space-2);
+}

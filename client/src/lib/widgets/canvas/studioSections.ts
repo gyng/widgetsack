@@ -28,30 +28,36 @@ export type Section = {
 // shared vocabulary: "custom widget" (the designer), "Background", "Share" (sacks = your exports),
 // "Presets" (saved layouts).
 export const SECTIONS: Section[] = [
-	{ id: 'layouts', label: 'Layout', short: 'Layout', icon: '▤', group: 'main' },
-	{ id: 'widget-designer', label: 'Widget designer', short: 'Custom', icon: '◳', group: 'main' },
-	{ id: 'sensors', label: 'Sensors', short: 'Sensors', icon: '∿', group: 'main' },
+	{ id: 'layouts', label: 'Layout', short: 'Layout', icon: 'zone', group: 'main' },
+	{
+		id: 'widget-designer',
+		label: 'Widget designer',
+		short: 'Custom',
+		icon: 'group',
+		group: 'main'
+	},
+	{ id: 'sensors', label: 'Sensors', short: 'Sensors', icon: 'wave', group: 'main' },
 	// Plugins ❖ (not ⧉ — ⧉ is "copy" elsewhere) and Share ❏ (not ▦ — ▦ is a container/grid/monitor)
 	// so each nav glyph is a distinct signifier (the glyph-uniqueness test locks this in).
-	{ id: 'plugins', label: 'Plugins', short: 'Plugins', icon: '❖', group: 'main' },
-	{ id: 'themes', label: 'Themes', short: 'Themes', icon: '◐', group: 'main' },
+	{ id: 'plugins', label: 'Plugins', short: 'Plugins', icon: 'plugin', group: 'main' },
+	{ id: 'themes', label: 'Themes', short: 'Themes', icon: 'palette', group: 'main' },
 	// The per-monitor full-screen background layer. ◧ (a framed picture) is distinct from every
 	// other nav glyph and from the in-canvas ▦ signifier.
-	{ id: 'background', label: 'Background', short: 'Background', icon: '◧', group: 'main' },
+	{ id: 'background', label: 'Background', short: 'Background', icon: 'image', group: 'main' },
 	// Sacks: export your widgets + theme as a shareable bundle, import someone else's.
 	{
 		id: 'sacks',
 		label: 'Share',
 		short: 'Share',
 		title: 'Sacks — export/import',
-		icon: '❏',
+		icon: 'share',
 		group: 'main'
 	},
 	// Presets (saved layout profiles: save the current monitor's arrangement, load it back). ⊞ is
 	// distinct from the other nav glyphs and from the in-canvas ▦ (container/grid) signifier.
-	{ id: 'saved-layouts', label: 'Presets', short: 'Presets', icon: '⊞', group: 'main' },
+	{ id: 'saved-layouts', label: 'Presets', short: 'Presets', icon: 'calendar', group: 'main' },
 	// Shortcut remaps moved into Settings → Shortcuts; Settings is the sole foot item now.
-	{ id: 'settings', label: 'Settings', short: 'Settings', icon: '⚙', group: 'foot' }
+	{ id: 'settings', label: 'Settings', short: 'Settings', icon: 'settings', group: 'foot' }
 ];
 
 // The sections in the exact top-to-bottom order the NavRail renders them: the `main` group first,

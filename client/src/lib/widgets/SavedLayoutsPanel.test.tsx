@@ -48,3 +48,13 @@ describe('SavedLayoutsPanel', () => {
 		expect(p.onDelete).toHaveBeenCalledWith('Home');
 	});
 });
+
+it('lets users load the shipped preset without offering to delete it', () => {
+	const p = props();
+	const { getByText, queryByLabelText } = render(
+		<SavedLayoutsPanel {...p} layoutNames={['Built-in: Local desktop']} />
+	);
+	fireEvent.click(getByText('⤒ Built-in: Local desktop'));
+	expect(p.onLoad).toHaveBeenCalledWith('Built-in: Local desktop');
+	expect(queryByLabelText('Delete preset Built-in: Local desktop')).toBeNull();
+});

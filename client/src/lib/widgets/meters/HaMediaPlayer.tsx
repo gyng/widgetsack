@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Interactive HA meter (molecule): a media_player — album art + now-playing text + transport (prev /
 // play-pause / next) + a volume slider with mute. Reads title/artist/state/volume from the entity
 // JSON (binds: 'json'); controls emit onControl (media_player.media_play_pause / media_next_track /
@@ -76,21 +77,21 @@ export default function HaMediaPlayer({
 							aria-label={`Previous on ${name}`}
 							onClick={() => call('media_previous_track')}
 						>
-							⏮
+							<Icon name="previous" />
 						</button>
 						<button
 							type="button"
 							aria-label={playing ? `Pause ${name}` : `Play ${name}`}
 							onClick={() => call('media_play_pause')}
 						>
-							{playing ? '⏸' : '▶'}
+							<Icon name={playing ? 'pause' : 'play'} />
 						</button>
 						<button
 							type="button"
 							aria-label={`Next on ${name}`}
 							onClick={() => call('media_next_track')}
 						>
-							⏭
+							<Icon name="next" />
 						</button>
 					</div>
 				)}
@@ -103,7 +104,7 @@ export default function HaMediaPlayer({
 							aria-pressed={muted}
 							onClick={() => call('volume_mute', { is_volume_muted: !muted })}
 						>
-							{muted ? '🔇' : '🔊'}
+							<Icon name={muted ? 'mute' : 'speaker-high'} />
 						</button>
 						<input
 							type="range"

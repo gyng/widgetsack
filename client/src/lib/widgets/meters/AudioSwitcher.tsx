@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Audio Switcher meter (presentational, props-only). Lists the output devices and lets the user pick
 // one to make default — the wiring (list / read default / set default via Tauri) lives in the sibling
 // AudioSwitcherHost; this just renders rows and calls `onPick`. The active device floats to the top and
@@ -21,7 +22,9 @@ export default function AudioSwitcher({ devices, currentId, onPick, busyId, colo
 	return (
 		<div className="audioswitch np-audioswitch" style={vars}>
 			<div className="as-head">
-				<span className="as-title">🔊 Output</span>
+				<span className="as-title">
+					<Icon name="speaker" /> Output
+				</span>
 			</div>
 			{rows.length === 0 ? (
 				<div className="as-empty" data-part="empty">

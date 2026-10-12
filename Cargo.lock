@@ -5038,7 +5038,7 @@ dependencies = [
 
 [[package]]
 name = "widgetsack"
-version = "0.0.63"
+version = "0.0.64"
 dependencies = [
  "fontdb",
  "futures-util",
@@ -5061,6 +5061,7 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "wasapi",
+ "webview2-com",
  "win-gsmtc",
  "windows 0.61.3",
  "windows-core 0.61.2",

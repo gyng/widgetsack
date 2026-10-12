@@ -228,7 +228,7 @@ describe('BackgroundPanel — auto theme (image only)', () => {
 			{ kind: 'image', src: 'a.png' },
 			{ wallpaperFiles: ['a.png'], autoTheme: at }
 		);
-		fireEvent.click(getByText('🎨 From background'));
+		fireEvent.click(getByText('From background'));
 		expect(at.run).toHaveBeenCalledTimes(1);
 	});
 
@@ -275,6 +275,6 @@ describe('BackgroundPanel — auto theme (image only)', () => {
 			{ kind: 'video', src: 'clip.mp4' },
 			{ wallpaperFiles: ['clip.mp4'], autoTheme: autoTheme() }
 		);
-		expect(queryByText('🎨 From background')).toBeNull();
+		expect(queryByText('From background')).toBeNull();
 	});
 });

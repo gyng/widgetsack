@@ -86,3 +86,12 @@
 .canvas .settings-panel .diag-toggle {
 	white-space: nowrap;
 }
+
+.mcp-config {
+	width: 100%;
+	box-sizing: border-box;
+	font-family: var(--ui-font-mono);
+	font-size: var(--text-sm);
+	resize: vertical;
+	margin: var(--space-4) 0;
+}

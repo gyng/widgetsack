@@ -1,3 +1,4 @@
+import Icon from './Icon';
 // Settings section (extracted from Canvas): the side tab list + one focused subsection at a time
 // (Monitor / Overlay / Startup / Shortcuts / Diagnostics / About / Danger zone). Purely a panel —
 // the prefs/handlers it surfaces stay owned by Canvas and arrive as grouped props; the only module
@@ -27,6 +28,7 @@ import { updateStatusLine } from '../core/updateNotice';
 import ControlsPanel from './ControlsPanel';
 import DiagnosticsPanel from './DiagnosticsPanel';
 import Select from './Select';
+import McpSettingsPanel from './McpSettingsPanel';
 import mascotUrl from '../../assets/mascot.png';
 import './StudioSettingsPanel.css';
 
@@ -112,7 +114,7 @@ function AppUpdateCheck() {
 							onClick={() => void openReleasePage(known.url)}
 							title="Open the release page in your browser (there is no auto-installer)"
 						>
-							↗ Open release page
+							<Icon name="external" /> Open release page
 						</button>{' '}
 						<button type="button" onClick={() => void copyToClipboard(known.url)}>
 							copy link
@@ -188,6 +190,7 @@ export const SETTINGS_TABS = [
 	{ id: 'startup', label: 'Startup' },
 	{ id: 'controls', label: 'Shortcuts' },
 	{ id: 'diagnostics', label: 'Diagnostics' },
+	{ id: 'mcp', label: 'MCP' },
 	{ id: 'about', label: 'About' },
 	{ id: 'danger', label: 'Danger zone' }
 ] as const;
@@ -433,6 +436,7 @@ export default function StudioSettingsPanel({
 							/>
 						</>
 					)}
+					{tab === 'mcp' && <McpSettingsPanel />}
 					{tab === 'diagnostics' && (
 						<>
 							<div className="pl-title">Diagnostics</div>
@@ -459,7 +463,7 @@ export default function StudioSettingsPanel({
 									onClick={() => void rescueWindows()}
 									title="Make every window interactive and bring it forward — recovers a click-through or crashed overlay you can't click (same as the Ctrl+Alt+Shift+E shortcut)."
 								>
-									⛑ Rescue all windows
+									<Icon name="rescue" /> Rescue all windows
 								</button>
 							</div>
 							<DiagnosticsPanel appVersion={appVersion} />

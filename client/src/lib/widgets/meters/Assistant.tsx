@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // The AI Briefing meter — pure presentation (AGENTS.md §6): renders the generated text / busy /
 // error state it is GIVEN. The generation wiring (sensor-hub snapshot, LLM call, interval/cron
 // schedule, TTS) lives in the AssistantHost container (../AssistantHost.tsx + ../useAssistant.ts).
@@ -22,7 +23,7 @@ export default function Assistant({
 }: AssistantViewProps) {
 	// `||` (not `??`) so a blank config color falls back to the theme variable.
 	const colorCss = color || 'var(--np-fg, rgb(255, 255, 255))';
-	const body = error ? `⚠ ${error}` : text || (busy ? 'Thinking…' : 'Waiting for the AI…');
+	const body = error ? error : text || (busy ? 'Thinking…' : 'Waiting for the AI…');
 
 	return (
 		<div className="assistant np-assistant" data-part="root" style={{ color: colorCss }}>
@@ -32,7 +33,7 @@ export default function Assistant({
 				</span>
 			)}
 			<span className="assistant-text" data-part="value">
-				{body}
+				{error && <Icon name="alert" />} {body}
 			</span>
 			{onRefresh && (
 				<button
@@ -43,7 +44,7 @@ export default function Assistant({
 					title="Generate now"
 					aria-label="Generate now"
 				>
-					↻
+					<Icon name="refresh" />
 				</button>
 			)}
 		</div>

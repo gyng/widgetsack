@@ -4,7 +4,7 @@ import { topMetric, topProcessSensors, TOP_METRICS } from './topProcess';
 describe('topMetric', () => {
 	it('returns the matching metric, CPU for unknown', () => {
 		expect(topMetric('disk').label).toBe('Disk');
-		expect(topMetric('gpu').icon).toBe('🎮');
+		expect(topMetric('gpu').icon).toBe('gpu');
 		expect(topMetric('nonsense').id).toBe('cpu');
 	});
 	it('uses a rate format for disk, percent for cpu, bytes for the rest', () => {

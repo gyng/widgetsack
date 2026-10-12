@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Interactive HA meter (molecule): a one-tap scene activator. A scene has no on/off state, so this
 // is a button labelled with the scene name that emits onControl (scene.turn_on). Prop-only.
 import type { ControlEvent } from '../meterProps';
@@ -32,7 +33,7 @@ export default function HaScene({ value = null, haStatus, label, onControl }: Pr
 			onClick={() => onControl?.({ domain: 'scene', service: 'turn_on' })}
 		>
 			<span className="icon" data-part="icon" aria-hidden="true">
-				▶
+				<Icon name="play" />
 			</span>
 			<span className="label" data-part="label">
 				{name}

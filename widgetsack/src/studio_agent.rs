@@ -196,6 +196,7 @@ async fn run_agent(
         "{system}\n{}\n\n{prompt}",
         crate::studio_agent_cli::ADAPTER_INSTRUCTIONS
     );
+    let mut verification_required = false;
     for turn in 0..8 {
         let output = tokio::select! {
             output = execute_cli(&agent, backend, model, &prompt) => output?,
@@ -207,6 +208,10 @@ async fn run_agent(
         };
         let reply = crate::studio_agent_cli::reply(backend, &output)?;
         if let Some(message) = reply["message"].as_str() {
+            if verification_required {
+                prompt.push_str("\nA change was applied but not verified. Call studio_verify before replying to the user.");
+                continue;
+            }
             channel
                 .send(json!({ "type": "text", "text": message }))
                 .map_err(|_| "Studio disconnected")?;
@@ -229,6 +234,12 @@ async fn run_agent(
         })
         .await
         .map_err(|_| "Studio did not answer the tool request")??;
+        if reply["tool"] == "studio_apply" && result["applied"].as_u64().is_some_and(|n| n > 0) {
+            verification_required = true;
+        }
+        if reply["tool"] == "studio_verify" && result["checked"].is_number() {
+            verification_required = false;
+        }
         prompt.push_str(&format!("\nAssistant: {reply}\nTool result: {result}"));
         if prompt.len() > 512_000 {
             return Err("Studio context exceeded the limit".into());
@@ -241,10 +252,76 @@ async fn run_agent(
 pub async fn studio_agent_status(window: tauri::WebviewWindow) -> Result<Value, String> {
     studio(&window)?;
     let directories = search_directories();
-    Ok(crate::studio_agent_cli::status(
-        ["pi", "codex", "claude"]
-            .map(|name| crate::studio_agent_cli::discover(name, &directories).is_some()),
-    ))
+    let available = ["pi", "codex", "claude"]
+        .map(|name| crate::studio_agent_cli::discover(name, &directories).is_some());
+    let mut status = crate::studio_agent_cli::status(available);
+    let mut models = json!({});
+    if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+        let home = PathBuf::from(home);
+        for (backend, path) in [
+            ("codex", home.join(".codex/models_cache.json")),
+            ("claude", home.join(".claude/settings.json")),
+        ] {
+            if let Ok(bytes) = std::fs::read(path)
+                && bytes.len() <= 2_000_000
+                && let Ok(value) = serde_json::from_slice::<Value>(&bytes)
+            {
+                models[backend] = json!(crate::studio_agent_cli::cached_model_ids(&value));
+            }
+        }
+    }
+    // These installed Claude CLI aliases always follow its current models; custom IDs remain valid.
+    let mut claude: Vec<String> = models["claude"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|id| id.as_str().map(str::to_owned))
+        .collect();
+    claude.extend(["opus".into(), "sonnet".into()]);
+    claude.sort();
+    claude.dedup();
+    models["claude"] = json!(claude);
+    if let Some(agent) = crate::studio_agent_cli::discover("pi", &directories) {
+        let mut command = tokio::process::Command::new(&agent.program);
+        command
+            .args(&agent.prefix)
+            .args([
+                "--no-extensions",
+                "--no-skills",
+                "--no-prompt-templates",
+                "--no-themes",
+                "--list-models",
+            ])
+            .current_dir(std::env::temp_dir())
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true);
+        #[cfg(windows)]
+        command.creation_flags(0x08000000);
+        if let Ok(mut child) = command.spawn() {
+            #[cfg(windows)]
+            let _job = child.id().and_then(|id| ProcessJob::attach(id).ok());
+            if let Some(stdout) = child.stdout.take() {
+                let query = async {
+                    let mut bytes = Vec::new();
+                    stdout.take(128_001).read_to_end(&mut bytes).await.ok()?;
+                    if bytes.len() > 128_000 {
+                        return None;
+                    }
+                    let exit = child.wait().await.ok()?;
+                    exit.success().then(|| {
+                        crate::studio_agent_cli::pi_model_ids(&String::from_utf8_lossy(&bytes))
+                    })
+                };
+                if let Ok(Some(ids)) = tokio::time::timeout(Duration::from_secs(3), query).await {
+                    models["pi"] = json!(ids);
+                }
+            }
+        }
+    }
+    status["models"] = models;
+    Ok(status)
 }
 
 #[tauri::command]

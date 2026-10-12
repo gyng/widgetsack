@@ -3,11 +3,12 @@ import {
 	createStudioAgentSession,
 	type AgentEvent,
 	type AgentPorts,
-	type AgentState
+	type AgentState,
+	type StudioSnapshot
 } from './studioAgentSession';
 import { emptyMonitorLayout } from '../core/layoutTree';
 
-function setup() {
+function setup(withVerification = false) {
 	let receive: (event: AgentEvent) => void = () => {};
 	let resolve: () => void = () => {};
 	const ports: AgentPorts = {
@@ -20,12 +21,19 @@ function setup() {
 		reply: vi.fn().mockResolvedValue(undefined),
 		cancel: vi.fn().mockResolvedValue(undefined)
 	};
-	let snapshot = { monitorKey: 'primary', monitor: emptyMonitorLayout() };
+	let snapshot: StudioSnapshot = { monitorKey: 'primary', monitor: emptyMonitorLayout() };
 	const apply = vi.fn().mockReturnValue({ applied: 1, addedIds: ['clock'], errors: [] });
+	const verify = vi.fn().mockResolvedValue({
+		ok: true,
+		measured: true,
+		checked: 1,
+		issues: [],
+		visualReviewRequired: true
+	});
 	const updates: AgentState[] = [];
 	const session = createStudioAgentSession(
 		ports,
-		{ read: () => snapshot, apply },
+		{ read: () => snapshot, apply, ...(withVerification ? { verify } : {}) },
 		(state) => updates.push(state),
 		() => 'run'
 	);
@@ -33,6 +41,13 @@ function setup() {
 		session,
 		ports,
 		apply,
+		verify,
+		readonly: () => {
+			snapshot = { ...snapshot, editable: false };
+		},
+		target: (editorTarget: string) => {
+			snapshot = { ...snapshot, editorTarget };
+		},
 		updates,
 		receive: (event: AgentEvent) => receive(event),
 		finish: () => resolve(),
@@ -180,4 +195,88 @@ describe('studio agent session', () => {
 		s.finish();
 		await pending;
 	});
+});
+
+it('returns rendered verification and ignores late verification after stopping', async () => {
+	const s = setup(true);
+	const pending = s.session.send('Verify', 'pi', '');
+	s.receive({ type: 'tool', id: 'verify', name: 'studio_verify', args: {} });
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(s.ports.reply).toHaveBeenCalledWith(
+		'run',
+		'verify',
+		expect.objectContaining({ checked: 1 })
+	);
+	expect(s.updates.at(-1)?.actions[0]).toContain('visual review required');
+	let finish!: (value: unknown) => void;
+	s.verify.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				finish = resolve;
+			})
+	);
+	s.receive({ type: 'tool', id: 'late', name: 'studio_verify', args: {} });
+	s.session.stop();
+	finish({ checked: 2, issues: [] });
+	await Promise.resolve();
+	expect(s.ports.reply).not.toHaveBeenCalledWith('run', 'late', expect.anything());
+	s.finish();
+	await pending;
+});
+it('rejects verification failures, unavailable verification, read-only targets and changed editor targets', async () => {
+	const s = setup();
+	const pending = s.session.send('Edit', 'pi', '');
+	s.receive({ type: 'tool', id: 'verify', name: 'studio_verify', args: {} });
+	expect(s.updates.at(-1)?.error).toContain('unavailable');
+	s.receive({ type: 'tool', id: 'read', name: 'studio_read', args: {} });
+	s.readonly();
+	s.receive({ type: 'tool', id: 'edit', name: 'studio_apply', args: { ops: [] } });
+	expect(s.apply).not.toHaveBeenCalled();
+	expect(s.updates.at(-1)?.error).toContain('read-only');
+	s.target('preview:clock');
+	s.receive({ type: 'tool', id: 'read2', name: 'studio_read', args: {} });
+	expect(s.updates.at(-1)?.error).toContain('editor target changed');
+	s.finish();
+	await pending;
+	const failed = setup(true);
+	const run = failed.session.send('Verify', 'pi', '');
+	failed.verify.mockRejectedValue(new Error('Geometry changed'));
+	failed.receive({ type: 'tool', id: 'verify', name: 'studio_verify', args: {} });
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(failed.updates.at(-1)?.error).toContain('Geometry changed');
+	failed.finish();
+	await run;
+});
+
+it('ignores a verification failure after stop and handles a failed error reply', async () => {
+	const s = setup(true);
+	const pending = s.session.send('Verify', 'pi', '');
+	let fail!: (error: Error) => void;
+	s.verify.mockImplementationOnce(
+		() =>
+			new Promise((_resolve, reject) => {
+				fail = reject;
+			})
+	);
+	s.receive({ type: 'tool', id: 'late', name: 'studio_verify', args: {} });
+	s.session.stop();
+	fail(new Error('Old verification'));
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(s.ports.reply).not.toHaveBeenCalled();
+	s.finish();
+	await pending;
+	const failed = setup(true);
+	const run = failed.session.send('Verify', 'pi', '');
+	failed.verify.mockRejectedValue(new Error('Could not measure'));
+	vi.mocked(failed.ports.reply).mockRejectedValue(new Error('Closed'));
+	failed.receive({ type: 'tool', id: 'verify', name: 'studio_verify', args: {} });
+	await Promise.resolve();
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(failed.updates.at(-1)?.error).toContain('Could not measure');
+	failed.finish();
+	await run;
 });

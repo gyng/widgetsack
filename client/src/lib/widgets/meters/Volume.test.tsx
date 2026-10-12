@@ -8,13 +8,15 @@ describe('Volume meter', () => {
 	it('shows the level percent and a speaker icon', () => {
 		const { container } = render(<Volume level={0.5} muted={false} />);
 		expect(container.querySelector('.vol-pct')?.textContent).toBe('50%');
-		expect(container.querySelector('.vol-icon')?.textContent).toBe('🔉');
+		expect(
+			container.querySelector('.vol-icon')?.querySelector('[data-icon="speaker"]')
+		).toBeTruthy();
 		expect((container.querySelector('.vol-slider') as HTMLInputElement).value).toBe('50');
 	});
 
 	it('shows the muted icon + marks the host muted', () => {
 		const { container } = render(<Volume level={0.8} muted />);
-		expect(container.querySelector('.vol-icon')?.textContent).toBe('🔇');
+		expect(container.querySelector('.vol-icon')?.querySelector('[data-icon="mute"]')).toBeTruthy();
 		expect(container.querySelector('.volume')?.getAttribute('data-muted')).toBe('true');
 	});
 

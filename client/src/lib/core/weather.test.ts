@@ -12,47 +12,47 @@ describe('weatherInfo', () => {
 	});
 
 	it('swaps the clear / partly glyphs for night', () => {
-		expect(weatherInfo(0, true).icon).toBe('☀️');
-		expect(weatherInfo(0, false).icon).toBe('🌙');
-		expect(weatherInfo(2, true).icon).toBe('⛅');
-		expect(weatherInfo(2, false).icon).toBe('☁️');
+		expect(weatherInfo(0, true).icon).toBe('sun');
+		expect(weatherInfo(0, false).icon).toBe('moon');
+		expect(weatherInfo(2, true).icon).toBe('weather');
+		expect(weatherInfo(2, false).icon).toBe('cloud');
 	});
 
 	it('falls back for an unknown code', () => {
-		expect(weatherInfo(999)).toEqual({ label: '—', icon: '❓' });
+		expect(weatherInfo(999)).toEqual({ label: '—', icon: 'help' });
 	});
 
 	it('maps every WMO 4677 code group to its label + day icon', () => {
 		// One representative per case arm (covers the fall-through groups too).
 		const expected: Record<number, WeatherInfo> = {
-			0: { label: 'Clear', icon: '☀️' },
-			1: { label: 'Mainly clear', icon: '🌤️' },
-			2: { label: 'Partly cloudy', icon: '⛅' },
-			3: { label: 'Overcast', icon: '☁️' },
-			45: { label: 'Fog', icon: '🌫️' },
-			48: { label: 'Fog', icon: '🌫️' },
-			51: { label: 'Drizzle', icon: '🌦️' },
-			53: { label: 'Drizzle', icon: '🌦️' },
-			55: { label: 'Drizzle', icon: '🌦️' },
-			56: { label: 'Freezing drizzle', icon: '🌧️' },
-			57: { label: 'Freezing drizzle', icon: '🌧️' },
-			61: { label: 'Rain', icon: '🌧️' },
-			63: { label: 'Rain', icon: '🌧️' },
-			65: { label: 'Rain', icon: '🌧️' },
-			66: { label: 'Freezing rain', icon: '🌧️' },
-			67: { label: 'Freezing rain', icon: '🌧️' },
-			71: { label: 'Snow', icon: '🌨️' },
-			73: { label: 'Snow', icon: '🌨️' },
-			75: { label: 'Snow', icon: '🌨️' },
-			77: { label: 'Snow grains', icon: '🌨️' },
-			80: { label: 'Rain showers', icon: '🌦️' },
-			81: { label: 'Rain showers', icon: '🌦️' },
-			82: { label: 'Rain showers', icon: '🌦️' },
-			85: { label: 'Snow showers', icon: '🌨️' },
-			86: { label: 'Snow showers', icon: '🌨️' },
-			95: { label: 'Thunderstorm', icon: '⛈️' },
-			96: { label: 'Thunderstorm + hail', icon: '⛈️' },
-			99: { label: 'Thunderstorm + hail', icon: '⛈️' }
+			0: { label: 'Clear', icon: 'sun' },
+			1: { label: 'Mainly clear', icon: 'weather' },
+			2: { label: 'Partly cloudy', icon: 'weather' },
+			3: { label: 'Overcast', icon: 'cloud' },
+			45: { label: 'Fog', icon: 'fog' },
+			48: { label: 'Fog', icon: 'fog' },
+			51: { label: 'Drizzle', icon: 'rain' },
+			53: { label: 'Drizzle', icon: 'rain' },
+			55: { label: 'Drizzle', icon: 'rain' },
+			56: { label: 'Freezing drizzle', icon: 'rain' },
+			57: { label: 'Freezing drizzle', icon: 'rain' },
+			61: { label: 'Rain', icon: 'rain' },
+			63: { label: 'Rain', icon: 'rain' },
+			65: { label: 'Rain', icon: 'rain' },
+			66: { label: 'Freezing rain', icon: 'rain' },
+			67: { label: 'Freezing rain', icon: 'rain' },
+			71: { label: 'Snow', icon: 'snow' },
+			73: { label: 'Snow', icon: 'snow' },
+			75: { label: 'Snow', icon: 'snow' },
+			77: { label: 'Snow grains', icon: 'snow' },
+			80: { label: 'Rain showers', icon: 'rain' },
+			81: { label: 'Rain showers', icon: 'rain' },
+			82: { label: 'Rain showers', icon: 'rain' },
+			85: { label: 'Snow showers', icon: 'snow' },
+			86: { label: 'Snow showers', icon: 'snow' },
+			95: { label: 'Thunderstorm', icon: 'storm' },
+			96: { label: 'Thunderstorm + hail', icon: 'rain' },
+			99: { label: 'Thunderstorm + hail', icon: 'rain' }
 		};
 		for (const [code, info] of Object.entries(expected)) {
 			expect(weatherInfo(Number(code)), code).toEqual(info);
@@ -60,8 +60,8 @@ describe('weatherInfo', () => {
 	});
 
 	it('uses the night cloud glyph for partly-cloudy at night (code 2)', () => {
-		expect(weatherInfo(2, false)).toEqual({ label: 'Partly cloudy', icon: '☁️' });
-		expect(weatherInfo(1, false).icon).toBe('🌙');
+		expect(weatherInfo(2, false)).toEqual({ label: 'Partly cloudy', icon: 'cloud' });
+		expect(weatherInfo(1, false).icon).toBe('moon');
 	});
 });
 
@@ -89,9 +89,9 @@ describe('labelForecast', () => {
 			],
 			base
 		);
-		expect(days[0]).toMatchObject({ label: 'Today', high: 10, info: { icon: '☀️' } });
+		expect(days[0]).toMatchObject({ label: 'Today', high: 10, info: { icon: 'sun' } });
 		expect(days[1]).toMatchObject({ label: 'Tue', info: { label: 'Rain' } });
 		// A missing code → neutral placeholder (still labeled).
-		expect(days[2]).toMatchObject({ label: 'Wed', info: { icon: '❓' } });
+		expect(days[2]).toMatchObject({ label: 'Wed', info: { icon: 'help' } });
 	});
 });

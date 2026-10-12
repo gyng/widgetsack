@@ -146,3 +146,8 @@ describe('Cpu (no hub)', () => {
 		expect(container.querySelector('[data-part="value"]')?.textContent).toBe('–%');
 	});
 });
+
+it('passes the optional smooth setting to the per-core canvas', () => {
+	renderCpu(<Cpu smooth />, 8);
+	expect(cap.props!.smooth).toBe(true);
+});

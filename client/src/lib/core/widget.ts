@@ -614,8 +614,15 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		label: 'CPU',
 		category: 'Meters',
 		defaultSize: { w: 160, h: 90 },
-		defaultConfig: { mode: 'cores', cols: 8, seconds: 30 },
+		defaultConfig: { mode: 'cores', cols: 8, seconds: 30, smooth: false },
 		configFields: [
+			{
+				key: 'smooth',
+				label: 'smooth updates',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'animate between telemetry ticks; respects reduced motion'
+			},
 			{
 				key: 'mode',
 				label: 'mode',

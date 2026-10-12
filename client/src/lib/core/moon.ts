@@ -18,14 +18,14 @@ export function moonPhase(nowMs: number): number {
 export type MoonInfo = { name: string; icon: string; illumination: number };
 
 const PHASES: { name: string; icon: string }[] = [
-	{ name: 'New', icon: '🌑' },
-	{ name: 'Waxing crescent', icon: '🌒' },
-	{ name: 'First quarter', icon: '🌓' },
-	{ name: 'Waxing gibbous', icon: '🌔' },
-	{ name: 'Full', icon: '🌕' },
-	{ name: 'Waning gibbous', icon: '🌖' },
-	{ name: 'Last quarter', icon: '🌗' },
-	{ name: 'Waning crescent', icon: '🌘' }
+	{ name: 'New', icon: 'moon-new' },
+	{ name: 'Waxing crescent', icon: 'moon-waxing-crescent' },
+	{ name: 'First quarter', icon: 'moon-first-quarter' },
+	{ name: 'Waxing gibbous', icon: 'moon-waxing-gibbous' },
+	{ name: 'Full', icon: 'moon-full' },
+	{ name: 'Waning gibbous', icon: 'moon-waning-gibbous' },
+	{ name: 'Last quarter', icon: 'moon-last-quarter' },
+	{ name: 'Waning crescent', icon: 'moon-waning-crescent' }
 ];
 
 /** Name + glyph + illuminated fraction (0..1) for a 0..1 phase. Illumination follows

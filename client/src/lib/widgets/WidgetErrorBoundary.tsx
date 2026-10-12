@@ -1,3 +1,4 @@
+import Icon from './Icon';
 // Atom: isolates one widget's render/runtime crash so a single bad widget — a buggy meter, a
 // malformed config, a sensor value its render can't handle — degrades to a small inline fallback
 // instead of unmounting the whole overlay's React tree (one throw would otherwise blank every
@@ -53,7 +54,7 @@ export default class WidgetErrorBoundary extends Component<Props, State> {
 		if (error) {
 			return (
 				<div className="widget-error" title={error.message}>
-					⚠ {this.props.label ?? 'widget'}
+					<Icon name="alert" /> {this.props.label ?? 'widget'}
 				</div>
 			);
 		}

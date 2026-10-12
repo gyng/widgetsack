@@ -262,9 +262,9 @@ describe('Inspector add-palette hover preview (debounced popover)', () => {
 
 	it('previews a template on hover', () => {
 		render(<Inspector onOp={vi.fn()} />);
-		fireEvent.mouseEnter(within(palette()).getByRole('button', { name: /^System monitor/ }));
+		fireEvent.mouseEnter(within(palette()).getByRole('button', { name: /^Now playing/ }));
 		act(() => vi.advanceTimersByTime(300));
-		expect(screen.getByText('System monitor', { selector: '.pp-name' })).toBeTruthy();
+		expect(screen.getByText('Now playing', { selector: '.pp-name' })).toBeTruthy();
 	});
 
 	it('cancels a pending preview when the pointer moves to another entry', () => {

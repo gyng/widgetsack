@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Self-sourcing network-connections panel (binds:'none'): which processes are talking to the
 // internet right now, and how many of those go to PUBLIC remotes — security peace-of-mind, at a
 // glance. Like Disks/Cpu it reads the telemetry hub from context: it subscribes to the
@@ -78,7 +79,7 @@ export default function NetConnections({ showListening = false, maxRows = 8, col
 										className="nc-pub"
 										title={r.remotes.length ? r.remotes.join('\n') : 'public Internet'}
 									>
-										🌐 {r.public}
+										<Icon name="globe" /> {r.public}
 									</span>
 								)}
 								{r.established > r.public && (

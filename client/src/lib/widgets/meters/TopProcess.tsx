@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Top Process meter (presentational, props-only). Shows the single busiest process by the chosen
 // metric (CPU % / RAM / disk I/O / GPU VRAM) — "what's eating my machine". Multi-sensor: the meta's
 // `sensors` map (config-driven via topProcessSensors) binds proc.<by>.top.{name,value}; WidgetHost
@@ -30,7 +31,7 @@ export default function TopProcess({ sensors = {}, by = 'cpu', label, color }: P
 	return (
 		<div className="topproc np-topproc" style={vars} data-metric={m.id}>
 			<span className="tp-icon" role="img" aria-label={m.label}>
-				{m.icon}
+				<Icon name={m.icon} />
 			</span>
 			<div className="tp-body">
 				<span className="tp-label">{label || `Top ${m.label}`}</span>

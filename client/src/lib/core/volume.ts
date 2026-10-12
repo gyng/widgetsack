@@ -7,10 +7,10 @@ export function volumePercent(level: number | null): number {
 	return Math.round(Math.max(0, Math.min(1, level)) * 100);
 }
 
-/** A speaker glyph for the level + mute state: muted / silent → 🔇, then low / mid / high. */
+/** A speaker glyph for the level + mute state: muted / silent → mute, then low / mid / high. */
 export function volumeIcon(level: number | null, muted: boolean): string {
-	if (muted || level == null || level <= 0) return '🔇';
-	if (level < 0.34) return '🔈';
-	if (level < 0.67) return '🔉';
-	return '🔊';
+	if (muted || level == null || level <= 0) return 'mute';
+	if (level < 0.34) return 'speaker-low';
+	if (level < 0.67) return 'speaker';
+	return 'speaker-high';
 }

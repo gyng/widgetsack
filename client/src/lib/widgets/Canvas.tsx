@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import { useCanvasDrag } from './canvas/useCanvasDrag';
 import { editingDefinitionId, definitionBaseline, previewDefinition } from '../core/editorMode';
 // Canvas (organism): owns the telemetry hub, wires the backend source, and lays out this
@@ -72,7 +73,6 @@ import {
 	isWholeWindowInteractive,
 	type PresentationInput
 } from './canvas/overlayPresentation';
-import { screenRectToLayout } from '../core/measureMath';
 import { collectSensorRefs, sensorActivity } from '../core/sensorActivity';
 import { SYSTEM_GROUP } from '../core/sensorList';
 // StyleLayer renders on BOTH roles (overlay + studio), so it stays eager. The studio-only panels
@@ -81,7 +81,11 @@ import { SYSTEM_GROUP } from '../core/sensorList';
 import StyleLayer from './StyleLayer';
 import { startDiagResponder, startMemoryTrail } from '../diag';
 import { paletteItems } from './registry';
-import { applyStudioOps, type StudioOp } from '../core/studioAssistant';
+import { applyStudioOps, STUDIO_AGENT_INSTRUCTIONS, type StudioOp } from '../core/studioAssistant';
+import { verifyStudioLayout, type StudioMeasurement } from '../core/studioVerification';
+import { screenRectToLayout } from '../core/measureMath';
+import { createMcpStudioController } from '../llm/mcpStudioController';
+import { listenMcpStudio, mcpStudioPorts } from '../bridge/mcp';
 import type { StudioSnapshot } from '../llm/studioAgentSession';
 import type { LayoutOp } from './ops';
 import { sensorCatalog } from '../core/sensors';
@@ -125,6 +129,7 @@ import { clampMenuToViewport, contextMenuAnchor } from './canvas/menuPosition';
 import { buildMenuPreview } from './canvas/menuPreview';
 import { innermostContainerAt } from './canvas/containerAt';
 import { readStudioMonitor } from './canvas/studioMonitorPref';
+import PalettePluginSetup from './PalettePluginSetup';
 import { studioHints } from './canvas/studioHints';
 import { buildDebugInfo } from './canvas/debugInfo';
 import { commonConfigFields, commonBasisMode } from './canvas/multiSelect';
@@ -1008,16 +1013,41 @@ export default function Canvas({ studio = false }: Props) {
 	const readAgentStudio = useCallback(
 		(): StudioSnapshot => ({
 			monitorKey: myMonitorRef.current,
+			editorTarget: previewing
+				? `preview:${previewDef?.id}`
+				: designing
+					? `definition:${editingDefId}`
+					: `monitor:${myMonitorRef.current}`,
+			editable: !previewing,
+			workArea,
+			instructions: STUDIO_AGENT_INSTRUCTIONS,
 			monitor: monitorRef.current,
 			library,
 			widgetTypes: widgetTypes.map((item) => getMeta(item.type)),
 			sensorIds: [...new Set([...hub.sensorIds(), ...sourceCatalogIds()])]
 		}),
-		[myMonitorRef, monitorRef, library, widgetTypes, hub]
+		[
+			myMonitorRef,
+			monitorRef,
+			library,
+			widgetTypes,
+			hub,
+			designing,
+			previewing,
+			previewDef,
+			editingDefId,
+			workArea
+		]
 	);
 	const applyAgentStudio = useCallback(
 		(ops: StudioOp[], expected: StudioSnapshot) => {
-			if (expected.monitorKey !== myMonitorRef.current || expected.monitor !== monitorRef.current)
+			if (
+				previewing ||
+				expected.editorTarget !== readAgentStudio().editorTarget ||
+				expected.monitorKey !== myMonitorRef.current ||
+				expected.monitor !== monitorRef.current ||
+				expected.library !== library
+			)
 				return {
 					applied: 0,
 					addedIds: [],
@@ -1026,7 +1056,8 @@ export default function Canvas({ studio = false }: Props) {
 			const result = applyStudioOps(
 				monitorRef.current,
 				ops,
-				(type) => `${type}-${editHelpers.rand()}`
+				(type) => `${type}-${editHelpers.rand()}`,
+				library
 			);
 			if (result.applied) {
 				monitorRef.current = result.monitor;
@@ -1037,8 +1068,85 @@ export default function Canvas({ studio = false }: Props) {
 			}
 			return { applied: result.applied, addedIds: result.addedIds, errors: result.errors };
 		},
-		[commitOp, monitorRef, myMonitorRef]
+		[commitOp, monitorRef, myMonitorRef, readAgentStudio, library, previewing]
 	);
+
+	const verifyAgentStudio = useCallback(
+		async (expected: StudioSnapshot) => {
+			if (document.visibilityState !== 'hidden')
+				await new Promise<void>((resolve) =>
+					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+				);
+			const current = readAgentStudio();
+			if (
+				expected.monitor !== current.monitor ||
+				expected.editorTarget !== current.editorTarget ||
+				expected.library !== current.library
+			)
+				throw new Error('The editor changed during verification. Read it again.');
+			const world = worldRef.current;
+			const measurements: Record<string, StudioMeasurement> = {};
+			if (world && document.visibilityState !== 'hidden') {
+				const origin = world.getBoundingClientRect();
+				world.querySelectorAll<HTMLElement>('[data-id], [data-w]').forEach((element) => {
+					const id = (element.dataset.id ?? element.dataset.w)!;
+					const style = getComputedStyle(element);
+					const error = element.querySelector<HTMLElement>('.widget-error');
+					measurements[id] = {
+						rect: screenRectToLayout(element.getBoundingClientRect(), origin, zoom),
+						hidden: style.display === 'none' || style.visibility === 'hidden',
+						overflow:
+							element.scrollWidth > element.clientWidth + 1 ||
+							element.scrollHeight > element.clientHeight + 1,
+						...(error ? { error: error.title || 'Widget failed to render' } : {})
+					};
+				});
+			}
+			return verifyStudioLayout(
+				current.monitor,
+				library,
+				document.visibilityState === 'hidden' ? { ...workArea, w: 0 } : workArea,
+				measurements,
+				widgetTypes.map((item) => item.type)
+			);
+		},
+		[readAgentStudio, library, workArea, widgetTypes, zoom]
+	);
+	const agentStudio = useRef({
+		read: readAgentStudio,
+		apply: applyAgentStudio,
+		verify: verifyAgentStudio
+	});
+	useEffect(() => {
+		agentStudio.current = {
+			read: readAgentStudio,
+			apply: applyAgentStudio,
+			verify: verifyAgentStudio
+		};
+	});
+	useEffect(() => {
+		if (!studio) return;
+		let disposed = false;
+		let unlisten: (() => void) | undefined;
+		const controller = createMcpStudioController(mcpStudioPorts, {
+			read: () => agentStudio.current.read(),
+			apply: (ops, expected) => agentStudio.current.apply(ops, expected),
+			verify: (expected) => agentStudio.current.verify(expected)
+		});
+		void listenMcpStudio((request) => {
+			void controller.handle(request).catch((error) => console.warn('MCP reply failed', error));
+		})
+			.then((cleanup) => {
+				if (disposed) cleanup();
+				else unlisten = cleanup;
+			})
+			.catch((error) => console.warn('MCP listener failed', error));
+		return () => {
+			disposed = true;
+			controller.dispose();
+			unlisten?.();
+		};
+	}, [studio]);
 
 	// Warm the lazy panel chunks once on the studio so navigating between sections never suspends
 	// mid-session. The passive OVERLAY skips this and stays lean; on an overlay these chunks load only
@@ -2453,7 +2561,7 @@ export default function Canvas({ studio = false }: Props) {
 										aria-controls="studio-header-menu"
 										onClick={() => setHeaderMenuOpen((o) => !o)}
 									>
-										<span aria-hidden="true">≡</span>
+										<Icon name="menu" />
 									</button>
 									{/* Quick theme switch, mirroring the Themes section's picker — global, so it stays
 										    enabled while designing a widget; the full editor lives in the Themes section. */}
@@ -2480,41 +2588,6 @@ export default function Canvas({ studio = false }: Props) {
 										onChange={setTheme}
 										aria-label="Theme"
 									/>
-									{/* "Monitor", not "Display": Settings has a Display PAGE (monitor info), and the two
-									    sharing a name made this read as a duplicate — this switcher picks WHICH monitor's
-									    layout the studio edits. */}
-									<span className="lbl" data-tauri-drag-region>
-										Monitor
-									</span>
-									<div className="monitor-picker">
-										<Select
-											className="sb-select"
-											value={myMonitor}
-											placeholder="Current monitor"
-											options={monitorOptions.map((o) => ({ value: o.key, label: o.label }))}
-											disabled={designing}
-											title={designing ? 'Finish the widget (Done) to switch monitor' : undefined}
-											onChange={switchMonitor}
-											aria-label="Monitor"
-										/>
-										{firstRun && !designing && navSection === 'layouts' && !assistantOpen && (
-											<div className="monitor-onboarding" role="note" aria-label="Monitor tip">
-												<span>
-													<strong>Switch monitor</strong>
-													<br />
-													Choose which screen’s widgets you’re editing.
-												</span>
-												<button
-													type="button"
-													aria-label="Dismiss monitor tip"
-													title="Got it"
-													onClick={dismissMonitorHint}
-												>
-													✕
-												</button>
-											</div>
-										)}
-									</div>
 									{/* The studio previews every edit straight through to the desktop overlays, so
 									    "Save" is the KEEP decision (baseline + the queued cross-monitor moves) and
 									    Cancel is the way back — the cue says so instead of implying an unsaved
@@ -2558,7 +2631,7 @@ export default function Canvas({ studio = false }: Props) {
 											setAssistantOpen((open) => !open);
 										}}
 									>
-										✦ Assistant
+										<Icon name="chat" /> Assistant
 									</button>
 									{/* Dev/extra-instance badge (main.rs is_dev_instance): a --multi or debug build run
 									    alongside the installed release shows this so the two are distinguishable. */}
@@ -2930,6 +3003,56 @@ export default function Canvas({ studio = false }: Props) {
 								{(navSection === 'layouts' || designing) && !previewing && (
 									<ErrorBoundary label="Layout tree" resetKey={navSection} onCopy={copyToClipboard}>
 										<Outline
+											header={
+												!designing && (
+													<div className="layout-monitor-picker">
+														<span className="lbl">Monitor</span>
+														<div className="monitor-picker">
+															<Select
+																className="sb-select"
+																value={myMonitor}
+																placeholder="Current monitor"
+																options={monitorOptions.map((o) => ({
+																	value: o.key,
+																	label: o.label
+																}))}
+																disabled={designing}
+																title={
+																	designing
+																		? 'Finish the widget (Done) to switch monitor'
+																		: undefined
+																}
+																onChange={switchMonitor}
+																aria-label="Monitor"
+															/>
+															{firstRun &&
+																!designing &&
+																navSection === 'layouts' &&
+																!assistantOpen && (
+																	<div
+																		className="monitor-onboarding"
+																		role="note"
+																		aria-label="Monitor tip"
+																	>
+																		<span>
+																			<strong>Switch monitor</strong>
+																			<br />
+																			Choose which screen’s widgets you’re editing.
+																		</span>
+																		<button
+																			type="button"
+																			aria-label="Dismiss monitor tip"
+																			title="Got it"
+																			onClick={dismissMonitorHint}
+																		>
+																			✕
+																		</button>
+																	</div>
+																)}
+														</div>
+													</div>
+												)
+											}
 											root={monitor.root}
 											floating={monitor.floating}
 											selectedId={selectedId}
@@ -3042,7 +3165,13 @@ export default function Canvas({ studio = false }: Props) {
 														aria-busy={autoTheme.busy}
 														title="Derive a readable accent + text colours from your wallpaper"
 													>
-														{autoTheme.busy ? 'Reading…' : '🎨 From wallpaper'}
+														{autoTheme.busy ? (
+															'Reading…'
+														) : (
+															<>
+																<Icon name="palette" /> From wallpaper
+															</>
+														)}
 													</button>
 													{autoTheme.status === 'done' && <span className="rp-id">applied ✓</span>}
 													{autoTheme.status === 'fail' && (
@@ -3219,6 +3348,7 @@ export default function Canvas({ studio = false }: Props) {
 							<ErrorBoundary label="Studio assistant" onCopy={copyToClipboard}>
 								<StudioAssistantSidebar
 									read={readAgentStudio}
+									verify={verifyAgentStudio}
 									apply={applyAgentStudio}
 									onClose={() => setAssistantOpen(false)}
 								/>
@@ -3259,6 +3389,30 @@ export default function Canvas({ studio = false }: Props) {
 										widgetHalign={selectedLeafHalign}
 										widgetValign={selectedLeafValign}
 										widgetTypes={widgetTypes}
+										paletteSetup={
+											studio
+												? Object.fromEntries(
+														pluginList
+															.filter((plugin) =>
+																['home-assistant', 'ai-provider'].includes(plugin.id)
+															)
+															.map((plugin) => [
+																plugin.name,
+																<PalettePluginSetup
+																	key={plugin.id}
+																	hub={hub}
+																	id={plugin.id}
+																	name={plugin.name}
+																	sensor={plugin.statusSensor ?? ''}
+																	onConfigure={(id) => {
+																		setSelectedPluginId(id);
+																		navToSection('plugins');
+																	}}
+																/>
+															])
+													)
+												: undefined
+										}
 										configFields={configFields}
 										sensors={sensors}
 										sensorMeta={sensorMeta}

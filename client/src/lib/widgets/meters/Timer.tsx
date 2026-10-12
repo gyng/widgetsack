@@ -1,3 +1,4 @@
+import Icon from '../Icon';
 // Timer widget (binds:'none', interactive): a countdown timer or stopwatch with start / pause / reset.
 // Self-sourcing — the tick lives in useTimer; the presentation is the pure TimerView below.
 import { formatDuration } from '../../core/timer';
@@ -50,7 +51,7 @@ export function TimerView({
 							title={running ? 'Pause' : 'Start'}
 							aria-label={running ? 'Pause' : 'Start'}
 						>
-							{running ? '⏸' : '▶'}
+							<Icon name={running ? 'pause' : 'play'} />
 						</button>
 					)}
 					{onReset && (

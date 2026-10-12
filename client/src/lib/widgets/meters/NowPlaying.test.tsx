@@ -238,7 +238,7 @@ describe('NowPlaying — transport controls', () => {
 		const btn = container.querySelector('[data-part="repeat"]') as HTMLElement;
 		expect(btn.getAttribute('data-mode')).toBe('None');
 		expect(btn.getAttribute('aria-label')).toBe('Repeat: None');
-		expect(btn.textContent).toBe('🔁');
+		expect(btn.querySelector('[data-icon="repeat"]')).toBeTruthy();
 		fireEvent.click(btn);
 		expect(onControl).toHaveBeenCalledWith({
 			domain: 'media',
@@ -253,7 +253,7 @@ describe('NowPlaying — transport controls', () => {
 		const { container } = render(<NowPlaying session={s} onControl={onControl} />);
 		const btn = container.querySelector('[data-part="repeat"]') as HTMLElement;
 		expect(btn.getAttribute('data-mode')).toBe('Track');
-		expect(btn.textContent).toBe('🔂');
+		expect(btn.querySelector('[data-icon="repeat-one"]')).toBeTruthy();
 		fireEvent.click(btn);
 		expect(onControl).toHaveBeenCalledWith({
 			domain: 'media',
@@ -278,13 +278,17 @@ describe('NowPlaying — transport controls', () => {
 	it('play/pause shows the pause glyph while playing and the play glyph while paused', () => {
 		const playingS = withModel(session('Song A', ART), { status: 'Playing' });
 		const { container, rerender } = render(<NowPlaying session={playingS} />);
-		expect(container.querySelector('[data-part="playpause"]')!.textContent).toBe('⏸');
+		expect(
+			container.querySelector('[data-part="playpause"]')!.querySelector('[data-icon="pause"]')
+		).toBeTruthy();
 		expect(container.querySelector('[data-part="root"]')!.getAttribute('data-playing')).toBe(
 			'true'
 		);
 		const paused = withModel(session('Song A', ART), { status: 'Paused' });
 		rerender(<NowPlaying session={paused} />);
-		expect(container.querySelector('[data-part="playpause"]')!.textContent).toBe('▶');
+		expect(
+			container.querySelector('[data-part="playpause"]')!.querySelector('[data-icon="play"]')
+		).toBeTruthy();
 		expect(container.querySelector('[data-part="root"]')!.getAttribute('data-playing')).toBe(
 			'false'
 		);
