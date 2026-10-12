@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import './styles.css';
+import '@fontsource-variable/ibm-plex-sans/wght.css';
 import App from './App';
 
 // NOTE: deliberately NOT wrapped in <React.StrictMode>. The Canvas init runs non-idempotent Tauri

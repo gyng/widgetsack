@@ -27,6 +27,13 @@ export const DEFAULT_TOKENS: Tokens = {
 	'--np-font-display': "'Bahnschrift', 'Arial Narrow', sans-serif",
 	'--np-radius': '2px',
 	'--np-gap': '4px',
+	'--np-text-caption': '12px',
+	'--np-text-body': '14px',
+	'--np-text-heading': '16px',
+	'--np-line-caption': '16px',
+	'--np-line-body': '20px',
+	'--np-line-heading': '22px',
+	'--np-row-gap': '8px',
 	'--np-control-size': '28px', // compact interactive control target
 	'--np-touch-target': '44px' // large / touch-first control target
 };

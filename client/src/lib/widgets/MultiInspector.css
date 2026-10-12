@@ -15,7 +15,7 @@
 	background: rgba(var(--ui-accent-rgb), 0.07);
 	border: 1px solid transparent;
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	padding: var(--space-1) var(--space-3);
 	border-radius: var(--radius-control);
@@ -44,7 +44,7 @@
 	background: rgba(var(--ui-danger-rgb), 0.15);
 	border: 1px solid rgba(var(--ui-danger-rgb), 0.5);
 	color: var(--ui-danger-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	padding: var(--space-2) var(--space-4);
 	border-radius: var(--radius-control);

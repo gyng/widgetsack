@@ -5,12 +5,12 @@
 	width: 240px;
 	max-height: 50vh;
 	overflow-y: auto;
-	padding: var(--space-4); /* same panel inset as the Inspector rail */
+	padding: var(--space-5); /* same panel inset as the Inspector rail */
 	background: var(--ui-surface);
-	border: 1px solid rgba(var(--ui-accent-rgb), 0.5);
+	border: 1px solid var(--ui-border);
 	border-radius: var(--radius-panel);
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	pointer-events: auto;
 }
@@ -38,14 +38,23 @@
 	justify-content: space-between;
 	align-items: center;
 	color: rgb(var(--ui-accent-rgb));
-	text-transform: uppercase;
-	letter-spacing: 1px;
-	font-size: var(--text-sm);
+	font-size: var(--text-lg);
+	line-height: var(--line-heading);
+	font-weight: 600;
 	margin: var(--space-4) 0 var(--space-2);
 }
 
 .outline .hd:first-child {
 	margin-top: 0;
+	flex-direction: column;
+	align-items: stretch;
+	gap: var(--space-4);
+}
+
+.outline .add {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
 }
 
 .outline .hd2 {
@@ -54,7 +63,10 @@
 }
 
 .outline .add button {
-	padding: var(--space-1) var(--space-3);
+	flex: 1;
+	white-space: nowrap;
+	padding: var(--space-1) var(--space-2);
+	min-height: 28px;
 }
 
 .outline .row {
@@ -163,7 +175,7 @@
 	border: none;
 	background: transparent;
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	cursor: pointer;
 	padding: var(--space-1);
@@ -258,7 +270,7 @@
 	background: var(--ui-raised);
 	border: 1px solid var(--ui-border-strong);
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-sm);
 	cursor: pointer;
 }

@@ -63,7 +63,7 @@ export const DASHBOARD_SACKS: Record<string, Sack> = {
 	'Built-in: Home': dashboard('Home', '#9bd385', [
 		{ type: 'clock', height: 42, config: { format: 'dddd · HH:mm' } },
 		{ type: 'weather', height: 100 },
-		{ type: 'agenda', height: 140, config: { maxRows: 2 } },
+		{ type: 'agenda', height: 160, config: { maxRows: 2 } },
 		{ type: 'servicehealth', height: 85, config: { label: 'Home Assistant', url: '' } },
 		{ type: 'checklist', height: 150, config: { label: 'Home tasks' } }
 	]),

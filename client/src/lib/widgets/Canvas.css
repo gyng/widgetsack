@@ -33,7 +33,7 @@
    (Inspector) live in the reserved margins (fixed), so the tools never overlap widgets.
    The rail/bar sizes are shared with the docked panels via these custom properties. */
 .canvas.studio {
-	--bar-h: 36px; /* the always-on primary bar — every side rail / panel / divider offsets from this */
+	--bar-h: 44px; /* the always-on primary bar — every side rail / panel / divider offsets from this */
 	/* The contextual canvas subbar (undo/redo·zoom·drop·debug) is a SECOND row that sits above the
 	   STAGE only — not the side rails. So it adds to the stage's top offset alone (below), and is 0
 	   unless a stage is shown (.has-subbar). The rails stay anchored under the primary bar. */
@@ -67,7 +67,7 @@
    are unaffected by it (they stay at --bar-h); --bar-b reserves the bottom row for every rail/panel/stage
    so the powerbar never overlaps them. Both bars appear together — same gate (Canvas.tsx `showSubbar`). */
 .canvas.studio.has-subbar {
-	--subbar-h: 30px;
+	--subbar-h: 36px;
 	--bar-b: 24px;
 }
 
@@ -202,7 +202,7 @@
 	left: 0;
 	padding: var(--space-1) var(--space-3);
 	border: none;
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-sm);
 	line-height: 1.4;
 	color: rgba(var(--ui-accent-rgb), 0.85);
@@ -348,7 +348,7 @@
 	position: absolute;
 	transform: translate(12px, 12px);
 	padding: var(--space-1) var(--space-3);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-sm);
 	color: var(--ui-bg);
 	background: rgba(var(--ui-accent-rgb), 0.95);
@@ -474,7 +474,7 @@
 	border: none;
 	border-left: 2px solid transparent;
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-lg);
 	text-align: left;
 	padding: var(--space-2) var(--space-4);
@@ -509,7 +509,7 @@
 
 .canvas .ctx-hd {
 	padding: var(--space-1) var(--space-4);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-sm);
 	text-transform: uppercase;
 	letter-spacing: 1px;
@@ -525,7 +525,7 @@
 	gap: var(--space-4);
 	align-items: center;
 	padding: var(--space-2) var(--space-5);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-lg);
 	color: var(--ui-bg);
 	background: var(--ui-accent-fg);
@@ -541,7 +541,7 @@
 	border-radius: var(--radius-control);
 	padding: var(--space-1) var(--space-3);
 	cursor: pointer;
-	font-family: monospace;
+	font-family: var(--ui-font);
 }
 
 /* A read-only template preview reads as amber (distinct from the mint "designing" banner) AND carries
@@ -568,7 +568,7 @@
 	gap: var(--space-3);
 	align-items: center;
 	padding: var(--space-2) var(--space-4);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	color: var(--ui-bg);
 	background: var(--ui-warn-fg);
@@ -585,7 +585,7 @@
 	border-radius: var(--radius-control);
 	padding: var(--space-1) var(--space-3);
 	cursor: pointer;
-	font-family: monospace;
+	font-family: var(--ui-font);
 }
 
 /* The studio's full-width top bar (in the reserved margin above the stage). Doubles as the borderless
@@ -605,7 +605,7 @@
 	background: var(--ui-bar-bg);
 	border-bottom: 1px solid rgba(var(--ui-accent-rgb), 0.5);
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	pointer-events: auto;
 	z-index: 7;
@@ -729,7 +729,7 @@
 	border-radius: var(--radius-control);
 	background: transparent;
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	cursor: pointer;
 	transition: background var(--motion-fast, 100ms) var(--ease-out, ease-out);
@@ -781,7 +781,7 @@
 	top: 6px;
 	left: 6px;
 	padding: var(--space-1) var(--space-3);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-sm);
 	letter-spacing: 0.5px;
 	color: rgb(var(--ui-accent-rgb));
@@ -808,7 +808,7 @@
 	background: var(--ui-bar-bg);
 	border-top: 1px solid rgba(var(--ui-accent-rgb), 0.5);
 	color: var(--ui-fg-muted);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-sm);
 	pointer-events: auto;
 	overflow: hidden;
@@ -847,7 +847,7 @@
 }
 
 .canvas .powerbar .seg kbd {
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-sm);
 	color: var(--ui-bg);
 	background: rgb(var(--ui-accent-rgb));
@@ -893,7 +893,7 @@
 	background: var(--ui-raised);
 	color: var(--ui-fg);
 	border: 1px solid var(--ui-border);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	padding: var(--space-1) var(--space-3);
 	min-height: var(--control-h);
@@ -957,7 +957,7 @@
 	border: 1px solid rgba(var(--ui-accent-rgb), 0.6);
 	border-radius: var(--radius-panel);
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	pointer-events: auto;
 	z-index: 11;
@@ -997,7 +997,7 @@
 	background: var(--ui-raised);
 	color: var(--ui-fg);
 	border: 1px solid var(--ui-border);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	padding: var(--space-2);
 	min-height: var(--control-h);
@@ -1023,7 +1023,7 @@
 	border-radius: var(--radius-control);
 	padding: var(--space-2) var(--space-5);
 	cursor: pointer;
-	font-family: monospace;
+	font-family: var(--ui-font);
 	transition:
 		background var(--motion-fast, 100ms) var(--ease-out, ease-out),
 		border-color var(--motion-fast, 100ms) var(--ease-out, ease-out),
@@ -1072,7 +1072,7 @@
 	top: 4px;
 	right: 4px;
 	padding: var(--space-1) var(--space-3);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-sm);
 	color: var(--ui-fg);
 	background: rgba(var(--ui-accent-rgb), 0.85);

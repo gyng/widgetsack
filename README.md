@@ -193,6 +193,8 @@ CI tests the sample against the package pipeline on each build.
 ## Development
 
 For build commands, required checks, and release steps, read [Development](docs/development.md).
+
+For typography, spacing, and alignment rules, read the [design system](docs/design-system.md).
 For the architecture and roadmap, read [Widget platform](docs/widget-platform.md).
 
 ## License

@@ -15,7 +15,8 @@
 	flex: 0 0 auto;
 }
 .ag-title {
-	font-size: var(--ag-title-size, 0.75em);
+	font-size: var(--ag-title-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	font-weight: 600;
 	letter-spacing: 0.06em;
 	text-transform: uppercase;
@@ -39,12 +40,13 @@
 }
 .ag-row {
 	flex: 0 0 auto;
-	font-size: var(--ag-row-size, 0.86em);
-	line-height: 1.35;
+	font-size: var(--ag-row-size, var(--np-text-body, 14px));
+	line-height: var(--np-line-body, 20px);
 }
 .ag-day {
 	margin: 5px 0 7px;
-	font-size: 0.84em;
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
 	font-weight: 600;
 	color: var(--np-label, rgba(255, 255, 255, 0.6));
 }
@@ -82,7 +84,8 @@
 .ag-location {
 	grid-column: 2;
 	min-width: 0;
-	font-size: 0.84em;
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
 	color: var(--np-label, rgba(255, 255, 255, 0.55));
 	white-space: nowrap;
 	overflow: hidden;

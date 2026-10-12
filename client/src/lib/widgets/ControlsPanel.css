@@ -40,7 +40,7 @@
 
 .controls-panel .cp-keys {
 	flex: 0 0 auto;
-	font-family: monospace;
+	font-family: var(--ui-font-mono);
 	font-size: var(--text-md);
 	opacity: 0.85;
 }

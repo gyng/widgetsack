@@ -19,7 +19,16 @@ export function prefersReducedMotion(): boolean {
 export function startViewTransition(update: () => void): void {
 	const doc = document as DocumentWithViewTransitions;
 	if (typeof doc.startViewTransition === 'function' && !prefersReducedMotion()) {
-		doc.startViewTransition(update);
+		const transition = doc.startViewTransition(update) as {
+			ready?: Promise<void>;
+			updateCallbackDone?: Promise<void>;
+		};
+		// Animation readiness can fail on interruption, viewport changes, or browser limits.
+		// The animation is optional; report actual DOM-update failures separately.
+		void transition.ready?.catch(() => {});
+		void transition.updateCallbackDone?.catch((error: unknown) => {
+			console.error('Studio update failed', error);
+		});
 	} else {
 		update();
 	}

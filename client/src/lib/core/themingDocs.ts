@@ -9,6 +9,11 @@ import { BUILTIN_THEMES, BUILTIN_GROUP_ORDER } from './builtinThemes';
 // The studio-chrome token vocabulary (defined in styles.css :root). Hand-described here (the defaults
 // live in CSS, not as importable data); a theme sets these alongside the widget --np-* tokens.
 const CHROME_TOKENS: { name: string; purpose: string }[] = [
+	{
+		name: '--ui-font',
+		purpose: 'Studio text: locally bundled IBM Plex Sans with system fallbacks.'
+	},
+	{ name: '--ui-font-mono', purpose: 'Code, expressions, and identifiers.' },
 	{ name: '--ui-bg', purpose: 'Base window + opaque panel background.' },
 	{ name: '--ui-surface', purpose: 'Translucent rails / docked panels.' },
 	{ name: '--ui-bar-bg', purpose: 'Top / sub / bottom bars (incl. the title bar).' },
@@ -28,29 +33,42 @@ const CHROME_TOKENS: { name: string; purpose: string }[] = [
 	{ name: '--ui-warn-rgb', purpose: 'Warning accent channels.' },
 	{ name: '--ui-warn-fg', purpose: 'Warning text.' },
 	// Spacing / typography / shape — the studio's density knobs. Same override story as the colour
-	// tokens: set at :root in a theme. Scale: 2/4/6/8/12/16.
+	// tokens: set at :root in a theme. Scale: 2/4/6/8/12/16/24/32.
 	{ name: '--space-1', purpose: 'Spacing scale: hairline (2px).' },
 	{ name: '--space-2', purpose: 'Spacing scale: tight (4px).' },
 	{ name: '--space-3', purpose: 'Spacing scale: default gap (6px).' },
 	{ name: '--space-4', purpose: 'Spacing scale: section / panel inset (8px).' },
 	{ name: '--space-5', purpose: 'Spacing scale: large (12px).' },
 	{ name: '--space-6', purpose: 'Spacing scale: screen-edge / panel padding (16px).' },
-	{ name: '--text-xs', purpose: 'Type scale: smallest annotations (9px).' },
-	{ name: '--text-sm', purpose: 'Type scale: section headers / hints (10px).' },
-	{ name: '--text-md', purpose: 'Type scale: chrome body (11px).' },
-	{ name: '--text-lg', purpose: 'Type scale: emphasized body / panel text (12px).' },
-	{ name: '--text-xl', purpose: 'Type scale: panel titles (14px).' },
-	{ name: '--radius-control', purpose: 'Corner radius for inputs / buttons / chips (2px).' },
-	{ name: '--radius-panel', purpose: 'Corner radius for panels / cards / menus (4px).' },
-	{ name: '--control-h', purpose: 'Minimum height of rail/bar inputs and selects (22px).' },
+	{ name: '--space-7', purpose: 'Spacing scale: major sections (24px).' },
+	{ name: '--space-8', purpose: 'Spacing scale: structural separation (32px).' },
+	{ name: '--text-xs', purpose: 'Type scale: annotations (12px).' },
+	{ name: '--text-sm', purpose: 'Type scale: labels / hints (12px).' },
+	{ name: '--text-md', purpose: 'Type scale: chrome body (14px).' },
+	{ name: '--text-lg', purpose: 'Type scale: section headings (16px).' },
+	{ name: '--text-xl', purpose: 'Type scale: panel titles (20px).' },
+	{ name: '--line-caption', purpose: 'Caption line height (16px).' },
+	{ name: '--line-body', purpose: 'Body line height (20px).' },
+	{ name: '--line-heading', purpose: 'Heading line height (22px).' },
+	{ name: '--line-title', purpose: 'Title line height (26px).' },
+	{ name: '--radius-control', purpose: 'Corner radius for inputs / buttons / chips (4px).' },
+	{ name: '--radius-panel', purpose: 'Corner radius for panels / cards / menus (6px).' },
+	{ name: '--control-h', purpose: 'Minimum height of rail/bar inputs and selects (32px).' },
 	{ name: '--disabled-opacity', purpose: 'Opacity of disabled controls (0.5).' }
 ];
 
 // One-line human description per token (the prose the value/name alone can't carry). Keyed by token
 // name so the table's NAMES + DEFAULTS come from DEFAULT_TOKENS (can't drift) while the wording lives
-// here. A token added to DEFAULT_TOKENS without an entry still lists — with a blank description — so
-// the doc never silently omits a token.
+// here. Keep this map exhaustive: generation fails on a missing description rather than publishing
+// an incomplete token table.
 const TOKEN_DESCRIPTIONS: Record<string, string> = {
+	'--np-text-caption': 'Supporting widget text size (labels, units, metadata).',
+	'--np-text-body': 'Compact content-widget body size.',
+	'--np-text-heading': 'Content-widget heading size.',
+	'--np-line-caption': 'Supporting widget text line height.',
+	'--np-line-body': 'Content-widget body line height.',
+	'--np-line-heading': 'Content-widget heading line height.',
+	'--np-row-gap': 'Space between related content-widget rows.',
 	'--np-accent': 'Primary fill / line / accent (gauges, bars, sparklines, active states).',
 	'--np-fg': 'Main text and numerals.',
 	'--np-muted': 'Secondary text (units, sub-labels).',

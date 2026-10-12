@@ -36,6 +36,13 @@ theme only needs to set the ones it changes; anything it omits falls back to the
 | `--np-font-display` | `'Bahnschrift', 'Arial Narrow', sans-serif` | Display font family (large numerals / headings). |
 | `--np-radius` | `2px` | Corner radius for widget chrome. |
 | `--np-gap` | `4px` | Default gap between elements inside a widget. |
+| `--np-text-caption` | `12px` | Supporting widget text size (labels, units, metadata). |
+| `--np-text-body` | `14px` | Compact content-widget body size. |
+| `--np-text-heading` | `16px` | Content-widget heading size. |
+| `--np-line-caption` | `16px` | Supporting widget text line height. |
+| `--np-line-body` | `20px` | Content-widget body line height. |
+| `--np-line-heading` | `22px` | Content-widget heading line height. |
+| `--np-row-gap` | `8px` | Space between related content-widget rows. |
 | `--np-control-size` | `28px` | Minimum target size for compact interactive controls. |
 | `--np-touch-target` | `44px` | Minimum target size for large, touch-first controls. |
 
@@ -54,6 +61,8 @@ relax it the same way it recolours it.
 
 | token | purpose |
 | --- | --- |
+| `--ui-font` | Studio text: locally bundled IBM Plex Sans with system fallbacks. |
+| `--ui-font-mono` | Code, expressions, and identifiers. |
 | `--ui-bg` | Base window + opaque panel background. |
 | `--ui-surface` | Translucent rails / docked panels. |
 | `--ui-bar-bg` | Top / sub / bottom bars (incl. the title bar). |
@@ -78,14 +87,20 @@ relax it the same way it recolours it.
 | `--space-4` | Spacing scale: section / panel inset (8px). |
 | `--space-5` | Spacing scale: large (12px). |
 | `--space-6` | Spacing scale: screen-edge / panel padding (16px). |
-| `--text-xs` | Type scale: smallest annotations (9px). |
-| `--text-sm` | Type scale: section headers / hints (10px). |
-| `--text-md` | Type scale: chrome body (11px). |
-| `--text-lg` | Type scale: emphasized body / panel text (12px). |
-| `--text-xl` | Type scale: panel titles (14px). |
-| `--radius-control` | Corner radius for inputs / buttons / chips (2px). |
-| `--radius-panel` | Corner radius for panels / cards / menus (4px). |
-| `--control-h` | Minimum height of rail/bar inputs and selects (22px). |
+| `--space-7` | Spacing scale: major sections (24px). |
+| `--space-8` | Spacing scale: structural separation (32px). |
+| `--text-xs` | Type scale: annotations (12px). |
+| `--text-sm` | Type scale: labels / hints (12px). |
+| `--text-md` | Type scale: chrome body (14px). |
+| `--text-lg` | Type scale: section headings (16px). |
+| `--text-xl` | Type scale: panel titles (20px). |
+| `--line-caption` | Caption line height (16px). |
+| `--line-body` | Body line height (20px). |
+| `--line-heading` | Heading line height (22px). |
+| `--line-title` | Title line height (26px). |
+| `--radius-control` | Corner radius for inputs / buttons / chips (4px). |
+| `--radius-panel` | Corner radius for panels / cards / menus (6px). |
+| `--control-h` | Minimum height of rail/bar inputs and selects (32px). |
 | `--disabled-opacity` | Opacity of disabled controls (0.5). |
 
 ## Built-in themes

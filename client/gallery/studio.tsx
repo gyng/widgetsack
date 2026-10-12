@@ -11,6 +11,7 @@ import { freezeClock, seedHub, seedMedia } from './seed';
 import { studioShotLayout } from './studioLayout';
 import App from '../src/App';
 import '../src/styles.css';
+import '@fontsource-variable/ibm-plex-sans/wght.css';
 
 // Forces the studio role + serves the showcase layout for load_layout (a full monitor's worth of
 // widgets — the null fallback left the stage nearly empty). Install before the app boots.

@@ -5,13 +5,13 @@
 	bottom: var(--bar-b);
 	width: calc(var(--rail-r) - var(--pane-gap));
 	box-sizing: border-box;
-	padding: 12px;
+	padding: var(--space-5);
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: var(--space-4);
 	background: var(--ui-bg);
 	color: var(--ui-fg);
-	font: 13px/1.45 var(--ui-font, 'Segoe UI', sans-serif);
+	font: var(--text-md)/var(--line-body) var(--ui-font);
 	border-left: 1px solid var(--ui-border);
 	pointer-events: auto;
 	user-select: text;
@@ -23,17 +23,18 @@
 	color: var(--ui-fg);
 	background: var(--ui-bg-2, var(--ui-bg));
 	border: 1px solid var(--ui-border);
-	border-radius: 4px;
-	padding: 6px 8px;
+	border-radius: var(--radius-control);
+	padding: var(--space-3) var(--space-4);
+	min-height: var(--control-h);
 }
 .studio-assistant button {
 	cursor: pointer;
 }
 .studio-assistant button:hover {
-	border-color: var(--ui-accent);
+	border-color: rgb(var(--ui-accent-rgb));
 }
 .studio-assistant :is(button, input, select, textarea):focus-visible {
-	outline: 2px solid var(--ui-accent);
+	outline: 2px solid rgb(var(--ui-accent-rgb));
 	outline-offset: 2px;
 }
 .studio-assistant :disabled {

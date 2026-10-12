@@ -26,7 +26,8 @@
 }
 .np-audio-mixer .mixer-status {
 	color: var(--np-label, #a4b0bd);
-	font-size: 11px;
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
 }
 .np-audio-mixer .mixer-session {
 	display: flex;

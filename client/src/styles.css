@@ -24,30 +24,37 @@ body {
 /* --- Studio-chrome scale tokens --------------------------------------------------------------------
    The chrome's spacing / type / radius vocabulary, mirroring the --ui-* colour and --motion-* systems:
    pick a step from the scale instead of hand-typing a px literal, so panel insets, control paddings
-   and the type ramp stay consistent across the studio stylesheets. Widget CONTENT (meters/*) is
-   intentionally not on this scale — meters size with their box (em/cqmin) and stay themable. */
+   and the type ramp stay consistent across the studio stylesheets. Widget content uses its own
+   --np-* text roles alongside meter-specific sizing, and stays themable. */
 :root {
 	/* Spacing scale (gaps, paddings, margins) */
+	--ui-font: 'IBM Plex Sans Variable', 'Segoe UI', sans-serif;
+	--ui-font-mono: 'Cascadia Code', Consolas, monospace;
 	--space-1: 2px;
 	--space-2: 4px;
 	--space-3: 6px;
 	--space-4: 8px;
 	--space-5: 12px;
 	--space-6: 16px;
-	/* Type ramp: panel title (xl) > section header (sm, uppercase) > body (md). Body is 12px — the
-	   floor for comfortable reading in a settings form on a dense monitor. */
-	--text-xs: 10px;
-	--text-sm: 11px;
-	--text-md: 12px;
-	--text-lg: 12px;
-	--text-xl: 14px;
+	--space-7: 24px;
+	--space-8: 32px;
+	/* Role sizes and line heights: see docs/design-system.md. */
+	--text-xs: 12px;
+	--text-sm: 12px;
+	--text-md: 14px;
+	--text-lg: 16px;
+	--text-xl: 20px;
+	--line-caption: 16px;
+	--line-body: 20px;
+	--line-heading: 22px;
+	--line-title: 26px;
 	/* Radii: small controls vs panels/menus */
-	--radius-control: 2px;
-	--radius-panel: 4px;
+	--radius-control: 4px;
+	--radius-panel: 6px;
 	/* State */
 	--disabled-opacity: 0.5;
 	/* One control height for inputs/selects/buttons (use as min-height when content might wrap) */
-	--control-h: 22px;
+	--control-h: 32px;
 }
 
 /* --- Studio-chrome theme tokens ------------------------------------------------------------------
@@ -171,4 +178,30 @@ html.overlay-windowed body {
 	::view-transition-new(*) {
 		animation: none !important;
 	}
+}
+
+/* Studio text roles. Widget content keeps its --np-* typography. */
+.inspector,
+.outline,
+.nav-rail,
+.canvas .rail-panel,
+.canvas .studio-bar,
+.canvas .ctx,
+.canvas .def-banner {
+	line-height: var(--line-body);
+}
+.canvas .rail-panel,
+.canvas .ctx button {
+	font-size: var(--text-md);
+}
+.canvas :is(code, pre),
+.inspector textarea.cfg-expr,
+.inspector textarea.data-area,
+.inspector .adv textarea,
+.cm-editor {
+	font-family: var(--ui-font-mono);
+}
+.inspector input[type='number'],
+.diag {
+	font-variant-numeric: tabular-nums;
 }

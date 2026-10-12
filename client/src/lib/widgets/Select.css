@@ -1,4 +1,4 @@
-/* The shared <Select> control. Mirrors the studio's native input/select look (dark, monospace,
+/* The shared <Select> control. Mirrors the studio's native input/select look (themeable, Plex Sans,
    var(--text-md), var(--ui-border) border, accent on hover/focus). The menu is portaled to <body> and fixed-positioned, so these
    .np-select-menu styles are intentionally NOT scoped to any panel. */
 
@@ -16,10 +16,11 @@
 	box-sizing: border-box;
 	background: var(--ui-raised);
 	border: 1px solid var(--ui-border);
-	border-radius: 0;
+	border-radius: var(--radius-control);
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
+	line-height: var(--line-body);
 	padding: var(--space-1) var(--space-2);
 	min-height: var(--control-h);
 	text-align: left;
@@ -52,7 +53,7 @@
 	background: transparent;
 	border: none;
 	color: var(--ui-fg);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	padding: var(--space-1) var(--space-2);
 }
@@ -93,7 +94,7 @@
 	overflow-y: auto;
 	z-index: 50;
 	box-shadow: 0 6px 18px var(--ui-scrim);
-	font-family: monospace;
+	font-family: var(--ui-font);
 	font-size: var(--text-md);
 }
 
