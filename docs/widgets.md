@@ -1,36 +1,17 @@
 # Widget reference
 
-> **Generated** from the widget registry — do not hand-edit. Run `npm run gen:docs` (in `client/`)
-> to regenerate, or click **Copy widget reference** in the studio's Widget designer. Source of truth:
-> `client/src/lib/core/widget.ts` (built-ins) + plugin metas.
+<!-- Generated from the widget registry. Edit the generator or metadata, not this file. -->
 
-This lists every shipped widget **type** and its config schema, so an agent can author layouts
-directly. Edit any node's full JSON/YAML in the studio Inspector's **Data** tab (it applies via the
-`replaceNode` op), or build up the layout JSON below.
+Use this guide to find a widget and review its settings.
 
-## Layout shape
+1. Open **Layout** in Studio.
+2. Select **Add**.
+3. Select a widget from the list.
+4. Select the widget on the canvas to open its settings in the Inspector.
 
-A monitor layout is `{ root, floating }`:
-
-- **root** — the in-flow tree: nested **containers** `{ id, kind: "row" | "col" | "grid", children: [...], gap?, pad?, align?, justify? }`.
-- **floating** — **leaves** placed by an absolute `rect` (escape the flow).
-
-A **leaf** wraps one widget instance:
-
-```json
-{ "id": "gauge-1", "unit": { /* WidgetInstance */ }, "basis": "content" | { "fr": 1 }, "halign": "fill", "valign": "fill" }
-```
-
-A **WidgetInstance** (`leaf.unit`):
-
-```json
-{ "id": "gauge-1", "type": "gauge", "rect": { "x": 0, "y": 0, "w": 110, "h": 110 },
-  "sensor": "cpu.total", "config": { "label": "CPU", "min": 0, "max": 100 }, "css": "/* optional per-instance css */" }
-```
-
-- `type` picks the widget (see below). `sensor` binds a sensor id (omit for self-sourcing types).
-- `config` holds the type's fields (see each widget's table). `basis: { fr }` grows along the parent axis; `"content"` hugs content; a number/omitted is a fixed/auto size.
-- Sensor ids are listed in the studio **Sensors** section (e.g. `cpu.total`, `mem.used`, `gpu.util`, `net.down`, `ha.<entity_id>`).
+Open **Sensors** to find sensor IDs. Configure external data sources in **Plugins**.
+The tables include configuration keys for the Inspector.
+For the layout file structure, see the [developer reference](dev/layout-format.md).
 
 ## Widgets
 
@@ -38,11 +19,11 @@ A **WidgetInstance** (`leaf.unit`):
 
 ![CLI Command widget](img/widgets/command.png)
 
-Run a configured PowerShell command on demand and view its output and exit status. Never runs automatically. A 30-second timeout and 64 KiB per output stream keep execution bounded.
+Run a configured PowerShell command and show its output and exit status. Select Run to start. Execution stops after 30 seconds.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 360×220
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -53,9 +34,9 @@ Run a configured PowerShell command on demand and view its output and exit statu
 
 ![Gauge widget](img/widgets/gauge.png)
 
-Gauge for one scalar sensor (default 0–100%): arc ring, full circle, linear bar, pips or needle dial.
+Show a numeric sensor as an arc, circle, bar, segmented gauge, or needle dial. The default range is 0–100%.
 
-- **Sensor:** binds a `scalar` sensor (default `cpu.total`)
+- **Data:** Numeric sensor. Default: `cpu.total`.
 - **Default size:** 110×110
 
 | key | type | default | options / range | description |
@@ -78,9 +59,9 @@ Gauge for one scalar sensor (default 0–100%): arc ring, full circle, linear ba
 
 ![Bar widget](img/widgets/bar.png)
 
-Linear progress bar for one scalar sensor; horizontal or vertical.
+Show one numeric sensor as a horizontal or vertical bar.
 
-- **Sensor:** binds a `scalar` sensor (default `mem.used`)
+- **Data:** Numeric sensor. Default: `mem.used`.
 - **Default size:** 140×16
 
 | key | type | default | options / range | description |
@@ -99,9 +80,9 @@ Linear progress bar for one scalar sensor; horizontal or vertical.
 
 ![Sparkline widget](img/widgets/sparkline.png)
 
-Compact line / area / histogram of a sensor history (a time series).
+Show sensor history as a line, area chart, or histogram.
 
-- **Sensor:** binds a `series` sensor (default `cpu.total`)
+- **Data:** Sensor history. Default: `cpu.total`.
 - **Default size:** 140×30
 
 | key | type | default | options / range | description |
@@ -119,11 +100,11 @@ Compact line / area / histogram of a sensor history (a time series).
 
 ![Text widget](img/widgets/text.png)
 
-A single value as formatted text (percent / rate / bytes / duration / integer) with an optional label.
+Show a formatted sensor value with an optional label. Formats include percentages, rates, bytes, durations, and integers.
 
-- **Sensor:** binds a `scalar` sensor (default `net.down`)
+- **Data:** Numeric sensor. Default: `net.down`.
 - **Default size:** 100×18
-- **Intrinsic size:** `basis:"content"` shrink-wraps to the rendered content
+- **Intrinsic size:** adjusts to the displayed content.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -136,11 +117,11 @@ A single value as formatted text (percent / rate / bytes / duration / integer) w
 
 ![Clock widget](img/widgets/clock.png)
 
-Date / time clock using a moment-style token format (self-sourcing).
+Show the date and time using a configurable format.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 160×40
-- **Intrinsic size:** `basis:"content"` shrink-wraps to the rendered content
+- **Intrinsic size:** adjusts to the displayed content.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -153,9 +134,9 @@ Date / time clock using a moment-style token format (self-sourcing).
 
 ![Calendar widget](img/widgets/calendar.png)
 
-A month calendar grid: configurable first day of week, optional weekday header, highlights today, and an optional continuous view that spills dimmed into next month (self-sourcing).
+Show a month calendar and highlight today. Choose the first weekday and whether to show dates from the next month.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 220×200
 
 | key | type | default | options / range | description |
@@ -172,9 +153,9 @@ A month calendar grid: configurable first day of week, optional weekday header, 
 
 ![Analog Clock widget](img/widgets/analogclock.png)
 
-Analog clock face with hour / minute / second hands (self-sourcing).
+Show the time on an analog clock with hour, minute, and second hands.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 120×120
 
 | key | type | default | options / range | description |
@@ -192,11 +173,11 @@ Analog clock face with hour / minute / second hands (self-sourcing).
 
 ![Button / Macro widget](img/widgets/button.png)
 
-Pressable button that runs a macro of {domain, service, data} calls (HA services or media transport).
+Run Home Assistant service calls or media controls when you select the button.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 90×44
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -207,9 +188,9 @@ Pressable button that runs a macro of {domain, service, data} calls (HA services
 
 ![CPU widget](img/widgets/cpu.png)
 
-Self-sourcing CPU widget: a per-core sparkline grid or one combined gauge.
+Show CPU usage as per-core charts or one combined gauge.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 160×90
 
 | key | type | default | options / range | description |
@@ -227,9 +208,9 @@ Self-sourcing CPU widget: a per-core sparkline grid or one combined gauge.
 
 ![Battery widget](img/widgets/battery.png)
 
-A battery indicator: charge icon, percent, and charging / time-remaining status (laptops; a desktop without a battery shows "—").
+Show battery charge and charging status or remaining time. A computer without a battery shows “—”.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 150×44
 
 | key | type | default | options / range | description |
@@ -241,9 +222,9 @@ A battery indicator: charge icon, percent, and charging / time-remaining status 
 
 ![GPU widget](img/widgets/gpu.png)
 
-A GPU panel: card name, utilisation %, and the reported temp / VRAM / power / clock / fan (NVIDIA NVML; non-NVIDIA shows "—").
+Show NVIDIA GPU usage and available temperature, memory, power, clock, and fan readings. Unavailable readings show “—”.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×96
 
 | key | type | default | options / range | description |
@@ -256,9 +237,9 @@ A GPU panel: card name, utilisation %, and the reported temp / VRAM / power / cl
 
 ![Disks widget](img/widgets/disks.png)
 
-Storage usage: one bar per volume (used %, used/total), auto-discovering your drives. Near-full volumes warn.
+Show used space for each detected drive. Nearly full drives show a warning.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×80
 
 | key | type | default | options / range | description |
@@ -270,9 +251,9 @@ Storage usage: one bar per volume (used %, used/total), auto-discovering your dr
 
 ![Top Process widget](img/widgets/topproc.png)
 
-The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my machine". Each metric is sampled only while shown.
+Show the process with the highest CPU, memory, disk activity, or GPU memory usage.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×44
 
 | key | type | default | options / range | description |
@@ -285,9 +266,9 @@ The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my
 
 ![Process Watcher widget](img/widgets/procwatch.png)
 
-Watch a specific process by name: is it running, and its CPU % + RAM (summed across instances). Good for keeping an eye on one app (a game, a build, OBS).
+Show whether a named process is running. Combine CPU and memory usage across its instances.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×44
 
 | key | type | default | options / range | description |
@@ -300,9 +281,9 @@ Watch a specific process by name: is it running, and its CPU % + RAM (summed acr
 
 ![Connections widget](img/widgets/netconn.png)
 
-Active network connections by process: established + listening counts and how many go to a PUBLIC remote IP — so an unusual outbound connection stands out. Observability, not an IDS.
+Show network connections by process. Include established connections, listening connections, and connections to public IP addresses.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 240×150
 
 | key | type | default | options / range | description |
@@ -315,11 +296,11 @@ Active network connections by process: established + listening counts and how ma
 
 ![Ping widget](img/widgets/ping.png)
 
-Ping a host (default 1.1.1.1) and show reachability + round-trip latency — a quick "is my internet up?" light. ICMP, no admin needed.
+Check whether a host responds to ping and show its round-trip time. The default host is 1.1.1.1.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 150×24
-- **Intrinsic size:** `basis:"content"` shrink-wraps to the rendered content
+- **Intrinsic size:** adjusts to the displayed content.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -332,9 +313,9 @@ Ping a host (default 1.1.1.1) and show reachability + round-trip latency — a q
 
 ![Wi-Fi widget](img/widgets/wifi.png)
 
-Wi-Fi link detail: SSID, signal strength, and band / channel / 802.11 generation / RSSI / link rate. Windows; shows "Not connected" off Wi-Fi.
+Show the Wi-Fi network name, signal strength, and connection details. The widget shows “Not connected” when Wi-Fi is disconnected.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×76
 
 | key | type | default | options / range | description |
@@ -346,9 +327,9 @@ Wi-Fi link detail: SSID, signal strength, and band / channel / 802.11 generation
 
 ![Spectrum widget](img/widgets/spectrum.png)
 
-Self-sourcing audio spectrum (WASAPI loopback FFT): frequency bars or a scrolling spectrogram.
+Show output audio as frequency bars or a scrolling spectrogram.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 220×90
 
 | key | type | default | options / range | description |
@@ -365,11 +346,11 @@ Self-sourcing audio spectrum (WASAPI loopback FFT): frequency bars or a scrollin
 
 ![Web Frame widget](img/widgets/iframe.png)
 
-Embedded web page (self-hosted dashboards); optional click-through interactivity.
+Show a web page in a frame. Enable interaction to use its controls.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 320×240
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -386,9 +367,9 @@ Embedded web page (self-hosted dashboards); optional click-through interactivity
 
 ![Zone widget](img/widgets/zone.png)
 
-A landing zone: drag a window over it (hold Shift) to snap it here; optional match rule auto-arranges windows. Invisible on the live overlay; shown only while editing.
+Define an area for application windows. Hold Shift while dragging a window into it to snap. The zone is hidden on the overlay.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 600×400
 
 | key | type | default | options / range | description |
@@ -401,11 +382,11 @@ A landing zone: drag a window over it (hold Shift) to snap it here; optional mat
 
 ![Audio Switcher widget](img/widgets/audioswitch.png)
 
-Switch the default audio output device with a tap — lists your speakers/headphones/HDMI outputs and marks the active one. Windows.
+Select the default audio output device. The widget lists available devices and marks the active one.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×120
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -415,9 +396,9 @@ Switch the default audio output device with a tap — lists your speakers/headph
 
 ![Recycle Bin widget](img/widgets/recyclebin.png)
 
-Recycle Bin contents: how many items and how much space they take, with a "needs emptying" cue past a size you set.
+Show the Recycle Bin item count and size. Set a size threshold for a warning.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 150×48
 
 | key | type | default | options / range | description |
@@ -429,11 +410,11 @@ Recycle Bin contents: how many items and how much space they take, with a "needs
 
 ![Volume widget](img/widgets/volume.png)
 
-System master volume: a slider + mute toggle controlling the default output device. Windows.
+Adjust or mute the default audio output device.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 190×36
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -443,9 +424,9 @@ System master volume: a slider + mute toggle controlling the default output devi
 
 ![Image widget](img/widgets/image.png)
 
-A static image / photo from a URL (https / data) or a filename in your wallpapers folder, with a fit mode.
+Show an image from an HTTPS URL, data URL, or file in the wallpapers folder. Choose how it fits the widget.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×150
 
 | key | type | default | options / range | description |
@@ -458,11 +439,11 @@ A static image / photo from a URL (https / data) or a filename in your wallpaper
 
 ![Sticky Note widget](img/widgets/note.png)
 
-A sticky note / scratchpad: editable text that persists across restarts. Type on the live overlay; arrange it in the studio.
+Enter a note on the overlay. The widget keeps the text across restarts.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×140
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -473,9 +454,9 @@ A sticky note / scratchpad: editable text that persists across restarts. Type on
 
 ![Spacer widget](img/widgets/spacer.png)
 
-An invisible spacer: empty whitespace that occupies layout space to push other widgets apart. Shown only as a faint outline while editing.
+Reserve empty space between widgets. Studio shows an outline while editing.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 60×40
 
 _No configurable fields._
@@ -485,11 +466,11 @@ _No configurable fields._
 
 ![Countdown widget](img/widgets/countdown.png)
 
-Counts down to a target date/time ("days until …"), or runs an auto-cycling Pomodoro work/break rhythm. Wall-clock driven (no start/pause — use Timer for that).
+Count down to a date and time, or alternate Pomodoro work and break periods. Use Timer if you need start and pause controls.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 170×80
-- **Intrinsic size:** `basis:"content"` shrink-wraps to the rendered content
+- **Intrinsic size:** adjusts to the displayed content.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -506,11 +487,11 @@ Counts down to a target date/time ("days until …"), or runs an auto-cycling Po
 
 ![Timer widget](img/widgets/timer.png)
 
-A countdown timer or stopwatch with start / pause / reset. The dial style sets 0–60 minutes by dragging; release to start. A countdown can loop when it reaches zero. Controls work on the overlay (interactive).
+Use a countdown timer or stopwatch with start, pause, and reset controls. Drag the dial to set up to 60 minutes. Release to start.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 160×96
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -526,11 +507,11 @@ A countdown timer or stopwatch with start / pause / reset. The dial style sets 0
 
 ![Monitor Switch widget](img/widgets/monitorswitch.png)
 
-Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DDC/CI. Shows the current source and, optionally, the resolution + refresh rate. Requires DDC/CI enabled on the monitor; input codes are vendor-specific (auto-detected). Windows.
+Switch monitor inputs and show the current source. Enable DDC/CI in the monitor settings. Available input codes depend on the monitor.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 220×150
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -550,9 +531,9 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 
 Show sensor threshold alerts only when attention is needed; snooze individual alerts.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 320×150
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -567,7 +548,7 @@ Show sensor threshold alerts only when attention is needed; snooze individual al
 
 HTTP/HTTPS endpoint status, latency, and certificate expiry. Checks pause while hidden.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 260×85
 
 | key | type | default | options / range | description |
@@ -584,9 +565,9 @@ HTTP/HTTPS endpoint status, latency, and certificate expiry. Checks pause while 
 
 Independent app-session volume and mute, plus default communications microphone mute.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 340×200
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -598,9 +579,9 @@ Independent app-session volume and mute, plus default communications microphone 
 
 Persistent task list with checkboxes and add/remove controls; syncs across studio and overlay.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 270×200
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -612,7 +593,7 @@ Persistent task list with checkboxes and add/remove controls; syncs across studi
 
 Compare sensor histories on one scale, with a threshold band and min/average/max summaries.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 360×150
 
 | key | type | default | options / range | description |
@@ -632,7 +613,7 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Sensor widget](img/widgets/ha.sensor.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 150×44
 
 | key | type | default | options / range | description |
@@ -643,7 +624,7 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Binary Sensor widget](img/widgets/ha.binary_sensor.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 150×44
 
 | key | type | default | options / range | description |
@@ -654,9 +635,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Light widget](img/widgets/ha.light.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 120×48
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -667,9 +648,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Switch widget](img/widgets/ha.switch.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 120×48
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -679,9 +660,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Fan widget](img/widgets/ha.fan.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 150×56
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -693,9 +674,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Climate / A-C widget](img/widgets/ha.climate.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 170×92
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -708,9 +689,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Cover widget](img/widgets/ha.cover.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 150×76
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -722,9 +703,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Lock widget](img/widgets/ha.lock.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 120×48
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -734,9 +715,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Scene widget](img/widgets/ha.scene.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 130×40
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -746,9 +727,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Input widget](img/widgets/ha.input.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 160×48
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -758,9 +739,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![HA Media Player widget](img/widgets/ha.media_player.png)
 
-- **Sensor:** binds a `json` sensor
+- **Data:** Structured sensor data.
 - **Default size:** 180×92
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -772,9 +753,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![Now Playing widget](img/widgets/nowplaying.png)
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 160×200
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -784,7 +765,7 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![Stock Ticker widget](img/widgets/ticker.png)
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 180×110
 
 | key | type | default | options / range | description |
@@ -799,7 +780,7 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![Weather widget](img/widgets/weather.png)
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 220×160
 
 | key | type | default | options / range | description |
@@ -813,9 +794,9 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![Sun & Moon widget](img/widgets/sunmoon.png)
 
-Today’s sunrise + sunset (from your weather location) and the current moon phase with illumination.
+Show sunrise and sunset for the configured weather location. Show the current moon phase and illumination.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 210×64
 
 | key | type | default | options / range | description |
@@ -828,9 +809,9 @@ Today’s sunrise + sunset (from your weather location) and the current moon pha
 
 ![Air Quality widget](img/widgets/airquality.png)
 
-European Air Quality Index with a colour-coded band, plus PM2.5 and the UV index — for your weather location.
+Show the European Air Quality Index, PM2.5, and UV index for the configured weather location.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 190×86
 
 | key | type | default | options / range | description |
@@ -843,9 +824,9 @@ European Air Quality Index with a colour-coded band, plus PM2.5 and the UV index
 
 ![RSS widget](img/widgets/rss.png)
 
-A list of headlines from your configured RSS / Atom feed.
+Show headlines from the configured RSS or Atom feed.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 260×150
 
 | key | type | default | options / range | description |
@@ -858,11 +839,11 @@ A list of headlines from your configured RSS / Atom feed.
 
 ![Agenda widget](img/widgets/agenda.png)
 
-Your upcoming calendar events from a configured ICS feed.
+Show upcoming events from the configured ICS calendar feed.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 280×260
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -872,13 +853,11 @@ Your upcoming calendar events from a configured ICS feed.
 
 ### AI Assistant — `aichat`
 
-![AI Assistant widget](img/widgets/aichat.png)
-
 An interactive chat with your configured AI provider. Send messages, stop a reply, or clear the conversation. Chat is shared within each window.
 
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 360×300
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -886,13 +865,11 @@ An interactive chat with your configured AI provider. Send messages, stop a repl
 
 ### AI Briefing — `assistant`
 
-![AI Briefing widget](img/widgets/assistant.png)
+Generate a briefing from sensor readings with the configured AI Provider. Set an interval or cron schedule. Use manual refresh in Studio.
 
-A self-updating, LLM-generated briefing from your live sensors. Configure the prompt and a schedule (interval like 5m, or a cron expression). Auto-refreshes on the overlay; manual refresh in the studio. Needs an AI provider configured.
-
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 280×96
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -905,13 +882,11 @@ A self-updating, LLM-generated briefing from your live sensors. Configure the pr
 
 ### Transcribe / Translate — `transcribe`
 
-![Transcribe / Translate widget](img/widgets/transcribe.png)
+Select the microphone to record speech. Select it again to stop and transcribe. Configure an OpenAI-compatible AI Provider. Translation and speech playback are optional.
 
-Push-to-talk speech-to-text, optionally translated to another language and read aloud, via the AI provider. Click the mic to record, click again to stop and transcribe. Needs an OpenAI-compatible provider (Whisper) configured.
-
-- **Sensor:** none (self-sourcing)
+- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 320×120
-- **Interactive:** catches clicks in passive mode (per-widget click-through)
+- **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |

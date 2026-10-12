@@ -17,13 +17,14 @@ describe('themingReferenceMarkdown', () => {
 		expect(md).toContain('--ui-bg');
 		expect(md).toContain('--ui-accent-rgb');
 		// The chrome is now themeable (light studio) — the old "fixed identity" wording is gone.
-		expect(md).toMatch(/light studio/i);
+		expect(md).toContain('## Studio tokens');
 		expect(md).not.toMatch(/can't accidentally repaint/i);
 	});
 
 	it('lists the built-in theme catalog', () => {
 		expect(md).toMatch(/Built-in themes/i);
-		expect(md).toContain('builtin:<id>');
+		expect(md).toContain('Duplicate');
+		expect(md).not.toContain('builtin:<id>');
 		for (const name of ['App', 'Nord', 'Solarized Light'])
 			expect(BUILTIN_THEMES.some((t) => t.name === name)).toBe(true);
 		expect(md).toContain('Nord');
@@ -31,8 +32,8 @@ describe('themingReferenceMarkdown', () => {
 
 	it('explains the cascade order and the scoping caveat', () => {
 		expect(md).toMatch(/cascade/i);
-		expect(md).toContain('[data-def="<id>"]');
-		expect(md).toContain('[data-w="<id>"]');
+		expect(md).toContain('dev/theming.md');
+		expect(md).not.toContain('client/src/');
 		expect(md).toMatch(/@font-face/);
 	});
 

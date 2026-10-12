@@ -29,16 +29,25 @@ const metas: WidgetMeta[] = [
 describe('widgetReferenceMarkdown', () => {
 	const md = widgetReferenceMarkdown(metas);
 
-	it('includes the layout-shape preamble and a section per widget', () => {
+	it('introduces widget setup and links to the developer layout schema', () => {
 		expect(md).toContain('# Widget reference');
-		expect(md).toContain('## Layout shape');
+		expect(md).toContain('dev/layout-format.md');
+		expect(md).not.toContain('replaceNode');
+		expect(md).not.toContain('npm run');
 		expect(md).toContain('### Gauge — `gauge`');
 		expect(md).toContain('### Clock — `clock`');
 	});
 
+	it('includes only available screenshots when a catalog is supplied', () => {
+		const md = widgetReferenceMarkdown(metas, new Set(['gauge']));
+		expect(md).toContain('img/widgets/gauge.png');
+		expect(md).not.toContain('img/widgets/clock.png');
+		expect(md).toContain('### Clock');
+	});
+
 	it('documents the sensor binding (and self-sourcing)', () => {
-		expect(md).toContain('binds a `scalar` sensor (default `cpu.total`)');
-		expect(md).toContain('none (self-sourcing)');
+		expect(md).toContain('Numeric sensor. Default: `cpu.total`.');
+		expect(md).toContain('Configured in the widget settings or Plugins.');
 	});
 
 	it('renders a config table with defaults pulled from defaultConfig', () => {
@@ -105,7 +114,7 @@ describe('widgetReferenceMarkdown', () => {
 		const md = widgetReferenceMarkdown([blob]);
 		expect(md).toContain('### blob — `blob`');
 		expect(md).toContain('![blob widget]');
-		expect(md).toContain('binds a `scalar` sensor');
-		expect(md).toContain('- **Interactive:** catches clicks in passive mode');
+		expect(md).toContain('Numeric sensor.');
+		expect(md).toContain('- **Controls:** available on the desktop.');
 	});
 });

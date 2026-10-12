@@ -1,7 +1,0 @@
-- widget: iframe
-- widget: application landing zone (auto move/resize apps into this area for example)
-- stream deck integration?
-- better home assistant plugin
-- better studio ui (left panel menu picker: layout/widgets/plugins/themes/settings)
-- theme variable/token definitions
-- importable/installable plugin system

@@ -78,7 +78,7 @@ export const registerLlmPlugin = (): void =>
 					interactive: true,
 					label: 'AI Briefing',
 					description:
-						'A self-updating, LLM-generated briefing from your live sensors. Configure the prompt and a schedule (interval like 5m, or a cron expression). Auto-refreshes on the overlay; manual refresh in the studio. Needs an AI provider configured.',
+						'Generate a briefing from sensor readings with the configured AI Provider. Set an interval or cron schedule. Use manual refresh in Studio.',
 					defaultSize: { w: 280, h: 96 },
 					defaultConfig: {
 						prompt: 'Summarize my system status in one short, friendly sentence.',
@@ -138,7 +138,7 @@ export const registerLlmPlugin = (): void =>
 					interactive: true,
 					label: 'Transcribe / Translate',
 					description:
-						'Push-to-talk speech-to-text, optionally translated to another language and read aloud, via the AI provider. Click the mic to record, click again to stop and transcribe. Needs an OpenAI-compatible provider (Whisper) configured.',
+						'Select the microphone to record speech. Select it again to stop and transcribe. Configure an OpenAI-compatible AI Provider. Translation and speech playback are optional.',
 					defaultSize: { w: 320, h: 120 },
 					defaultConfig: {
 						mode: 'transcribe',

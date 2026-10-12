@@ -25,7 +25,7 @@ export const registerRssPlugin = (): void =>
 					type: 'rss',
 					binds: 'none',
 					label: 'RSS',
-					description: 'A list of headlines from your configured RSS / Atom feed.',
+					description: 'Show headlines from the configured RSS or Atom feed.',
 					defaultSize: { w: 260, h: 150 },
 					defaultConfig: { title: '', maxRows: 8 },
 					configFields: [

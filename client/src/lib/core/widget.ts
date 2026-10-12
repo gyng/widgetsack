@@ -222,7 +222,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		label: 'CLI Command',
 		category: 'Utilities',
 		description:
-			'Run a configured PowerShell command on demand and view its output and exit status. Never runs automatically. A 30-second timeout and 64 KiB per output stream keep execution bounded.',
+			'Run a configured PowerShell command and show its output and exit status. Select Run to start. Execution stops after 30 seconds.',
 		binds: 'none',
 		interactive: true,
 		defaultSize: { w: 360, h: 220 },
@@ -238,7 +238,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 	{
 		type: 'gauge',
 		description:
-			'Gauge for one scalar sensor (default 0–100%): arc ring, full circle, linear bar, pips or needle dial.',
+			'Show a numeric sensor as an arc, circle, bar, segmented gauge, or needle dial. The default range is 0–100%.',
 		binds: 'scalar',
 		label: 'Gauge',
 		category: 'Meters',
@@ -307,7 +307,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 	},
 	{
 		type: 'bar',
-		description: 'Linear progress bar for one scalar sensor; horizontal or vertical.',
+		description: 'Show one numeric sensor as a horizontal or vertical bar.',
 		binds: 'scalar',
 		label: 'Bar',
 		category: 'Meters',
@@ -346,7 +346,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 	},
 	{
 		type: 'sparkline',
-		description: 'Compact line / area / histogram of a sensor history (a time series).',
+		description: 'Show sensor history as a line, area chart, or histogram.',
 		binds: 'series',
 		label: 'Sparkline',
 		category: 'Meters',
@@ -407,7 +407,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 	{
 		type: 'text',
 		description:
-			'A single value as formatted text (percent / rate / bytes / duration / integer) with an optional label.',
+			'Show a formatted sensor value with an optional label. Formats include percentages, rates, bytes, durations, and integers.',
 		binds: 'scalar',
 		label: 'Text',
 		category: 'Meters',
@@ -430,7 +430,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 	},
 	{
 		type: 'clock',
-		description: 'Date / time clock using a moment-style token format (self-sourcing).',
+		description: 'Show the date and time using a configurable format.',
 		binds: 'none',
 		label: 'Clock',
 		category: 'Clocks',
@@ -460,7 +460,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// (core/calendar.ts); the meter just renders it.
 		type: 'calendar',
 		description:
-			'A month calendar grid: configurable first day of week, optional weekday header, highlights today, and an optional continuous view that spills dimmed into next month (self-sourcing).',
+			'Show a month calendar and highlight today. Choose the first weekday and whether to show dates from the next month.',
 		binds: 'none',
 		label: 'Calendar',
 		category: 'Clocks',
@@ -527,7 +527,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 	{
 		// Self-sourcing analog clock (classic face + hands). binds:none; ticks internally.
 		type: 'analogclock',
-		description: 'Analog clock face with hour / minute / second hands (self-sourcing).',
+		description: 'Show the time on an analog clock with hour, minute, and second hands.',
 		binds: 'none',
 		label: 'Analog Clock',
 		category: 'Clocks',
@@ -586,8 +586,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// passive overlay mode (per-widget click-through). With no actions it's an inert label (also
 		// the click-through canary). See core/macro.ts + Canvas.onWidgetControl (domain 'macro').
 		type: 'button',
-		description:
-			'Pressable button that runs a macro of {domain, service, data} calls (HA services or media transport).',
+		description: 'Run Home Assistant service calls or media controls when you select the button.',
 		binds: 'none',
 		label: 'Button / Macro',
 		category: 'Utility',
@@ -609,7 +608,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// Self-sourcing CPU widget: reads cpu.total + cpu.core.* from the hub (binds:none). Toggles
 		// between a combined gauge and a per-core sparkline grid (the classic System skin).
 		type: 'cpu',
-		description: 'Self-sourcing CPU widget: a per-core sparkline grid or one combined gauge.',
+		description: 'Show CPU usage as per-core charts or one combined gauge.',
 		binds: 'none',
 		label: 'CPU',
 		category: 'Meters',
@@ -665,7 +664,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// A desktop with no battery emits no battery.* samples, so it shows "—".
 		type: 'battery',
 		description:
-			'A battery indicator: charge icon, percent, and charging / time-remaining status (laptops; a desktop without a battery shows "—").',
+			'Show battery charge and charging status or remaining time. A computer without a battery shows “—”.',
 		binds: 'none',
 		sensors: () => ({ percent: 'battery.percent', state: 'battery.state', time: 'battery.time' }),
 		label: 'Battery',
@@ -692,7 +691,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// map. No NVIDIA/NVML → no gpu.* samples, so it shows "—".
 		type: 'gpu',
 		description:
-			'A GPU panel: card name, utilisation %, and the reported temp / VRAM / power / clock / fan (NVIDIA NVML; non-NVIDIA shows "—").',
+			'Show NVIDIA GPU usage and available temperature, memory, power, clock, and fan readings. Unavailable readings show “—”.',
 		binds: 'none',
 		sensors: () => ({
 			util: 'gpu.util',
@@ -726,8 +725,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// demand-gated per-disk enumeration via a `disk._probe` sentinel. Capacity only — bind a
 		// Sparkline to `disk.<letter>.read`/`.write` for I/O graphs.
 		type: 'disks',
-		description:
-			'Storage usage: one bar per volume (used %, used/total), auto-discovering your drives. Near-full volumes warn.',
+		description: 'Show used space for each detected drive. Nearly full drives show a warning.',
 		binds: 'none',
 		label: 'Disks',
 		category: 'Meters',
@@ -751,7 +749,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// demand gating), and GPU additionally needs NVML — no metric is paid for unless shown.
 		type: 'topproc',
 		description:
-			'The busiest process by CPU %, RAM, disk I/O, or GPU VRAM — "what’s eating my machine". Each metric is sampled only while shown.',
+			'Show the process with the highest CPU, memory, disk activity, or GPU memory usage.',
 		binds: 'none',
 		sensors: (config) => topProcessSensors(String(config.by ?? 'cpu')),
 		label: 'Top Process',
@@ -777,7 +775,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// backend only samples a watched name while its widget is mounted (per-name demand gating).
 		type: 'procwatch',
 		description:
-			'Watch a specific process by name: is it running, and its CPU % + RAM (summed across instances). Good for keeping an eye on one app (a game, a build, OBS).',
+			'Show whether a named process is running. Combine CPU and memory usage across its instances.',
 		binds: 'none',
 		sensors: (config) => procWatchSensors(String(config.name ?? 'chrome.exe')),
 		label: 'Process Watcher',
@@ -803,7 +801,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// reads the net.conn.* totals. Observability, not an IDS.
 		type: 'netconn',
 		description:
-			'Active network connections by process: established + listening counts and how many go to a PUBLIC remote IP — so an unusual outbound connection stands out. Observability, not an IDS.',
+			'Show network connections by process. Include established connections, listening connections, and connections to public IP addresses.',
 		binds: 'none',
 		label: 'Connections',
 		category: 'Network',
@@ -836,7 +834,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// ICMP-ping (demand gate), so nothing pings until this widget is mounted.
 		type: 'ping',
 		description:
-			'Ping a host (default 1.1.1.1) and show reachability + round-trip latency — a quick "is my internet up?" light. ICMP, no admin needed.',
+			'Check whether a host responds to ping and show its round-trip time. The default host is 1.1.1.1.',
 		binds: 'none',
 		sensors: (config) => pingSensors(String(config.host ?? '1.1.1.1')),
 		label: 'Ping',
@@ -868,7 +866,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// handle when this is mounted). Not on Wi-Fi → "Not connected".
 		type: 'wifi',
 		description:
-			'Wi-Fi link detail: SSID, signal strength, and band / channel / 802.11 generation / RSSI / link rate. Windows; shows "Not connected" off Wi-Fi.',
+			'Show the Wi-Fi network name, signal strength, and connection details. The widget shows “Not connected” when Wi-Fi is disconnected.',
 		binds: 'none',
 		sensors: () => ({
 			ssid: 'net.wifi.ssid',
@@ -900,8 +898,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// over a Channel and drawn on a <canvas>. The display bar count is independent of the capture
 		// band count (the meter groups bands down), so changing it never reconfigures capture.
 		type: 'spectrum',
-		description:
-			'Self-sourcing audio spectrum (WASAPI loopback FFT): frequency bars or a scrolling spectrogram.',
+		description: 'Show output audio as frequency bars or a scrolling spectrogram.',
 		binds: 'none',
 		label: 'Spectrum',
 		category: 'Meters',
@@ -966,8 +963,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// catches clicks or passes them through to the desktop (see meters/Iframe.tsx). Suited to
 		// self-hosted dashboards (Home Assistant, Grafana) — many public sites refuse framing.
 		type: 'iframe',
-		description:
-			'Embedded web page (self-hosted dashboards); optional click-through interactivity.',
+		description: 'Show a web page in a frame. Enable interaction to use its controls.',
 		binds: 'none',
 		label: 'Web Frame',
 		category: 'Utility',
@@ -1046,7 +1042,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// match rule (matchExe/Class/Title) drives on-demand auto-arrange (core/arrange.ts).
 		type: 'zone',
 		description:
-			'A landing zone: drag a window over it (hold Shift) to snap it here; optional match rule auto-arranges windows. Invisible on the live overlay; shown only while editing.',
+			'Define an area for application windows. Hold Shift while dragging a window into it to snap. The zone is hidden on the overlay.',
 		binds: 'none',
 		label: 'Zone',
 		category: 'Utility',
@@ -1073,7 +1069,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// meter stays props-only. interactive:true so the rows catch clicks on the passive overlay.
 		type: 'audioswitch',
 		description:
-			'Switch the default audio output device with a tap — lists your speakers/headphones/HDMI outputs and marks the active one. Windows.',
+			'Select the default audio output device. The widget lists available devices and marks the active one.',
 		binds: 'none',
 		interactive: true,
 		label: 'Audio Switcher',
@@ -1089,8 +1085,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// `sensors` map binds recyclebin.{items,bytes} (gated — the backend only queries the shell when
 		// this is mounted).
 		type: 'recyclebin',
-		description:
-			'Recycle Bin contents: how many items and how much space they take, with a "needs emptying" cue past a size you set.',
+		description: 'Show the Recycle Bin item count and size. Set a size threshold for a warning.',
 		binds: 'none',
 		sensors: () => ({ items: 'recyclebin.items', bytes: 'recyclebin.bytes' }),
 		label: 'Recycle Bin',
@@ -1112,8 +1107,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// lives in VolumeHost (Core Audio commands); the meter is props-only. interactive:true so the
 		// slider/button work on the passive overlay.
 		type: 'volume',
-		description:
-			'System master volume: a slider + mute toggle controlling the default output device. Windows.',
+		description: 'Adjust or mute the default audio output device.',
 		binds: 'none',
 		interactive: true,
 		label: 'Volume',
@@ -1129,7 +1123,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// (resolving a filename → asset URL) lives in ImageHost; the meter draws the <img>.
 		type: 'image',
 		description:
-			'A static image / photo from a URL (https / data) or a filename in your wallpapers folder, with a fit mode.',
+			'Show an image from an HTTPS URL, data URL, or file in the wallpapers folder. Choose how it fits the widget.',
 		binds: 'none',
 		label: 'Image',
 		category: 'Utility',
@@ -1156,8 +1150,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// localStorage by widget id (survives restarts, syncs studio↔overlay). Read-only in edit mode so
 		// the widget stays draggable; type on the live overlay.
 		type: 'note',
-		description:
-			'A sticky note / scratchpad: editable text that persists across restarts. Type on the live overlay; arrange it in the studio.',
+		description: 'Enter a note on the overlay. The widget keeps the text across restarts.',
 		binds: 'none',
 		interactive: true,
 		label: 'Sticky Note',
@@ -1173,8 +1166,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// Spacer: an invisible, space-occupying widget — pure whitespace in a flow/grid that pushes its
 		// neighbours apart. binds:none, no sensor, no config; shown only as a faint outline while editing.
 		type: 'spacer',
-		description:
-			'An invisible spacer: empty whitespace that occupies layout space to push other widgets apart. Shown only as a faint outline while editing.',
+		description: 'Reserve empty space between widgets. Studio shows an outline while editing.',
 		binds: 'none',
 		label: 'Spacer',
 		category: 'Utility',
@@ -1186,7 +1178,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// start/pause). No controls — it just reflects the clock.
 		type: 'countdown',
 		description:
-			'Counts down to a target date/time ("days until …"), or runs an auto-cycling Pomodoro work/break rhythm. Wall-clock driven (no start/pause — use Timer for that).',
+			'Count down to a date and time, or alternate Pomodoro work and break periods. Use Timer if you need start and pause controls.',
 		binds: 'none',
 		label: 'Countdown',
 		category: 'Clocks',
@@ -1245,7 +1237,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// tick) + interactive so the controls catch clicks on the passive overlay.
 		type: 'timer',
 		description:
-			'A countdown timer or stopwatch with start / pause / reset. The dial style sets 0–60 minutes by dragging; release to start. A countdown can loop when it reaches zero. Controls work on the overlay (interactive).',
+			'Use a countdown timer or stopwatch with start, pause, and reset controls. Drag the dial to set up to 60 minutes. Release to start.',
 		binds: 'none',
 		interactive: true,
 		label: 'Timer',
@@ -1304,7 +1296,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// passive overlay. DDC/CI must be enabled in the OSD; input codes are vendor-specific (auto-detected).
 		type: 'monitorswitch',
 		description:
-			'Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DDC/CI. Shows the current source and, optionally, the resolution + refresh rate. Requires DDC/CI enabled on the monitor; input codes are vendor-specific (auto-detected). Windows.',
+			'Switch monitor inputs and show the current source. Enable DDC/CI in the monitor settings. Available input codes depend on the monitor.',
 		binds: 'none',
 		interactive: true,
 		label: 'Monitor Switch',

@@ -40,57 +40,50 @@ function exprFieldsTable(metas: WidgetMeta[]): string {
 	return ['| widget | field | accepts | notes |', '| --- | --- | --- | --- |', ...rows].join('\n');
 }
 
-const PREAMBLE = `# Templating & formulas
+const PREAMBLE = `# Templates and formulas
 
-> **Generated** from the code that defines the language — do not hand-edit. Run \`npm run gen:docs\`
-> (in \`client/\`) to regenerate. Sources of truth: \`client/src/lib/core/templateFns.ts\` (helper
-> functions), \`client/src/lib/core/format.ts\` (named formats), \`client/src/lib/formula/engine.ts\`
-> (the sandbox), and the widget registry (\`core/widget.ts\`).
+<!-- Generated from the expression helpers, value formats, and widget registry. -->
 
-Many widget fields accept a small expression language so a value can be **computed** or **composed**
-from live sensors instead of bound 1:1. There are two flavours, both built on the same expressions:
+Use formulas to calculate numeric values. Use text templates to combine text with sensor readings.
+Enter these values in the fields marked **(formula)** in the Inspector.
 
-- **Formula** — a single expression that evaluates to a **number**, used to override a numeric field
-  (a gauge/bar \`value\`, \`min\`, \`max\`). Example: \`clamp(cpu.total, 0, 100)\` or \`mem.used.bytes / mem.total * 100\`.
-- **Template** — literal text interleaved with \`{ expression }\` segments that evaluates to a
-  **string** (the Text widget's \`value\`). Example: \`CPU {round(cpu.total)}% · {bytes(mem.used.bytes)}\`.
+| Input | Use | Example |
+| --- | --- | --- |
+| Formula | Set a numeric value. Do not include braces. | \`clamp(cpu.total, 0, 100)\` |
+| Text template | Insert readings into text. Put each expression inside braces. | \`CPU {round(cpu.total)}%\` |
 
 ## Template syntax
 
-A template is plain text with \`{ … }\` holes; each hole is an expression evaluated against the live
-sensor values, and its result is substituted in. Everything outside the braces is literal.
+Put an expression inside \`{ }\` to insert its result. Text outside the braces stays unchanged.
 
-- \`{{\` and \`}}\` produce literal \`{\` and \`}\`.
-- Braces and quotes **inside** an expression are balanced/skipped, so \`{ round(x, 2) + ' }' }\` is one hole.
-- A hole whose expression is \`null\`, errors, or is non-finite renders as **\`–\`** (an en dash) —
-  never the literal \`null\` or \`NaN\`. A formula field that fails simply falls back to its plain value.
+- Use \`{{\` and \`}}\` to display literal braces.
+- Braces inside quoted strings do not end the expression.
+- A missing reading or invalid expression displays \`–\` in a text template.
+- If a numeric formula fails, the widget uses its ordinary value.
 
 ## Expressions
 
-Each \`{ … }\` (and each formula) is **real JavaScript**, evaluated in a sandboxed QuickJS interpreter:
+Use the sensor ID as a value, such as \`cpu.total\`, \`mem.used\`, or \`net.down\`.
+Open **Sensors** to find the available IDs.
 
-- **Sensors are namespaced globals.** A dotted sensor id reads as ordinary member access:
-  \`cpu.total\`, \`mem.used\`, \`net.down\`, \`gpu.util\`, \`ha.<entity_id>\`. (The studio **Sensors**
-  section lists what's available; the full id reference is in [widgets.md](widgets.md).)
-- **Standard JavaScript works:** arithmetic and comparisons, \`Math.*\`, \`Number\`, \`String\`,
-  \`(x).toFixed(2)\`, ternaries (\`cpu.total > 90 ? 'HOT' : 'ok'\`), string concatenation (\`cpu.total + '%'\`).
-- **Plus the helper functions below.**
-- **It is a true sandbox:** no DOM, no Tauri, no network, no host globals (\`typeof fetch\` is
-  \`'undefined'\`) — formulas travel inside shared sacks, so they can't do more than compute. Each eval
-  is bounded (~50 ms + ~16 MiB); a runaway or oversized expression is killed and renders as \`–\`.
-- **A sensor that hasn't emitted yet is absent**, so referencing it makes the expression fail (→ \`–\`)
-  rather than coercing to \`0\` — a fresh widget shows \`–\`, not a misleading zero.
+Expressions support JavaScript arithmetic, comparisons, strings, conditional expressions, and \`Math\` functions.
+For example, \`cpu.total > 90 ? 'High' : 'Normal'\` selects text from the CPU reading.
+The helper functions below provide common formatting and calculations.
+
+Expressions cannot access the network, files, or app controls.
+Invalid expressions show no calculated value. A missing reading does not become zero.
+For execution limits, see the [developer architecture guide](dev/architecture.md#expressions).
 
 ## Helper functions
 
-Available in every expression, on top of native JavaScript:
+These functions are available in formulas and text templates:
 `;
 
 const FORMATS_SECTION = `## Named value formats
 
-A scalar widget's \`format\` field is a quicker alternative to a template when you just want one value
-shown nicely. It names how the bound sensor's number is rendered; any unlisted value renders the raw
-number. (For anything fancier — labels, maths, multiple sensors — use a template in the \`value\` field.)
+Use a widget's \`format\` setting to display one numeric reading.
+Choose a format from the table below. An unknown format displays the raw number.
+Use a text template when you need labels, calculations, or several readings.
 `;
 
 const EXAMPLES_SECTION = `## Examples
@@ -104,7 +97,7 @@ CPU {round(cpu.total)}% · {bytes(mem.used.bytes)}   → CPU 37% · 12.4 GiB
 {{literal braces}}                             → {literal braces}
 \`\`\`
 
-Formula fields (numeric) take just the expression — no braces:
+Enter numeric formulas without braces:
 
 \`\`\`text
 clamp(cpu.total, 0, 100)
@@ -121,9 +114,9 @@ export function templatingReferenceMarkdown(metas: WidgetMeta[]): string {
 		FORMATS_SECTION,
 		formatsTable(),
 		'',
-		'## Where formulas & templates are accepted',
+		'## Fields that accept formulas and templates',
 		'',
-		'Config fields that take an expression (the studio Inspector marks them “(formula)”):',
+		'The Inspector marks these fields **(formula)**:',
 		'',
 		exprFieldsTable(metas),
 		'',

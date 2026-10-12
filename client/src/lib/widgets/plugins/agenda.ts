@@ -26,7 +26,7 @@ export const registerAgendaPlugin = (): void =>
 					binds: 'none',
 					interactive: true,
 					label: 'Agenda',
-					description: 'Your upcoming calendar events from a configured ICS feed.',
+					description: 'Show upcoming events from the configured ICS calendar feed.',
 					defaultSize: { w: 280, h: 260 },
 					defaultConfig: { title: '', maxRows: 6 },
 					configFields: [

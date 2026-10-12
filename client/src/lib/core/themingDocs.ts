@@ -11,22 +11,22 @@ import { BUILTIN_THEMES, BUILTIN_GROUP_ORDER } from './builtinThemes';
 const CHROME_TOKENS: { name: string; purpose: string }[] = [
 	{
 		name: '--ui-font',
-		purpose: 'Studio text: locally bundled IBM Plex Sans with system fallbacks.'
+		purpose: 'Studio font family.'
 	},
 	{ name: '--ui-font-mono', purpose: 'Code, expressions, and identifiers.' },
 	{ name: '--ui-font-weight', purpose: 'Studio body and control weight (450 by default).' },
-	{ name: '--ui-bg', purpose: 'Base window + opaque panel background.' },
-	{ name: '--ui-surface', purpose: 'Translucent rails / docked panels.' },
-	{ name: '--ui-bar-bg', purpose: 'Top / sub / bottom bars (incl. the title bar).' },
+	{ name: '--ui-bg', purpose: 'Window and panel background.' },
+	{ name: '--ui-surface', purpose: 'Sidebar and docked panel backgrounds.' },
+	{ name: '--ui-bar-bg', purpose: 'Toolbar, title bar, and status bar backgrounds.' },
 	{ name: '--ui-raised', purpose: 'Inputs, buttons, raised rows.' },
-	{ name: '--ui-scrim', purpose: 'Menu / modal backdrops.' },
-	{ name: '--ui-fg', purpose: 'Primary chrome text.' },
-	{ name: '--ui-fg-muted', purpose: 'Secondary chrome text.' },
-	{ name: '--ui-fg-dim', purpose: 'Tertiary chrome text (== the legacy --dim-fg).' },
-	{ name: '--ui-border', purpose: 'Hairline borders / dividers.' },
+	{ name: '--ui-scrim', purpose: 'Menu and dialog backgrounds.' },
+	{ name: '--ui-fg', purpose: 'Primary Studio text.' },
+	{ name: '--ui-fg-muted', purpose: 'Secondary Studio text.' },
+	{ name: '--ui-fg-dim', purpose: 'Dimmed Studio text.' },
+	{ name: '--ui-border', purpose: 'Borders and dividers.' },
 	{ name: '--ui-border-strong', purpose: 'Stronger control borders.' },
-	{ name: '--ui-accent-rgb', purpose: 'Chrome accent as "r, g, b" channels (rgb()/rgba() forms).' },
-	{ name: '--ui-accent-fg', purpose: 'Bright accent text / icons / active labels.' },
+	{ name: '--ui-accent-rgb', purpose: 'Studio accent as three RGB channels.' },
+	{ name: '--ui-accent-fg', purpose: 'Selected text, icons, and labels.' },
 	{ name: '--ui-danger-rgb', purpose: 'Destructive accent channels.' },
 	{ name: '--ui-danger-fg', purpose: 'Destructive text.' },
 	{ name: '--ui-success-rgb', purpose: 'Success accent channels.' },
@@ -38,23 +38,23 @@ const CHROME_TOKENS: { name: string; purpose: string }[] = [
 	{ name: '--space-1', purpose: 'Spacing scale: hairline (2px).' },
 	{ name: '--space-2', purpose: 'Spacing scale: tight (4px).' },
 	{ name: '--space-3', purpose: 'Spacing scale: default gap (6px).' },
-	{ name: '--space-4', purpose: 'Spacing scale: section / panel inset (8px).' },
+	{ name: '--space-4', purpose: 'Spacing scale: section and panel inset (8px).' },
 	{ name: '--space-5', purpose: 'Spacing scale: large (12px).' },
-	{ name: '--space-6', purpose: 'Spacing scale: screen-edge / panel padding (16px).' },
+	{ name: '--space-6', purpose: 'Spacing scale: screen edge and panel padding (16px).' },
 	{ name: '--space-7', purpose: 'Spacing scale: major sections (24px).' },
 	{ name: '--space-8', purpose: 'Spacing scale: structural separation (32px).' },
 	{ name: '--text-xs', purpose: 'Type scale: annotations (12px).' },
-	{ name: '--text-sm', purpose: 'Type scale: labels / hints (12px).' },
-	{ name: '--text-md', purpose: 'Type scale: chrome body (14px).' },
+	{ name: '--text-sm', purpose: 'Type scale: labels and hints (12px).' },
+	{ name: '--text-md', purpose: 'Type scale: Studio body (14px).' },
 	{ name: '--text-lg', purpose: 'Type scale: section headings (16px).' },
 	{ name: '--text-xl', purpose: 'Type scale: panel titles (20px).' },
 	{ name: '--line-caption', purpose: 'Caption line height (16px).' },
 	{ name: '--line-body', purpose: 'Body line height (20px).' },
 	{ name: '--line-heading', purpose: 'Heading line height (22px).' },
 	{ name: '--line-title', purpose: 'Title line height (26px).' },
-	{ name: '--radius-control', purpose: 'Corner radius for inputs / buttons / chips (4px).' },
-	{ name: '--radius-panel', purpose: 'Corner radius for panels / cards / menus (6px).' },
-	{ name: '--control-h', purpose: 'Minimum height of rail/bar inputs and selects (32px).' },
+	{ name: '--radius-control', purpose: 'Corner radius for inputs, buttons, and chips (4px).' },
+	{ name: '--radius-panel', purpose: 'Corner radius for panels, cards, and menus (6px).' },
+	{ name: '--control-h', purpose: 'Minimum height of inputs and selects (32px).' },
 	{ name: '--disabled-opacity', purpose: 'Opacity of disabled controls (0.5).' }
 ];
 
@@ -70,23 +70,23 @@ const TOKEN_DESCRIPTIONS: Record<string, string> = {
 	'--np-line-body': 'Content-widget body line height.',
 	'--np-line-heading': 'Content-widget heading line height.',
 	'--np-row-gap': 'Space between related content-widget rows.',
-	'--np-accent': 'Primary fill / line / accent (gauges, bars, sparklines, active states).',
+	'--np-accent': 'Gauge fills, chart lines, and selected states.',
 	'--np-fg': 'Main text and numerals.',
 	'--np-muted': 'Secondary text (units, sub-labels).',
-	'--np-label': 'Labels above/below a value.',
-	'--np-track': 'The unfilled track behind a gauge / bar.',
-	'--np-bg': 'Widget chrome background (e.g. a button surface).',
-	'--np-danger': 'Error / invalid / over-threshold state.',
-	'--np-warn': 'Warning / caution state.',
-	'--np-success': 'OK / healthy state.',
+	'--np-label': 'Labels above or below a value.',
+	'--np-track': 'The unfilled part of a gauge or bar.',
+	'--np-bg': 'Widget background.',
+	'--np-danger': 'Errors and readings above a threshold.',
+	'--np-warn': 'Warning state.',
+	'--np-success': 'Normal state.',
 	'--np-accent-up': 'A rising value (market ticker up, positive delta).',
 	'--np-accent-down': 'A falling value (market ticker down, negative delta).',
 	'--np-font': 'Body font family.',
-	'--np-font-display': 'Display font family (large numerals / headings).',
-	'--np-radius': 'Corner radius for widget chrome.',
+	'--np-font-display': 'Display font family (large numerals and headings).',
+	'--np-radius': 'Widget corner radius.',
 	'--np-gap': 'Default gap between elements inside a widget.',
 	'--np-control-size': 'Minimum target size for compact interactive controls.',
-	'--np-touch-target': 'Minimum target size for large, touch-first controls.'
+	'--np-touch-target': 'Minimum size of large touch controls.'
 };
 
 // Escape a cell value so a literal `|` can't break the Markdown table.
@@ -118,82 +118,92 @@ function builtinCatalog(): string {
 		.join('\n');
 }
 
-const PREAMBLE = `# Theming
+const PREAMBLE = `# Themes
 
-> **Generated** from the code that defines the system — do not hand-edit. Run \`npm run gen:docs\`
-> (in \`client/\`) to regenerate. Sources of truth: \`client/src/lib/core/tokens.ts\` (the token
-> vocabulary) and \`client/src/lib/core/style.ts\` (the cascade + scoping).
+<!-- Generated from the theme catalog and token definitions. -->
 
-A **theme** is just a CSS file (\`themes/<name>.css\` in the app config dir). It sets a handful of CSS
-custom properties (**tokens**) that every widget reads, so one small file restyles all your widgets
-without touching any widget. Pick, edit, duplicate, and delete themes from the studio's **Themes**
-section; the active theme + any token overrides are saved with your layout and travel inside a shared
-**sack**.
+Use a theme to change widget colors, fonts, and spacing.
 
-> A theme recolours both the **widgets** (via \`--np-*\` tokens) and the studio's own **chrome** — the
-> title bar, rails, and panels — via separate \`--ui-*\` tokens, so a light theme yields a light studio.
-> Set whichever you want; a widgets-only theme just leaves the \`--ui-*\` tokens at their defaults.
+1. Open **Themes** in Studio.
+2. Select a theme.
+3. Adjust its settings or select **Duplicate** to create an editable copy.
+4. Select **Save & apply** to keep your CSS changes.
 
-## Tokens
+To set a different theme for each monitor, clear **apply theme to all monitors** in **Settings → Monitor**.
+Select a monitor in **Layout**, then choose its theme.
 
-Set these at \`:root\` in a theme to recolour every widget. Their defaults are the built-in look — a
-theme only needs to set the ones it changes; anything it omits falls back to the default below.
+A theme is a CSS file. It can change widget styles and the Studio interface.
+Use widget tokens for widgets. Use Studio tokens for the editor.
+
+## Widget tokens
+
+A token is a named CSS value. Set tokens inside a \`:root\` rule in the theme editor.
+For example:
+
+\`\`\`css
+:root {
+  --np-accent: #77c4d3;
+  --np-font: 'Bahnschrift', sans-serif;
+}
+\`\`\`
+
+Set only the values you want to change. Other tokens keep the defaults below.
 `;
 
-const USAGE_SECTION = `## How a theme is applied
+const USAGE_SECTION = `## Style priority
 
-The studio assembles one stylesheet per monitor, in cascade order (later wins):
+Styles follow this cascade order. Later settings override earlier settings for the same property.
 
-1. **The token defaults** — the table above, emitted at \`:root\` so every \`var(--np-*)\` resolves.
-2. **The active theme**, verbatim — your \`:root { --np-accent: … }\` overrides, plus any custom rules.
-3. **Token overrides** — the friendly fields in the Themes/Inspector panels, layered on top of the
-   theme (they win until you press **Clear overrides**, and they persist across theme switches).
-4. **Per-widget-type CSS**, scoped to \`[data-def="<id>"]\` (styles every instance of a designed widget).
-5. **Per-instance / per-group CSS**, scoped to \`[data-w="<id>"]\` / \`[data-group="<id>"]\` (most specific).
+1. Built-in defaults.
+2. The selected theme.
+3. Token overrides from Themes or the Inspector.
+4. Styles saved with a custom widget.
+5. Styles on an individual widget or group.
 
-### Authoring CSS beyond the tokens
+Token overrides stay active when you change themes. Use **Clear overrides** to remove them.
 
-The theme editor (Themes → ✎, or "Edit theme CSS…") is a full CSS editor. Beyond setting tokens you
-can target the stable widget hooks (\`[data-w]\`, \`[data-def]\`, \`[data-group]\`, and the meters'
-\`np-*\` classes). A per-widget or per-def CSS block is scoped automatically.
+## Widget CSS
 
-> **Scoping caveat:** \`@font-face\` and \`@keyframes\` **cannot** be nested, so they only work in the
-> **global theme** file — not in a per-widget / per-def CSS block (there they're silently dropped).
-> Put shared fonts and keyframes in the theme.
+Select a widget to edit its CSS in the Inspector.
+Use \`&\` to target the widget itself. Rules apply only to the selected widget.
+For example:
 
-### Fonts
+\`\`\`css
+& {
+  opacity: 0.8;
+}
+\`\`\`
 
-Name a font via the \`--np-font\` / \`--np-font-display\` tokens **or** any \`font-family:\` in your theme
-CSS, and the studio loads it automatically (it scans the assembled stylesheet and \`@font-face\`s each
-concrete family). A font referenced only by raw CSS still loads — you don't need to register it.
+Put \`@font-face\` and \`@keyframes\` rules in the theme file.
+These rules do not work in individual widget CSS.
+The [developer theming guide](dev/theming.md) explains selectors and style assembly.
 
-## Sharing & safety
+## Fonts
 
-A sack bundles your widget library + the active theme CSS + token overrides into one JSON file. Theme
-CSS is injected with full access to the studio, so on import a sack's theme is **scanned** for
-constructs that reach outside the app — remote \`url(...)\` / \`@import\` (which could phone home) and
-full-screen overlays — and you're asked to confirm before trusting a stranger's theme.
+Select an installed font in the theme settings, or set \`font-family\` in CSS.
+The \`--np-font\` token controls body text. The \`--np-font-display\` token controls larger readings and headings.
+
+## Sharing themes
+
+A sack can include widget definitions, theme CSS, and token settings.
+Review the import message before you accept a shared theme.
+The app scans theme CSS for remote resources and rules that can cover the window.
+Only import themes from sources you trust.
 `;
 
-const CHROME_SECTION = `## Chrome tokens (the editor itself)
+const CHROME_SECTION = `## Studio tokens
 
-The studio chrome — title bar, rails, panels, backgrounds — is themeable too. A theme sets these
-\`--ui-*\` tokens at \`:root\` alongside the widget tokens above, so picking a light theme yields a
-light studio. Their dark defaults live in \`client/src/styles.css\`; a theme only sets what it changes.
-Accent / state colours are RGB **channels** (e.g. \`--ui-accent-rgb: 119, 196, 211\`) so both the solid
-\`rgb(var(--ui-accent-rgb))\` and translucent \`rgba(var(--ui-accent-rgb), a)\` forms work.
+Use these tokens to change Studio colors, spacing, and text sizes.
+Set them inside the theme's \`:root\` rule.
 
-Beyond colour, the chrome's **density and typography** ride the same system: the \`--space-*\` scale,
-\`--text-*\` type ramp, \`--radius-*\` shapes, \`--control-h\`, and \`--disabled-opacity\` below are plain
-\`:root\` custom properties — a theme can compact the studio (\`--space-3: 4px; --text-md: 10px\`) or
-relax it the same way it recolours it.
+RGB tokens contain three channels, such as \`--ui-accent-rgb: 119, 196, 211\`.
+Use them with \`rgb()\` or \`rgba()\` in CSS.
 `;
 
 const BUILTIN_SECTION = `## Built-in themes
 
-The picker ships a library of immutable presets, grouped. Pick one, or **duplicate** it (⎘) to start a
-new editable theme of your own. Built-ins are selected as \`builtin:<id>\` and defined in
-\`client/src/lib/core/builtinThemes.ts\`.
+Select a built-in theme from the catalog below.
+Built-in themes are read-only. Use **Duplicate** to create a copy you can edit.
 `;
 
 /** The full theming reference, generated from the token + cascade + built-in sources. Pure. */

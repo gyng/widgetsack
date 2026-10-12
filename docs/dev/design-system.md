@@ -1,13 +1,12 @@
 # Widgetsack design system
 
-Widgetsack is a compact desktop control room. Keep its dark/teal character, clear readings,
-and editable widget themes. Make the Studio easier to read and more consistent to operate.
+Use consistent typography, spacing, and alignment in Studio.
+Preserve configurable widget fonts, colors, and themes.
 
 ## References and direction
 
 Use [Fluent 2 typography](https://fluent2.microsoft.design/typography) and
-[spacing](https://fluent2.microsoft.design/layout) as the structural reference. Borrow the quiet
-surfaces, predictable actions, and reduced visual clutter from
+[spacing](https://fluent2.microsoft.design/layout) as the structural reference. Use surface hierarchy and action placement from
 [Linear's interface refresh](https://linear.app/now/behind-the-latest-design-refresh).
 
 These references guide hierarchy and layout. Widgetsack owns its fonts, colors, and theme system.
@@ -60,8 +59,7 @@ Compact secondary controls may use 28px when their labels and focus rings still 
 radio glyphs keep their own size; their surrounding label is the click target. Preserve the
 existing 44px widget touch-target option.
 
-Use 4px control corners and 6px panel/menu corners. These are restrained defaults, not a reason to
-wrap each row in a card. Keep the current theme colors and visible keyboard focus.
+Use 4px control corners and 6px panel/menu corners. Avoid enclosing every row in a card. Keep the current theme colors and visible keyboard focus.
 
 ## Alignment and widget sizing
 

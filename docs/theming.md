@@ -1,40 +1,50 @@
-# Theming
+# Themes
 
-> **Generated** from the code that defines the system — do not hand-edit. Run `npm run gen:docs`
-> (in `client/`) to regenerate. Sources of truth: `client/src/lib/core/tokens.ts` (the token
-> vocabulary) and `client/src/lib/core/style.ts` (the cascade + scoping).
+<!-- Generated from the theme catalog and token definitions. -->
 
-A **theme** is just a CSS file (`themes/<name>.css` in the app config dir). It sets a handful of CSS
-custom properties (**tokens**) that every widget reads, so one small file restyles all your widgets
-without touching any widget. Pick, edit, duplicate, and delete themes from the studio's **Themes**
-section; the active theme + any token overrides are saved with your layout and travel inside a shared
-**sack**.
+Use a theme to change widget colors, fonts, and spacing.
 
-> A theme recolours both the **widgets** (via `--np-*` tokens) and the studio's own **chrome** — the
-> title bar, rails, and panels — via separate `--ui-*` tokens, so a light theme yields a light studio.
-> Set whichever you want; a widgets-only theme just leaves the `--ui-*` tokens at their defaults.
+1. Open **Themes** in Studio.
+2. Select a theme.
+3. Adjust its settings or select **Duplicate** to create an editable copy.
+4. Select **Save & apply** to keep your CSS changes.
 
-## Tokens
+To set a different theme for each monitor, clear **apply theme to all monitors** in **Settings → Monitor**.
+Select a monitor in **Layout**, then choose its theme.
 
-Set these at `:root` in a theme to recolour every widget. Their defaults are the built-in look — a
-theme only needs to set the ones it changes; anything it omits falls back to the default below.
+A theme is a CSS file. It can change widget styles and the Studio interface.
+Use widget tokens for widgets. Use Studio tokens for the editor.
+
+## Widget tokens
+
+A token is a named CSS value. Set tokens inside a `:root` rule in the theme editor.
+For example:
+
+```css
+:root {
+  --np-accent: #77c4d3;
+  --np-font: 'Bahnschrift', sans-serif;
+}
+```
+
+Set only the values you want to change. Other tokens keep the defaults below.
 
 | token | default | purpose |
 | --- | --- | --- |
-| `--np-accent` | `rgb(119, 196, 211)` | Primary fill / line / accent (gauges, bars, sparklines, active states). |
+| `--np-accent` | `rgb(119, 196, 211)` | Gauge fills, chart lines, and selected states. |
 | `--np-fg` | `#ffffff` | Main text and numerals. |
 | `--np-muted` | `rgba(255, 255, 255, 0.6)` | Secondary text (units, sub-labels). |
-| `--np-label` | `rgb(218, 237, 226)` | Labels above/below a value. |
-| `--np-track` | `rgba(255, 255, 255, 0.15)` | The unfilled track behind a gauge / bar. |
-| `--np-bg` | `rgba(10, 10, 12, 0.6)` | Widget chrome background (e.g. a button surface). |
-| `--np-danger` | `#e5484d` | Error / invalid / over-threshold state. |
-| `--np-warn` | `#e2a03f` | Warning / caution state. |
-| `--np-success` | `#3fb950` | OK / healthy state. |
+| `--np-label` | `rgb(218, 237, 226)` | Labels above or below a value. |
+| `--np-track` | `rgba(255, 255, 255, 0.15)` | The unfilled part of a gauge or bar. |
+| `--np-bg` | `rgba(10, 10, 12, 0.6)` | Widget background. |
+| `--np-danger` | `#e5484d` | Errors and readings above a threshold. |
+| `--np-warn` | `#e2a03f` | Warning state. |
+| `--np-success` | `#3fb950` | Normal state. |
 | `--np-accent-up` | `#3fb950` | A rising value (market ticker up, positive delta). |
 | `--np-accent-down` | `#f85149` | A falling value (market ticker down, negative delta). |
 | `--np-font` | `'Bahnschrift', 'Arial Narrow', sans-serif` | Body font family. |
-| `--np-font-display` | `'Bahnschrift', 'Arial Narrow', sans-serif` | Display font family (large numerals / headings). |
-| `--np-radius` | `2px` | Corner radius for widget chrome. |
+| `--np-font-display` | `'Bahnschrift', 'Arial Narrow', sans-serif` | Display font family (large numerals and headings). |
+| `--np-radius` | `2px` | Widget corner radius. |
 | `--np-gap` | `4px` | Default gap between elements inside a widget. |
 | `--np-text-caption` | `12px` | Supporting widget text size (labels, units, metadata). |
 | `--np-text-body` | `14px` | Compact content-widget body size. |
@@ -44,38 +54,33 @@ theme only needs to set the ones it changes; anything it omits falls back to the
 | `--np-line-heading` | `22px` | Content-widget heading line height. |
 | `--np-row-gap` | `8px` | Space between related content-widget rows. |
 | `--np-control-size` | `28px` | Minimum target size for compact interactive controls. |
-| `--np-touch-target` | `44px` | Minimum target size for large, touch-first controls. |
+| `--np-touch-target` | `44px` | Minimum size of large touch controls. |
 
-## Chrome tokens (the editor itself)
+## Studio tokens
 
-The studio chrome — title bar, rails, panels, backgrounds — is themeable too. A theme sets these
-`--ui-*` tokens at `:root` alongside the widget tokens above, so picking a light theme yields a
-light studio. Their dark defaults live in `client/src/styles.css`; a theme only sets what it changes.
-Accent / state colours are RGB **channels** (e.g. `--ui-accent-rgb: 119, 196, 211`) so both the solid
-`rgb(var(--ui-accent-rgb))` and translucent `rgba(var(--ui-accent-rgb), a)` forms work.
+Use these tokens to change Studio colors, spacing, and text sizes.
+Set them inside the theme's `:root` rule.
 
-Beyond colour, the chrome's **density and typography** ride the same system: the `--space-*` scale,
-`--text-*` type ramp, `--radius-*` shapes, `--control-h`, and `--disabled-opacity` below are plain
-`:root` custom properties — a theme can compact the studio (`--space-3: 4px; --text-md: 10px`) or
-relax it the same way it recolours it.
+RGB tokens contain three channels, such as `--ui-accent-rgb: 119, 196, 211`.
+Use them with `rgb()` or `rgba()` in CSS.
 
 | token | purpose |
 | --- | --- |
-| `--ui-font` | Studio text: locally bundled IBM Plex Sans with system fallbacks. |
+| `--ui-font` | Studio font family. |
 | `--ui-font-mono` | Code, expressions, and identifiers. |
 | `--ui-font-weight` | Studio body and control weight (450 by default). |
-| `--ui-bg` | Base window + opaque panel background. |
-| `--ui-surface` | Translucent rails / docked panels. |
-| `--ui-bar-bg` | Top / sub / bottom bars (incl. the title bar). |
+| `--ui-bg` | Window and panel background. |
+| `--ui-surface` | Sidebar and docked panel backgrounds. |
+| `--ui-bar-bg` | Toolbar, title bar, and status bar backgrounds. |
 | `--ui-raised` | Inputs, buttons, raised rows. |
-| `--ui-scrim` | Menu / modal backdrops. |
-| `--ui-fg` | Primary chrome text. |
-| `--ui-fg-muted` | Secondary chrome text. |
-| `--ui-fg-dim` | Tertiary chrome text (== the legacy --dim-fg). |
-| `--ui-border` | Hairline borders / dividers. |
+| `--ui-scrim` | Menu and dialog backgrounds. |
+| `--ui-fg` | Primary Studio text. |
+| `--ui-fg-muted` | Secondary Studio text. |
+| `--ui-fg-dim` | Dimmed Studio text. |
+| `--ui-border` | Borders and dividers. |
 | `--ui-border-strong` | Stronger control borders. |
-| `--ui-accent-rgb` | Chrome accent as "r, g, b" channels (rgb()/rgba() forms). |
-| `--ui-accent-fg` | Bright accent text / icons / active labels. |
+| `--ui-accent-rgb` | Studio accent as three RGB channels. |
+| `--ui-accent-fg` | Selected text, icons, and labels. |
 | `--ui-danger-rgb` | Destructive accent channels. |
 | `--ui-danger-fg` | Destructive text. |
 | `--ui-success-rgb` | Success accent channels. |
@@ -85,66 +90,71 @@ relax it the same way it recolours it.
 | `--space-1` | Spacing scale: hairline (2px). |
 | `--space-2` | Spacing scale: tight (4px). |
 | `--space-3` | Spacing scale: default gap (6px). |
-| `--space-4` | Spacing scale: section / panel inset (8px). |
+| `--space-4` | Spacing scale: section and panel inset (8px). |
 | `--space-5` | Spacing scale: large (12px). |
-| `--space-6` | Spacing scale: screen-edge / panel padding (16px). |
+| `--space-6` | Spacing scale: screen edge and panel padding (16px). |
 | `--space-7` | Spacing scale: major sections (24px). |
 | `--space-8` | Spacing scale: structural separation (32px). |
 | `--text-xs` | Type scale: annotations (12px). |
-| `--text-sm` | Type scale: labels / hints (12px). |
-| `--text-md` | Type scale: chrome body (14px). |
+| `--text-sm` | Type scale: labels and hints (12px). |
+| `--text-md` | Type scale: Studio body (14px). |
 | `--text-lg` | Type scale: section headings (16px). |
 | `--text-xl` | Type scale: panel titles (20px). |
 | `--line-caption` | Caption line height (16px). |
 | `--line-body` | Body line height (20px). |
 | `--line-heading` | Heading line height (22px). |
 | `--line-title` | Title line height (26px). |
-| `--radius-control` | Corner radius for inputs / buttons / chips (4px). |
-| `--radius-panel` | Corner radius for panels / cards / menus (6px). |
-| `--control-h` | Minimum height of rail/bar inputs and selects (32px). |
+| `--radius-control` | Corner radius for inputs, buttons, and chips (4px). |
+| `--radius-panel` | Corner radius for panels, cards, and menus (6px). |
+| `--control-h` | Minimum height of inputs and selects (32px). |
 | `--disabled-opacity` | Opacity of disabled controls (0.5). |
 
 ## Built-in themes
 
-The picker ships a library of immutable presets, grouped. Pick one, or **duplicate** it (⎘) to start a
-new editable theme of your own. Built-ins are selected as `builtin:<id>` and defined in
-`client/src/lib/core/builtinThemes.ts`.
+Select a built-in theme from the catalog below.
+Built-in themes are read-only. Use **Duplicate** to create a copy you can edit.
 
 - **Classic** — App, Mono, Amber, Slate, Steel
 - **Light** — Paper, Solarized Light, Nord Light, Daylight, Mint Light, Linen
 - **Dark** — Nord, Dracula, Gruvbox, Solarized Dark, Tokyo Night, One Dark, Midnight
 - **Fun** — Synthwave, Matrix, Bubblegum, Vaporwave, Hacker Green, Sunset, Candy
 
-## How a theme is applied
+## Style priority
 
-The studio assembles one stylesheet per monitor, in cascade order (later wins):
+Styles follow this cascade order. Later settings override earlier settings for the same property.
 
-1. **The token defaults** — the table above, emitted at `:root` so every `var(--np-*)` resolves.
-2. **The active theme**, verbatim — your `:root { --np-accent: … }` overrides, plus any custom rules.
-3. **Token overrides** — the friendly fields in the Themes/Inspector panels, layered on top of the
-   theme (they win until you press **Clear overrides**, and they persist across theme switches).
-4. **Per-widget-type CSS**, scoped to `[data-def="<id>"]` (styles every instance of a designed widget).
-5. **Per-instance / per-group CSS**, scoped to `[data-w="<id>"]` / `[data-group="<id>"]` (most specific).
+1. Built-in defaults.
+2. The selected theme.
+3. Token overrides from Themes or the Inspector.
+4. Styles saved with a custom widget.
+5. Styles on an individual widget or group.
 
-### Authoring CSS beyond the tokens
+Token overrides stay active when you change themes. Use **Clear overrides** to remove them.
 
-The theme editor (Themes → ✎, or "Edit theme CSS…") is a full CSS editor. Beyond setting tokens you
-can target the stable widget hooks (`[data-w]`, `[data-def]`, `[data-group]`, and the meters'
-`np-*` classes). A per-widget or per-def CSS block is scoped automatically.
+## Widget CSS
 
-> **Scoping caveat:** `@font-face` and `@keyframes` **cannot** be nested, so they only work in the
-> **global theme** file — not in a per-widget / per-def CSS block (there they're silently dropped).
-> Put shared fonts and keyframes in the theme.
+Select a widget to edit its CSS in the Inspector.
+Use `&` to target the widget itself. Rules apply only to the selected widget.
+For example:
 
-### Fonts
+```css
+& {
+  opacity: 0.8;
+}
+```
 
-Name a font via the `--np-font` / `--np-font-display` tokens **or** any `font-family:` in your theme
-CSS, and the studio loads it automatically (it scans the assembled stylesheet and `@font-face`s each
-concrete family). A font referenced only by raw CSS still loads — you don't need to register it.
+Put `@font-face` and `@keyframes` rules in the theme file.
+These rules do not work in individual widget CSS.
+The [developer theming guide](dev/theming.md) explains selectors and style assembly.
 
-## Sharing & safety
+## Fonts
 
-A sack bundles your widget library + the active theme CSS + token overrides into one JSON file. Theme
-CSS is injected with full access to the studio, so on import a sack's theme is **scanned** for
-constructs that reach outside the app — remote `url(...)` / `@import` (which could phone home) and
-full-screen overlays — and you're asked to confirm before trusting a stranger's theme.
+Select an installed font in the theme settings, or set `font-family` in CSS.
+The `--np-font` token controls body text. The `--np-font-display` token controls larger readings and headings.
+
+## Sharing themes
+
+A sack can include widget definitions, theme CSS, and token settings.
+Review the import message before you accept a shared theme.
+The app scans theme CSS for remote resources and rules that can cover the window.
+Only import themes from sources you trust.

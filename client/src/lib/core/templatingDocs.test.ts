@@ -18,13 +18,14 @@ const metas: WidgetMeta[] = [
 describe('templatingReferenceMarkdown', () => {
 	const md = templatingReferenceMarkdown(metas);
 
-	it('has the generated banner + the language sections', () => {
-		expect(md).toContain('# Templating & formulas');
-		expect(md).toContain('> **Generated**');
+	it('introduces formulas and templates without development instructions', () => {
+		expect(md).toContain('# Templates and formulas');
+		expect(md).toContain('<!-- Generated');
+		expect(md).not.toContain('npm run');
 		expect(md).toContain('## Template syntax');
 		expect(md).toContain('## Helper functions');
 		expect(md).toContain('## Named value formats');
-		expect(md).toContain('## Where formulas & templates are accepted');
+		expect(md).toContain('## Fields that accept formulas and templates');
 	});
 
 	it('renders every helper function signature (from the registry)', () => {

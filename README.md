@@ -113,11 +113,13 @@ Use **Ctrl+E** inside a Widgetsack window.
 If you cannot click a widget window, press **Ctrl+Alt+Shift+E** to bring it forward and enable clicks.
 Open **Settings → Diagnostics** to view logs or copy diagnostics for a bug report.
 
+See [User guides](docs/README.md) for configuration and usage instructions.
+
 ## Development
 
-See the [development guide](docs/development.md) for build commands and contribution checks.
-The [design system](docs/design-system.md) covers interface conventions.
-See the [package authoring guide](docs/third-party-plugins.md) to create a plugin package.
+See the [development guide](docs/dev/development.md) for build commands and contribution checks.
+The [design system](docs/dev/design-system.md) covers interface conventions.
+See the [package authoring guide](docs/dev/plugin-packages.md) to create a plugin package.
 
 ## License
 

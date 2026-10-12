@@ -10,7 +10,7 @@
 // sunmoon, ha.*). Their metas are plain data inside each plugin module, and those modules import
 // cleanly under vite-node (nothing touches browser globals at module scope), so the reference covers
 // the COMPLETE registry — the same set the studio's "Copy widget reference" button produces.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fieldsMissingHelp, listMetas } from '../src/lib/core/widget';
@@ -41,7 +41,14 @@ const norm = (s: string): string => s.replace(/\r\n/g, '\n');
 const docs: { rel: string; md: string; label: string }[] = [
 	{
 		rel: '../../docs/widgets.md',
-		md: widgetReferenceMarkdown(metas),
+		md: widgetReferenceMarkdown(
+			metas,
+			new Set(
+				readdirSync(fileURLToPath(new URL('../../docs/img/widgets', import.meta.url))).map((name) =>
+					name.replace(/\.png$/, '')
+				)
+			)
+		),
 		label: `${metas.length} widgets (built-in + plugin)`
 	},
 	{

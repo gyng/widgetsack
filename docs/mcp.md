@@ -1,7 +1,6 @@
-# MCP and external agents
+# MCP
 
-Use your own agent to control Widgetsack. You do not need to open the built-in assistant sidebar.
-The MCP server and stdio bridge run in the installed executable. They do not need Node or a separate package.
+Connect an external agent to Studio to edit and check layouts.
 
 ## Connect
 
@@ -12,37 +11,14 @@ The MCP server and stdio bridge run in the installed executable. They do not nee
 5. Add the configuration to your agent's MCP server settings.
 6. Keep Widgetsack running and Studio open.
 
-You can close the assistant sidebar.
-
-The copied configuration uses a native stdio server:
-
-```json
-{
-  "mcpServers": {
-    "widgetsack": {
-      "command": "C:\\path\\to\\widgetsack.exe",
-      "args": ["--mcp"]
-    }
-  }
-}
-```
-
-Use the command path from the MCP page. The bridge discovers the current local endpoint and its
-per-launch access token. You do not need to copy a token or update an ephemeral port after each launch.
-A `--multi` instance uses its own descriptor and data directory.
-
-Clients can also use the authenticated Streamable HTTP endpoint in `mcp/server.json` below the app's
-configuration directory. The descriptor contains the endpoint and bearer token. Do not share this file.
-The transport follows the [MCP Streamable HTTP specification](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports).
-
 ## Tools
 
-| Tool | Use |
-| --- | --- |
-| `studio_read` | Read the active editor target, layout, widget catalog, sensor IDs, work area, and revision. |
-| `studio_apply` | Apply up to 32 edits against a revision returned by `studio_read`. Each batch is undoable. |
-| `studio_verify` | Measure the rendered layout. Find missing nodes, zero-size boxes, overflow, hidden content, unknown widget types, and render errors. |
-| `studio_screenshot` | Return a PNG of the current Studio webview for a vision-capable agent. Restore Studio if minimized. |
+| Tool                | Use                                                                                                                                  |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `studio_read`       | Read the active editor target, layout, widget catalog, sensor IDs, work area, and revision.                                          |
+| `studio_apply`      | Apply up to 32 edits against a revision returned by `studio_read`. Each batch is undoable.                                           |
+| `studio_verify`     | Measure the rendered layout. Find missing nodes, zero-size boxes, overflow, hidden content, unknown widget types, and render errors. |
+| `studio_screenshot` | Return a PNG of the current Studio webview for a vision-capable agent. Restore Studio if minimized.                                  |
 
 Use this workflow:
 
@@ -54,9 +30,6 @@ Use this workflow:
 
 Use the returned widget IDs for later edits. Use each revision once.
 Read the layout again if the editor changes. Template previews are read-only.
-
-Use `setConfig`, `setSensor`, or `setStyle` with the rendered namespaced ID to edit a widget
-inside a group. The edited instance becomes a separate copy. Other instances keep their shared definition. Use `setLayout` with an `id` and `gap` to adjust container spacing.
 
 Changes appear immediately. Use **Undo** to reverse a batch. Use **Save** in Studio to keep the result.
 
@@ -78,12 +51,10 @@ Browser tools can inspect the DOM, operate controls, and take screenshots.
 The port also exposes overlay webviews. Other programs on this machine can use it.
 To close browser access, clear **Allow browser tools** and restart Widgetsack.
 
-## Limits and recovery
+## Troubleshooting
 
-- Layout tools need an open Studio window. They do not edit the layout file behind the editor.
-- A changed monitor or editor target invalidates an old revision.
-- Disabled MCP cancels pending requests. Expired requests cannot claim an edit.
-- The HTTP server binds to `127.0.0.1`, checks a per-launch bearer token, and rejects browser Origin headers.
-- If a model does not accept images, use `studio_verify` and review the screenshot yourself.
-- The built-in assistant uses installed Pi, Codex, or Claude. Its model typeahead reads the installed
-  Pi catalog and locally cached model IDs. Custom model IDs remain valid. Nothing is installed automatically.
+- Keep Studio open while the agent uses layout tools.
+- Read the layout again after you change the monitor or editor target.
+- Review screenshots yourself if the model cannot read images.
+
+See [MCP implementation](dev/mcp.md) for transport and tool contracts.

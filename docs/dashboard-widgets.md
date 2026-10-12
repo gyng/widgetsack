@@ -1,73 +1,92 @@
 # Dashboard widgets
 
-Add the new widgets from the studio palette or preview them in the Widget designer.
+Open **Layout** in Studio. Select **Add** to insert a widget.
+Select the widget on the canvas to change its settings in the Inspector.
+See the [widget reference](widgets.md) for all settings.
 
 ## Status / Alerts
 
-Alerts appear when a configured numeric sensor reaches its threshold. Missing readings are ignored.
-The default rules cover high CPU, memory, and disk C usage. Rules use this format, separated by
-semicolons (newlines also work in JSON):
+Alerts appear when a numeric sensor reaches a configured threshold.
+Missing readings do not trigger alerts.
+Enter rules separated by semicolons:
 
 ```text
 cpu.total|above|90|CPU busy;disk.c.used.pct|above|90|Disk C nearly full
 ```
 
-`above` and `below` include equality. For a reachability alert, add a Ping widget for your NAS and use
-its `net.ping.<host>.up` sensor with `below|0|NAS offline`. Snooze hides an individual alert for the
-configured number of minutes. Snoozes last for the current window session.
+Both `above` and `below` include the threshold value.
+For an offline alert, add a Ping widget for the host.
+Use its `net.ping.<host>.up` sensor with `below|0|Host offline`.
 
-When Agenda has a configured ICS feed, timed events within the meeting reminder window appear too.
-Set **meeting reminder** to zero to disable them. All-day and past events do not trigger reminders.
-When nothing needs attention, the live widget renders no content; the designer shows “All clear”.
+Select **Snooze** to hide an alert for the configured duration.
+Snoozes end when the window session ends.
+
+A configured Agenda feed can also provide meeting reminders.
+Set **meeting reminder** to zero to disable them.
+All-day and past events do not trigger reminders.
+The overlay shows nothing when there are no alerts.
+The designer preview shows “All clear”.
 
 ## Service Health
 
-Set an HTTP or HTTPS endpoint in properties. The widget tries HEAD and falls back to GET when the
-server returns 405 or 501, without consuming the response body. It reports the HTTP status and
-response time, and shows certificate expiry when the TLS stack supplies a certificate.
-HTTP errors, connection failures, and invalid certificates show as down; slow responses and
-certificates nearing expiry show as warnings. Redirects show as warnings without being followed.
+Enter an HTTP or HTTPS endpoint in the widget settings.
+The widget shows its status and response time.
+It can also show certificate expiry when this information is available.
 
-Checks have a 10-second timeout, run at least 15 seconds apart, and pause while the window is hidden.
-The 10-second budget covers both requests if a fallback is needed. Plain HTTP has no certificate expiry reading.
+- Failed connections, HTTP errors, and invalid certificates show as down.
+- Slow responses and certificates near expiry show a warning.
+- Redirects show a warning. The widget does not follow them.
+- Plain HTTP has no certificate expiry reading.
 
 ## App Audio / Microphone
 
-Each audio session on the default output gets its own volume slider and mute button. Slider writes
-are serialized and rapid pending changes coalesce. A disappeared session reports an error rather
-than targeting a different app. The microphone button controls the **default communications input**;
-its “live” status means unmuted, not proof that an app is recording. Reads pause while hidden.
-Failed slider writes restore the confirmed value. An output-device error does not disable an
-available microphone, and audio sessions that disappear mid-read do not hide the other apps.
+Use a slider to adjust an application's output volume.
+Select its mute button to mute that application.
+The microphone button controls the default communications input device.
+“Live” means unmuted. It does not mean an application is recording.
+
+If a volume change fails, the slider returns to its last confirmed value.
+An application that closes is removed from the list.
 
 ## Task Checklist
 
-Add a task, tick it complete, or remove it. Tasks persist by widget ID and sync across the studio and
-overlay using browser storage. Different checklist widgets, including copies of a dashboard, have
-independent lists. Legacy shared content remains available until a copy saves its own list. Controls are
-disabled while arranging the widget. A storage failure is shown in the widget.
+Enter a task to add it to the list.
+Select its checkbox to mark it complete.
+Use the remove control to delete it.
+
+Each checklist keeps its own tasks across restarts.
+Studio and the overlay share the same list for that widget.
+Controls are disabled while you arrange the widget.
+The widget shows an error if it cannot save tasks.
 
 ## Sensor History
 
-Enter up to eight comma-separated numeric sensor IDs. All lines share one automatic or fixed scale.
-Compare matching units, such as CPU and GPU utilization; mixing bytes and percentages is misleading.
-The optional threshold band shades values above the configured limit. The legend shows minimum,
-average, and maximum for each visible window. The history length is measured in samples; at the
-system sensors’ 1 Hz cadence it approximately equals seconds, up to the hub’s 600-sample buffer.
+Enter up to eight numeric sensor IDs, separated by commas.
+All lines use the same scale.
+Compare sensors with matching units, such as CPU and GPU percentages.
 
-Enable **smooth updates** to blend chart changes over 300 ms. This option is also available on
-Sparkline, including histogram mode. It changes only the display; recorded values and history
-summaries stay unchanged. Reduced-motion settings disable the animation.
+- Set a fixed scale or use automatic scaling.
+- Set a threshold to shade values above it.
+- Use the legend to read the minimum, average, and maximum values.
+- Set history length in samples. One system-sensor sample usually represents one second.
 
-## Dashboard sacks
+Enable **Smooth charts** to animate chart changes.
+This setting changes the display only. It does not change recorded values.
+The app disables animation when reduced motion is enabled.
 
-Open **Sacks** and import **Built-in: Work**, **Built-in: Gaming**, **Built-in: Home**, or
-**Built-in: Minimal**. Each imports a styled reusable dashboard into **My widgets**, plus color tokens.
-Insert the dashboard into your layout and save. Imports use the normal undoable library merge and
-retain existing widget definitions. Undo the import to revert its library and token changes.
+## Dashboard presets
 
-Work combines clock, agenda, checklist, timer, and alerts. Gaming combines history, GPU, ping,
-app audio, and now playing. Home combines clock, weather, agenda, service health, and home tasks.
-Minimal combines clock, network rate, CPU history, and alerts. Configure Agenda and Weather in
-their existing plugin settings and enter your own Home Assistant health URL; no credentials or
-guessed local addresses are bundled.
+Open **Share** to import a built-in preset.
+The imported dashboard appears in **My widgets**.
+Insert it into the layout, then select **Save**.
+
+| Preset  | Contents                                          |
+| ------- | ------------------------------------------------- |
+| Work    | Clock, agenda, checklist, timer, and alerts       |
+| Gaming  | Sensor history, GPU, ping, and now playing        |
+| Home    | Clock, weather, agenda, service health, and tasks |
+| Minimal | Clock, network rate, CPU history, and alerts      |
+
+Configure Agenda and Weather in **Plugins**.
+Enter your own endpoint for Service Health.
+Use **Undo** to reverse an import.

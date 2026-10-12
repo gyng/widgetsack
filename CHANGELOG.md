@@ -296,7 +296,7 @@ Notable changes per release. Older releases are described by their auto-generate
   button.
 - CI checks that the version in `tauri.conf.json`, `Cargo.toml`, and the release tag agree and that
   the changelog has a section for it; the release build now attaches assets to a draft before the
-  release is published (see `docs/development.md`).
+  release is published (see `docs/dev/development.md`).
 
 ## 0.0.55
 

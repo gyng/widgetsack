@@ -1,6 +1,6 @@
 // Sample sandboxed source: current weather from open-meteo (no API key required).
 //
-// The contract (docs/third-party-plugins.md): assign `module.exports = { requests, transform }`.
+// The contract (docs/dev/plugin-packages.md): assign `module.exports = { requests, transform }`.
 // Both functions are PURE — this script runs in a QuickJS sandbox with no host access at all; the
 // app fetches the URLs `requests()` returns (https-only, against the manifest's `hosts`
 // allowlist) and hands the responses to `transform()`, which returns samples for the sensor ids

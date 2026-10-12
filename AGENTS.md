@@ -170,7 +170,7 @@ client/                     React frontend
       stores.ts             mediaStore + TS types mirroring Rust + handle* reducers
       createStore.ts        external-store adapter (useSyncExternalStore) — replaces svelte/store
 Cargo.toml                  Workspace root (members = ["widgetsack"])
-docs/                       Architecture & roadmap notes (widget-platform.md, ideas.md)
+docs/                       User guides and developer references (dev/architecture.md, dev/ideas.md)
 .github/workflows/          CI: test.yml (build+test+clippy+client), build.yml (release)
 ```
 

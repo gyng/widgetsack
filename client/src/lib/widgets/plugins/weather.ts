@@ -97,7 +97,7 @@ export const registerWeatherPlugin = (): void =>
 					sensors: () => ({ rise: 'weather.sun.rise', set: 'weather.sun.set' }),
 					label: 'Sun & Moon',
 					description:
-						'Today’s sunrise + sunset (from your weather location) and the current moon phase with illumination.',
+						'Show sunrise and sunset for the configured weather location. Show the current moon phase and illumination.',
 					defaultSize: { w: 210, h: 64 },
 					defaultConfig: { showSun: true, showMoon: true },
 					configFields: [
@@ -135,7 +135,7 @@ export const registerWeatherPlugin = (): void =>
 					sensors: () => ({ aqi: 'weather.air.aqi', pm25: 'weather.air.pm25', uv: 'weather.uv' }),
 					label: 'Air Quality',
 					description:
-						'European Air Quality Index with a colour-coded band, plus PM2.5 and the UV index — for your weather location.',
+						'Show the European Air Quality Index, PM2.5, and UV index for the configured weather location.',
 					defaultSize: { w: 190, h: 86 },
 					defaultConfig: { showPm: true, showUv: true },
 					configFields: [
