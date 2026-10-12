@@ -134,6 +134,7 @@ export const COMMANDS = {
 	systemFonts: 'system_fonts',
 	// sensors / telemetry demand-gating (sensors.rs)
 	setActiveSensors: 'set_active_sensors',
+	getSystemSensorCatalog: 'get_system_sensor_catalog',
 	// audio spectrum (audio.rs)
 	startSpectrum: 'start_spectrum',
 	stopSpectrum: 'stop_spectrum',

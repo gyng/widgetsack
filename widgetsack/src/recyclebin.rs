@@ -1,8 +1,31 @@
 //! Recycle Bin contents — item count + total size, for a "needs emptying?" glance. One
-//! `SHQueryRecycleBin` call summed across all drives per tick, demand-gated on `recyclebin.*` so
-//! nothing runs unless the widget is mounted. Emits `recyclebin.items` (count) + `recyclebin.bytes`.
+//! `SHQueryRecycleBin` call summed across all drives at most every ten seconds, demand-gated on `recyclebin.*` so
+//! nothing runs unless a widget or visible sensor row requests it. Emits `recyclebin.items` (count) + `recyclebin.bytes`.
 
 use crate::sensors::SensorSample;
+
+/// Poll immediately on first demand, at most every ten seconds while demanded, and reset on idle.
+/// Cached values stay in the frontend hub between samples.
+#[derive(Default)]
+pub struct PollCadence {
+    last: Option<std::time::Instant>,
+}
+impl PollCadence {
+    pub fn due(&mut self, wanted: bool, now: std::time::Instant) -> bool {
+        if !wanted {
+            self.last = None;
+            return false;
+        }
+        if self
+            .last
+            .is_some_and(|last| now.duration_since(last) < std::time::Duration::from_secs(10))
+        {
+            return false;
+        }
+        self.last = Some(now);
+        true
+    }
+}
 
 /// Build the `recyclebin.*` samples from a raw (items, bytes) reading. Negative sentinels (an
 /// uninitialised/empty bin can report -1) clamp to 0. Pure seam — unit-tested.
@@ -14,7 +37,7 @@ pub fn recyclebin_samples_from(items: i64, bytes: i64, ts: u64) -> Vec<SensorSam
 }
 
 /// Query the Recycle Bin across all drives (null root path). `None` on failure. The shell caches this,
-/// so the per-tick cost is small.
+/// and this source is sampled at a slower cadence.
 #[cfg(target_os = "windows")]
 fn query() -> Option<(i64, i64)> {
     use windows::Win32::UI::Shell::{SHQUERYRBINFO, SHQueryRecycleBinW};
@@ -46,6 +69,18 @@ pub fn recyclebin_samples(_ts: u64) -> Vec<SensorSample> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cadence_stops_without_demand_and_refreshes_on_return() {
+        let now = std::time::Instant::now();
+        let mut cadence = PollCadence::default();
+        assert!(!cadence.due(false, now));
+        assert!(cadence.due(true, now));
+        assert!(!cadence.due(true, now + std::time::Duration::from_secs(9)));
+        assert!(cadence.due(true, now + std::time::Duration::from_secs(10)));
+        assert!(!cadence.due(false, now + std::time::Duration::from_secs(11)));
+        assert!(cadence.due(true, now + std::time::Duration::from_secs(12)));
+    }
 
     #[test]
     fn samples_carry_items_and_bytes_clamped() {

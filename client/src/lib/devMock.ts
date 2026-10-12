@@ -127,6 +127,8 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 				return { x: 0, y: 0, w: MONITOR.size.width, h: MONITOR.size.height - 48 };
 
 			// --- media (now-playing): no sessions / no caps ---
+			case COMMANDS.getSystemSensorCatalog:
+				return ['cpu.core.0.freq', 'disk.c.total', 'disk.c.free', 'disk.c.read', 'disk.c.write'];
 			case COMMANDS.getInitialSessions:
 				return { sessions: {} };
 			case COMMANDS.mediaCapabilities:

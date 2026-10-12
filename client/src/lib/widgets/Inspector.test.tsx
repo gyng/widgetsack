@@ -295,12 +295,14 @@ describe('Inspector group + def params block', () => {
 		expect(lastOp((o) => o.op === 'remove')).toMatchObject({ op: 'remove', id: 'g1' });
 	});
 
-	it('shows the "inline group (not a custom widget)" hint when the group has no def, and flow sizing controls', () => {
+	it('shows the "This widget is a separate copy. Changes affect only this instance." hint when the group has no def, and flow sizing controls', () => {
 		const inline: Group = { ...groupUnit, def: undefined, params: undefined };
 		const { getByText, getByLabelText } = render(
 			<Inspector groupUnit={inline} placement="flow" onOp={vi.fn()} />
 		);
-		expect(getByText('inline group (not a custom widget)')).toBeTruthy();
+		expect(
+			getByText('This widget is a separate copy. Changes affect only this instance.')
+		).toBeTruthy();
 		// flow placement shows the group's leaf sizing control (aria-label "size in parent").
 		expect(getByLabelText('size in parent')).toBeTruthy();
 	});

@@ -363,7 +363,7 @@ export const TEMPLATES: Template[] = [
 	{
 		id: 'system',
 		name: 'System monitor',
-		description: 'CPU/RAM/SWAP/GPU/VRAM + per-core sparkline grid',
+		description: 'CPU, memory, and GPU readings with a chart for each CPU core.',
 		size: { w: 170, h: 140 },
 		params: [
 			{
@@ -382,7 +382,7 @@ export const TEMPLATES: Template[] = [
 	{
 		id: 'network',
 		name: 'Network',
-		description: 'Up/down throughput histograms + rate text',
+		description: 'Upload and download charts with current transfer rates.',
 		size: { w: 170, h: NETWORK_H },
 		params: [
 			{

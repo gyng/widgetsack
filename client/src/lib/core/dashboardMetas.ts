@@ -201,10 +201,10 @@ export const dashboardMetas: WidgetMeta[] = [
 			},
 			{
 				key: 'smooth',
-				label: 'smooth updates',
+				label: 'Smooth charts',
 				kind: 'toggle',
 				group: 'Appearance',
-				help: 'Blend chart updates over 300 ms. Respects reduced motion. Recorded values and summaries stay unchanged.'
+				help: 'Blend chart changes between readings. Charts do not animate when reduced motion is on. Recorded values and summaries stay unchanged.'
 			},
 			{
 				key: 'min',

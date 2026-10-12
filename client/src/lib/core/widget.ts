@@ -356,10 +356,10 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		configFields: [
 			{
 				key: 'smooth',
-				label: 'smooth updates',
+				label: 'Smooth charts',
 				kind: 'toggle',
 				group: LOOK,
-				help: 'Blend chart updates over 300 ms. Respects reduced motion. Recorded values stay unchanged.'
+				help: 'Blend chart changes between readings. Charts do not animate when reduced motion is on. Recorded values stay unchanged.'
 			},
 			num('seconds', 'history (s)', {
 				min: 5,
@@ -618,7 +618,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		configFields: [
 			{
 				key: 'smooth',
-				label: 'smooth updates',
+				label: 'Smooth charts',
 				kind: 'toggle',
 				group: LOOK,
 				help: 'animate between telemetry ticks; respects reduced motion'

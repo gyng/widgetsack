@@ -730,11 +730,11 @@ impl ActiveSensors {
     }
 
     /// Does any window want a sensor matching `pred` (or hold the `*` wildcard)? Before the first
-    /// demand report the answer is `true` (the startup fallback), exactly as the sensor loop's own
+    /// demand report the answer is `false` (wait for a consumer), exactly as the sensor loop's own
     /// gates behave — so peer sources (ha.rs) can demand-gate with the same semantics. Locks briefly.
     pub(crate) fn wanted(&self, pred: impl Fn(&str) -> bool) -> bool {
         let map = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        any_wanted_or_unreported(&map, self.has_reported(), pred)
+        wanted_after_report(&map, self.has_reported(), pred)
     }
 }
 
@@ -746,6 +746,43 @@ pub(crate) fn remove_active_window(state: &ActiveSensors, label: &str) {
         .lock()
         .unwrap_or_else(|e| e.into_inner())
         .remove(label);
+}
+
+/// Discover dynamic identifiers without refreshing disk capacity, I/O, clocks, or GPU values.
+#[tauri::command]
+pub fn get_system_sensor_catalog() -> Vec<String> {
+    let cores = std::thread::available_parallelism()
+        .map(usize::from)
+        .unwrap_or(1);
+    #[cfg(windows)]
+    let drives = {
+        // SAFETY: GetLogicalDrives takes no pointers and returns only a drive-letter bitmask.
+        let mask = unsafe { windows::Win32::Storage::FileSystem::GetLogicalDrives() };
+        (0..26)
+            .filter(|bit| mask & (1 << bit) != 0)
+            .map(|bit| (b'a' + bit) as char)
+            .collect::<Vec<_>>()
+    };
+    #[cfg(not(windows))]
+    let drives: Vec<char> = Vec::new();
+    hardware_sensor_catalog(cores, &drives)
+}
+fn hardware_sensor_catalog(cores: usize, drives: &[char]) -> Vec<String> {
+    let mut ids = Vec::new();
+    for index in 0..cores {
+        ids.push(core_sensor_id(index));
+        ids.push(format!("cpu.core.{index}.freq"));
+    }
+    for letter in drives {
+        for metric in [
+            "total", "free", "used", "used.pct", "busy.pct", "read", "write",
+        ] {
+            ids.push(format!("disk.{letter}.{metric}"));
+        }
+    }
+    ids.sort();
+    ids.dedup();
+    ids
 }
 
 /// Record the set of sensor ids window `window.label()` is currently consuming.
@@ -785,7 +822,7 @@ fn newly_added(previous: Option<&HashSet<String>>, current: &HashSet<String>) ->
 }
 
 /// True if any window's active set wants a sensor matching `pred`. The caller separately decides
-/// whether the pre-first-report startup fallback applies; once a report has arrived, an empty union
+/// whether a window has reported; once a report has arrived, an empty union
 /// correctly means no demand (including the zero-window state after every reporter was destroyed).
 pub(crate) fn any_wanted(
     active: &HashMap<String, HashSet<String>>,
@@ -796,19 +833,19 @@ pub(crate) fn any_wanted(
         .any(|ids| ids.contains("*") || ids.iter().any(|id| pred(id)))
 }
 
-fn any_wanted_or_unreported(
+fn wanted_after_report(
     active: &HashMap<String, HashSet<String>>,
     reported: bool,
     pred: impl Fn(&str) -> bool,
 ) -> bool {
-    !reported || any_wanted(active, pred)
+    reported && any_wanted(active, pred)
 }
 
 /// Should the GPU be sampled this tick? Any active `gpu.*` id (or the `"*"` wildcard) turns the
 /// whole NVML block on; nothing else pays for it. A prefix test (not a fixed id list) so new
 /// `gpu.*` sensors are covered automatically.
 fn gpu_wanted(active: &HashMap<String, HashSet<String>>, reported: bool) -> bool {
-    any_wanted_or_unreported(active, reported, |id| id.starts_with("gpu."))
+    wanted_after_report(active, reported, |id| id.starts_with("gpu."))
 }
 
 /// Per-metric demand for the "top process" sensors (`proc.<metric>.top.*`). The (gated, expensive)
@@ -870,8 +907,8 @@ fn is_wifi_id(id: &str) -> bool {
 ///
 /// Cheap, always-on sensors (CPU usage + per-core, memory, swap, network, host counts/uptime) emit
 /// every tick. Expensive ones are demand-gated: the NVML block, per-disk enumeration, the process
-/// table refresh and the CPU-frequency refresh only run when a matching sensor is mounted (or the
-/// studio asked for `"*"`). CPU usage needs two refreshes spaced apart to be non-zero, so init
+/// table refresh and the CPU-frequency refresh only run when a matching sensor is requested (or
+/// an explicit consumer asked for `"*"`). CPU usage needs two refreshes spaced apart to be non-zero, so init
 /// primes it. NVML is optional: if init fails (no NVIDIA driver) GPU sensors are skipped without
 /// erroring. Runs until the app exits.
 pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
@@ -921,6 +958,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         gpu_name,
         latest: HashMap::new(),
         snap_tick: 0,
+        recyclebin_cadence: crate::recyclebin::PollCadence::default(),
     });
     // The sample in progress (the sampler's state travels with it and comes back on completion).
     let mut in_flight: Option<tokio::task::JoinHandle<Sampler<R>>> = None;
@@ -993,6 +1031,7 @@ struct Sampler<R: Runtime> {
     /// server's read_sensors tool (live readings for an external agent).
     latest: HashMap<String, SensorValue>,
     snap_tick: u32,
+    recyclebin_cadence: crate::recyclebin::PollCadence,
 }
 
 impl<R: Runtime> Sampler<R> {
@@ -1011,6 +1050,7 @@ impl<R: Runtime> Sampler<R> {
             gpu_name,
             latest,
             snap_tick,
+            recyclebin_cadence,
         } = self;
         let logical_cores = *logical_cores;
         let physical_cores = *physical_cores;
@@ -1099,12 +1139,12 @@ impl<R: Runtime> Sampler<R> {
             let active: tauri::State<ActiveSensors> = app.state();
             let g = active.0.lock().unwrap_or_else(|e| e.into_inner());
             let reported = active.has_reported();
-            let pw = |p: &str| any_wanted_or_unreported(&g, reported, |id| id.starts_with(p));
+            let pw = |p: &str| wanted_after_report(&g, reported, |id| id.starts_with(p));
             (
                 gpu_wanted(&g, reported),
-                any_wanted_or_unreported(&g, reported, |id| id.starts_with("disk.")),
-                any_wanted_or_unreported(&g, reported, is_disk_io_id),
-                any_wanted_or_unreported(&g, reported, |id| id == "host.procs"),
+                wanted_after_report(&g, reported, |id| id.starts_with("disk.")),
+                wanted_after_report(&g, reported, is_disk_io_id),
+                wanted_after_report(&g, reported, |id| id == "host.procs"),
                 ProcWants {
                     cpu: pw("proc.cpu.top"),
                     mem: pw("proc.mem.top"),
@@ -1112,13 +1152,13 @@ impl<R: Runtime> Sampler<R> {
                     gpu: pw("proc.gpu.top"),
                 },
                 proc_watch_names(&g),
-                any_wanted_or_unreported(&g, reported, |id| id == "cpu.freq"),
-                any_wanted_or_unreported(&g, reported, is_perf_id),
-                any_wanted_or_unreported(&g, reported, is_cpufreq_id),
-                any_wanted_or_unreported(&g, reported, is_netlink_id),
-                any_wanted_or_unreported(&g, reported, |id| id.starts_with("net.conn")),
-                any_wanted_or_unreported(&g, reported, is_wifi_id),
-                any_wanted_or_unreported(&g, reported, |id| id.starts_with("recyclebin")),
+                wanted_after_report(&g, reported, |id| id == "cpu.freq"),
+                wanted_after_report(&g, reported, is_perf_id),
+                wanted_after_report(&g, reported, is_cpufreq_id),
+                wanted_after_report(&g, reported, is_netlink_id),
+                wanted_after_report(&g, reported, |id| id.starts_with("net.conn")),
+                wanted_after_report(&g, reported, is_wifi_id),
+                wanted_after_report(&g, reported, |id| id.starts_with("recyclebin")),
             )
         };
         let want_proctop = proc_w.any();
@@ -1377,7 +1417,7 @@ impl<R: Runtime> Sampler<R> {
             let _t = timings.start("sensors.wifi");
             batch.extend(crate::wifi::wifi_samples(ts));
         }
-        if want_recyclebin {
+        if recyclebin_cadence.due(want_recyclebin, std::time::Instant::now()) {
             let _t = timings.start("sensors.recyclebin");
             batch.extend(crate::recyclebin::recyclebin_samples(ts));
         }
@@ -1405,6 +1445,16 @@ impl<R: Runtime> Sampler<R> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hardware_catalog_discovers_ids_without_samples() {
+        let ids = hardware_sensor_catalog(2, &['c', 'z', 'c']);
+        assert!(ids.contains(&"cpu.core.1.freq".to_string()));
+        assert!(ids.contains(&"disk.z.read".to_string()));
+        assert!(!ids.contains(&"cpu.core.2".to_string()));
+        assert_eq!(ids.len(), 18);
+        assert!(hardware_sensor_catalog(0, &[]).is_empty());
+    }
 
     #[test]
     fn overrun_guard_skips_while_busy_logs_sparsely_and_reports_recovery() {
@@ -1648,9 +1698,9 @@ mod tests {
     }
 
     #[test]
-    fn gpu_wanted_defaults_on_only_before_the_first_demand_report() {
-        // Before any webview reports, preserve the startup safety fallback.
-        assert!(gpu_wanted(&HashMap::new(), false));
+    fn gpu_waits_for_the_first_demand_report() {
+        // Before any webview reports, expensive sources wait for demand.
+        assert!(!gpu_wanted(&HashMap::new(), false));
         // Once a live window has explicitly reported an empty set, expensive polling is off.
         assert!(!gpu_wanted(&active(&[("main", &[])]), true));
         // The remembered report state also keeps a later zero-window map off.
@@ -1703,10 +1753,10 @@ mod tests {
     }
 
     #[test]
-    fn wanted_applies_the_unreported_fallback_then_the_demand_map() {
+    fn wanted_waits_for_a_report_then_uses_the_demand_map() {
         let state = ActiveSensors::default();
-        // Nothing reported yet → everything is wanted (startup fallback).
-        assert!(state.wanted(|id| id == "ha.light.kitchen"));
+        // Nothing reported yet → no expensive work is requested.
+        assert!(!state.wanted(|id| id == "ha.light.kitchen"));
         *state.0.lock().unwrap() = active(&[("overlay-1", &["ha.light.kitchen.state"])]);
         state.1.store(true, Ordering::Release);
         assert!(state.wanted(|id| id.starts_with("ha.light.kitchen")));

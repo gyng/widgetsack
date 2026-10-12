@@ -1401,8 +1401,8 @@ mod tests {
     fn entity_wanted_follows_window_demand_and_the_wildcard() {
         use std::collections::{HashMap, HashSet};
         let active = ActiveSensors::default();
-        // Startup fallback: nothing reported yet → forward everything.
-        assert!(entity_wanted(&active, "light.kitchen"));
+        // Wait for demand before forwarding entity values; metadata discovery is separate.
+        assert!(!entity_wanted(&active, "light.kitchen"));
         let set = |ids: &[&str]| ids.iter().map(|s| s.to_string()).collect::<HashSet<_>>();
         *active.0.lock().unwrap() =
             HashMap::from([("overlay-1".to_string(), set(&["ha.light.kitchen.state"]))]);

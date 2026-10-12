@@ -370,6 +370,7 @@ async fn main() -> Result<(), ()> {
             clickthrough::current_work_area,
             clickthrough::set_overlay_wallpaper,
             sensors::set_active_sensors,
+            sensors::get_system_sensor_catalog,
             audio::start_spectrum,
             audio::stop_spectrum,
             audio::list_audio_outputs,

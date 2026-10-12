@@ -47,7 +47,10 @@ describe('isAlwaysOnSensor (mirrors sensors.rs gating)', () => {
 			'disk.c.read',
 			'net.linkspeed.rx',
 			'net.adapter',
-			'proc.cpu.top.pct'
+			'proc.cpu.top.pct',
+			'net.conn.established',
+			'net.wifi.ssid',
+			'recyclebin.items'
 		]) {
 			expect(isAlwaysOnSensor(id)).toBe(false);
 		}
@@ -214,4 +217,39 @@ describe('sensorActivity', () => {
 		const a = sensorActivity('cpu.total', refs);
 		expect(a.reason).toBe('used by gauge, gauge (formula)');
 	});
+});
+
+it('marks multi-sensor widgets as consumers of their declared sensors', () => {
+	const refs = collectSensorRefs([
+		{
+			key: 'default',
+			layout: {
+				root: container('root', 'col', [
+					leaf(inst('bin', 'recyclebin', { sensor: 'recyclebin.items' }))
+				]),
+				floating: []
+			}
+		}
+	]);
+	expect(refs.get('recyclebin.items')).toHaveLength(1);
+	expect(sensorActivity('recyclebin.bytes', refs.get('recyclebin.bytes'))).toMatchObject({
+		active: true,
+		referenced: true,
+		reason: 'used by recyclebin'
+	});
+});
+
+it('retains explicit sensor references when widget metadata is unavailable', () => {
+	const refs = collectSensorRefs([
+		{
+			key: 'default',
+			layout: {
+				root: container('root', 'col', [
+					leaf(inst('external', 'unregistered', { sensor: 'custom.temp' }))
+				]),
+				floating: []
+			}
+		}
+	]);
+	expect(refs.get('custom.temp')?.[0].widgetId).toBe('external');
 });

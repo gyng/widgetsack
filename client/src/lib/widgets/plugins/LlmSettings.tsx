@@ -260,10 +260,9 @@ export default function LlmSettings() {
 
 			<div className="rp-hd">Provider</div>
 			<div className="has-help">
-				Pick the active AI provider — used across the app (the layout assistant, a briefing widget,
-				any chat). Each provider keeps its own key + settings, so you can stay signed in to several
-				and switch freely. Keys stay on this machine (<code>plugins/llm.json</code>) and never cross
-				into the webview.
+				Choose a provider for AI widgets and layout proposals. Each provider keeps its own settings.
+				Widgetsack stores API keys locally. The editor does not receive them. The Studio assistant
+				uses its installed agent settings.
 			</div>
 
 			<label className="has-field">
@@ -575,9 +574,9 @@ function LayoutAssistant({ sensorIds }: { sensorIds: () => string[] }) {
 		<>
 			<div className="rp-hd">Layout assistant</div>
 			<div className="has-help">
-				Describe a change in plain language — e.g.{' '}
-				<em>“add a CPU gauge and a GPU gauge in a row”</em> — and the model edits your canvas. One
-				undo step; review and Ctrl+Z if you don’t like it.
+				Describe the change you want. For example:{' '}
+				<em>“Add a CPU gauge and a GPU gauge in a row.”</em> Review the result. Press Ctrl+Z to undo
+				the batch.
 			</div>
 			<label className="has-field">
 				<textarea

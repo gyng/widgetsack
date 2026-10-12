@@ -27,7 +27,7 @@ export default function SavedLayoutsPanel({
 		<div className="rail-panel presets-panel">
 			<div className="rp-hd">Presets</div>
 			<div className="rp-stub">
-				Save this monitor’s arrangement as a named preset, then load it back later.
+				Save this monitor’s layout as a preset. Load it when you need it.
 			</div>
 			<form
 				className="preset-save"
@@ -87,7 +87,7 @@ export default function SavedLayoutsPanel({
 					))}
 				</div>
 			) : (
-				<div className="rp-stub">No presets yet — save one above.</div>
+				<div className="rp-stub">No presets yet. Enter a name above and select Save.</div>
 			)}
 		</div>
 	);

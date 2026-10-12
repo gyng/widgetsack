@@ -150,7 +150,8 @@ export default function StudioAssistantSidebar(props: Props) {
 				</button>
 			</div>
 			<p className="assistant-hint">
-				Ask to add, arrange, or style widgets. Changes are live and undoable. Save keeps them.
+				Ask the agent to add, arrange, or style widgets. Changes appear immediately. Select Save to
+				keep them. Use Undo to reverse them.
 			</p>
 			{!status && !statusError && <p role="status">Checking agents…</p>}
 			{statusError && <p role="alert">{statusError}</p>}
@@ -162,8 +163,8 @@ export default function StudioAssistantSidebar(props: Props) {
 			) : (
 				status && (
 					<p className="assistant-hint">
-						Uses your agent&apos;s existing login and settings. Leave Model blank to use its
-						default.
+						The assistant uses your agent&apos;s login and settings. Leave Model blank to use the
+						agent default.
 					</p>
 				)
 			)}

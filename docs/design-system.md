@@ -76,6 +76,22 @@ Widget typography has its own semantic `--np-*` defaults. These do not override 
 CSS, theme fonts, or large meter readings. Migrate content widgets to shared defaults gradually;
 do not globally replace every meter's font size with the Studio body size.
 
+## Writing
+
+Use [ASD-STE100](https://www.asd-ste100.org/STE_faq.html) as a writing reference for instructions and longer help text.
+This is a product style guide, not a claim of full compliance with the controlled dictionary.
+
+- Keep each instruction to one action. Put steps in a numbered list.
+- Use short, complete sentences. Aim for at most 20 words in an instruction and 25 words in a description.
+- Address the user directly. Prefer active verbs such as select, enter, open, save, and start.
+- Use one term for one concept. Match the names of the visible controls.
+- Explain the result and the next action. Put related choices in bullets.
+- Replace shorthand, slash lists, and dense parenthetical text with complete sentences.
+- Keep personality in headings and sample prompts. Keep operational instructions precise.
+- Preserve API identifiers, code examples, product names, and legal text where exact words matter.
+
+The sentence-length guidance comes from the [ASD-STE100 writing rules](https://www.asd-ste100.org/assets/files/ASD-STE100_ISSUE9.pdf).
+
 ## Implementation rules
 
 The global token definitions live in `client/src/styles.css`. Widget theme defaults live in

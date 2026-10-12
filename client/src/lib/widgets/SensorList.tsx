@@ -5,6 +5,7 @@
 // "from <plugin>" badge — the Sensors section groups by source; the Plugins section uses a plain list.
 import { memo, useState } from 'react';
 import { useSensor } from './useSensor';
+import { useSensorRowVisibility } from './useSensorRowVisibility';
 import { displaySensorValue, filterSensorIds, groupSensorIds } from '../core/sensorList';
 import type { SensorActivity } from '../core/sensorActivity';
 import type { TelemetryHub } from '../core/telemetry';
@@ -23,13 +24,14 @@ const SensorRow = memo(function SensorRow({
 	badge?: string | null;
 	activity?: SensorActivity | null;
 }) {
-	const state = useSensor(hub, id);
+	const { ref, visible } = useSensorRowVisibility();
+	const state = useSensor(hub, id, visible);
 	const value = displaySensorValue(id, state.value);
 	return (
-		<div className="rp-row" title={id}>
+		<div ref={ref} className="rp-row" title={id}>
 			{activity ? (
 				// After-close fate, told apart by SHAPE (not colour alone — WCAG 1.4.1): ★ = a widget keeps
-				// it alive, ● = a cheap always-on sensor, ○ = studio-only (stops on close).
+				// it alive, ● = a cheap always-on sensor, ○ = on demand (no overlay consumer).
 				<span
 					className={`sensor-dot ${activity.referenced ? 'on' : activity.active ? 'amb' : 'off'}`}
 					title={activity.reason}
@@ -38,7 +40,7 @@ const SensorRow = memo(function SensorRow({
 							? 'used by a widget — stays active after the studio closes'
 							: activity.active
 								? 'always-on — stays active after the studio closes'
-								: 'studio-only — stops when the studio closes'
+								: 'on demand — sampled when a widget or visible row uses it'
 					}
 				>
 					{activity.referenced ? '★' : activity.active ? '●' : '○'}
@@ -134,7 +136,7 @@ export default function SensorList({
 				<span className="sensor-dot amb">●</span> {activeN - refN} always-on
 			</span>
 			<span>
-				<span className="sensor-dot off">○</span> {ids.length - activeN} studio-only
+				<span className="sensor-dot off">○</span> {ids.length - activeN} on demand
 			</span>
 			<span className="rp-count">
 				{activeN}/{ids.length} stay active after close

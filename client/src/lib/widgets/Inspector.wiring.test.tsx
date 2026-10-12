@@ -1388,3 +1388,53 @@ describe('Inspector remaining branch wiring', () => {
 		expect(lastOp(onOp, 'clearWidgetTokens')).toEqual({ op: 'clearWidgetTokens', id: 'g1' });
 	});
 });
+
+it('edits existing grouped charts through the Inspector and clears the linked definition in its patch', () => {
+	const def: WidgetDef = {
+		id: 'network',
+		name: 'Network',
+		size: { w: 170, h: 130 },
+		child: leaf({
+			id: 'line',
+			type: 'sparkline',
+			rect: { x: 0, y: 0, w: 100, h: 30 },
+			config: { smooth: false }
+		})
+	};
+	const unit = group('network', def.size, def.child, { def: def.id });
+	const onOp = vi.fn();
+	const view = render(<Inspector groupUnit={unit} def={def} defs={[def]} onOp={onOp} />);
+	fireEvent.click(view.getByRole('checkbox', { name: 'Smooth charts' }));
+	const action = onOp.mock.calls.at(-1)![0];
+	expect(action).toMatchObject({
+		op: 'patchGroup',
+		id: unit.id,
+		patch: { child: { unit: { config: { smooth: true } } } }
+	});
+	expect(action.patch).toHaveProperty('def', undefined);
+	expect(action.patch).toHaveProperty('params', undefined);
+	view.rerender(
+		<Inspector
+			groupUnit={unit}
+			def={{
+				...def,
+				params: [
+					{
+						key: 'smooth',
+						label: 'Smooth charts',
+						default: false,
+						target: 'unit.config.smooth',
+						choices: [
+							{ value: 'false', label: 'Off' },
+							{ value: 'true', label: 'On' }
+						]
+					}
+				]
+			}}
+			defs={[def]}
+			onOp={onOp}
+		/>
+	);
+	expect(view.queryByRole('checkbox', { name: 'Smooth charts' })).toBeNull();
+	expect(view.getByRole('combobox', { name: 'param Smooth charts' })).toBeTruthy();
+});

@@ -269,7 +269,7 @@ export default function StudioSettingsPanel({
 						<>
 							<div className="pl-title">Monitor</div>
 							<div className="pl-desc">
-								The monitor this layout drives — each monitor keeps its own layout.
+								This layout uses the selected monitor. Each monitor has its own layout.
 							</div>
 							<div className="rp-hd">
 								{monName || '—'} · {monSize.w}×{monSize.h}
@@ -282,7 +282,7 @@ export default function StudioSettingsPanel({
 							</div>
 							{multiMonitor && (
 								<div className="rp-stub">
-									Move a widget to another monitor by right-clicking it → “Move to”.
+									Move a widget to another monitor. Right-click it and select “Move to”.
 								</div>
 							)}
 							<div className="rp-hd">Theme</div>
@@ -308,8 +308,8 @@ export default function StudioSettingsPanel({
 							</div>
 							<div className="pl-desc">
 								{theme.lock
-									? 'One theme styles every monitor. Uncheck to give each monitor its own theme.'
-									: 'Each monitor keeps its own theme — the picker above sets this monitor’s. Re-check to use one theme everywhere. Build/edit themes in the Themes section.'}
+									? 'One theme styles every monitor. Clear this option to set a separate theme for each monitor.'
+									: 'Each monitor keeps its own theme. Use the picker above to select this monitor’s theme. Select this option to apply one theme to all monitors. Edit themes in Themes.'}
 							</div>
 							<div className="rp-hd">View</div>
 							<button type="button" onClick={fit}>
@@ -353,7 +353,7 @@ export default function StudioSettingsPanel({
 									Windows feature is experimental.
 								</li>
 							</ul>
-							<p className="pl-desc">Layer changes apply to the desktop widgets immediately.</p>
+							<p className="pl-desc">Changes to the window layer apply immediately.</p>
 							<div className="pl-desc set-status">
 								Current layer: <strong>{overlayLayerLabel(overlayPrefs.overlayLayer)}</strong>
 								{layerStatus && (
@@ -386,8 +386,8 @@ export default function StudioSettingsPanel({
 								<li>If an error page appears, you can select Reload.</li>
 							</ul>
 							<p className="pl-desc">
-								To recover a window you cannot click, press <code>Ctrl+Alt+Shift+E</code>. This
-								shortcut brings all widget windows forward and makes them interactive.
+								To recover a window you cannot click, press <code>Ctrl+Alt+Shift+E</code>. The
+								shortcut brings all widget windows forward so you can click them.
 							</p>
 						</>
 					)}
@@ -397,8 +397,8 @@ export default function StudioSettingsPanel({
 							<div className="pl-desc">What happens when you sign in to Windows.</div>
 							<LaunchAtLogin />
 							<div className="pl-desc">
-								The overlay starts passive (click-through). Left-click the tray icon or use the
-								Start-menu shortcut to open this studio.
+								The overlay starts with clicks passing through to the desktop. Open Studio from the
+								tray icon or Start menu.
 							</div>
 							<div className="rp-hd">Global shortcuts</div>
 							<div className="set-row">
@@ -406,8 +406,8 @@ export default function StudioSettingsPanel({
 									<code>Ctrl+Alt+E</code>
 								</span>
 								<span>
-									Toggle desktop edit mode — arrange widgets right on the desktop (
-									<code>Ctrl+E</code> does the same inside a widgetsack window).
+									Turn desktop edit mode on or off. Use <code>Ctrl+E</code> inside a Widgetsack
+									window.
 								</span>
 							</div>
 							<div className="set-row">
@@ -415,8 +415,8 @@ export default function StudioSettingsPanel({
 									<code>Ctrl+Alt+Shift+E</code>
 								</span>
 								<span>
-									Rescue — makes every widgetsack window interactive and brings it forward, even if
-									its webview crashed.
+									Bring all widget windows forward so you can click them. Use this shortcut if a
+									window stops responding.
 								</span>
 							</div>
 						</>
@@ -425,8 +425,8 @@ export default function StudioSettingsPanel({
 						<>
 							<div className="pl-title">Shortcuts</div>
 							<div className="pl-desc">
-								Rebind the keyboard shortcuts that drive the studio and overlays. Built-in global
-								shortcuts are listed for reference.
+								Change the keyboard shortcuts for Studio and the overlays. The list also shows
+								built-in global shortcuts.
 							</div>
 							<ControlsPanel
 								overrides={controls.overrides}
@@ -441,8 +441,8 @@ export default function StudioSettingsPanel({
 						<>
 							<div className="pl-title">Diagnostics</div>
 							<div className="pl-desc">
-								Inspect the studio and overlays — JS heap, retained media, per-widget DOM weight,
-								the logs pane, and devtools.
+								Check memory use, retained media, widget element counts, and logs for Studio and the
+								overlays. Use developer tools to inspect a window.
 							</div>
 							<label className="rp-row set-check">
 								<input
@@ -461,7 +461,7 @@ export default function StudioSettingsPanel({
 								<button
 									type="button"
 									onClick={() => void rescueWindows()}
-									title="Make every window interactive and bring it forward — recovers a click-through or crashed overlay you can't click (same as the Ctrl+Alt+Shift+E shortcut)."
+									title="Bring all widget windows forward so you can click them. This is the same action as Ctrl+Alt+Shift+E."
 								>
 									<Icon name="rescue" /> Rescue all windows
 								</button>
@@ -482,8 +482,8 @@ export default function StudioSettingsPanel({
 								<div className="pl-title">widgetsack</div>
 							</div>
 							<div className="pl-desc">
-								A themeable desktop widget overlay for Windows — system meters, clocks, the
-								now-playing track, and Home Assistant controls, arranged here in the studio.
+								Desktop widgets for Windows. Show system meters, clocks, music, and Home Assistant
+								controls. Arrange them in Studio.
 							</div>
 							<div className="set-row">
 								<span className="set-label">version</span>
@@ -514,8 +514,8 @@ export default function StudioSettingsPanel({
 						<>
 							<div className="pl-title set-danger-title">Danger zone</div>
 							<div className="pl-desc">
-								Destructive actions for this monitor’s layout. Undoable with Ctrl+Z until you open
-								the widget designer or reload the layout.
+								Clear this monitor’s layout. Press Ctrl+Z to undo it before you open the widget
+								designer or reload the layout.
 							</div>
 							<button type="button" className="rp-danger" onClick={clearMonitor}>
 								✕ Clear this monitor

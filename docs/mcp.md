@@ -5,10 +5,14 @@ The MCP server and stdio bridge run in the installed executable. They do not nee
 
 ## Connect
 
-1. Open Studio, then **Settings → MCP**.
-2. Turn on **Enable MCP**.
-3. Select **Copy MCP configuration**. Add the configuration to your MCP client's server settings.
-4. Keep Widgetsack running and Studio open. You can close the assistant sidebar.
+1. Open Studio.
+2. Open **Settings → MCP**.
+3. Turn on **Enable MCP**.
+4. Select **Copy MCP configuration**.
+5. Add the configuration to your agent's MCP server settings.
+6. Keep Widgetsack running and Studio open.
+
+You can close the assistant sidebar.
 
 The copied configuration uses a native stdio server:
 
@@ -40,28 +44,39 @@ The transport follows the [MCP Streamable HTTP specification](https://modelconte
 | `studio_verify` | Measure the rendered layout. Find missing nodes, zero-size boxes, overflow, hidden content, unknown widget types, and render errors. |
 | `studio_screenshot` | Return a PNG of the current Studio webview for a vision-capable agent. Restore Studio if minimized. |
 
-Ask the agent to **read → apply → verify → review a screenshot**. Use the returned widget IDs for
-follow-up edits. A revision can be used once. If the editor changes, read it again before applying edits.
-Read-only template previews cannot be edited.
-Use `setConfig`, `setSensor`, or `setStyle` with the rendered namespaced ID to edit a widget
-inside a group. A library instance becomes a standalone copy when its contents change; its
-other instances stay unchanged. Use `setLayout` with an `id` and `gap` to adjust container spacing.
+Use this workflow:
 
-Changes appear live. Use **Undo** to reverse a batch. Use **Save** in Studio to keep the result.
-Verification reports geometry and render health. It cannot establish that a design looks good.
-Warnings can include intentional clipped or scrollable content; use the screenshot to check them.
-The screenshot contains only the Studio webview, rather than your other desktop windows.
+1. Read the layout with `studio_read`.
+2. Apply a batch with `studio_apply`.
+3. Check the result with `studio_verify`.
+4. Take a screenshot with `studio_screenshot`.
+5. Review the screenshot before you accept the design.
+
+Use the returned widget IDs for later edits. Use each revision once.
+Read the layout again if the editor changes. Template previews are read-only.
+
+Use `setConfig`, `setSensor`, or `setStyle` with the rendered namespaced ID to edit a widget
+inside a group. The edited instance becomes a separate copy. Other instances keep their shared definition. Use `setLayout` with an `id` and `gap` to adjust container spacing.
+
+Changes appear immediately. Use **Undo** to reverse a batch. Use **Save** in Studio to keep the result.
+
+Verification checks widget sizes, clipping, and render errors. Review a screenshot to check appearance.
+Scrollable content can produce a clipping warning. Check each warning before you change the layout.
+The screenshot shows only Studio. It does not include other desktop windows.
 
 ## Optional browser access
 
-Turn on **Allow browser tools** in the MCP page, then restart Widgetsack. The page shows the
-localhost WebView2 debugging endpoint. Connect a browser tool or Playwright through CDP to this endpoint.
-Use its `/json/list` endpoint to find the Studio target; overlays use the same app-owned WebView2 process.
-This option allows DOM inspection, interaction, and browser screenshots. Other local processes can use
-this debugging port too. Turn it off and restart to close that access.
+Browser access is off by default. Layout edits, verification, and Studio screenshots work without it.
 
-Browser access is off by default. MCP layout edits, structured verification, and native screenshots
-work without it. No debugging port is added to an ordinary launch.
+1. Turn on **Allow browser tools** in **Settings → MCP**.
+2. Restart Widgetsack.
+3. Copy the local browser endpoint from the MCP page.
+4. Connect a browser tool or Playwright to this endpoint through CDP.
+5. Open `/json/list` to find the Studio target.
+
+Browser tools can inspect the DOM, operate controls, and take screenshots.
+The port also exposes overlay webviews. Other programs on this machine can use it.
+To close browser access, clear **Allow browser tools** and restart Widgetsack.
 
 ## Limits and recovery
 

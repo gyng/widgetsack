@@ -72,8 +72,7 @@ export default function RssSettings() {
 
 			<div className="rp-hd">Feed</div>
 			<div className="has-help">
-				Any public RSS or Atom feed URL. The fetch + parse run on the Rust side; only the headline
-				titles cross to the overlay.
+				Paste the address of a public RSS or Atom feed. Add an RSS widget to show its headlines.
 			</div>
 
 			<label className="has-field">
@@ -146,8 +145,7 @@ export default function RssSettings() {
 			</div>
 
 			<div className="has-help">
-				Drop an <strong>RSS</strong> widget (its plugin category in the palette) to show the
-				headlines.
+				Add an <strong>RSS</strong> widget from the widget list to show headlines.
 			</div>
 		</div>
 	);

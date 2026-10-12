@@ -1,7 +1,7 @@
 # <img src="branding/icon-transparent.png" alt="" width="40" align="top"> widgetsack
 
 <p align="center">
-  <img src="docs/img/demo.png" alt="widgetsack demo layout: clock, CPU/GPU gauges, a countdown timer, memory/VRAM bars, up/down network graphs, an audio spectrum, a now-playing card, a stock ticker, an analog clock, Home Assistant temperature/climate/light tiles, and a DDC monitor input switcher" width="900">
+  <img src="docs/img/demo.png" alt="Widget overlay with clocks, system meters, media controls, weather, and Home Assistant tiles." width="900">
 </p>
 
 [**Download the latest installer**](https://github.com/gyng/widgetsack/releases/latest)
@@ -9,7 +9,7 @@
 A desktop widget overlay for Windows. Your meters, your layout, your little control room.
 
 Show system meters, clocks, and music on a transparent overlay across your monitors.
-Arrange widgets in the built-in visual editor, called the **studio**. Use CSS and design tokens
+Arrange widgets in the built-in visual editor, **Studio**. Use CSS and design tokens
 to change their appearance. Connect Home Assistant, MQTT, or stock quotes for more live data.
 
 A sensor supplies a value. A widget shows it. The overlay lets clicks pass to the desktop,
@@ -36,7 +36,7 @@ Start with one of four bundled dashboards. Keep it as supplied, or make it yours
 | <img src="docs/img/presets/home.png" width="400" alt="Home preset with clock, weather, agenda, Home Assistant endpoint health, and household checklist"> | <img src="docs/img/presets/minimal.png" width="400" alt="Minimal preset with time, download speed, CPU history, and an active alert"> |
 | Weather, upcoming events, service health, and household tasks. | Time, download speed, CPU history, and alerts when needed. |
 
-1. Open **Share** in the studio.
+1. Open **Share** in Studio.
 2. Select **Built-in: Work**, **Built-in: Gaming**, **Built-in: Home**, or **Built-in: Minimal** to import it.
 3. Open **Layout → Add → My widgets**. Insert the dashboard.
 4. Configure its widgets in the inspector. Select **Save** to save the layout.
@@ -44,20 +44,30 @@ Start with one of four bundled dashboards. Keep it as supplied, or make it yours
 Configure Weather and Agenda in their plugin settings. For the Home Assistant health card,
 enter the URL of the endpoint to check.
 
-The screenshots use sample data and a configured health endpoint. New task lists are empty.
+The screenshots use sample data. New task lists are empty. Alerts appear when a rule triggers.
+To update these images, run `npm run gen:presets` in `client/`.
+
+### Local desktop layout
+
 | Local desktop |
 | --- |
 | <img src="docs/img/presets/local-desktop.png" width="400" alt="Local desktop preset with clocks, media, network charts, per-core CPU charts, and monitor inputs"> |
 
-Alerts appear when a rule triggers. To update these images, run `npm run gen:presets` in `client/`.
+Load **Built-in: Local desktop** from **Presets** to use this complete monitor layout.
+It includes clocks, media, network charts, and CPU charts. The CPU charts find the cores on your machine.
+The monitor switcher uses the primary display and finds its available inputs.
+You can also insert **Local desktop** from the widget list or import its sack from **Share**.
 
-To save a monitor's full arrangement for later use, use the studio's **Presets** section.
-Load **Built-in: Local desktop** for a ready-made layout with clocks, media, network charts,
-and per-core CPU charts. The charts use the CPU cores on your machine. The monitor switcher
-uses the primary display and discovers its available inputs. You can also add this layout
-from **Local desktop** in the widget list or import its sack from **Share**.
-In **Layout**, choose a monitor above the outline. The **System monitor** and **Network**
-templates have a **Smooth charts** option. Set it to **On** for softer transitions between ticks.
+### Smooth charts
+
+1. Open **Layout**.
+2. Select an existing **System monitor** or **Network** group.
+3. Enable **Smooth charts** in the Inspector.
+
+For a separate **CPU**, **Sparkline**, or **Sensor History** widget, open **Appearance** in the Inspector.
+Enable **Smooth charts**. System monitor and Network also have this option when you insert them.
+CPU smoothing applies to the per-core chart view.
+Smoothing changes the display. Recorded sensor values stay unchanged.
 
 ## Layout studio
 
@@ -72,9 +82,10 @@ templates have a **Smooth charts** option. Set it to **On** for softer transitio
   audio outputs, monitor inputs, and Home Assistant devices. See the [widget reference](docs/widgets.md)
   for the full list. Use sensors or [formulas](docs/templating.md) to supply values.
 - **Sensors:** read CPU load and frequency, memory, swap, network traffic, disk use and I/O, uptime,
-  battery, and process activity. Read NVIDIA GPU data through NVML. Sensors run when visible widgets need them.
-- **Charts:** enable **Smooth updates** on Sparkline or Sensor History to blend changes between ticks.
-  This changes the display only. Recorded values stay unchanged.
+  battery, and process activity. Read NVIDIA GPU data through NVML. Cheap baseline sensors keep their normal refresh rate.
+  Expensive sensors run when a widget or visible sensor row needs them. Recycle Bin values refresh at most every ten seconds.
+- **Charts:** enable **Smooth charts** in the Inspector to blend changes between readings.
+  Use it on CPU, Sparkline, Sensor History, or grouped charts. Recorded values stay unchanged.
 - **Timer:** choose **dial** style for a kitchen timer with a raised knob. Drag to set up to 60 minutes;
   release to start. Use a box around 220 × 280 for a comfortable grip. Digital style also supports a stopwatch.
 - **Now playing:** show Windows media through GSMTC. Sources include Spotify, foobar2000, and browsers
@@ -105,7 +116,7 @@ The meters, clocks, and music cards will feel familiar. The editor and layout us
 
 - **Memory use:** each monitor has a browser-based overlay. Allow about 100 MB of RAM and 40 MB
   of VRAM per monitor with active widgets. Actual use depends on the layout and hardware.
-- **Sensor and meter:** connect sensors in the studio. Layouts use CSS flexbox.
+- **Sensor and meter:** connect sensors in Studio. Layouts use CSS flexbox.
   Each widget can have its own CSS and design tokens.
 - **Templates:** insert a bundled skin layout, or build reusable widgets in the widget designer.
 - **Data sources:** combine local system data with Home Assistant, MQTT, and stock quotes.
@@ -133,7 +144,7 @@ widgetsack window forward and lets it receive clicks, even after a webview crash
 
 ### Studio AI assistant
 
-Select **Assistant** in the studio toolbar to open the chat sidebar. Ask it to add widgets,
+Select **Assistant** in Studio toolbar to open the chat sidebar. Ask it to add widgets,
 change their settings, arrange them, or edit their CSS. Changes appear on the desktop and can be
 undone. Select **Save** to keep them.
 
@@ -144,10 +155,26 @@ The native adapter launches agents from your environment. It ships no Node runti
 `node_modules`, and downloads nothing. If no agent is found, install and sign in with
 [Pi](https://pi.dev/), Codex, or Claude, then select **Refresh agents**. Pi uses the Node runtime
 from its own installation; standalone Codex and Claude executables do not require Node.
-Leave **Model** blank to use the agent's default, or enter a model ID.
-**Stop** cancels a request; **New chat** clears the conversation.
-The assistant has its own sidebar across the studio. Your widget list and Inspector stay available.
+Use these controls in the sidebar:
+
+- **Model:** leave it blank to use the agent default. Select a suggestion or enter a model ID.
+- **Stop:** cancel the current request.
+- **New chat:** clear the conversation.
+
+The assistant has its own sidebar across Studio. Your widget list and Inspector stay available.
 Upgrades remove the old bundled agent files, including `node_modules`.
+
+### Your agent, your choice
+
+Connect your own agent through **Settings → MCP**. The connection uses the Widgetsack executable.
+Node is not required. You can keep the assistant sidebar closed.
+
+- Read and edit layouts.
+- Check widget sizes and clipping.
+- Take a Studio screenshot to review the result.
+- Enable browser access if your agent needs DOM inspection or browser controls.
+
+See [MCP setup and tools](docs/mcp.md).
 
 ### Theming
 
@@ -173,7 +200,7 @@ To download or install an update, open the release page.
 
 ## Plugins
 
-Manage both plugin types in the studio's **Plugins** section:
+Manage both plugin types in Studio's **Plugins** section:
 
 - **Built-in integrations:** configure Home Assistant, MQTT, stock quotes, and the AI provider.
   Tokens and API keys stay in the Rust backend. The webview does not hold them.
@@ -228,9 +255,3 @@ dual licensed as above, without any additional terms or conditions.
 <p align="center">
   <img src="branding/icon-transparent.png" alt="widgetsack logo — a maneki-neko holding a money sack and a little CRT" width="168" height="168">
 </p>
-
-## Your agent, your choice
-
-Use **Settings → MCP** to connect an external agent. The native bridge needs no Node runtime.
-It can read and edit layouts, check rendered geometry, and capture a Studio screenshot.
-Browser access is an optional setting. See [MCP setup and tools](docs/mcp.md).

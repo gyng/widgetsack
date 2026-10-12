@@ -68,8 +68,20 @@ test('System monitor and Network offer smooth charts on insertion', async ({ pag
 			.filter({ has: page.locator('.tpl-opts-name', { hasText: name }) })
 			.locator('.tpl-opts-insert')
 			.click();
-		await expect(
-			page.getByRole('button', { name: `Move ${name} widget`, exact: true })
-		).toBeVisible();
+		await expect(page.locator('.inspector .node-hd')).toHaveText(name);
+		await summary.click();
+		const smooth = page.getByRole('checkbox', { name: 'Smooth charts', exact: true });
+		await expect(smooth, name).toBeChecked();
+		await smooth.uncheck();
+		await expect(smooth).not.toBeChecked();
+		await page.locator('.studio-bar button[title^="Undo"]').click();
+		await expect(smooth).toBeChecked();
 	}
+	await page.screenshot({ path: 'test-results/studio-smooth-charts.png' });
+	await addWidget(page, 'CPU');
+	await expect(page.locator('.inspector .cfg-group-hd', { hasText: 'Appearance' })).toBeVisible();
+	const cpuSmooth = page.getByRole('checkbox', { name: 'Smooth charts', exact: true });
+	await expect(cpuSmooth).not.toBeChecked();
+	await cpuSmooth.check();
+	await expect(cpuSmooth).toBeChecked();
 });

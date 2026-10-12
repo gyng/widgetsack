@@ -82,9 +82,8 @@ export default function WeatherSettings() {
 
 			<div className="rp-hd">Location</div>
 			<div className="has-help">
-				Weather comes from <a href="https://open-meteo.com">Open-Meteo</a> — free, no API key. Enter
-				your latitude / longitude (search your city on open-meteo.com to find them). Stored locally;
-				the fetch runs on the Rust side.
+				Weather uses <a href="https://open-meteo.com">Open-Meteo</a>. No API key is needed. Enter
+				the latitude and longitude of your location. Find these values on the Open-Meteo website.
 			</div>
 
 			<label className="has-field">
@@ -162,8 +161,8 @@ export default function WeatherSettings() {
 			</div>
 
 			<div className="has-help">
-				Drop a <strong>Weather</strong> widget (its plugin category in the palette), or bind{' '}
-				<code>weather.*</code> sensors on any meter.
+				Add a <strong>Weather</strong> widget from the widget list. You can also bind{' '}
+				<code>weather.*</code> sensors to other widgets.
 			</div>
 		</div>
 	);

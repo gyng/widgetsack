@@ -48,6 +48,7 @@ import TokenFields from './TokenFields';
 import ConditionEditor from './ConditionEditor';
 import './Inspector.css';
 import WidgetIcon from './WidgetIcon';
+import GroupChartOptions from './GroupChartOptions';
 
 // Group palette entries by `category` in first-seen order, uncategorized last under "Other".
 // Pure (exported for tests): order within a group is registration order, same as before grouping.
@@ -1687,6 +1688,19 @@ export default function Inspector({
 							))}
 						</div>
 					)}
+					{!def?.params?.some((param) => param.key === 'smooth') && (
+						<GroupChartOptions
+							group={groupUnit}
+							library={{ version: 1, defs }}
+							onChange={(patch) =>
+								op({
+									op: 'patchGroup',
+									id: groupUnit.id,
+									patch: { ...patch, def: patch.def, params: patch.params }
+								})
+							}
+						/>
+					)}
 					{def ? (
 						<>
 							<label className="full">
@@ -1772,7 +1786,9 @@ export default function Inspector({
 							</label>
 						</>
 					) : (
-						<div className="meta">inline group (not a custom widget)</div>
+						<div className="meta">
+							This widget is a separate copy. Changes affect only this instance.
+						</div>
 					)}
 					<label className={['full', dirtyKeys.has('css') && 'dirty'].filter(Boolean).join(' ')}>
 						css

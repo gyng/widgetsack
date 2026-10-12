@@ -4,7 +4,7 @@
 
 // Curated, STABLE sensor ids (always offered in the picker). Dynamic ids — per-core cpu.core.N
 // and per-drive disk.<letter>.* — are intentionally NOT listed here; they surface automatically
-// via the live merge in sensorCatalog once the backend emits them (see sensorCatalog). The
+// via metadata discovery and the live merge in sensorCatalog (see sensorCatalog). The
 // percent ids (mem.used/swap.used/gpu.vram) are kept for backward compat; the byte absolutes
 // (mem.total, gpu.vram.used, …) are added alongside them. Mirrors widgetsack/src/sensors.rs.
 export const KNOWN_SENSORS = [
@@ -45,6 +45,7 @@ export const KNOWN_SENSORS = [
 	'net.state',
 	// Active connections (gated; net.conn.list is a JSON sensor consumed by the Connections widget,
 	// so it's not in the scalar picker — these totals are)
+	'net.conn.list',
 	'net.conn.established',
 	'net.conn.listening',
 	'net.conn.public',

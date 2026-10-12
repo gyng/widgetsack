@@ -264,9 +264,9 @@ export default function HaSettings() {
 
 			<div className="rp-hd">Connection</div>
 			<div className="has-help">
-				Point at your Home Assistant base URL and paste a long-lived access token (HA → your profile
-				→ Security → Long-lived access tokens). The token is stored locally and never leaves the
-				Rust side.
+				Enter your Home Assistant address and access token. Create a long-lived token in your Home
+				Assistant profile under Security. Widgetsack stores it locally. The editor does not receive
+				the token.
 			</div>
 
 			<label className="has-field">
@@ -363,9 +363,8 @@ export default function HaSettings() {
 
 			<div className="rp-hd">Entities</div>
 			<div className="has-help">
-				Tick an entity to <strong>expose</strong> it — exposed entities are the ones offered in a
-				widget&apos;s sensor dropdown (bind to <code>ha.&lt;entity_id&gt;</code>). Expose none to
-				offer them all. Copy an id with ⧉.
+				Select the entities to include in the sensor picker. Select none to include all entities.
+				Bind a widget to <code>ha.&lt;entity_id&gt;</code>. Use Copy to copy an ID.
 			</div>
 
 			<div className="has-browser-bar">

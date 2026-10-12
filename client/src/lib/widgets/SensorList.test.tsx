@@ -1,8 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render } from '@testing-library/react';
 import SensorList from './SensorList';
 import { createTelemetryHub, type TelemetryHub } from '../core/telemetry';
 import type { SensorActivity } from '../core/sensorActivity';
+
+beforeEach(() => vi.stubGlobal('IntersectionObserver', undefined));
+afterEach(() => vi.unstubAllGlobals());
 
 // SensorList rows subscribe live via useSensor; ingest happens outside React, so wrap in act().
 function ingest(hub: TelemetryHub, id: string, value: number | string): void {
@@ -182,7 +185,68 @@ describe('SensorList — activity dots + legend', () => {
 		// 1 referenced, (2 active − 1 referenced) = 1 always-on, (3 total − 2 active) = 1 studio-only.
 		expect(() => getByText('1 used by widgets')).not.toThrow();
 		expect(() => getByText('1 always-on')).not.toThrow();
-		expect(() => getByText('1 studio-only')).not.toThrow();
+		expect(() => getByText('1 on demand')).not.toThrow();
 		expect(() => getByText('2/3 stay active after close')).not.toThrow();
 	});
+});
+
+it('releases rows filtered out or collapsed, retaining other consumers', () => {
+	const hub = createTelemetryHub();
+	const off = hub.sensor('recyclebin.items').subscribe(() => {});
+	const view = render(
+		<SensorList hub={hub} ids={['recyclebin.items', 'gpu.util']} filter groupFor={() => 'System'} />
+	);
+	expect(hub.activeSensorIds().sort()).toEqual(['gpu.util', 'recyclebin.items']);
+	fireEvent.input(view.getByLabelText('Filter sensors'), { target: { value: 'gpu' } });
+	expect(hub.activeSensorIds().sort()).toEqual(['gpu.util', 'recyclebin.items']);
+	fireEvent.click(view.getByText('System').closest('button')!);
+	expect(hub.activeSensorIds()).toEqual(['recyclebin.items']);
+	off();
+	view.unmount();
+	expect(hub.activeSensorIds()).toEqual([]);
+});
+
+it('samples only intersecting rows and disconnects observers on disposal', () => {
+	const entries: {
+		callback: IntersectionObserverCallback;
+		observer: IntersectionObserver;
+		node?: Element;
+	}[] = [];
+	const disconnect = vi.fn();
+	class Observer {
+		entry: (typeof entries)[number];
+		constructor(callback: IntersectionObserverCallback) {
+			this.entry = { callback, observer: this as unknown as IntersectionObserver };
+			entries.push(this.entry);
+		}
+		observe(node: Element) {
+			this.entry.node = node;
+		}
+		disconnect() {
+			disconnect();
+		}
+	}
+	vi.stubGlobal('IntersectionObserver', Observer);
+	const hub = createTelemetryHub();
+	const view = render(<SensorList hub={hub} ids={['recyclebin.items', 'gpu.util']} />);
+	expect(hub.activeSensorIds()).toEqual([]);
+	const signal = (index: number, visible: boolean) =>
+		act(() =>
+			entries[index].callback(
+				[{ isIntersecting: visible, target: entries[index].node! } as IntersectionObserverEntry],
+				entries[index].observer
+			)
+		);
+	signal(0, true);
+	expect(hub.activeSensorIds()).toEqual(['recyclebin.items']);
+	ingest(hub, 'recyclebin.items', 4);
+	expect(view.getByTitle('recyclebin.items').querySelector('.sensor-value')?.textContent).toBe('4');
+	signal(0, false);
+	signal(1, true);
+	expect(hub.activeSensorIds()).toEqual(['gpu.util']);
+	view.unmount();
+	expect(hub.activeSensorIds()).toEqual([]);
+	expect(disconnect).toHaveBeenCalledTimes(2);
+	signal(0, true);
+	expect(hub.activeSensorIds()).toEqual([]);
 });

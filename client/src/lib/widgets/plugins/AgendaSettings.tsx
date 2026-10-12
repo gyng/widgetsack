@@ -90,9 +90,8 @@ export default function AgendaSettings() {
 
 			<div className="rp-hd">Calendar feed</div>
 			<div className="has-help">
-				A public ICS (iCalendar) URL — most calendars offer a “secret address in iCal format”
-				(Google Calendar, Outlook, Fastmail, …). <code>webcal://</code> links work too. The fetch +
-				parse run on the Rust side; only the event titles + times cross to the overlay.
+				Paste an ICS calendar address. Your calendar may call it a secret iCal address. Keep this
+				address private. <code>webcal://</code> links also work.
 			</div>
 
 			<label className="has-field">
@@ -157,8 +156,7 @@ export default function AgendaSettings() {
 			</div>
 
 			<div className="has-help">
-				Drop an <strong>Agenda</strong> widget (its plugin category in the palette) to show your
-				upcoming events.
+				Add an <strong>Agenda</strong> widget from the widget list to show upcoming events.
 			</div>
 		</div>
 	);

@@ -162,9 +162,11 @@ describe('Inspector group property panel', () => {
 		});
 	});
 
-	it('shows "inline group (not a custom widget)" when no def backs the group', () => {
+	it('shows "This widget is a separate copy. Changes affect only this instance." when no def backs the group', () => {
 		render(<Inspector groupUnit={groupUnit()} onOp={vi.fn()} />);
-		expect(screen.getByText('inline group (not a custom widget)')).toBeTruthy();
+		expect(
+			screen.getByText('This widget is a separate copy. Changes affect only this instance.')
+		).toBeTruthy();
 	});
 
 	it('renders def fields when a def is supplied, and renames the def', () => {

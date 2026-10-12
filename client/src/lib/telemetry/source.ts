@@ -8,11 +8,11 @@ import type { TelemetryBatch, TelemetryHub } from '../core/telemetry';
 import { registerSource, type SensorSource } from '../core/plugin';
 import { isStudioWindow } from '../overlay';
 import { COMMANDS, EVENTS } from '../bridge/contract';
+import { sensorCatalog } from '../core/sensors';
 
 export const TELEMETRY_EVENT = EVENTS.telemetry;
 
-/** Wildcard sentinel: this window wants every sensor sampled (GPU included). */
-const ALL_SENSORS = '*';
+let hardwareCatalog: string[] = [];
 /** Coalesce active-set churn (a layout re-render can subscribe many sensors at once). */
 const REPORT_DEBOUNCE_MS = 250;
 
@@ -31,15 +31,16 @@ export async function startTelemetrySource(hub: TelemetryHub): Promise<tauriEven
 		hub.ingestBatch(ev.payload);
 	});
 
-	// The studio wants EVERYTHING (so the sensor picker can discover gpu.* etc) — it reports the `*`
-	// wildcard. But `*` can't enumerate an unbounded symbol space, so demand-derived sources (stocks)
-	// also need the concrete `stocks.<SYM>.*` ids a previewed widget subscribes to in order to know
-	// WHICH symbols to fetch; hence the studio reports the wildcard PLUS its live active set, not just
-	// once. The overlay reports only the sensors actually bound to its widgets. Both are debounced (a
-	// layout re-render can churn the active set).
+	// Discovery reads identifiers only. It does not ask the sampler to collect their values.
 	const studio = isStudioWindow();
+	reportActive(studio && document.visibilityState === 'hidden' ? [] : hub.activeSensorIds());
+	try {
+		hardwareCatalog = await invoke<string[]>(COMMANDS.getSystemSensorCatalog);
+	} catch (error) {
+		console.warn('System sensor discovery failed', error);
+	}
 	const idsToReport = (): string[] =>
-		studio ? [ALL_SENSORS, ...hub.activeSensorIds()] : hub.activeSensorIds();
+		studio && document.visibilityState === 'hidden' ? [] : hub.activeSensorIds();
 
 	let timer: ReturnType<typeof setTimeout> | null = null;
 	const scheduleReport = (): void => {
@@ -50,12 +51,20 @@ export async function startTelemetrySource(hub: TelemetryHub): Promise<tauriEven
 		}, REPORT_DEBOUNCE_MS);
 	};
 	const offActive = hub.onActiveChange(scheduleReport);
-	reportActive(idsToReport()); // initial report (studio: the wildcard; overlay: typically empty)
+	const visibilityChanged = (): void => {
+		if (timer !== null) clearTimeout(timer);
+		timer = null;
+		reportActive(idsToReport());
+	};
+	if (studio) document.addEventListener('visibilitychange', visibilityChanged);
+	reportActive(idsToReport()); // catches demand acquired while discovery was pending
 
 	return () => {
 		if (timer !== null) clearTimeout(timer);
 		offActive();
 		unlisten();
+		if (studio) document.removeEventListener('visibilitychange', visibilityChanged);
+		reportActive([]);
 	};
 }
 
@@ -63,6 +72,7 @@ export async function startTelemetrySource(hub: TelemetryHub): Promise<tauriEven
  * Importing this module registers it; plugins (e.g. Home Assistant) register their own. */
 export const systemSource: SensorSource = {
 	id: 'system',
+	catalog: () => sensorCatalog(hardwareCatalog),
 	start: (hub) => startTelemetrySource(hub)
 };
 

@@ -28,7 +28,7 @@ export default function McpSettingsPanel() {
 			const result = await mcpSetPreferences(enabled, browserAccess);
 			if (alive.current) {
 				setStatus(result);
-				setMessage('Settings saved. Browser access changes take effect after restart.');
+				setMessage('Settings saved. Restart Widgetsack to apply changes to browser access.');
 			}
 		} catch (error) {
 			if (alive.current) setMessage(String(error));
@@ -44,8 +44,8 @@ export default function McpSettingsPanel() {
 			</p>
 			<ul className="set-help-list">
 				<li>Read the active layout and widget catalog.</li>
-				<li>Apply edits as undoable batches. Save in Studio to keep them.</li>
-				<li>Check rendered sizes and overflow. Capture a Studio screenshot for visual review.</li>
+				<li>Edit widgets and layouts. Use Undo to reverse a batch. Use Save to keep it.</li>
+				<li>Check widget sizes and clipping. Take a Studio screenshot to review the result.</li>
 			</ul>
 			<label className="set-row">
 				<span className="set-label">Enable MCP</span>
@@ -86,9 +86,14 @@ export default function McpSettingsPanel() {
 					/>
 				</>
 			)}
+			<ol className="set-help-list">
+				<li>Enable MCP.</li>
+				<li>Copy the configuration into your agent&apos;s MCP server settings.</li>
+				<li>Keep Widgetsack running.</li>
+				<li>Keep Studio open.</li>
+			</ol>
 			<p className="set-help">
-				Add this configuration to a client that supports MCP over stdio. Keep Widgetsack running and
-				Studio open. The installed executable handles the connection; Node is not required.
+				The connection uses the installed Widgetsack executable. Node is not required.
 			</p>
 			<div className="pl-title">Optional browser access</div>
 			<label className="set-row">
@@ -101,11 +106,16 @@ export default function McpSettingsPanel() {
 					onChange={(event) => void change(status!.enabled, event.target.checked)}
 				/>
 			</label>
-			<p className="set-help">
-				Off by default. Restart Widgetsack after changing this option. It exposes this app’s
-				WebView2 debugging port on localhost. Other local processes can connect and control the
-				app’s webviews.
-			</p>
+			<ul className="set-help-list">
+				<li>Browser access is off by default.</li>
+				<li>Restart Widgetsack after you change this option.</li>
+				<li>
+					Browser tools can inspect and control the app&apos;s webviews through a local debugging
+					port.
+				</li>
+				<li>Other programs on this machine can use this port.</li>
+				<li>To close browser access, clear this option and restart Widgetsack.</li>
+			</ul>
 			{status?.browserUrl && (
 				<p className="set-help">
 					Browser endpoint: <code>{status.browserUrl}</code>

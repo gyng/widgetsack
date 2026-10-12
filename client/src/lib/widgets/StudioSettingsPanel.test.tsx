@@ -306,7 +306,7 @@ describe('StudioSettingsPanel — Startup section', () => {
 		const { container } = render(<StudioSettingsPanel {...baseProps({ tab: 'startup' })} />);
 		expect(container.textContent).toContain('Ctrl+Alt+E');
 		expect(container.textContent).toContain('Ctrl+Alt+Shift+E');
-		expect(container.textContent).toMatch(/Rescue/);
+		expect(container.textContent).toContain('Bring all widget windows forward');
 		await flush();
 	});
 });
@@ -481,13 +481,13 @@ describe('StudioSettingsPanel — About section', () => {
 describe('StudioSettingsPanel — Danger section', () => {
 	it('clears this monitor when the danger button is pressed, and says how to undo', () => {
 		const props = baseProps({ tab: 'danger' });
-		const { getByText, container } = render(<StudioSettingsPanel {...props} />);
-		fireEvent.click(getByText(/Clear this monitor/));
+		const { getByRole, container } = render(<StudioSettingsPanel {...props} />);
+		fireEvent.click(getByRole('button', { name: /Clear this monitor/ }));
 		expect(props.clearMonitor).toHaveBeenCalledOnce();
 		// Matches the clearMonitor confirm: history survives switching sections; it is reset only by a
 		// def edit (widget designer) or a layout reload / revert.
 		expect(container.textContent).toContain(
-			'Undoable with Ctrl+Z until you open the widget designer or reload the layout'
+			'Press Ctrl+Z to undo it before you open the widget designer or reload the layout'
 		);
 		expect(container.textContent).not.toContain('There is no undo');
 	});

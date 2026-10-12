@@ -4,10 +4,13 @@
 import { useCallback, useSyncExternalStore } from 'react';
 import type { SensorState, TelemetryHub } from '../core/telemetry';
 
-export function useSensor(hub: TelemetryHub, id: string): SensorState {
+export function useSensor(hub: TelemetryHub, id: string, enabled = true): SensorState {
 	// Memoize by [hub, id] so we only re-subscribe when the sensor id changes (mirrors Svelte's
 	// `$: store = sensorStore(hub, id)` recreating the readable on id change).
-	const subscribe = useCallback((cb: () => void) => hub.sensor(id).subscribe(cb), [hub, id]);
+	const subscribe = useCallback(
+		(cb: () => void) => (enabled ? hub.sensor(id).subscribe(cb) : () => undefined),
+		[hub, id, enabled]
+	);
 	const getSnapshot = useCallback(() => hub.sensor(id).getSnapshot(), [hub, id]);
 	return useSyncExternalStore(subscribe, getSnapshot);
 }

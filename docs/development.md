@@ -107,3 +107,20 @@ Upgrades remove the legacy `studio-agent/` installation resources from v0.0.62, 
 `node_modules`. Layouts, themes, and user-installed agents are preserved. After an NSIS build,
 run `./widgetsack/windows/test-agent-cleanup.ps1` to verify the real hook against isolated fixtures.
 The release workflow runs this check before uploading an installer.
+
+## Sensor discovery and sampling
+
+Studio lists known sensor IDs and hardware metadata without enabling their samplers.
+The `get_system_sensor_catalog` command discovers CPU-core and logical-drive IDs without
+reading disk capacity, I/O rates, CPU clocks, or Recycle Bin contents.
+
+- Widgets request their bound sensors and formula inputs through live subscriptions.
+- Sensor rows request values only while visible. Filtering, collapsing, scrolling out of view,
+  or leaving the page releases those subscriptions.
+- A hidden Studio clears its demand. Overlay windows keep their own widget demand.
+- Expensive sources wait for the first demand report. Opening Studio sends no wildcard.
+- Recycle Bin contents refresh immediately on new demand, then at most every ten seconds.
+  Last readings remain cached between polls. An empty-bin action can take up to ten seconds
+  to appear while the widget remains mounted.
+
+Cheap baseline CPU, memory, network-rate, battery, and uptime sampling keeps its normal cadence.

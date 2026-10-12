@@ -76,10 +76,10 @@ export default function StocksSettings() {
 
 			<div className="rp-hd">Symbols</div>
 			<div className="has-help">
-				Live quotes via Yahoo Finance (no API key). Add tickers, then bind their{' '}
-				<code>stocks.&lt;SYMBOL&gt;.*</code> sensors to a Text / Gauge / Sparkline widget — or drop
-				a <strong>Stock Ticker</strong> widget and set its symbol. Equities (<code>AAPL</code>,{' '}
-				<code>SPY</code>), crypto (<code>BTC-USD</code>), indices (<code>^GSPC</code>).
+				Quotes come from Yahoo Finance. No API key is needed. Add symbols such as <code>AAPL</code>,{' '}
+				<code>BTC-USD</code>, or <code>^GSPC</code>. Add a <strong>Stock Ticker</strong> widget and
+				select its symbol. You can also bind <code>stocks.&lt;SYMBOL&gt;.*</code> sensors to other
+				widgets.
 			</div>
 
 			<TokenListField
@@ -131,8 +131,8 @@ export default function StocksSettings() {
 
 			<div className="rp-hd">Sensors</div>
 			<div className="has-help">
-				Bindable ids for the configured symbols. Copy an id (⧉) onto a Text, Gauge or Sparkline
-				widget.
+				This list shows sensor IDs for your symbols. Copy an ID. Use it in a Text, Gauge, or
+				Sparkline widget.
 			</div>
 			{symbols.length ? (
 				<ul className="has-entities" aria-label="Stock sensors">

@@ -1,15 +1,5 @@
-// "Which sensors stay sampled after the studio closes, and why." The studio reports the `*` wildcard
-// so the backend samples EVERYTHING while it's open (so the Sensors pane can show live values); on
-// close, only sensors an overlay widget actually demands keep sampling (demand-gating, sensors.rs).
-//
-// This module answers, per sensor id:
-//   • who references it — a pure walk of the layout collecting each widget's bound `sensor` + its
-//     formula/template references (the "why"); and
-//   • whether it's cheap-always-on vs demand-gated — mirroring widgetsack/src/sensors.rs so an
-//     UNreferenced sensor is labelled honestly (a cheap one still emits; a gated one stops).
-// Pure (no Tauri/React); co-located tests in sensorActivity.test.ts. Keep the gating predicates in
-// sync with sensors.rs (a test pins the known ids).
-
+// Which sensors stay sampled after Studio closes, and why. Discovery lists identifiers without
+// demand; widget and visible sensor-row subscriptions request live values.
 import {
 	isContainer,
 	isGroup,
@@ -23,10 +13,11 @@ import { exprRefs, templateRefs } from './textTemplate';
 
 // ---- demand-gating classification (mirrors widgetsack/src/sensors.rs) -----------------------------
 
-/** A demand-gated SYSTEM sensor: only sampled when a widget references it (or the studio forces all).
+/** A demand-gated SYSTEM sensor: only sampled when a widget references it (or a visible sensor row requests it).
  * Mirrors the gate predicates in sensors.rs (gpu_wanted / is_perf_id / is_cpufreq_id / is_disk_io_id
  * / is_netlink_id + the disk/procs/freq gates). */
 function isGatedSystemSensor(id: string): boolean {
+	if (id.startsWith('net.conn') || id.startsWith('net.wifi')) return true;
 	if (id.startsWith('gpu.')) return true; // NVML block
 	if (id.startsWith('disk.')) return true; // per-disk capacity + I/O
 	if (id.startsWith('proc.')) return true; // process-top
@@ -93,10 +84,13 @@ export function collectSensorRefs(
 	};
 
 	const visit = (inst: WidgetInstance, monitorKey: string): void => {
-		if (inst.sensor) {
-			add(inst.sensor, { widgetType: inst.type, widgetId: inst.id, monitorKey, via: 'bound' });
+		const meta = getMeta(inst.type);
+		const bound = new Set([inst.sensor, ...Object.values(meta?.sensors?.(inst.config) ?? {})]);
+		for (const sensor of bound) {
+			if (sensor)
+				add(sensor, { widgetType: inst.type, widgetId: inst.id, monitorKey, via: 'bound' });
 		}
-		for (const f of exprFieldsOf(getMeta(inst.type))) {
+		for (const f of exprFieldsOf(meta)) {
 			const src = inst.config?.[f.key];
 			if (typeof src !== 'string' || !src) continue;
 			const refs = f.result === 'text' ? templateRefs(src) : exprRefs(src);
@@ -162,6 +156,6 @@ export function sensorActivity(id: string, refs: SensorRef[] | undefined): Senso
 	return {
 		active: false,
 		referenced: false,
-		reason: 'sampled only while the studio is open — stops when it closes'
+		reason: 'sampled only when a widget or visible sensor row uses it'
 	};
 }

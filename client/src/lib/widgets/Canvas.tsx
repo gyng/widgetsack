@@ -1374,7 +1374,7 @@ export default function Canvas({ studio = false }: Props) {
 	const clearMonitor = useCallback(() => {
 		if (
 			!window.confirm(
-				'Remove all widgets on this monitor?\n\nIt clears immediately and writes through to the desktop overlays. Undo with Ctrl+Z right away — undo is lost once you open the widget designer.'
+				'Remove all widgets on this monitor?\n\nThe desktop overlay changes immediately. Press Ctrl+Z to undo before you open the widget designer or reload the layout.'
 			)
 		)
 			return;

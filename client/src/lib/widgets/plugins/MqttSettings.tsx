@@ -116,10 +116,9 @@ export default function MqttSettings() {
 
 			<div className="rp-hd">Broker</div>
 			<div className="has-help">
-				Connect to any MQTT broker and bind topics as <code>mqtt.&lt;topic&gt;</code> sensors. A
-				JSON payload also exposes <code>mqtt.&lt;topic&gt;.&lt;field&gt;</code>; a numeric payload
-				exposes
-				<code> mqtt.&lt;topic&gt;.value</code>.
+				Connect to an MQTT broker. Bind a topic to <code>mqtt.&lt;topic&gt;</code>. JSON fields use{' '}
+				<code>mqtt.&lt;topic&gt;.&lt;field&gt;</code>. Numeric values use{' '}
+				<code>mqtt.&lt;topic&gt;.value</code>.
 			</div>
 
 			<div className="has-browser-bar">
@@ -266,8 +265,8 @@ export default function MqttSettings() {
 
 			<div className="rp-hd">Topics</div>
 			<div className="has-help">
-				Topics seen + discovered since connecting. Copy an id (⧉) and bind it to a Text, Gauge or
-				Sparkline widget.
+				This list shows topics received since connection. Copy a sensor ID. Use it in a Text, Gauge,
+				or Sparkline widget.
 			</div>
 			<div className="has-browser-bar">
 				<span className="has-state-dim">{entries.length} topics</span>

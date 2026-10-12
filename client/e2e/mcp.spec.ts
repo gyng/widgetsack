@@ -98,7 +98,9 @@ test('MCP reads, edits and verifies the actual editor with the assistant sidebar
 	await page.getByLabel('Enable MCP').check();
 	await expect(page.getByText('Listening: http://127.0.0.1:12345/mcp')).toBeVisible();
 	await page.getByLabel('Allow browser tools').check();
-	await expect(page.getByText(/Browser access changes take effect after restart/)).toBeVisible();
+	await expect(
+		page.getByText(/Restart Widgetsack to apply changes to browser access/)
+	).toBeVisible();
 	await page.screenshot({ path: 'test-results/studio-mcp-page.png' });
 	expect(log.errors).toEqual([]);
 	expect(log.mockWarns).toEqual([]);

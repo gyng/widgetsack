@@ -106,7 +106,7 @@ Compact line / area / histogram of a sensor history (a time series).
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `smooth` | toggle | false |  | Blend chart updates over 300 ms. Respects reduced motion. Recorded values stay unchanged. |
+| `smooth` | toggle | false |  | Blend chart changes between readings. Charts do not animate when reduced motion is on. Recorded values stay unchanged. |
 | `seconds` | number | 60 | min 5, step 5 | seconds of history to show |
 | `color` | color |  |  | line / bar colour (blank = theme accent) |
 | `fill` | toggle |  |  | fill the area under the line |
@@ -621,7 +621,7 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 | `sensorIds` | text | "cpu.total,gpu.util" |  | Comma-separated numeric sensor IDs. Compare sensors with the same units. |
 | `seconds` | number | 60 | min 5, max 600 | Number of recent samples to display (roughly seconds for 1 Hz system sensors). |
 | `fixedScale` | toggle | true |  | Pin the shared range instead of automatically scaling all lines together. |
-| `smooth` | toggle | false |  | Blend chart updates over 300 ms. Respects reduced motion. Recorded values and summaries stay unchanged. |
+| `smooth` | toggle | false |  | Blend chart changes between readings. Charts do not animate when reduced motion is on. Recorded values and summaries stay unchanged. |
 | `min` | number | 0 |  | Bottom of the fixed chart scale. |
 | `max` | number | 100 |  | Top of the fixed chart scale. |
 | `showThreshold` | toggle | false |  | Shade the area at or above the threshold. |
