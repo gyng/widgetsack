@@ -24,13 +24,13 @@ Define font size and line height together. Use weight 450 for Studio content and
 600 for headings. The slightly firmer body weight improves small text on dark surfaces.
 All sizes below are CSS pixels before the user's display scaling.
 
-| Role | Size / line height | Use |
-| --- | --- | --- |
-| Caption | 12 / 16 | Helper text, units, timestamps, secondary metadata |
-| Body | 14 / 20 | Controls, navigation, inspector fields, event names |
-| Heading | 16 / 22 | Section and widget headings |
-| Title | 20 / 26 | Panel titles and prominent values |
-| Reading | 24 / 32 | Larger readings where the widget has room |
+| Role    | Size / line height | Use                                                 |
+| ------- | ------------------ | --------------------------------------------------- |
+| Caption | 12 / 16            | Helper text, units, timestamps, secondary metadata  |
+| Body    | 14 / 20            | Controls, navigation, inspector fields, event names |
+| Heading | 16 / 22            | Section and widget headings                         |
+| Title   | 20 / 26            | Panel titles and prominent values                   |
+| Reading | 24 / 32            | Larger readings where the widget has room           |
 
 Do not use size alone to show importance. Combine placement, spacing, and weight. Avoid reducing
 normal content to 10–11px to fit a fixed box. Allow controls to wrap or panels to scroll instead.
@@ -44,16 +44,16 @@ monospace font is useful for code and identifiers; it is not the default for eve
 Use the existing small spacing steps, with larger steps for hierarchy. Measure gaps between boxes;
 check text alignment separately.
 
-| Gap | Intended use |
-| --- | --- |
-| 2px | Optical corrections and small details |
-| 4px | A label and its supporting detail |
-| 6px | Compact icon/text pairs |
-| 8px | Related controls and rows |
-| 12px | Compact panel padding and field groups |
+| Gap  | Intended use                                       |
+| ---- | -------------------------------------------------- |
+| 2px  | Optical corrections and small details              |
+| 4px  | A label and its supporting detail                  |
+| 6px  | Compact icon/text pairs                            |
+| 8px  | Related controls and rows                          |
+| 12px | Compact panel padding and field groups             |
 | 16px | Normal panel padding and separation between groups |
-| 24px | Major sections |
-| 32px | Large structural separation |
+| 24px | Major sections                                     |
+| 32px | Large structural separation                        |
 
 Studio controls default to 32px minimum height. Use a 20px body line with space around it.
 Compact secondary controls may use 28px when their labels and focus rings still fit. Checkbox and
@@ -87,7 +87,8 @@ This is a product style guide, not a claim of full compliance with the controlle
 - Use one term for one concept. Match the names of the visible controls.
 - Explain the result and the next action. Put related choices in bullets.
 - Replace shorthand, slash lists, and dense parenthetical text with complete sentences.
-- Keep personality in headings and sample prompts. Keep operational instructions precise.
+- Use factual headings and task prompts. Avoid promotional slogans and personalized brand phrases.
+- Write the README for users. Keep implementation details, development commands, and release history in their own documents.
 - Preserve API identifiers, code examples, product names, and legal text where exact words matter.
 
 The sentence-length guidance comes from the [ASD-STE100 writing rules](https://www.asd-ste100.org/assets/files/ASD-STE100_ISSUE9.pdf).

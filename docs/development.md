@@ -37,6 +37,15 @@ $ (cd client && npm run check)       # tsc --noEmit type checking
 $ (cd client && npm run lint)        # Prettier + ESLint
 ```
 
+## Reference docs and screenshots
+
+Run these commands from `client/`:
+
+- `npm run gen:gallery` updates widget screenshots and reference docs.
+- `npm run gen:docs` updates only the reference docs.
+- `npm run gen:presets` updates the dashboard preset screenshots.
+- `npm run check:docs` checks that the generated references match the widget registry.
+
 ## Release
 
 The installer is attached to the release **before** it goes public: the build workflow
@@ -59,6 +68,7 @@ asset-less release.
    ```
 
    (or just `--notes-file release-notes.md` with the section pasted out of the CHANGELOG).
+
 4. Push the tag (a draft creates no git tag by itself) — this triggers the "Build release"
    workflow, which builds, uploads the installer to the draft with retries, and attests provenance:
 
@@ -78,6 +88,7 @@ asset-less release.
 
 > A release created directly as public (not a draft) still builds — `created` fires for it too —
 > but it is visible for the ~10 minutes the build takes before its asset appears.
+
 ## Studio assistant agents
 
 The studio assistant prefers installed Pi, Codex, and Claude CLIs, in that order.
