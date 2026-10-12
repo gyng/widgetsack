@@ -3,6 +3,7 @@
 import { formatDuration } from '../../core/timer';
 import { useTimer, type TimerMode } from './useTimer';
 import './Timer.css';
+import TimerDial from './TimerDial';
 
 export type TimerViewProps = {
 	time: string;
@@ -70,6 +71,9 @@ export function TimerView({
 }
 
 type Props = {
+	style?: string;
+	editMode?: boolean;
+	previewMode?: boolean;
 	widgetId?: string;
 	mode?: TimerMode;
 	duration?: number;
@@ -86,16 +90,33 @@ export default function Timer({
 	format = 'auto',
 	loop = false,
 	label = '',
-	color
+	color,
+	style = 'digital',
+	editMode = false,
+	previewMode = false
 }: Props) {
-	const { seconds, running, done, toggle, reset } = useTimer({
+	const { seconds, running, done, toggle, reset, setCountdown } = useTimer({
 		mode,
-		duration,
+		duration:
+			style === 'dial' && mode === 'countdown' ? Math.max(0, Math.min(3600, duration)) : duration,
 		loop,
 		storageKey: widgetId ? `widgetsack.timer.${widgetId}` : undefined
 	});
 	// A countdown shows the CEILING (4.2s left reads "00:05"); a stopwatch floors.
 	const shown = mode === 'countdown' ? Math.ceil(seconds) : seconds;
+	if (style === 'dial' && mode === 'countdown')
+		return (
+			<TimerDial
+				seconds={seconds}
+				running={running}
+				done={done}
+				label={label}
+				color={color}
+				disabled={editMode || previewMode}
+				onSet={setCountdown}
+				onToggle={toggle}
+			/>
+		);
 	return (
 		<TimerView
 			time={formatDuration(shown, format)}

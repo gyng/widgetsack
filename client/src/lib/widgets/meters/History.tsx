@@ -21,7 +21,8 @@ export default function History({
 	max = 100,
 	threshold = 80,
 	showThreshold = false,
-	showStats = true
+	showStats = true,
+	smooth = false
 }: {
 	sensors?: Record<string, SensorState>;
 	label?: string;
@@ -32,6 +33,7 @@ export default function History({
 	threshold?: number;
 	showThreshold?: boolean;
 	showStats?: boolean;
+	smooth?: boolean;
 }) {
 	const sampleCount = historyWindow(seconds);
 	const lines = Object.entries(sensors).map(([id, s]) => ({
@@ -65,6 +67,7 @@ export default function History({
 							max={hi}
 							seconds={sampleCount}
 							fill={false}
+							smooth={smooth}
 							color={COLORS[i % COLORS.length]}
 						/>
 					</div>

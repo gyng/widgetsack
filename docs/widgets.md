@@ -106,6 +106,7 @@ Compact line / area / histogram of a sensor history (a time series).
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
+| `smooth` | toggle | false |  | Blend chart updates over 300 ms. Respects reduced motion. Recorded values stay unchanged. |
 | `seconds` | number | 60 | min 5, step 5 | seconds of history to show |
 | `color` | color |  |  | line / bar colour (blank = theme accent) |
 | `fill` | toggle |  |  | fill the area under the line |
@@ -504,7 +505,7 @@ Counts down to a target date/time ("days until …"), or runs an auto-cycling Po
 
 ![Timer widget](img/widgets/timer.png)
 
-A countdown timer or stopwatch with start / pause / reset. A countdown can loop when it reaches zero. Pick the time format; the controls work on the overlay (interactive).
+A countdown timer or stopwatch with start / pause / reset. The dial style sets 0–60 minutes by dragging; release to start. A countdown can loop when it reaches zero. Controls work on the overlay (interactive).
 
 - **Sensor:** none (self-sourcing)
 - **Default size:** 160×96
@@ -515,6 +516,7 @@ A countdown timer or stopwatch with start / pause / reset. A countdown can loop 
 | `mode` | select | "countdown" | `countdown`, `stopwatch` | count down from a duration, or up from zero |
 | `duration` | number | 300 | min 0 | countdown length in seconds |
 | `label` | text | "" |  | header text |
+| `style` | select | "digital" | `digital`, `dial` | Dial: drag to set 0–60 minutes; release to start. Countdown only. Use a taller widget (about 220 × 280). |
 | `format` | select | "auto" | `auto`, `mm:ss`, `hh:mm:ss`, `ss` | time display format |
 | `color` | color | "" |  | text colour (blank = theme) |
 | `loop` | toggle | false |  | restart automatically when a countdown reaches zero |
@@ -618,6 +620,7 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 | `sensorIds` | text | "cpu.total,gpu.util" |  | Comma-separated numeric sensor IDs. Compare sensors with the same units. |
 | `seconds` | number | 60 | min 5, max 600 | Number of recent samples to display (roughly seconds for 1 Hz system sensors). |
 | `fixedScale` | toggle | true |  | Pin the shared range instead of automatically scaling all lines together. |
+| `smooth` | toggle | false |  | Blend chart updates over 300 ms. Respects reduced motion. Recorded values and summaries stay unchanged. |
 | `min` | number | 0 |  | Bottom of the fixed chart scale. |
 | `max` | number | 100 |  | Top of the fixed chart scale. |
 | `showThreshold` | toggle | false |  | Shade the area at or above the threshold. |
@@ -857,13 +860,14 @@ A list of headlines from your configured RSS / Atom feed.
 Your upcoming calendar events from a configured ICS feed.
 
 - **Sensor:** none (self-sourcing)
-- **Default size:** 240×150
+- **Default size:** 280×260
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `title` | text | "" |  | optional title above the list |
 | `maxRows` | number | 6 | min 1, max 20, step 1 | how many upcoming events to show |
-| `color` | color |  |  | header / bullet colour (blank = theme accent) |
+| `color` | color |  |  | time / timeline colour (blank = theme accent) |
 
 ### AI Assistant — `aichat`
 

@@ -41,7 +41,9 @@ export default function Agenda({ title = '', maxRows = 6, color }: Props) {
 		return off;
 	}, [hub]);
 
-	const vis = upcomingEvents(events, now, maxRows);
+	const upcoming = upcomingEvents(events, now, Number.MAX_SAFE_INTEGER);
+	const vis = upcoming.slice(0, Math.max(0, maxRows));
+	const more = upcoming.length - vis.length;
 	const vars = color ? ({ '--ag-accent': color } as CSSProperties) : undefined;
 
 	return (
@@ -56,16 +58,38 @@ export default function Agenda({ title = '', maxRows = 6, color }: Props) {
 					No upcoming events
 				</div>
 			) : (
-				<ol className="ag-list">
-					{vis.map((e, i) => (
-						<li className="ag-row" key={i}>
-							<span className="ag-when">{formatEventWhen(e.start, e.allDay, now)}</span>
-							<span className="ag-summary" title={e.location || e.summary}>
-								{e.summary}
-							</span>
-						</li>
-					))}
+				<ol className="ag-list" aria-label="Upcoming events" tabIndex={0}>
+					{vis.map((e, i) => {
+						const day = formatEventWhen(e.start, true, now);
+						const previous = vis[i - 1];
+						const newDay = !previous || day !== formatEventWhen(previous.start, true, now);
+						return (
+							<li className="ag-row" key={`${e.start}-${e.summary}-${i}`}>
+								{newDay && <div className="ag-day">{day}</div>}
+								<div className="ag-event">
+									<time className="ag-when" dateTime={e.start}>
+										{e.allDay ? 'All day' : formatEventWhen(e.start, false, now).slice(-5)}
+									</time>
+									<div className="ag-details">
+										<div className="ag-summary" title={e.summary}>
+											{e.summary}
+										</div>
+										{e.location && (
+											<div className="ag-location" title={e.location}>
+												{e.location}
+											</div>
+										)}
+									</div>
+								</div>
+							</li>
+						);
+					})}
 				</ol>
+			)}
+			{more > 0 && (
+				<div className="ag-more">
+					+{more} more {more === 1 ? 'event' : 'events'}
+				</div>
 			)}
 		</div>
 	);

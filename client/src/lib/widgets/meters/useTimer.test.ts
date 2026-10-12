@@ -18,6 +18,71 @@ const advance = (ms: number): void => {
 };
 
 describe('useTimer countdown', () => {
+	it('bounds dial selections and ignores non-finite values', () => {
+		const { result } = renderHook(() => useTimer({ mode: 'countdown', duration: 300, loop: true }));
+		act(() => result.current.setCountdown(9999));
+		expect(result.current.seconds).toBe(3600);
+		act(() => result.current.setCountdown(NaN));
+		expect(result.current.seconds).toBe(3600);
+		act(() => result.current.setCountdown(2));
+		advance(2500);
+		expect(result.current.seconds).toBe(1.5);
+		act(() => result.current.pause());
+		expect(result.current.seconds).toBe(1.5);
+	});
+	it.each(['bad', Infinity, -1])(
+		'rejects malformed persisted dial duration %s',
+		(durationSeconds) => {
+			localStorage.setItem(
+				'bad-dial',
+				JSON.stringify({
+					version: 1,
+					config: 'countdown:300:0',
+					runtime: { running: false, accumulatedMs: 0, startedAt: null, durationSeconds }
+				})
+			);
+			const { result } = renderHook(() =>
+				useTimer({ mode: 'countdown', duration: 300, storageKey: 'bad-dial' })
+			);
+			expect(result.current.seconds).toBe(300);
+			act(() =>
+				window.dispatchEvent(
+					new CustomEvent('widgetsack:timer-state', {
+						detail: {
+							storageKey: 'bad-dial',
+							config: 'countdown:300:0',
+							runtime: {
+								running: false,
+								accumulatedMs: 0,
+								startedAt: null,
+								durationSeconds: Infinity
+							}
+						}
+					})
+				)
+			);
+			expect(result.current.seconds).toBe(300);
+		}
+	);
+	it('starts a newly selected dial duration, persists it, and stops at zero', () => {
+		const first = renderHook(() =>
+			useTimer({ mode: 'countdown', duration: 300, storageKey: 'dial-test' })
+		);
+		act(() => first.result.current.setCountdown(1200));
+		expect(first.result.current.seconds).toBe(1200);
+		expect(first.result.current.running).toBe(true);
+		advance(2000);
+		first.unmount();
+		const second = renderHook(() =>
+			useTimer({ mode: 'countdown', duration: 300, storageKey: 'dial-test' })
+		);
+		expect(second.result.current.seconds).toBe(1198);
+		act(() => second.result.current.reset());
+		expect(second.result.current.seconds).toBe(1200);
+		act(() => second.result.current.setCountdown(0));
+		expect(second.result.current.seconds).toBe(0);
+		expect(second.result.current.running).toBe(false);
+	});
 	it('starts idle at the full duration and is not done', () => {
 		const { result } = renderHook(() => useTimer({ mode: 'countdown', duration: 10 }));
 		expect(result.current.seconds).toBe(10);

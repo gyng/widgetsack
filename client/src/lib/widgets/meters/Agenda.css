@@ -1,57 +1,94 @@
-/* Agenda — an optional title + a list of upcoming events (when · summary). Themeable via --np-* / --ag-*. */
+/* Day headings and a quiet timeline keep dense calendars easy to scan. */
 .agenda {
 	display: flex;
 	flex-direction: column;
-	gap: var(--ag-gap, 4px);
+	gap: var(--ag-gap, 10px);
 	width: 100%;
 	height: 100%;
+	min-width: 0;
 	box-sizing: border-box;
 	overflow: hidden;
 	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
 	color: var(--np-fg, rgb(255, 255, 255));
 }
-
 .ag-head {
 	flex: 0 0 auto;
 }
 .ag-title {
-	font-size: var(--ag-title-size, 0.68em);
-	letter-spacing: 0.04em;
+	font-size: var(--ag-title-size, 0.75em);
+	font-weight: 600;
+	letter-spacing: 0.06em;
 	text-transform: uppercase;
-	color: var(--np-label, rgba(255, 255, 255, 0.5));
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
 }
-
 .ag-list {
 	list-style: none;
 	margin: 0;
-	padding: 0;
+	padding: 0 3px 0 0;
 	display: flex;
 	flex-direction: column;
-	gap: var(--ag-row-gap, 3px);
+	gap: var(--ag-row-gap, 8px);
 	min-height: 0;
-	overflow: hidden;
+	overflow: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--np-border, rgba(255, 255, 255, 0.18)) transparent;
+}
+.ag-list:focus-visible {
+	outline: 1px solid var(--ag-accent, var(--np-accent, rgb(119, 196, 211)));
+	outline-offset: -1px;
 }
 .ag-row {
+	flex: 0 0 auto;
+	font-size: var(--ag-row-size, 0.86em);
+	line-height: 1.35;
+}
+.ag-day {
+	margin: 5px 0 7px;
+	font-size: 0.84em;
+	font-weight: 600;
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
+}
+.ag-row:first-child .ag-day {
+	margin-top: 0;
+}
+.ag-event {
 	display: flex;
 	align-items: baseline;
-	gap: 8px;
-	font-size: var(--ag-row-size, 0.86em);
-	line-height: 1.25;
+	gap: 10px;
+	border-left: 2px solid var(--ag-accent, var(--np-accent, rgb(119, 196, 211)));
+	padding-left: 8px;
 }
 .ag-when {
-	flex: 0 0 auto;
-	min-width: var(--ag-when-w, 5.2em);
+	flex: 0 0 var(--ag-when-w, 3.8em);
+	font-size: 0.9em;
 	font-variant-numeric: tabular-nums;
 	color: var(--ag-accent, var(--np-accent, rgb(119, 196, 211)));
 }
-.ag-summary {
+.ag-details {
+	flex: 1;
 	min-width: 0;
+}
+.ag-summary {
+	font-weight: 500;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
-
+.ag-location {
+	margin-top: 2px;
+	font-size: 0.84em;
+	color: var(--np-label, rgba(255, 255, 255, 0.55));
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
 .ag-empty {
-	color: var(--np-label, rgba(255, 255, 255, 0.4));
+	padding: 12px 0;
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
 	font-size: 0.86em;
+}
+.ag-more {
+	flex: 0 0 auto;
+	font-size: 0.72em;
+	color: var(--np-label, rgba(255, 255, 255, 0.6));
 }

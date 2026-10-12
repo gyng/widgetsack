@@ -64,7 +64,7 @@ describe('dashboard meters', () => {
 			GPU: { value: null, history: [10, 20] },
 			Empty: { value: null, history: [] }
 		};
-		rerender(<History sensors={sensors} fixedScale showThreshold threshold={80} />);
+		rerender(<History sensors={sensors} fixedScale showThreshold threshold={80} smooth />);
 		expect(screen.getByText(/CPU · min 0.0 \/ avg 50.0 \/ max 100.0/)).toBeVisible();
 		expect(screen.getByTitle('Threshold 80')).toHaveStyle({ height: '20%' });
 		rerender(<History sensors={sensors} seconds={2} showStats={false} />);

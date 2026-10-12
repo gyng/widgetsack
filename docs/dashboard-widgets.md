@@ -55,6 +55,10 @@ The optional threshold band shades values above the configured limit. The legend
 average, and maximum for each visible window. The history length is measured in samples; at the
 system sensors’ 1 Hz cadence it approximately equals seconds, up to the hub’s 600-sample buffer.
 
+Enable **smooth updates** to blend chart changes over 300 ms. This option is also available on
+Sparkline, including histogram mode. It changes only the display; recorded values and history
+summaries stay unchanged. Reduced-motion settings disable the animation.
+
 ## Dashboard sacks
 
 Open **Sacks** and import **Built-in: Work**, **Built-in: Gaming**, **Built-in: Home**, or

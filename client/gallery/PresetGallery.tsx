@@ -49,18 +49,20 @@ export default function PresetGallery() {
 						<figure className="cell" key={def.id}>
 							<StyleLayer css={css} />
 							<div className="preset-stage" data-shot={`preset-${sack.name!.toLowerCase()}`}>
-								<div
-									data-group=""
-									data-def={def.id}
-									style={{ width: def.size.w, height: def.size.h }}
-								>
-									<FlowNode
-										node={child}
-										parentKind="col"
-										prefix="preset/"
-										renderLeaf={renderLeaf}
-										fill
-									/>
+								<div className="preset-frame">
+									<div
+										data-group=""
+										data-def={def.id}
+										style={{ width: def.size.w, height: def.size.h }}
+									>
+										<FlowNode
+											node={child}
+											parentKind="col"
+											prefix="preset/"
+											renderLeaf={renderLeaf}
+											fill
+										/>
+									</div>
 								</div>
 								<figcaption>{sack.name}</figcaption>
 							</div>

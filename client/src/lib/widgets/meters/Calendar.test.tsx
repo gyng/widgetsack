@@ -10,6 +10,15 @@ afterEach(() => {
 // The meter self-sources the real date, so these assert STRUCTURE (the grid math is exhaustively
 // covered in core/calendar.test.ts) — which holds whatever today happens to be.
 describe('Calendar meter', () => {
+	it('labels each date unambiguously and keeps today marked on a weekend', () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2027, 0, 3, 12));
+		const { getByRole } = render(<Calendar />);
+		const today = getByRole('gridcell', { name: 'Sunday 3 January 2027' });
+		expect(today).toHaveAttribute('aria-current', 'date');
+		expect(today).toHaveClass('cal-weekend', 'cal-today');
+		expect(today).toHaveTextContent('3');
+	});
 	it('renders a 7-column weekday header and highlights today by default', () => {
 		const { container } = render(<Calendar />);
 		const grid = container.querySelector('.cal-grid');

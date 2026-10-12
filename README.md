@@ -28,8 +28,8 @@ Start with one of four bundled dashboards. Keep it as supplied, or make it yours
 
 | Work | Gaming |
 | --- | --- |
-| <img src="docs/img/presets/work.png" width="400" alt="Work preset with agenda, checklist, focus timer, and disk-space alert"> | <img src="docs/img/presets/gaming.png" width="400" alt="Gaming preset with CPU/GPU history, GPU metrics, ping, app audio mixer, microphone mute, and now playing"> |
-| Agenda, tasks, focus timer, and alerts. | Performance history, GPU stats, latency, audio controls, and music. |
+| <img src="docs/img/presets/work.png" width="400" alt="Work preset with agenda, checklist, focus timer, and disk-space alert"> | <img src="docs/img/presets/gaming.png" width="400" alt="Gaming preset with CPU/GPU history, GPU metrics, ping, and now playing"> |
+| Agenda, tasks, focus timer, and alerts. | Performance history, GPU stats, latency, and music. |
 
 | Home | Minimal |
 | --- | --- |
@@ -63,6 +63,10 @@ To save a monitor's full arrangement for later use, use the studio's **Presets**
   for the full list. Use sensors or [formulas](docs/templating.md) to supply values.
 - **Sensors:** read CPU load and frequency, memory, swap, network traffic, disk use and I/O, uptime,
   battery, and process activity. Read NVIDIA GPU data through NVML. Sensors run when visible widgets need them.
+- **Charts:** enable **Smooth updates** on Sparkline or Sensor History to blend changes between ticks.
+  This changes the display only. Recorded values stay unchanged.
+- **Timer:** choose **dial** style for a kitchen timer with a raised knob. Drag to set up to 60 minutes;
+  release to start. Use a box around 220 × 280 for a comfortable grip. Digital style also supports a stopwatch.
 - **Now playing:** show Windows media through GSMTC. Sources include Spotify, foobar2000, and browsers
   ([support table](https://github.com/ModernFlyouts-Community/ModernFlyouts/blob/main/docs/GSMTC-Support-And-Popular-Apps.md)).
 - **Integrations:** connect Home Assistant, MQTT, stock quotes, and Open-Meteo weather.
@@ -116,6 +120,20 @@ Inside a widgetsack window, use **`Ctrl+E`**.
 If the overlay stops responding, press **`Ctrl+Alt+Shift+E`**. This rescue shortcut brings every
 widgetsack window forward and lets it receive clicks, even after a webview crash.
 **Settings → Diagnostics** has the same control, live logs, and **Copy diagnostics** for bug reports.
+
+### Studio AI assistant
+
+Select **Assistant** in the studio toolbar to open the chat sidebar. Ask it to add widgets,
+change their settings, arrange them, or edit their CSS. Changes appear on the desktop and can be
+undone. Select **Save** to keep them.
+
+The assistant prefers installed agents: Pi first, then Codex, then Claude. It uses their existing
+login and settings. You can select any installed agent in the sidebar.
+
+If none is installed, the bundled [Pi SDK](https://pi.dev/) is the fallback. No separate Pi or Node
+installation is needed for it. Configure **Plugins → AI Provider**, or use an existing Pi login,
+then select **Refresh agents**. The bundled SDK is also available as an explicit choice.
+The sidebar lists available agents and models. **Stop** cancels a request; **New chat** clears the conversation.
 
 ### Theming
 

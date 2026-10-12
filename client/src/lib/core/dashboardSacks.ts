@@ -58,7 +58,6 @@ export const DASHBOARD_SACKS: Record<string, Sack> = {
 		{ type: 'history', height: 150, config: { label: 'CPU / GPU', showThreshold: true } },
 		{ type: 'gpu', height: 96 },
 		{ type: 'ping', height: 30 },
-		{ type: 'audiomixer', height: 160 },
 		{ type: 'nowplaying', height: 120 }
 	]),
 	'Built-in: Home': dashboard('Home', '#9bd385', [

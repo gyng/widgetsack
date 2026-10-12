@@ -251,9 +251,19 @@ const styleCss = [
 	.filter(Boolean)
 	.join('\n');
 
-function Stage({ inst, w, h }: { inst: WidgetInstance; w: number; h: number }) {
+function Stage({
+	inst,
+	w,
+	h,
+	shot = inst.type
+}: {
+	inst: WidgetInstance;
+	w: number;
+	h: number;
+	shot?: string;
+}) {
 	return (
-		<div className="stage" data-shot={`widget-${inst.type}`} style={{ width: w, height: h }}>
+		<div className="stage" data-shot={`widget-${shot}`} style={{ width: w, height: h }}>
 			<WidgetHost hub={hub} instance={inst} />
 		</div>
 	);
@@ -319,6 +329,18 @@ export default function Gallery() {
 							</figure>
 						);
 					})}
+					<figure className="cell">
+						<Stage
+							inst={buildInstance('timer', 'w-timer-dial', {
+								rect: { x: 0, y: 0, w: 220, h: 280 },
+								config: { style: 'dial', duration: 1500 }
+							})}
+							w={220}
+							h={280}
+							shot="timer-dial"
+						/>
+						<figcaption>Timer · dial</figcaption>
+					</figure>
 				</section>
 
 				<PresetGallery />

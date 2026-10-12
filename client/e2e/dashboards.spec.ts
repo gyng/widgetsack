@@ -1,5 +1,25 @@
 import { test, expect } from '@playwright/test';
 import { gotoStudio, previewTemplate, watchConsole, openSection } from './helpers';
+test('preset screenshots have matching dimensions without stretching shorter dashboards', async ({
+	page
+}) => {
+	await page.goto('/gallery/?presets');
+	const shots = page.locator('[data-shot^="preset-"]');
+	await expect(shots).toHaveCount(4);
+	const sizes = await shots.evaluateAll((nodes) =>
+		nodes.map((node) => {
+			const { width, height } = node.getBoundingClientRect();
+			return { width, height };
+		})
+	);
+	for (const size of sizes) expect(size).toEqual(sizes[0]);
+	for (const group of await shots.locator('[data-group=""]').all())
+		await expect(group).toHaveCSS('width', '392px');
+	await expect(page.locator('[data-shot="preset-minimal"] [data-group=""]')).toHaveCSS(
+		'height',
+		'294px'
+	);
+});
 test('Gaming preset keeps its media text and cover readable at the shipped size', async ({
 	page
 }) => {

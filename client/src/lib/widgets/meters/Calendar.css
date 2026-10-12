@@ -7,7 +7,7 @@
 	width: 100%;
 	height: 100%;
 	box-sizing: border-box;
-	gap: var(--cal-gap, 4px);
+	gap: var(--cal-title-gap, 12px);
 	overflow: hidden;
 	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
 	color: var(--np-fg, rgb(255, 255, 255));
@@ -15,10 +15,10 @@
 
 .cal-title {
 	flex: 0 0 auto;
-	font-size: var(--cal-title-size, 0.9em);
+	font-size: var(--cal-title-size, 0.95em);
 	font-weight: 600;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
+	line-height: 1.4;
+	text-align: center;
 	color: var(--cal-accent, var(--np-accent, rgb(119, 196, 211)));
 }
 
@@ -32,7 +32,7 @@
 
 .cal-row {
 	display: grid;
-	grid-template-columns: repeat(7, 1fr);
+	grid-template-columns: repeat(7, minmax(0, 1fr));
 	gap: var(--cal-gap, 4px);
 	flex: 1 1 0;
 	min-height: 0;
@@ -41,6 +41,9 @@
 /* The weekday header row hugs its text instead of stretching like the day rows. */
 .cal-head {
 	flex: 0 0 auto;
+	padding-bottom: 7px;
+	margin-bottom: 3px;
+	border-bottom: 1px solid var(--np-border, rgba(255, 255, 255, 0.15));
 }
 
 .cal-wd {
@@ -48,6 +51,8 @@
 	align-items: center;
 	justify-content: center;
 	font-size: var(--cal-wd-size, 0.7em);
+	min-width: 0;
+	line-height: 1.4;
 	letter-spacing: 0.03em;
 	text-transform: uppercase;
 	color: var(--np-label, rgba(255, 255, 255, 0.55));
@@ -59,6 +64,17 @@
 	justify-content: center;
 	min-width: 0;
 	font-size: var(--cal-day-size, 0.85em);
+	line-height: 1;
+	font-variant-numeric: tabular-nums;
+}
+
+.cal-number {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: min(100%, var(--cal-marker-size, 28px));
+	height: 100%;
+	max-height: var(--cal-marker-size, 28px);
 	border-radius: var(--cal-radius, 4px);
 }
 
@@ -71,7 +87,7 @@
 	color: var(--cal-weekend, var(--np-label, rgba(255, 255, 255, 0.7)));
 }
 
-.cal-today {
+.cal-today .cal-number {
 	background: var(--cal-accent, var(--np-accent, rgb(119, 196, 211)));
 	color: var(--cal-today-fg, var(--np-bg, #0b0b0e));
 	font-weight: 700;

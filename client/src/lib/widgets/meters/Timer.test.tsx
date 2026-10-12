@@ -73,6 +73,17 @@ describe('Timer (default, self-sourcing) wires useTimer to TimerView', () => {
 	afterEach(() => vi.useRealTimers());
 
 	const val = (c: HTMLElement): string => c.querySelector('[data-part="value"]')?.textContent ?? '';
+	it('starts a dial setting and counts down automatically; stopwatch keeps its digital view', () => {
+		const { container, getByRole, rerender } = render(<Timer style="dial" duration={5000} />);
+		expect(val(container)).toBe('60:00');
+		fireEvent.keyDown(getByRole('slider'), { key: 'Home' });
+		fireEvent.keyDown(getByRole('slider'), { key: 'ArrowUp' });
+		expect(val(container)).toBe('01:00');
+		act(() => vi.advanceTimersByTime(1000));
+		expect(val(container)).toBe('00:59');
+		rerender(<Timer style="dial" mode="stopwatch" />);
+		expect(container.querySelector('[role="slider"]')).toBeNull();
+	});
 
 	it('shows a paused countdown at its full duration (ceiling) and counts down on start', () => {
 		const { container, getByLabelText } = render(<Timer mode="countdown" duration={5} />);

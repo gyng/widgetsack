@@ -22,16 +22,25 @@ export type TimerState = {
 	pause: () => void;
 	reset: () => void;
 	toggle: () => void;
+	setCountdown: (seconds: number) => void;
 };
 
-type Runtime = { running: boolean; accumulatedMs: number; startedAt: number | null };
+type Runtime = {
+	running: boolean;
+	accumulatedMs: number;
+	startedAt: number | null;
+	durationSeconds?: number;
+};
 type Model = { identity: string; runtime: Runtime };
 type StoredTimer = { version: 1; config: string; runtime: Runtime };
 
 const TIMER_EVENT = 'widgetsack:timer-state';
 const freshRuntime = (): Runtime => ({ running: false, accumulatedMs: 0, startedAt: null });
 const sameRuntime = (a: Runtime, b: Runtime): boolean =>
-	a.running === b.running && a.accumulatedMs === b.accumulatedMs && a.startedAt === b.startedAt;
+	a.running === b.running &&
+	a.accumulatedMs === b.accumulatedMs &&
+	a.startedAt === b.startedAt &&
+	a.durationSeconds === b.durationSeconds;
 
 const validRuntime = (value: unknown): value is Runtime => {
 	if (!value || typeof value !== 'object') return false;
@@ -40,6 +49,10 @@ const validRuntime = (value: unknown): value is Runtime => {
 		typeof runtime.running === 'boolean' &&
 		typeof runtime.accumulatedMs === 'number' &&
 		Number.isFinite(runtime.accumulatedMs) &&
+		(runtime.durationSeconds === undefined ||
+			(typeof runtime.durationSeconds === 'number' &&
+				Number.isFinite(runtime.durationSeconds) &&
+				runtime.durationSeconds >= 0)) &&
 		(runtime.startedAt === null ||
 			(typeof runtime.startedAt === 'number' && Number.isFinite(runtime.startedAt)))
 	);
@@ -78,21 +91,23 @@ export function useTimer(cfg: TimerConfig): TimerState {
 	const elapsedMs =
 		runtime.accumulatedMs +
 		(runtime.running && runtime.startedAt != null ? Math.max(0, now - runtime.startedAt) : 0);
-	const durationMs = Math.max(0, cfg.duration * 1000);
+	const duration = runtime.durationSeconds ?? cfg.duration;
+	const durationMs = Math.max(0, duration * 1000);
 	const elapsedSec = elapsedMs / 1000;
-	const seconds = cfg.mode === 'countdown' ? Math.max(0, cfg.duration - elapsedSec) : elapsedSec;
-	const done = cfg.mode === 'countdown' && cfg.duration > 0 && seconds <= 0;
+	const seconds = cfg.mode === 'countdown' ? Math.max(0, duration - elapsedSec) : elapsedSec;
+	const done = cfg.mode === 'countdown' && duration > 0 && seconds <= 0;
 
 	// Complete or loop before paint. Looping retains overshoot so delayed ticks do not introduce drift.
 	if (done && runtime.running) {
 		const next = cfg.loop
 			? {
+					...runtime,
 					running: true,
 					/* v8 ignore next -- done requires a positive countdown duration. */
 					accumulatedMs: durationMs > 0 ? elapsedMs % durationMs : 0,
 					startedAt: now
 				}
-			: { running: false, accumulatedMs: durationMs, startedAt: null };
+			: { ...runtime, running: false, accumulatedMs: durationMs, startedAt: null };
 		setModel({ identity, runtime: next });
 	}
 
@@ -162,6 +177,7 @@ export function useTimer(cfg: TimerConfig): TimerState {
 		setModel({
 			identity,
 			runtime: {
+				...runtime,
 				running: false,
 				/* v8 ignore next -- running runtimes are created only with a numeric startedAt anchor. */
 				accumulatedMs:
@@ -175,16 +191,33 @@ export function useTimer(cfg: TimerConfig): TimerState {
 		setModel({
 			identity,
 			runtime: {
+				...runtime,
 				running: runtime.running,
 				accumulatedMs: 0,
 				startedAt: runtime.running ? resetAt : null
 			}
 		});
-	}, [identity, runtime.running]);
+	}, [identity, runtime]);
+	const setCountdown = useCallback(
+		(seconds: number) => {
+			if (!Number.isFinite(seconds)) return;
+			const durationSeconds = Math.max(0, Math.min(3600, seconds));
+			setModel({
+				identity,
+				runtime: {
+					running: durationSeconds > 0,
+					accumulatedMs: 0,
+					startedAt: durationSeconds > 0 ? Date.now() : null,
+					durationSeconds
+				}
+			});
+		},
+		[identity]
+	);
 	const toggle = useCallback(
 		() => (runtime.running ? pause() : start()),
 		[runtime.running, pause, start]
 	);
 
-	return { seconds, running: runtime.running, done, start, pause, reset, toggle };
+	return { seconds, running: runtime.running, done, start, pause, reset, toggle, setCountdown };
 }

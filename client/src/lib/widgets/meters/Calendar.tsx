@@ -78,9 +78,14 @@ export default function Calendar({
 									key={`${day.y}-${day.m}-${day.d}`}
 									className={cls.join(' ')}
 									role="gridcell"
+									aria-label={formatClock(
+										new Date(day.y, day.m, day.d),
+										'dddd D MMMM YYYY',
+										locale
+									)}
 									aria-current={day.isToday ? 'date' : undefined}
 								>
-									{day.d}
+									<span className="cal-number">{day.d}</span>
 								</span>
 							);
 						})}

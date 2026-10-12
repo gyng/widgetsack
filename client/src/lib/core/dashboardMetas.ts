@@ -165,7 +165,8 @@ export const dashboardMetas: WidgetMeta[] = [
 			max: 100,
 			showThreshold: false,
 			threshold: 80,
-			showStats: true
+			showStats: true,
+			smooth: false
 		},
 		configFields: [
 			{
@@ -197,6 +198,13 @@ export const dashboardMetas: WidgetMeta[] = [
 				kind: 'toggle',
 				group: 'Appearance',
 				help: 'Pin the shared range instead of automatically scaling all lines together.'
+			},
+			{
+				key: 'smooth',
+				label: 'smooth updates',
+				kind: 'toggle',
+				group: 'Appearance',
+				help: 'Blend chart updates over 300 ms. Respects reduced motion. Recorded values and summaries stay unchanged.'
 			},
 			{
 				key: 'min',

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render } from '@testing-library/react';
 import Sparkline from './Sparkline';
 
 // The chart is drawn into a <canvas>, which has no queryable DOM and no 2D context under happy-dom.
@@ -35,6 +35,77 @@ afterEach(() => {
 });
 
 describe('Sparkline (canvas)', () => {
+	it('blends updates between frames, reaches the exact sample, and stops scheduling', () => {
+		const frames = new Map<number, FrameRequestCallback>();
+		let next = 0;
+		vi.spyOn(performance, 'now').mockReturnValue(0);
+		vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+			frames.set(++next, callback);
+			return next;
+		});
+		vi.spyOn(window, 'cancelAnimationFrame').mockImplementation((id) => {
+			frames.delete(id);
+		});
+		const frame = (time: number) =>
+			act(() => {
+				const pending = [...frames.values()];
+				frames.clear();
+				pending.forEach((callback) => callback(time));
+			});
+		const { rerender, unmount } = render(
+			<Sparkline history={[0, 20]} min={0} max={100} seconds={2} smooth />
+		);
+		expect(frames.size).toBe(0);
+		rerender(<Sparkline history={[20, 40]} min={0} max={100} seconds={2} smooth />);
+		expect(frames.size).toBe(1);
+		ctx.lineTo.mockClear();
+		frame(150);
+		expect(ctx.lineTo).toHaveBeenCalledWith(0.75, 0.7);
+		frame(300);
+		expect(ctx.lineTo).toHaveBeenCalledWith(0.75, 0.6);
+		expect(frames.size).toBe(0);
+		vi.mocked(performance.now).mockReturnValue(300);
+		rerender(<Sparkline history={[40, 60]} min={0} max={100} seconds={2} smooth />);
+		frame(450);
+		vi.mocked(performance.now).mockReturnValue(450);
+		rerender(<Sparkline history={[60, 80]} min={0} max={100} seconds={2} smooth />);
+		expect(frames.size).toBe(1);
+		ctx.lineTo.mockClear();
+		frame(600);
+		expect(ctx.lineTo).toHaveBeenCalledWith(0.75, 0.35);
+		frame(750);
+		expect(ctx.lineTo).toHaveBeenCalledWith(0.75, expect.closeTo(0.2));
+		expect(frames.size).toBe(0);
+		rerender(<Sparkline history={[80, 100]} min={0} max={100} seconds={2} smooth />);
+		unmount();
+		expect(frames.size).toBe(0);
+	});
+	it('finishes a transition when the window hides without leaving a queued frame', () => {
+		vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(42);
+		const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+		const { rerender } = render(<Sparkline history={[0, 20]} smooth />);
+		rerender(<Sparkline history={[20, 40]} smooth />);
+		ctx.stroke.mockClear();
+		act(() => document.dispatchEvent(new Event('visibilitychange')));
+		expect(cancel).toHaveBeenCalledWith(42);
+		expect(ctx.stroke).toHaveBeenCalledTimes(1);
+	});
+	it('cancels a pending transition when smoothing is disabled or motion is reduced', () => {
+		const request = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(42);
+		const cancel = vi.spyOn(window, 'cancelAnimationFrame').mockImplementation(() => {});
+		const { rerender } = render(<Sparkline history={[0, 20]} smooth />);
+		rerender(<Sparkline history={[20, 40]} smooth />);
+		expect(request).toHaveBeenCalledTimes(1);
+		rerender(<Sparkline history={[40, 60]} />);
+		expect(cancel).toHaveBeenCalledWith(42);
+		vi.spyOn(window, 'matchMedia').mockReturnValue({
+			matches: true,
+			addEventListener: vi.fn(),
+			removeEventListener: vi.fn()
+		} as unknown as MediaQueryList);
+		rerender(<Sparkline history={[60, 80]} smooth />);
+		expect(request).toHaveBeenCalledTimes(1);
+	});
 	it('keeps the themeable wrapper: classes, data-part/data-mode, role, and a canvas (no SVG)', () => {
 		const { container } = render(<Sparkline history={[1, 2]} />);
 		const wrap = container.querySelector('.sparkline.np-sparkline') as HTMLElement;

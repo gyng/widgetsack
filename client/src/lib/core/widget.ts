@@ -352,8 +352,15 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		category: 'Meters',
 		defaultSensor: 'cpu.total',
 		defaultSize: { w: 140, h: 30 },
-		defaultConfig: { seconds: 60, barGap: 0.2, axis: true },
+		defaultConfig: { seconds: 60, barGap: 0.2, axis: true, smooth: false },
 		configFields: [
+			{
+				key: 'smooth',
+				label: 'smooth updates',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'Blend chart updates over 300 ms. Respects reduced motion. Recorded values stay unchanged.'
+			},
 			num('seconds', 'history (s)', {
 				min: 5,
 				step: 5,
@@ -1231,7 +1238,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		// tick) + interactive so the controls catch clicks on the passive overlay.
 		type: 'timer',
 		description:
-			'A countdown timer or stopwatch with start / pause / reset. A countdown can loop when it reaches zero. Pick the time format; the controls work on the overlay (interactive).',
+			'A countdown timer or stopwatch with start / pause / reset. The dial style sets 0–60 minutes by dragging; release to start. A countdown can loop when it reaches zero. Controls work on the overlay (interactive).',
 		binds: 'none',
 		interactive: true,
 		label: 'Timer',
@@ -1239,6 +1246,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		defaultSize: { w: 160, h: 96 },
 		defaultConfig: {
 			mode: 'countdown',
+			style: 'digital',
 			duration: 300,
 			format: 'auto',
 			loop: false,
@@ -1256,6 +1264,14 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 			},
 			num('duration', 'duration (s)', { min: 0, group: DATA, help: 'countdown length in seconds' }),
 			text('label', 'label', { group: DATA, help: 'header text' }),
+			{
+				key: 'style',
+				label: 'style',
+				kind: 'select',
+				options: ['digital', 'dial'],
+				group: LOOK,
+				help: 'Dial: drag to set 0–60 minutes; release to start. Countdown only. Use a taller widget (about 220 × 280).'
+			},
 			{
 				key: 'format',
 				label: 'format',

@@ -93,3 +93,22 @@ describe('sparklineBars', () => {
 		expect(bars[1].h).toBe(20);
 	});
 });
+import { interpolateHistory } from './sparklineMath';
+
+describe('history transitions', () => {
+	it('blends values and clamps progress without changing the input snapshots', () => {
+		const from = [10, 40];
+		const to = [30, 20];
+		expect(interpolateHistory(from, to, -1)).toEqual(from);
+		expect(interpolateHistory(from, to, 0.5)).toEqual([20, 30]);
+		expect(interpolateHistory(from, to, 2)).toEqual(to);
+		expect(from).toEqual([10, 40]);
+		expect(to).toEqual([30, 20]);
+	});
+	it('right-aligns partial buffers and uses new values for unrecorded slots', () => {
+		expect(interpolateHistory([20], [10, 40], 0.5)).toEqual([10, 30]);
+		expect(interpolateHistory([10, 20, 30], [40, 50], 0.5)).toEqual([30, 40]);
+		expect(interpolateHistory([], [20], 0.5)).toEqual([20]);
+		expect(interpolateHistory([20], [], 0.5)).toEqual([]);
+	});
+});

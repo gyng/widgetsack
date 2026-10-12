@@ -31,6 +31,28 @@ const renderWith = async (
 };
 
 describe('Agenda meter', () => {
+	it('groups dates once, labels all-day events, and reports events beyond the row limit', async () => {
+		vi.useFakeTimers();
+		vi.setSystemTime(new Date(2027, 0, 1, 13));
+		const hub = createTelemetryHub();
+		hub.ingestBatch([
+			list([
+				{ summary: 'Holiday', start: '2027-01-01', allDay: true },
+				{ summary: 'Review', start: new Date(2027, 0, 1, 15).toISOString() },
+				{ summary: 'Planning', start: new Date(2027, 0, 2, 9).toISOString() },
+				{ summary: 'Lunch', start: new Date(2027, 0, 2, 12).toISOString() }
+			])
+		]);
+		const c = await renderWith(hub, { maxRows: 3 });
+		expect(Array.from(c.querySelectorAll('.ag-day'), (el) => el.textContent)).toEqual([
+			'Today',
+			'Tomorrow'
+		]);
+		expect(c.querySelector('.ag-when')?.textContent).toBe('All day');
+		expect(c.querySelector('.ag-more')?.textContent).toBe('+1 more event');
+		const capped = await renderWith(hub, { maxRows: 1 });
+		expect(capped.querySelector('.ag-more')?.textContent).toBe('+3 more events');
+	});
 	it('renders upcoming events with friendly when-labels, filtering the past', async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date(2027, 0, 1, 13, 0, 0)); // Fri 1 Jan 2027
@@ -44,7 +66,8 @@ describe('Agenda meter', () => {
 		const c = await renderWith(hub);
 		const rows = c.querySelectorAll('.ag-row');
 		expect(rows).toHaveLength(1); // the past event is filtered out
-		expect(rows[0].querySelector('.ag-when')?.textContent).toBe('Today 15:00');
+		expect(rows[0].querySelector('.ag-day')?.textContent).toBe('Today');
+		expect(rows[0].querySelector('.ag-when')?.textContent).toBe('15:00');
 		expect(rows[0].querySelector('.ag-summary')?.textContent).toBe('Design review');
 	});
 
@@ -65,7 +88,7 @@ describe('Agenda meter', () => {
 		);
 	});
 
-	it('uses the location as the summary tooltip when present', async () => {
+	it('shows locations alongside the event and preserves the full name in its tooltip', async () => {
 		vi.useFakeTimers();
 		vi.setSystemTime(new Date(2027, 0, 1, 13, 0, 0));
 		const hub = createTelemetryHub();
@@ -79,7 +102,8 @@ describe('Agenda meter', () => {
 			])
 		]);
 		const c = await renderWith(hub);
-		expect(c.querySelector('.ag-summary')?.getAttribute('title')).toBe('Room 4');
+		expect(c.querySelector('.ag-summary')?.getAttribute('title')).toBe('Standup');
+		expect(c.querySelector('.ag-location')?.textContent).toBe('Room 4');
 	});
 
 	it('renders nothing-but-empty (no subscription) when there is no telemetry hub', async () => {
@@ -113,7 +137,7 @@ describe('Agenda meter', () => {
 			list([{ summary: 'Design review', start: new Date(2027, 0, 1, 15, 0).toISOString() }])
 		]);
 		const c = await renderWith(hub);
-		expect(c.querySelector('.ag-when')?.textContent).toBe('Today 15:00');
+		expect(c.querySelector('.ag-when')?.textContent).toBe('15:00');
 		// Jump a day forward and let the minute tick fire — "when" should re-derive relative to `now`.
 		vi.setSystemTime(new Date(2027, 0, 2, 13, 0, 0));
 		await act(async () => {

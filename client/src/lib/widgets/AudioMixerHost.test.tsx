@@ -93,6 +93,7 @@ describe('audio mixer host', () => {
 			target: { value: '80' }
 		});
 		expect(screen.getByRole('slider', { name: 'Player volume' })).toHaveValue('80');
+		expect(screen.getByLabelText('Player volume level')).toHaveTextContent('80%');
 		await act(async () => vi.advanceTimersByTimeAsync(3000));
 		expect(getAudioMixer).toHaveBeenCalledOnce();
 		await act(async () => finish());

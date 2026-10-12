@@ -24,9 +24,10 @@ export const registerAgendaPlugin = (): void =>
 					// demand-gates the backend poll), like the Connections / RSS widgets.
 					type: 'agenda',
 					binds: 'none',
+					interactive: true,
 					label: 'Agenda',
 					description: 'Your upcoming calendar events from a configured ICS feed.',
-					defaultSize: { w: 240, h: 150 },
+					defaultSize: { w: 280, h: 260 },
 					defaultConfig: { title: '', maxRows: 6 },
 					configFields: [
 						{
@@ -51,7 +52,7 @@ export const registerAgendaPlugin = (): void =>
 							label: 'accent',
 							kind: 'color',
 							group: 'Appearance',
-							help: 'header / bullet colour (blank = theme accent)'
+							help: 'time / timeline colour (blank = theme accent)'
 						}
 					]
 				},

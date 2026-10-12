@@ -126,7 +126,8 @@ figcaption {
 .preset-stage {
 	padding: 24px;
 	background: #0b0f14;
-	width: 392px;
+	width: 440px;
+	box-sizing: border-box;
 }
 .preset-stage figcaption {
 	margin-top: 16px;
@@ -135,4 +136,9 @@ figcaption {
 		600 16px 'Segoe UI',
 		sans-serif;
 	color: #e9eef3;
+}
+.preset-frame {
+	height: 636px;
+	display: flex;
+	align-items: center;
 }

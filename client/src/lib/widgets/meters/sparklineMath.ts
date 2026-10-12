@@ -3,6 +3,16 @@
 
 export type Point = [number, number];
 
+/** Blend display snapshots in right-aligned slots. This never changes recorded telemetry. */
+export function interpolateHistory(from: number[], to: number[], progress: number): number[] {
+	const t = Math.max(0, Math.min(1, progress));
+	const offset = from.length - to.length;
+	return to.map((value, i) => {
+		const start = from[i + offset] ?? value;
+		return start + (value - start) * t;
+	});
+}
+
 /** Resolve the value range, falling back to data bounds where min/max aren't pinned. */
 export function sparklineRange(
 	history: number[],
