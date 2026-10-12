@@ -73,6 +73,13 @@
 .canvas .settings-panel .pl-desc {
 	max-width: 100%;
 }
+.canvas .settings-panel .set-help-list {
+	padding-left: var(--space-7);
+	margin: var(--space-4) 0 var(--space-6);
+}
+.canvas .settings-panel .set-help-list li + li {
+	margin-top: var(--space-4);
+}
 
 /* Diagnostics: the "level ≥ [select]" filter label must stay on one line even when the filter
    toolbar wraps (DiagnosticsPanel renders it inside our .pl-detail). */

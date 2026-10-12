@@ -63,6 +63,7 @@ relax it the same way it recolours it.
 | --- | --- |
 | `--ui-font` | Studio text: locally bundled IBM Plex Sans with system fallbacks. |
 | `--ui-font-mono` | Code, expressions, and identifiers. |
+| `--ui-font-weight` | Studio body and control weight (450 by default). |
 | `--ui-bg` | Base window + opaque panel background. |
 | `--ui-surface` | Translucent rails / docked panels. |
 | `--ui-bar-bg` | Top / sub / bottom bars (incl. the title bar). |

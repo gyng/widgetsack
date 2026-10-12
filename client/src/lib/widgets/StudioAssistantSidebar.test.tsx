@@ -13,11 +13,8 @@ const ready = {
 	backends: [
 		{ id: 'pi', label: 'Pi (installed)', available: true },
 		{ id: 'codex', label: 'Codex', available: true },
-		{ id: 'claude', label: 'Claude', available: false },
-		{ id: 'pi-bundled', label: 'Pi (bundled SDK)', available: true }
-	],
-	models: [{ id: 'openai/example', label: 'Example' }],
-	defaultModel: 'openai/example'
+		{ id: 'claude', label: 'Claude', available: false }
+	]
 };
 const props = () => ({
 	read: () => ({ monitorKey: 'primary', monitor: emptyMonitorLayout() }),
@@ -33,16 +30,45 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 describe('Studio assistant sidebar', () => {
+	it('keeps a selected installed agent on refresh and clears its model when falling back', async () => {
+		render(<StudioAssistantSidebar {...props()} />);
+		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
+		fireEvent.change(screen.getByLabelText('Agent backend'), { target: { value: 'codex' } });
+		fireEvent.change(screen.getByLabelText('Agent model'), { target: { value: 'custom-model' } });
+		fireEvent.click(screen.getByRole('button', { name: 'Refresh agents' }));
+		await waitFor(() => expect(screen.getByLabelText('Agent model')).toHaveValue('custom-model'));
+		vi.mocked(studioAgentStatus).mockResolvedValue({
+			...ready,
+			backends: ready.backends.map((agent) => ({ ...agent, available: agent.id === 'pi' }))
+		});
+		fireEvent.click(screen.getByRole('button', { name: 'Refresh agents' }));
+		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
+		expect(screen.getByLabelText('Agent model')).toHaveValue('');
+	});
+	it('explains missing agents and blocks sending from both keyboard and form', async () => {
+		vi.mocked(studioAgentStatus).mockResolvedValue({
+			...ready,
+			defaultBackend: '',
+			backends: ready.backends.map((agent) => ({ ...agent, available: false }))
+		});
+		render(<StudioAssistantSidebar {...props()} />);
+		expect(await screen.findByText(/No installed agent found/)).toBeVisible();
+		const input = screen.getByLabelText('Message to studio assistant');
+		fireEvent.change(input, { target: { value: 'Hello' } });
+		fireEvent.keyDown(input, { key: 'Enter' });
+		fireEvent.submit(input.closest('form')!);
+		expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
+		expect(studioAgentPorts.run).not.toHaveBeenCalled();
+		expect(screen.queryByText(/bundled SDK/)).toBeNull();
+	});
 	it('selects Codex when it is the detected default and ignores a status error after closing', async () => {
 		vi.mocked(studioAgentStatus).mockResolvedValueOnce({
 			...ready,
-			defaultBackend: 'codex',
-			modelError: 'Pi model settings are invalid'
+			defaultBackend: 'codex'
 		});
 		const { unmount } = render(<StudioAssistantSidebar {...props()} />);
 		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('codex'));
 		expect(screen.getByLabelText('Agent model')).toHaveValue('');
-		expect(screen.getByRole('alert')).toHaveTextContent('Pi model settings are invalid');
 		let fail: (reason: Error) => void = () => {};
 		vi.mocked(studioAgentStatus).mockImplementationOnce(
 			() =>
@@ -60,8 +86,14 @@ describe('Studio assistant sidebar', () => {
 	it('prefers installed Pi and submits from the keyboard without treating Shift+Enter as send', async () => {
 		const p = props();
 		render(<StudioAssistantSidebar {...p} />);
-		await waitFor(() => expect(screen.getByLabelText('Agent model')).toHaveValue('openai/example'));
+		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
 		expect(screen.getByLabelText('Agent backend')).toHaveValue('pi');
+		fireEvent.click(screen.getByRole('button', { name: 'Add a clock' }));
+		expect(screen.getByLabelText('Message to studio assistant')).toHaveValue('Add a clock');
+		expect(screen.getByLabelText('Message to studio assistant')).toHaveFocus();
+		fireEvent.change(screen.getByLabelText('Message to studio assistant'), {
+			target: { value: '' }
+		});
 		fireEvent.change(screen.getByLabelText('Agent model'), { target: { value: '' } });
 		const input = screen.getByLabelText('Message to studio assistant');
 		fireEvent.keyDown(input, { key: 'Enter' });
@@ -89,7 +121,7 @@ describe('Studio assistant sidebar', () => {
 		});
 		const p = props();
 		const { unmount } = render(<StudioAssistantSidebar {...p} />);
-		await screen.findByText('Example');
+		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
 		fireEvent.change(screen.getByLabelText('Message to studio assistant'), {
 			target: { value: 'Add a clock' }
 		});
@@ -125,15 +157,10 @@ describe('Studio assistant sidebar', () => {
 			await Promise.resolve();
 		});
 	});
-	it('explains how to sign in when installed Pi has no configured models', async () => {
-		vi.mocked(studioAgentStatus).mockResolvedValue({ ...ready, models: [], defaultModel: '' });
-		render(<StudioAssistantSidebar {...props()} />);
-		expect(await screen.findByText(/Sign in with your installed Pi/)).toBeVisible();
-	});
 	it('selects an installed agent and reports errors and missing setup', async () => {
 		vi.mocked(studioAgentPorts.run).mockRejectedValue(new Error('Login required'));
 		render(<StudioAssistantSidebar {...props()} />);
-		await screen.findByText('Example');
+		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
 		fireEvent.change(screen.getByLabelText('Agent backend'), { target: { value: 'codex' } });
 		fireEvent.change(screen.getByLabelText('Agent model'), { target: { value: 'custom-model' } });
 		fireEvent.change(screen.getByLabelText('Message to studio assistant'), {
@@ -141,10 +168,6 @@ describe('Studio assistant sidebar', () => {
 		});
 		fireEvent.click(screen.getByRole('button', { name: 'Send' }));
 		expect(await screen.findByRole('alert')).toHaveTextContent('Login required');
-		vi.mocked(studioAgentStatus).mockResolvedValue({ ...ready, models: [], defaultModel: '' });
-		fireEvent.change(screen.getByLabelText('Agent backend'), { target: { value: 'pi-bundled' } });
-		fireEvent.click(screen.getByRole('button', { name: 'Refresh agents' }));
-		expect(await screen.findByText(/Configure AI Provider/)).toBeVisible();
 	});
 	it('ignores old status requests after refresh or unmount', async () => {
 		let old: (value: typeof ready) => void = () => {};
@@ -157,12 +180,12 @@ describe('Studio assistant sidebar', () => {
 		const { unmount } = render(<StudioAssistantSidebar {...props()} />);
 		expect(screen.getByText('Checking agents…')).toBeVisible();
 		fireEvent.click(screen.getByRole('button', { name: 'Refresh agents' }));
-		await screen.findByText('Example');
+		await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
 		await act(async () => {
-			old({ ...ready, models: [], defaultModel: '' });
+			old(ready);
 			await Promise.resolve();
 		});
-		expect(screen.getByText('Example')).toBeVisible();
+		expect(screen.getByLabelText('Agent backend')).toHaveValue('pi');
 		vi.mocked(studioAgentStatus).mockRejectedValue(new Error('Runtime missing'));
 		fireEvent.click(screen.getByRole('button', { name: 'Refresh agents' }));
 		expect(await screen.findByRole('alert')).toHaveTextContent('Runtime missing');

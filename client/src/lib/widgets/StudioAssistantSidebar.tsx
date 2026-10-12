@@ -37,41 +37,50 @@ export default function StudioAssistantSidebar(props: Props) {
 	);
 	const [status, setStatus] = useState<AgentStatus | null>(null);
 	const [statusError, setStatusError] = useState('');
-	const [backend, setBackend] = useState('pi-bundled');
-	const initialized = useRef(false);
+	const [backend, setBackend] = useState('');
+	const selectedBackend = useRef('');
 	const [model, setModel] = useState('');
 	const [input, setInput] = useState('');
 	const [refresh, setRefresh] = useState(0);
 	const transcript = useRef<HTMLDivElement>(null);
+	const composer = useRef<HTMLTextAreaElement>(null);
 	useEffect(() => {
 		let alive = true;
 		setStatusError('');
+		setStatus(null);
 		void studioAgentStatus()
 			.then((result) => {
 				if (alive) {
 					setStatus(result);
-					if (!initialized.current) {
+					if (
+						!result.backends.some(
+							(agent) => agent.id === selectedBackend.current && agent.available
+						)
+					) {
+						session.reset();
+						selectedBackend.current = result.defaultBackend;
 						setBackend(result.defaultBackend);
-						setModel(
-							['pi', 'pi-bundled'].includes(result.defaultBackend) ? result.defaultModel : ''
-						);
-						initialized.current = true;
+						setModel('');
 					}
 				}
 			})
 			.catch((error) => {
-				if (alive) setStatusError(String(error));
+				if (alive) {
+					setStatus(null);
+					setStatusError(String(error));
+				}
 			});
 		return () => {
 			alive = false;
 		};
-	}, [refresh]);
+	}, [refresh, session]);
 	useEffect(() => () => session.dispose(), [session]);
 	useEffect(() => {
 		transcript.current?.scrollTo({ top: transcript.current.scrollHeight });
 	}, [state.messages, state.actions]);
+	const available = !!status?.backends.some((agent) => agent.id === backend && agent.available);
 	const submit = () => {
-		if (!input.trim() || state.busy) return;
+		if (!input.trim() || state.busy || !available) return;
 		void session.send(input, backend, model);
 		setInput('');
 	};
@@ -89,16 +98,18 @@ export default function StudioAssistantSidebar(props: Props) {
 					<select
 						aria-label="Agent backend"
 						value={backend}
-						disabled={state.busy}
+						disabled={state.busy || !status}
 						onChange={(event) => {
 							session.reset();
+							selectedBackend.current = event.target.value;
 							setBackend(event.target.value);
 							setModel('');
 						}}
 					>
-						{(
-							status?.backends ?? [{ id: 'pi-bundled', label: 'Pi (bundled SDK)', available: true }]
-						).map((agent) => (
+						<option value="" disabled>
+							Select an installed agent
+						</option>
+						{(status?.backends ?? []).map((agent) => (
 							<option key={agent.id} value={agent.id} disabled={!agent.available}>
 								{agent.label}
 								{agent.available ? '' : ' (not installed)'}
@@ -107,30 +118,14 @@ export default function StudioAssistantSidebar(props: Props) {
 					</select>
 				</label>
 				<label>
-					Model
-					{['pi', 'pi-bundled'].includes(backend) ? (
-						<select
-							aria-label="Agent model"
-							value={model}
-							disabled={state.busy}
-							onChange={(event) => setModel(event.target.value)}
-						>
-							<option value="">Pi default</option>
-							{status?.models.map((option) => (
-								<option key={option.id} value={option.id}>
-									{option.label}
-								</option>
-							))}
-						</select>
-					) : (
-						<input
-							aria-label="Agent model"
-							value={model}
-							placeholder="Installed agent default"
-							disabled={state.busy}
-							onChange={(event) => setModel(event.target.value)}
-						/>
-					)}
+					Model (optional)
+					<input
+						aria-label="Agent model"
+						value={model}
+						placeholder="Installed agent default"
+						disabled={state.busy || !available}
+						onChange={(event) => setModel(event.target.value)}
+					/>
 				</label>
 				<button
 					type="button"
@@ -145,13 +140,18 @@ export default function StudioAssistantSidebar(props: Props) {
 			</p>
 			{!status && !statusError && <p role="status">Checking agents…</p>}
 			{statusError && <p role="alert">{statusError}</p>}
-			{status?.modelError && <p role="alert">{status.modelError}</p>}
-			{status && ['pi', 'pi-bundled'].includes(backend) && !status.models.length && (
-				<p className="assistant-hint">
-					{backend === 'pi'
-						? 'Sign in with your installed Pi, then refresh agents.'
-						: 'Configure AI Provider in Plugins, or use your Pi login. Then refresh agents.'}
+			{status && !status.backends.some((agent) => agent.available) ? (
+				<p className="assistant-setup" role="status">
+					No installed agent found. Install and sign in with Pi, Codex, or Claude, then select
+					Refresh agents. Nothing is downloaded automatically.
 				</p>
+			) : (
+				status && (
+					<p className="assistant-hint">
+						Uses your agent&apos;s existing login and settings. Leave Model blank to use its
+						default.
+					</p>
+				)
 			)}
 			<div
 				className="assistant-transcript"
@@ -160,6 +160,25 @@ export default function StudioAssistantSidebar(props: Props) {
 				aria-label="Assistant conversation"
 				aria-live="polite"
 			>
+				{!state.messages.length && (
+					<div className="assistant-empty">
+						<strong>Make room for an idea.</strong>
+						<p>Describe the change you want, or start here.</p>
+						{['Add a clock', 'Arrange my widgets neatly'].map((prompt) => (
+							<button
+								key={prompt}
+								type="button"
+								disabled={!available}
+								onClick={() => {
+									setInput(prompt);
+									composer.current?.focus();
+								}}
+							>
+								{prompt}
+							</button>
+						))}
+					</div>
+				)}
 				{state.messages.map((message, i) => (
 					<article key={i} data-role={message.role}>
 						<strong>{message.role === 'user' ? 'You' : 'Assistant'}</strong>
@@ -173,6 +192,11 @@ export default function StudioAssistantSidebar(props: Props) {
 				))}
 			</div>
 			{state.error && <p role="alert">{state.error}</p>}
+			{state.busy && (
+				<p className="assistant-hint" role="status">
+					{status?.backends.find((agent) => agent.id === backend)?.label} is working…
+				</p>
+			)}
 			<form
 				onSubmit={(event) => {
 					event.preventDefault();
@@ -180,6 +204,7 @@ export default function StudioAssistantSidebar(props: Props) {
 				}}
 			>
 				<textarea
+					ref={composer}
 					aria-label="Message to studio assistant"
 					value={input}
 					placeholder="Add a clock and a smooth CPU chart…"
@@ -198,7 +223,7 @@ export default function StudioAssistantSidebar(props: Props) {
 							Stop
 						</button>
 					) : (
-						<button type="submit" disabled={!input.trim() || !status}>
+						<button type="submit" disabled={!input.trim() || !available}>
 							Send
 						</button>
 					)}

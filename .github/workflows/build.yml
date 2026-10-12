@@ -78,6 +78,9 @@ jobs:
           # Pin the CLI tested with our custom NSIS template. CLI upgrades must also
           # re-sync widgetsack/windows/installer.nsi with the bundled template.
           tauriScript: npx @tauri-apps/cli@2.11.5
+      - name: Verify legacy agent upgrade cleanup
+        shell: pwsh
+        run: ./widgetsack/windows/test-agent-cleanup.ps1
       - name: Upload bundles to the release (retried)
         # Only on a tag push (workflow_dispatch builds have no release to attach to). The draft release
         # for this tag must already exist (`gh release create vX --draft …` — see docs/development.md).

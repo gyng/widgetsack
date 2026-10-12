@@ -19,11 +19,23 @@
   Sleep 300
 !macroend
 
+!macro _WS_REMOVE_LEGACY_AGENT
+  ; v0.0.62 shipped Node and node_modules beneath this installation resource directory.
+  ; Remove only that legacy resource after stopping the app. Keep all user settings and agents.
+  IfFileExists "$INSTDIR\widgetsack.exe" 0 ws_agent_cleanup_done
+  RMDir /r "$INSTDIR\studio-agent"
+  IfFileExists "$INSTDIR\studio-agent\*.*" 0 ws_agent_cleanup_done
+  MessageBox MB_OK|MB_ICONSTOP "Could not remove the old studio-agent files. Close widgetsack and try the upgrade again." /SD IDOK
+  Abort
+  ws_agent_cleanup_done:
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro _WS_CLOSE_RUNNING_APP
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  !insertmacro _WS_REMOVE_LEGACY_AGENT
   ; Pre-0.0.28 installers nested the shortcut inside a "widgetsack" Start Menu FOLDER, which
   ; Windows 11's All-apps list and search index handle poorly (the report was "the app doesn't
   ; show up after install"). The shortcut now lands at the Programs root (no startMenuFolder),

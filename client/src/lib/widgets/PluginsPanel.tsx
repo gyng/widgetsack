@@ -182,7 +182,7 @@ function InstallPackageForm() {
 				<input
 					type="text"
 					value={source}
-					placeholder="owner/repo or https://…manifest.json"
+					placeholder="owner/repo or manifest URL"
 					aria-label="Package source"
 					spellCheck={false}
 					disabled={busy}
@@ -209,12 +209,36 @@ function InstallPackageForm() {
 // One Plugins-list status dot: subscribes to the plugin's declared status sensor (the same
 // `*.status` text samples the detail panels read) and renders an ok/warn/off dot. A component
 // (not inline JSX) so the useSensor hook count stays constant per list row.
-function PluginStatusDot({ hub, sensor }: { hub: TelemetryHub; sensor?: string }) {
+function PluginListEntry({
+	hub,
+	sensor,
+	name,
+	id
+}: {
+	hub: TelemetryHub;
+	sensor?: string;
+	name: string;
+	id: string;
+}) {
 	const state = useSensor(hub, sensor ?? '__none__');
-	if (!sensor) return null;
+	if (!sensor)
+		return (
+			<>
+				<span className="pl-dot-slot" aria-hidden="true" />
+				<span className="pl-name">{name}</span>
+			</>
+		);
 	const dot = statusDotFrom(state.value?.kind === 'text' ? state.value.value : null);
 	return (
-		<span className={`pl-dot pl-dot--${dot.state}`} title={dot.label} aria-label={dot.label} />
+		<>
+			<span className={`pl-dot pl-dot--${dot.state}`} title={dot.label} aria-label={dot.label} />
+			<span className="pl-name">
+				<span>{name}</span>
+				<span id={`plugin-status-${id}`} className={`pl-status-text pl-status-text--${dot.state}`}>
+					{dot.label}
+				</span>
+			</span>
+		</>
 	);
 }
 
@@ -237,11 +261,12 @@ export default function PluginsPanel({ hub, plugins, selectedId, onSelect }: Pro
 						<button
 							key={p.id}
 							type="button"
+							aria-label={p.name}
+							aria-describedby={p.statusSensor ? `plugin-status-${p.id}` : undefined}
 							className={['pl-item', p.id === selectedId && 'cur'].filter(Boolean).join(' ')}
 							onClick={() => onSelect(p.id)}
 						>
-							<PluginStatusDot hub={hub} sensor={p.statusSensor} />
-							{p.name}
+							<PluginListEntry hub={hub} sensor={p.statusSensor} name={p.name} id={p.id} />
 						</button>
 					))
 				) : (
@@ -252,7 +277,10 @@ export default function PluginsPanel({ hub, plugins, selectedId, onSelect }: Pro
 				{pluginLoadErrors().map((e) => (
 					<div key={e.id} className="pl-item pl-failed" title={e.error}>
 						<span className="pl-dot pl-dot--warn" aria-label="Failed to load" />
-						{e.name} <span className="dim">failed to load</span>
+						<span className="pl-name">
+							<span>{e.name}</span>
+							<span className="pl-status-text pl-status-text--warn">failed to load</span>
+						</span>
 					</div>
 				))}
 				{/* Third-party packages: declarative template/theme bundles dropped into the app-config
@@ -264,10 +292,9 @@ export default function PluginsPanel({ hub, plugins, selectedId, onSelect }: Pro
 						<PackageItem key={r.id} row={r} enabled={enabledIds.includes(r.id)} />
 					))
 				) : (
-					<div className="rp-stub">
-						No packages installed — install one above, or drop a folder at{' '}
-						<code>plugins\&lt;id&gt;\plugin.json</code> in the app config dir. See
-						docs/third-party-plugins.md.
+					<div className="pkg-empty">
+						<strong>No packages installed</strong>
+						<p>Add a package to get more themes and widgets. Paste its source above to install.</p>
 					</div>
 				)}
 			</div>

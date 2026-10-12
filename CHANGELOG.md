@@ -3,6 +3,32 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.63
+
+### Changed
+
+- Replace the bundled Pi SDK and Node runtime with a native Rust adapter for installed Pi,
+  Codex, and Claude agents. The installer ships no `node_modules` and downloads no agent runtime.
+  Agents use their existing login and settings. If none is available, the sidebar explains setup.
+- Give the assistant its own sidebar across all Studio sections. Keep the widget palette and
+  Inspector visible, preserve chat drafts during navigation, and use compact docks on smaller windows.
+- Improve Studio text contrast and weight, style text inputs consistently, and use monospace for
+  sensor values. Keep IBM Plex Sans and independent widget theme fonts.
+- Add small widget icons to the palette and outline. Enlarge the monitor picker, connect tree
+  guides between rows, and balance the margins in widget preview tooltips.
+- Show centered plugin indicators with visible status text. Simplify the package empty state and
+  package-source field. Rewrite Overlay settings with shorter sentences and clear bullet lists.
+- Refresh Studio screenshots and development documentation.
+
+### Fixed
+
+- Remove the old `studio-agent` installation directory, including Node and `node_modules`, during
+  upgrade. Preserve layouts, themes, settings, and user-installed agents. The release build tests
+  cleanup against isolated installer fixtures before upload.
+- Close CLI stdin after sending a prompt so installed agents can finish. Bound output, propagate
+  provider errors, and terminate agent process trees when a request stops or times out.
+- Keep onboarding hints from covering other Studio sections or the assistant workspace.
+
 ## 0.0.62
 
 ### Added

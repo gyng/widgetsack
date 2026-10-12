@@ -3,7 +3,7 @@
 	top: var(--bar-h);
 	right: 0;
 	bottom: var(--bar-b);
-	width: calc(var(--rail-r) - var(--pane-gap));
+	width: var(--assistant-w, 320px);
 	box-sizing: border-box;
 	padding: var(--space-5);
 	display: flex;
@@ -49,7 +49,7 @@
 	gap: 8px;
 }
 .studio-assistant header strong {
-	font-size: 15px;
+	font-size: var(--text-lg);
 }
 .studio-assistant .assistant-options {
 	display: grid;
@@ -91,8 +91,28 @@
 .studio-assistant .assistant-hint,
 .assistant-action {
 	margin: 0;
-	font-size: 12px;
+	font-size: var(--text-sm);
+	line-height: var(--line-caption);
 	color: var(--ui-fg-dim);
+}
+.studio-assistant .assistant-setup {
+	margin: 0;
+	padding: var(--space-4);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+	background: var(--ui-bg-2);
+}
+.assistant-empty {
+	display: grid;
+	gap: var(--space-4);
+	padding: var(--space-5) 0;
+}
+.assistant-empty p {
+	margin: 0;
+	color: var(--ui-fg-dim);
+}
+.assistant-empty button {
+	text-align: left;
 }
 .studio-assistant [role='alert'] {
 	margin: 0;

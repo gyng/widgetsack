@@ -258,7 +258,7 @@ describe('PluginsPanel packages list', () => {
 		const { getByText, getByLabelText } = renderPanel();
 		expect(getByText('Install')).toBeTruthy();
 		expect((getByLabelText('Package source') as HTMLInputElement).placeholder).toBe(
-			'owner/repo or https://…manifest.json'
+			'owner/repo or manifest URL'
 		);
 		expect(getByText(/No packages installed/)).toBeTruthy();
 	});

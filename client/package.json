@@ -1,11 +1,10 @@
 {
 	"name": "client",
-	"version": "0.0.62",
+	"version": "0.0.63",
 	"license": "MIT OR Apache-2.0",
 	"scripts": {
 		"dev": "vite dev",
 		"build": "vite build",
-		"build:agent": "node scripts/build-agent.mjs",
 		"preview": "vite preview",
 		"check": "tsc --noEmit",
 		"test:unit": "vitest",

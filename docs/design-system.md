@@ -20,7 +20,8 @@ These references guide hierarchy and layout. Widgetsack owns its fonts, colors, 
 
 ## Typography
 
-Define font size and line height together. Use regular weight for content and semibold for headings.
+Define font size and line height together. Use weight 450 for Studio content and controls, and
+600 for headings. The slightly firmer body weight improves small text on dark surfaces.
 All sizes below are CSS pixels before the user's display scaling.
 
 | Role | Size / line height | Use |

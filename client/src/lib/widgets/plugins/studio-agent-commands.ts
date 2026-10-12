@@ -3,10 +3,7 @@ import { COMMANDS } from '../../bridge/contract';
 import type { AgentEvent, AgentPorts } from '../../llm/studioAgentSession';
 export type AgentStatus = {
 	defaultBackend: string;
-	modelError?: string;
 	backends: { id: string; label: string; available: boolean }[];
-	models: { id: string; label: string }[];
-	defaultModel: string;
 };
 export const studioAgentStatus = () => invoke<AgentStatus>(COMMANDS.studioAgentStatus);
 export const studioAgentPorts: AgentPorts = {

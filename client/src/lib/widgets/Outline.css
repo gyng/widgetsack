@@ -90,6 +90,7 @@
 	display: flex;
 	align-self: stretch;
 	flex-shrink: 0;
+	margin-block: calc(-1 * var(--space-1));
 }
 .outline .lane {
 	position: relative;
@@ -179,6 +180,11 @@
 	font-size: var(--text-md);
 	cursor: pointer;
 	padding: var(--space-1);
+}
+.outline .widget-icon {
+	vertical-align: -3px;
+	margin-right: var(--space-3);
+	color: var(--ui-fg-muted);
 }
 
 /* The dim disambiguator after the type (user label / bound sensor / group name) — what tells five

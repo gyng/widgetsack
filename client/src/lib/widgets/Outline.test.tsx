@@ -62,9 +62,7 @@ describe('Outline leaf-drop feedback', () => {
 	it('marks a leaf row as an invalid drop target on dragover (no reparent)', () => {
 		const onOp = vi.fn();
 		const { getAllByText } = render(<Outline root={tree()} onOp={onOp} />);
-		const leafRow = getAllByText('• Text', { selector: '.label' })[0].closest(
-			'.row'
-		) as HTMLElement;
+		const leafRow = getAllByText('Text', { selector: '.label' })[0].closest('.row') as HTMLElement;
 		const data = {
 			getData: () => 'a',
 			dropEffect: '',
@@ -91,7 +89,7 @@ describe('Outline row context menu', () => {
 		const { getAllByText } = render(
 			<Outline root={tree()} onOp={() => undefined} onNodeContextMenu={onMenu} />
 		);
-		const row = getAllByText('• Text', { selector: '.label' })[0].closest('.row') as HTMLElement;
+		const row = getAllByText('Text', { selector: '.label' })[0].closest('.row') as HTMLElement;
 		const ev = fireEvent.contextMenu(row, { clientX: 40, clientY: 60, button: 2 });
 		expect(onMenu).toHaveBeenCalledWith({ id: 'a', x: 40, y: 60 });
 		expect(ev).toBe(false); // fireEvent returns false when preventDefault() was called
@@ -102,7 +100,7 @@ describe('Outline row context menu', () => {
 		const { getAllByText } = render(
 			<Outline root={tree()} onOp={() => undefined} onNodeContextMenu={onMenu} />
 		);
-		const row = getAllByText('• Text', { selector: '.label' })[0].closest('.row') as HTMLElement;
+		const row = getAllByText('Text', { selector: '.label' })[0].closest('.row') as HTMLElement;
 		row.getBoundingClientRect = () => ({ left: 10, top: 100, width: 200, height: 24 }) as DOMRect;
 		fireEvent.contextMenu(row, { clientX: 0, clientY: 0, button: 0 });
 		expect(onMenu).toHaveBeenCalledWith({ id: 'a', x: 110, y: 112 });
@@ -110,7 +108,7 @@ describe('Outline row context menu', () => {
 
 	it('leaves right-click native when no handler is supplied (overlay / preview)', () => {
 		const { getAllByText } = render(<Outline root={tree()} onOp={() => undefined} />);
-		const row = getAllByText('• Text', { selector: '.label' })[0].closest('.row') as HTMLElement;
+		const row = getAllByText('Text', { selector: '.label' })[0].closest('.row') as HTMLElement;
 		expect(fireEvent.contextMenu(row)).toBe(true); // not prevented
 	});
 });
@@ -148,19 +146,19 @@ describe('Outline row labels + hints', () => {
 		const { getByText } = render(<Outline root={labelledRoot()} />);
 		expect(getByText('▦ root (col)')).toBeTruthy();
 		expect(getByText('▦ row')).toBeTruthy();
-		expect(getByText('• Text')).toBeTruthy();
-		expect(getByText('• Gauge')).toBeTruthy();
-		expect(getByText('• Clock')).toBeTruthy();
+		expect(getByText('Text')).toBeTruthy();
+		expect(getByText('Gauge')).toBeTruthy();
+		expect(getByText('Clock')).toBeTruthy();
 		// hints: text leaf surfaces config.label, gauge surfaces its bound sensor.
 		expect(getByText('Hello')).toBeTruthy();
 		expect(getByText('cpu.total')).toBeTruthy();
 	});
 
-	it('shows a group leaf as "• group" with its name as the hint', () => {
+	it('shows a group leaf as "group" with its name as the hint', () => {
 		const g = group('g1', { w: 50, h: 50 }, leaf(prim('inner', 'text')), { name: 'My Widget' });
 		const root = container('root', 'col', [leaf(g)]);
 		const { getByText } = render(<Outline root={root} />);
-		expect(getByText('• group')).toBeTruthy();
+		expect(getByText('group')).toBeTruthy();
 		expect(getByText('My Widget')).toBeTruthy();
 	});
 
@@ -189,7 +187,7 @@ describe('Outline select + structural ops', () => {
 	it('clicking a row label emits a select op for that node', () => {
 		const onOp = vi.fn();
 		const { getByText } = render(<Outline root={labelledRoot()} onOp={onOp} />);
-		fireEvent.click(getByText('• Text'));
+		fireEvent.click(getByText('Text'));
 		expect(onOp).toHaveBeenCalledWith({ op: 'select', id: 'a-text' });
 	});
 
@@ -222,7 +220,7 @@ describe('Outline select + structural ops', () => {
 		const { getByText } = render(<Outline root={root} onOp={onOp} />);
 		// Scope the (per-row) action buttons to a-text's own row — every row renders the same set.
 		// The moves sit behind the row's ⋯ menu (which closes after each action).
-		const aRow = within(getByText('• Text').closest('.row')!);
+		const aRow = within(getByText('Text').closest('.row')!);
 		fireEvent.click(aRow.getByLabelText('More actions'));
 		fireEvent.click(aRow.getByLabelText('Move down'));
 		expect(onOp).toHaveBeenCalledWith({ op: 'moveDown', id: 'a-text' });
@@ -244,7 +242,7 @@ describe('Outline select + structural ops', () => {
 		const root = container('root', 'col', [leaf(prim('x', 'text')), leaf(prim('y', 'text'))]);
 		const { getAllByText } = render(<Outline root={root} />);
 		// x is the first direct child of root → Move up disabled; its parent IS root → Move out disabled.
-		const xRow = within(getAllByText('• Text')[0].closest('.row')!);
+		const xRow = within(getAllByText('Text')[0].closest('.row')!);
 		fireEvent.click(xRow.getByLabelText('More actions'));
 		expect((xRow.getByLabelText('Move up') as HTMLButtonElement).disabled).toBe(true);
 		expect((xRow.getByLabelText('Move out') as HTMLButtonElement).disabled).toBe(true);
@@ -252,7 +250,7 @@ describe('Outline select + structural ops', () => {
 
 	it('marks the selected node row with the .sel class', () => {
 		const { getByText } = render(<Outline root={labelledRoot()} selectedId="b-clock" />);
-		expect(getByText('• Clock').closest('.row')!.className).toContain('sel');
+		expect(getByText('Clock').closest('.row')!.className).toContain('sel');
 	});
 });
 
@@ -260,7 +258,7 @@ describe('Outline hover cross-highlight', () => {
 	it('reports hover enter/leave for a row via onHover', () => {
 		const onHover = vi.fn();
 		const { getByText } = render(<Outline root={labelledRoot()} onHover={onHover} />);
-		const row = getByText('• Clock').closest('.row')!;
+		const row = getByText('Clock').closest('.row')!;
 		fireEvent.mouseEnter(row);
 		expect(onHover).toHaveBeenCalledWith('b-clock');
 		fireEvent.mouseLeave(row);
@@ -269,7 +267,7 @@ describe('Outline hover cross-highlight', () => {
 
 	it('marks the hovered row with the .hover class from the hoverId prop', () => {
 		const { getByText } = render(<Outline root={labelledRoot()} hoverId="b-clock" />);
-		expect(getByText('• Clock').closest('.row')!.className).toContain('hover');
+		expect(getByText('Clock').closest('.row')!.className).toContain('hover');
 	});
 });
 
@@ -314,7 +312,7 @@ describe('Outline drag-and-drop into containers', () => {
 
 	it('dragging a row writes its node id onto the dataTransfer (so it can be reparented)', () => {
 		const { getByText } = render(<Outline root={labelledRoot()} />);
-		const leafRow = getByText('• Clock').closest('.row')!;
+		const leafRow = getByText('Clock').closest('.row')!;
 		const dt = fakeDataTransfer();
 		fireEvent.dragStart(leafRow, { dataTransfer: dt });
 		// The row carries its node id as the drag payload → a later drop reparents THIS node.
@@ -333,7 +331,7 @@ describe('Outline drag-and-drop into containers', () => {
 
 	it('tolerates drag events that carry no dataTransfer (synthetic drags)', () => {
 		const { getByText } = render(<Outline root={labelledRoot()} />);
-		const leafRow = getByText('• Clock').closest('.row')!;
+		const leafRow = getByText('Clock').closest('.row')!;
 		const containerRow = getByText('▦ row').closest('.row')!;
 		// No dataTransfer on any of these — the handlers must skip the payload/effect writes without
 		// crashing, and the visual target feedback still applies (it doesn't depend on the payload).
@@ -507,7 +505,7 @@ describe('Outline keyboard tree', () => {
 		expect(rowA.getAttribute('aria-expanded')).toBe('true');
 		fireEvent.keyDown(rowA, { key: 'ArrowLeft' });
 		expect(rowA.getAttribute('aria-expanded')).toBe('false');
-		expect(queryByText('• Gauge')).toBeNull();
+		expect(queryByText('Gauge')).toBeNull();
 		expect(items(c).length).toBe(3); // root, rowA, b-clock
 		// Left again on a collapsed container moves to the parent (root).
 		fireEvent.keyDown(rowA, { key: 'ArrowLeft' });
@@ -515,14 +513,14 @@ describe('Outline keyboard tree', () => {
 		// Right on the collapsed container expands it; Right again moves into the first child.
 		fireEvent.keyDown(rowA, { key: 'ArrowRight' });
 		expect(rowA.getAttribute('aria-expanded')).toBe('true');
-		expect(getByText('• Gauge')).toBeTruthy();
+		expect(getByText('Gauge')).toBeTruthy();
 		fireEvent.keyDown(rowA, { key: 'ArrowRight' });
 		expect(document.activeElement?.textContent).toContain('Hello'); // a-text
 		// Left on a leaf moves to its parent row.
 		fireEvent.keyDown(document.activeElement as HTMLElement, { key: 'ArrowLeft' });
 		expect(document.activeElement).toBe(rowA);
 		// Leaves have no aria-expanded and ignore ArrowRight.
-		const clock = getByText('• Clock').closest('.row') as HTMLElement;
+		const clock = getByText('Clock').closest('.row') as HTMLElement;
 		expect(clock.getAttribute('aria-expanded')).toBeNull();
 		fireEvent.keyDown(clock, { key: 'ArrowRight' });
 		expect(document.activeElement).toBe(rowA);
@@ -563,7 +561,7 @@ describe('Outline keyboard tree', () => {
 	it('Alt+Arrow runs the structural moves (up / down / out / in) for the focused tree row', () => {
 		const onOp = vi.fn();
 		const { getByText } = render(<Outline root={labelledRoot()} onOp={onOp} />);
-		const gauge = getByText('• Gauge').closest('.row') as HTMLElement; // 2nd child of rowA
+		const gauge = getByText('Gauge').closest('.row') as HTMLElement; // 2nd child of rowA
 		fireEvent.keyDown(gauge, { key: 'ArrowUp', altKey: true });
 		expect(onOp).toHaveBeenLastCalledWith({ op: 'moveUp', id: 'a-gauge' });
 		fireEvent.keyDown(gauge, { key: 'ArrowLeft', altKey: true });
@@ -590,7 +588,7 @@ describe('Outline keyboard tree', () => {
 		const { container: c, getByText } = render(
 			<Outline root={labelledRoot()} floating={floating} onOp={onOp} />
 		);
-		const gauge = getByText('• Gauge').closest('.row') as HTMLElement;
+		const gauge = getByText('Gauge').closest('.row') as HTMLElement;
 		expect(fireEvent.keyDown(gauge, { key: 'Delete' })).toBe(false); // claimed (preventDefault)
 		expect(onOp).toHaveBeenLastCalledWith({ op: 'remove', id: 'a-gauge' });
 		const fl = getByText('Floater').closest('.row') as HTMLElement;
@@ -607,7 +605,7 @@ describe('Outline keyboard tree', () => {
 		const { container: c, getByText } = render(
 			<Outline root={labelledRoot()} floating={floating} onOp={onOp} />
 		);
-		const gauge = getByText('• Gauge').closest('.row') as HTMLElement; // 2nd child of rowA
+		const gauge = getByText('Gauge').closest('.row') as HTMLElement; // 2nd child of rowA
 		gauge.focus();
 		expect(fireEvent.keyDown(gauge, { key: 'ContextMenu' })).toBe(false);
 		const menu = within(gauge).getByRole('menu');
@@ -634,7 +632,7 @@ describe('Outline keyboard tree', () => {
 
 	it('falls back to the root tab stop when the focused row gets hidden by a collapse', () => {
 		const { container: c, getByText } = render(<Outline root={labelledRoot()} />);
-		const gauge = getByText('• Gauge').closest('.row') as HTMLElement;
+		const gauge = getByText('Gauge').closest('.row') as HTMLElement;
 		gauge.focus();
 		fireEvent.keyDown(gauge, { key: 'ArrowUp' }); // focus a-text (roving stop moves with it)
 		expect(tabStops(c)[0].textContent).toContain('Hello');
@@ -646,7 +644,7 @@ describe('Outline keyboard tree', () => {
 	it('labels a row by the widget type label, falling back to the raw type when unregistered', () => {
 		const root = container('root', 'col', [leaf(prim('m', 'mystery.type'))]);
 		const { getByText } = render(<Outline root={root} />);
-		expect(getByText('• mystery.type')).toBeTruthy();
+		expect(getByText('mystery.type')).toBeTruthy();
 	});
 
 	it('Escape inside the ⋯ menu closes it and returns focus to the row', () => {

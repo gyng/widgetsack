@@ -90,7 +90,7 @@
 	position: fixed;
 	top: var(--bar-h, 36px);
 	left: var(--nav-w, 56px);
-	right: 0;
+	right: var(--assistant-w, 0px);
 	bottom: var(--bar-b, 0);
 	box-sizing: border-box;
 	overflow-y: auto;
@@ -98,7 +98,9 @@
 	background: var(--ui-bg);
 	color: var(--ui-fg);
 	font-family: var(--ui-font);
-	font-size: var(--text-lg);
+	font-size: var(--text-md);
+	font-weight: var(--ui-font-weight);
+	line-height: var(--line-body);
 	z-index: 7;
 	pointer-events: auto;
 	/* No entry animation: the panel is opaque and covers the whole stage, so fading it up from
@@ -307,7 +309,7 @@
 	position: fixed;
 	top: var(--bar-h, 36px);
 	left: var(--rail-l, 250px);
-	right: 0;
+	right: var(--assistant-w, 0px);
 	bottom: var(--bar-b, 0);
 	display: flex;
 	flex-direction: column;
@@ -389,6 +391,31 @@
 	padding: var(--space-1) var(--space-2);
 	margin-bottom: var(--space-2);
 	min-height: var(--control-h);
+}
+
+/* Text controls share a baseline; native checkbox/range/color controls keep their own geometry. */
+.canvas
+	.rail-panel
+	:is(
+		input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']),
+		textarea
+	) {
+	min-height: var(--control-h);
+	box-sizing: border-box;
+	min-width: 0;
+	background: var(--ui-raised);
+	color: var(--ui-fg);
+	border: 1px solid var(--ui-border-strong);
+	border-radius: var(--radius-control);
+	padding: var(--space-3) var(--space-4);
+	font-family: var(--ui-font);
+	font-size: var(--text-md);
+	font-weight: var(--ui-font-weight);
+	line-height: var(--line-body);
+}
+.canvas .rail-panel :is(input, textarea)::placeholder {
+	color: var(--ui-fg-dim);
+	opacity: 1;
 }
 
 /* Theme token override fields (mirrors the Inspector's "Theme tokens" group). */
@@ -687,6 +714,11 @@
 	text-overflow: ellipsis;
 	color: var(--ui-fg-dim);
 }
+.canvas .rail-panel .rp-row .sensor-value {
+	font-family: var(--ui-font-mono);
+	font-variant-numeric: tabular-nums;
+	color: var(--ui-fg-muted);
+}
 
 /* "from <plugin>" provenance badge: a small pill between the id and value, so plugin sensors (HA /
    MQTT / Stocks / Now Playing) are visually distinct from the built-in system feed. */
@@ -929,15 +961,19 @@
 }
 
 .canvas .plugins-panel .pl-list {
-	flex: 0 0 220px;
+	flex: 0 0 264px;
 	box-sizing: border-box;
 	overflow-y: auto;
 	padding: var(--space-5);
-	border-right: 1px solid rgba(var(--ui-accent-rgb), 0.5);
+	border-right: 1px solid var(--ui-border);
 }
 
 .canvas .plugins-panel .pl-item {
-	display: block;
+	display: grid;
+	grid-template-columns: 12px minmax(0, 1fr);
+	align-items: center;
+	gap: var(--space-4);
+	min-height: 44px;
 	width: 100%;
 	text-align: left;
 	margin: 0 0 var(--space-1);
@@ -947,7 +983,7 @@
 	border-left: 2px solid transparent;
 	color: var(--ui-fg);
 	font-family: var(--ui-font);
-	font-size: var(--text-lg);
+	font-size: var(--text-md);
 	cursor: pointer;
 }
 
@@ -958,20 +994,53 @@
 /* Per-plugin status dot (PluginStatusDot): ok = live/configured, warn = connecting/error/failed
    to load, off = not configured. Colors ride the centralized --ui-* tokens. */
 .canvas .plugins-panel .pl-dot {
-	display: inline-block;
-	width: 8px;
-	height: 8px;
+	display: block;
+	width: 10px;
+	height: 10px;
+	box-sizing: border-box;
+	border: 1px solid var(--ui-fg-muted);
 	border-radius: 50%;
-	margin-right: var(--space-2);
 	background: var(--ui-fg-dim);
+}
+.canvas .plugins-panel .pl-dot-slot {
+	width: 10px;
+	height: 10px;
+}
+.canvas .plugins-panel .pl-name {
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-1);
+	line-height: var(--line-body);
+}
+.canvas .plugins-panel .pl-status-text {
+	font-size: var(--text-sm);
+	line-height: var(--line-caption);
+	color: var(--ui-fg-dim);
+}
+.canvas .plugins-panel .pl-status-text--warn {
+	color: var(--ui-warn-fg);
+}
+.canvas .plugins-panel .pkg-empty {
+	margin-top: var(--space-5);
+	padding: var(--space-5);
+	background: var(--ui-raised);
+	border-radius: var(--radius-panel);
+	line-height: var(--line-body);
+}
+.canvas .plugins-panel .pkg-empty p {
+	margin: var(--space-2) 0 0;
+	color: var(--ui-fg-muted);
 }
 
 .canvas .plugins-panel .pl-dot--ok {
 	background: var(--ui-success-fg);
+	border-color: var(--ui-success-fg);
 }
 
 .canvas .plugins-panel .pl-dot--warn {
 	background: var(--ui-warn-fg);
+	border-color: var(--ui-warn-fg);
 }
 
 /* A plugin whose registration threw: an inert row (not selectable — it has no detail pane). */

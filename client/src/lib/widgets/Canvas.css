@@ -48,11 +48,12 @@
 	--tree-w: 200px; /* widget-designer: the def's structure tree, between the list and the canvas */
 	--rail-l: 250px;
 	--rail-r: 360px;
+	--assistant-w: 0px;
 	--pane-gap: 6px; /* empty gutter at each resizable divider — the drag handle lives here */
 	background: var(--ui-bg);
 	top: calc(var(--bar-h) + var(--subbar-h)); /* the stage (only) drops by the subbar row */
 	left: var(--rail-l);
-	right: var(--rail-r);
+	right: calc(var(--rail-r) + var(--assistant-w));
 	bottom: var(--bar-b); /* leave room for the bottom powerline hint bar */
 	overflow: hidden; /* clip the zoomed world to the stage (don't spill over the rails) */
 	/* The studio is a design surface, not a document: suppress native text/drag selection so dragging
@@ -120,7 +121,7 @@
 	left: calc(var(--rail-l) + var(--tree-w) - var(--pane-gap, 6px));
 }
 .canvas.studio .pane-resize.right {
-	right: calc(var(--rail-r) - var(--pane-gap, 6px));
+	right: calc(var(--rail-r) + var(--assistant-w) - var(--pane-gap, 6px));
 }
 
 /* …except where you actually edit text: Inspector fields, the theme CSS editor, prompts, etc. */
@@ -683,7 +684,7 @@
 .canvas .studio-bar.studio-subbar {
 	top: var(--bar-h, 36px);
 	left: var(--rail-l, 250px);
-	right: var(--rail-r, 360px);
+	right: calc(var(--rail-r, 360px) + var(--assistant-w));
 	height: var(--subbar-h, 30px);
 	background: var(--ui-bar-bg);
 	border-bottom-color: rgba(var(--ui-accent-rgb), 0.25);
@@ -758,6 +759,26 @@
 	width: auto;
 	min-width: 104px;
 	max-width: 168px;
+}
+.canvas .studio-bar .monitor-picker .np-select.sb-select {
+	width: clamp(180px, 20vw, 260px);
+	max-width: 260px;
+}
+.canvas.studio.assistant-open {
+	--assistant-w: 320px;
+}
+.canvas.studio.assistant-open .inspector.docked {
+	right: var(--assistant-w);
+}
+@media (max-width: 1150px) {
+	.canvas.studio.assistant-open {
+		--rail-l: 200px !important;
+		--rail-r: 280px !important;
+		--assistant-w: 280px;
+	}
+	.canvas.studio.assistant-open .pane-resize {
+		display: none;
+	}
 }
 
 .canvas .studio-bar .chk {
@@ -1051,16 +1072,14 @@
 	color: var(--ui-fg);
 }
 
-/* Prose vs values: monospace stays the studio default (and keeps all data/value columns aligned),
-   but multi-line help / description / empty-state SENTENCES read faster in a proportional face — and
-   the contrast restores the "code is mono, chrome is prose" hierarchy. Values stay monospace. */
+/* Help and empty-state copy share the studio typeface. Code keeps its separate monospace role. */
 .canvas .de-hint,
 .canvas .rp-stub,
 .canvas .pl-desc,
 .canvas .nps-help,
 .canvas .has-help,
 .canvas .multi-note {
-	font-family: system-ui, sans-serif;
+	font-family: var(--ui-font);
 }
 
 /* (The designer empty-state — .designer-empty/.de-title/.de-hint — is styled ONCE in NavRail.css

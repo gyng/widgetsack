@@ -45,6 +45,7 @@ import { containerAlignControls, LEAF_H_OPTIONS, LEAF_V_OPTIONS } from './canvas
 import TokenFields from './TokenFields';
 import ConditionEditor from './ConditionEditor';
 import './Inspector.css';
+import WidgetIcon from './WidgetIcon';
 
 // Group palette entries by `category` in first-seen order, uncategorized last under "Other".
 // Pure (exported for tests): order within a group is registration order, same as before grouping.
@@ -411,7 +412,7 @@ export default function Inspector({
 		if (previewTimer.current !== null) window.clearTimeout(previewTimer.current);
 		previewTimer.current = window.setTimeout(() => {
 			const r = el.getBoundingClientRect();
-			const left = Math.max(8, r.left - 232 - 10);
+			const left = Math.max(8, r.left - 248 - 12);
 			setPalettePreview({ ...spec, top: Math.max(8, r.top - 8), left });
 		}, 280);
 	};
@@ -956,6 +957,7 @@ export default function Inspector({
 				<div
 					ref={previewRef}
 					className="palette-preview"
+					role="tooltip"
 					style={{ top: palettePreview.top, left: palettePreview.left }}
 				>
 					<div className="pp-stage">
@@ -1038,6 +1040,7 @@ export default function Inspector({
 									e.dataTransfer?.setData('text/x-widget-type', w.type);
 								}}
 							>
+								<WidgetIcon type={w.type} />
 								{w.label}
 							</button>
 						))}

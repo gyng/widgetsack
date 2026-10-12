@@ -50,7 +50,7 @@ const SensorRow = memo(function SensorRow({
 					{badge}
 				</span>
 			) : null}
-			<span className="dim" title={value}>
+			<span className="dim sensor-value" title={value}>
 				{value}
 			</span>
 		</div>

@@ -130,10 +130,14 @@ undone. Select **Save** to keep them.
 The assistant prefers installed agents: Pi first, then Codex, then Claude. It uses their existing
 login and settings. You can select any installed agent in the sidebar.
 
-If none is installed, the bundled [Pi SDK](https://pi.dev/) is the fallback. No separate Pi or Node
-installation is needed for it. Configure **Plugins → AI Provider**, or use an existing Pi login,
-then select **Refresh agents**. The bundled SDK is also available as an explicit choice.
-The sidebar lists available agents and models. **Stop** cancels a request; **New chat** clears the conversation.
+The native adapter launches agents from your environment. It ships no Node runtime or
+`node_modules`, and downloads nothing. If no agent is found, install and sign in with
+[Pi](https://pi.dev/), Codex, or Claude, then select **Refresh agents**. Pi uses the Node runtime
+from its own installation; standalone Codex and Claude executables do not require Node.
+Leave **Model** blank to use the agent's default, or enter a model ID.
+**Stop** cancels a request; **New chat** clears the conversation.
+The assistant has its own sidebar across the studio. Your widget list and Inspector stay available.
+Upgrades remove the old bundled agent files, including `node_modules`.
 
 ### Theming
 

@@ -1,4 +1,4 @@
-//! App-owned, studio-only agent sidecars. JSONL stays off the filesystem; a Channel delivers events.
+//! Native, studio-only installed-agent adapter. A Channel delivers validated tool requests.
 use serde_json::{Value, json};
 use std::{
     collections::{HashMap, HashSet},
@@ -7,9 +7,9 @@ use std::{
     sync::Mutex,
     time::Duration,
 };
-use tauri::{Manager, State, ipc::Channel};
+use tauri::{State, ipc::Channel};
 use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    io::{AsyncReadExt, AsyncWriteExt},
     sync::mpsc,
 };
 
@@ -29,21 +29,23 @@ fn studio(window: &tauri::WebviewWindow) -> Result<(), String> {
         Err("Studio agent commands are studio-only".into())
     }
 }
-fn runtime_paths(app: &tauri::AppHandle) -> Result<(PathBuf, PathBuf), String> {
-    let packaged = app
-        .path()
-        .resource_dir()
-        .map_err(|e| e.to_string())?
-        .join("studio-agent");
-    let development = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../agent/runtime");
-    for root in [packaged, development] {
-        let node = root.join(if cfg!(windows) { "node.exe" } else { "node" });
-        let entry = root.join("entry.mjs");
-        if node.is_file() && entry.is_file() {
-            return Ok((node, entry));
-        }
+fn search_directories() -> Vec<PathBuf> {
+    let mut directories: Vec<_> = std::env::var_os("PATH")
+        .map(|path| {
+            std::env::split_paths(&path)
+                .filter(|path| path.is_absolute())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+        let home = PathBuf::from(home);
+        directories.extend([
+            home.join(".local/bin"),
+            home.join("AppData/Local/Programs/OpenAI/Codex/bin"),
+            home.join("AppData/Roaming/npm"),
+        ]);
     }
-    Err("Bundled Pi runtime is missing. Run npm run build:agent in client/.".into())
+    directories
 }
 fn request_valid(
     request_id: &str,
@@ -54,10 +56,11 @@ fn request_valid(
 ) -> Result<(), String> {
     if request_id.is_empty()
         || request_id.len() > 80
-        || !["pi", "pi-bundled", "codex", "claude"].contains(&backend)
+        || !["pi", "codex", "claude"].contains(&backend)
         || prompt.is_empty()
         || prompt.len() > 512_000
         || system.len() > 128_000
+        || prompt.len() + system.len() > 512_000
         || model.len() > 256
     {
         return Err("Invalid studio agent request".into());
@@ -65,7 +68,7 @@ fn request_valid(
     Ok(())
 }
 
-// Kill the entire child tree when a request ends, including CLI children created by the SDK adapter.
+// Kill the entire child tree when a request ends, including npm CLI wrappers.
 #[cfg(windows)]
 struct ProcessJob(windows::Win32::Foundation::HANDLE);
 #[cfg(windows)]
@@ -113,97 +116,141 @@ impl Drop for ProcessJob {
     }
 }
 
-async fn run_process(
-    app: &tauri::AppHandle,
-    initial: Value,
-    channel: Option<&Channel<Value>>,
-    mut replies: mpsc::UnboundedReceiver<Value>,
-) -> Result<Value, String> {
-    let (node, entry) = runtime_paths(app)?;
-    let mut command = tokio::process::Command::new(node);
+async fn execute_cli(
+    agent: &crate::studio_agent_cli::AgentCommand,
+    backend: &str,
+    model: &str,
+    prompt: &str,
+) -> Result<String, String> {
+    let mut command = tokio::process::Command::new(&agent.program);
     command
-        .arg(&entry)
-        .current_dir(entry.parent().expect("entry parent"))
+        .args(&agent.prefix)
+        .args(crate::studio_agent_cli::arguments(backend, model))
+        .current_dir(std::env::temp_dir())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
+        .stderr(Stdio::piped())
         .kill_on_drop(true);
     #[cfg(windows)]
-    command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    command.creation_flags(0x08000000);
     let mut child = command
         .spawn()
-        .map_err(|e| format!("Could not start studio agent: {e}"))?;
+        .map_err(|e| format!("Could not start {backend}: {e}"))?;
     #[cfg(windows)]
     let _job = ProcessJob::attach(child.id().ok_or("Agent has no process ID")?)?;
     let mut input = child.stdin.take().ok_or("Agent stdin unavailable")?;
-    let stdout = child.stdout.take().ok_or("Agent stdout unavailable")?;
-    let mut lines = BufReader::new(stdout.take(4 * 1024 * 1024)).lines();
-    input
-        .write_all(format!("{initial}\n").as_bytes())
-        .await
-        .map_err(|e| e.to_string())?;
-    let work = async {
-        let mut status = Value::Null;
-        let mut error = None;
-        loop {
-            tokio::select! {
-                line = lines.next_line() => {
-                    let Some(line) = line.map_err(|e| e.to_string())? else { return Err("Studio agent exited before completing the request".into()); };
-                    let event: Value = serde_json::from_str(&line).map_err(|_| "Invalid studio agent output".to_string())?;
-                    match event.get("type").and_then(Value::as_str) {
-                        Some("status") => status = event["result"].clone(),
-                        Some("error") => error = Some(event["text"].as_str().unwrap_or("Agent failed").to_string()),
-                        Some("done") => break,
-                        Some("text" | "tool") => {},
-                        _ => return Err("Unknown studio agent event".into()),
-                    }
-                    if let Some(channel) = channel { channel.send(event).map_err(|_| "Studio disconnected".to_string())?; }
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or("Agent stdout unavailable")?
+        .take(2_000_001);
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or("Agent stderr unavailable")?
+        .take(8193);
+    let write = async move {
+        input.write_all(prompt.as_bytes()).await?;
+        drop(input);
+        Ok::<_, std::io::Error>(())
+    };
+    let read = async {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).await?;
+        if bytes.len() > 2_000_000 {
+            return Err(std::io::Error::other("Agent output exceeded the limit"));
+        }
+        Ok::<_, std::io::Error>(bytes)
+    };
+    let errors = async {
+        let mut bytes = Vec::new();
+        stderr.read_to_end(&mut bytes).await?;
+        if bytes.len() > 8192 {
+            return Err(std::io::Error::other("Agent output exceeded the limit"));
+        }
+        Ok::<_, std::io::Error>(bytes)
+    };
+    let ((), output, error) = tokio::try_join!(write, read, errors).map_err(|e| e.to_string())?;
+    let exit = child.wait().await.map_err(|e| e.to_string())?;
+    if !exit.success() {
+        let error = String::from_utf8_lossy(&error);
+        return Err(if error.trim().is_empty() {
+            format!("{backend} exited with {exit}")
+        } else {
+            error.into_owned()
+        });
+    }
+    String::from_utf8(output).map_err(|_| "Invalid agent output encoding".into())
+}
+
+async fn run_agent(
+    backend: &str,
+    model: &str,
+    prompt: &str,
+    system: &str,
+    channel: &Channel<Value>,
+    mut replies: mpsc::UnboundedReceiver<Value>,
+) -> Result<(), String> {
+    let agent = crate::studio_agent_cli::discover(backend, &search_directories()).ok_or_else(|| format!("{backend} is not installed. Install and sign in with Pi, Codex, or Claude, then refresh agents."))?;
+    let mut prompt = format!(
+        "{system}\n{}\n\n{prompt}",
+        crate::studio_agent_cli::ADAPTER_INSTRUCTIONS
+    );
+    for turn in 0..8 {
+        let output = tokio::select! {
+            output = execute_cli(&agent, backend, model, &prompt) => output?,
+            _ = async {
+                while let Some(reply) = replies.recv().await {
+                    if reply["type"] == "cancel" { break; }
                 }
-                reply = replies.recv(), if channel.is_some() => {
-                    let Some(reply) = reply else { return Err("Studio disconnected".into()); };
-                    if reply["type"] == "cancel" { return Err("Stopped".into()); }
-                    input.write_all(format!("{reply}\n").as_bytes()).await.map_err(|e| e.to_string())?;
+            } => return Err("Stopped".into()),
+        };
+        let reply = crate::studio_agent_cli::reply(backend, &output)?;
+        if let Some(message) = reply["message"].as_str() {
+            channel
+                .send(json!({ "type": "text", "text": message }))
+                .map_err(|_| "Studio disconnected")?;
+            return Ok(());
+        }
+        let id = turn.to_string();
+        channel
+            .send(json!({ "type": "tool", "id": id, "name": reply["tool"], "args": reply["args"] }))
+            .map_err(|_| "Studio disconnected")?;
+        let result = tokio::time::timeout(Duration::from_secs(30), async {
+            loop {
+                let response = replies.recv().await.ok_or("Studio disconnected")?;
+                if response["type"] == "cancel" {
+                    return Err("Stopped");
+                }
+                if response["type"] == "reply" && response["id"] == id {
+                    return Ok(response["result"].clone());
                 }
             }
+        })
+        .await
+        .map_err(|_| "Studio did not answer the tool request")??;
+        prompt.push_str(&format!("\nAssistant: {reply}\nTool result: {result}"));
+        if prompt.len() > 512_000 {
+            return Err("Studio context exceeded the limit".into());
         }
-        if let Some(error) = error {
-            return Err(error);
-        }
-        Ok(status)
-    };
-    let result = tokio::time::timeout(
-        Duration::from_secs(if channel.is_some() { 180 } else { 30 }),
-        work,
-    )
-    .await
-    .map_err(|_| "Studio agent timed out".to_string())
-    .and_then(|r| r);
-    let _ = child.kill().await;
-    let _ = child.wait().await;
-    result
+    }
+    Err("Agent reached the eight-step limit. Continue with a new message.".into())
 }
 
 #[tauri::command]
-pub async fn studio_agent_status(
-    window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
-) -> Result<Value, String> {
+pub async fn studio_agent_status(window: tauri::WebviewWindow) -> Result<Value, String> {
     studio(&window)?;
-    let (_sender, receiver) = mpsc::unbounded_channel();
-    run_process(
-        &app,
-        json!({ "type": "status", "llmConfig": crate::llm::load_llm_config(&app)? }),
-        None,
-        receiver,
-    )
-    .await
+    let directories = search_directories();
+    Ok(crate::studio_agent_cli::status(
+        ["pi", "codex", "claude"]
+            .map(|name| crate::studio_agent_cli::discover(name, &directories).is_some()),
+    ))
 }
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn studio_agent_run(
     window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
     state: State<'_, StudioAgentState>,
     request_id: String,
     backend: String,
@@ -225,10 +272,20 @@ pub async fn studio_agent_run(
         }
         jobs.active.insert(request_id.clone(), sender);
     }
-    let result = async {
-        let config = crate::llm::load_llm_config(&app)?;
-        run_process(&app, json!({ "backend": backend, "prompt": prompt, "systemPrompt": system_prompt, "model": model, "llmConfig": config }), Some(&channel), receiver).await.map(|_| ())
-    }.await;
+    let result = tokio::time::timeout(
+        Duration::from_secs(180),
+        run_agent(
+            &backend,
+            &model,
+            &prompt,
+            &system_prompt,
+            &channel,
+            receiver,
+        ),
+    )
+    .await
+    .map_err(|_| "Studio agent timed out".to_string())
+    .and_then(|result| result);
     if let Ok(mut jobs) = state.inner.lock() {
         jobs.active.remove(&request_id);
     }
@@ -304,6 +361,88 @@ pub fn forget_studio(state: &StudioAgentState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    #[tokio::test]
+    #[ignore = "Read-only smoke check of installed agents; requires local Pi/Codex/Claude installations"]
+    async fn installed_agent_versions() {
+        let directories = search_directories();
+        let mut found = 0;
+        for backend in ["pi", "codex", "claude"] {
+            if let Some(agent) = crate::studio_agent_cli::discover(backend, &directories) {
+                let mut command = tokio::process::Command::new(&agent.program);
+                command
+                    .args(&agent.prefix)
+                    .arg("--version")
+                    .stdin(Stdio::null());
+                #[cfg(windows)]
+                command.creation_flags(0x08000000);
+                let output = tokio::time::timeout(Duration::from_secs(15), command.output())
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{backend}: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                println!(
+                    "{backend}: {} ({})",
+                    String::from_utf8_lossy(&output.stdout).trim(),
+                    agent.program.display()
+                );
+                found += 1;
+            }
+        }
+        assert!(found > 0, "No installed agents found");
+    }
+    fn fixture(code: &str) -> crate::studio_agent_cli::AgentCommand {
+        let node = crate::studio_agent_cli::discover("node", &search_directories())
+            .expect("Developer Node is required for CLI process fixtures");
+        crate::studio_agent_cli::AgentCommand {
+            program: node.program,
+            prefix: vec!["-e".into(), code.into(), "--".into()],
+        }
+    }
+    #[tokio::test]
+    async fn native_adapter_pipes_large_prompts_and_literal_models_without_a_shell() {
+        let agent = fixture(
+            "let input='';process.stdin.setEncoding('utf8');process.stdin.on('data',s=>input+=s);process.stdin.on('end',()=>console.log(JSON.stringify({input,model:process.argv.at(-1)})));",
+        );
+        let prompt = format!("{}\n& literal \"quotes\"", "context".repeat(8000));
+        let model = "model & literal";
+        let output = tokio::time::timeout(
+            Duration::from_secs(10),
+            execute_cli(&agent, "pi", model, &prompt),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let value: Value = serde_json::from_str(&output).unwrap();
+        assert_eq!(value["input"], prompt);
+        assert_eq!(value["model"], model);
+    }
+    #[tokio::test]
+    async fn oversized_output_fails_promptly_and_agent_failures_remain_visible() {
+        for (code, expected) in [
+            (
+                "process.stdin.resume();process.stdout.write('x'.repeat(2100000));setInterval(()=>{},1000);",
+                "Agent output exceeded the limit",
+            ),
+            (
+                "process.stdin.resume();console.error('Login required');process.exitCode=1;",
+                "Login required",
+            ),
+        ] {
+            let error = tokio::time::timeout(
+                Duration::from_secs(10),
+                execute_cli(&fixture(code), "pi", "", "request"),
+            )
+            .await
+            .unwrap()
+            .unwrap_err();
+            assert!(error.contains(expected), "{error}");
+        }
+    }
     #[test]
     fn closing_studio_cancels_every_owned_request() {
         let state = StudioAgentState::default();
@@ -324,7 +463,9 @@ mod tests {
             Foundation::{CloseHandle, WAIT_OBJECT_0},
             System::Threading::{OpenProcess, PROCESS_SYNCHRONIZE, WaitForSingleObject},
         };
-        let node = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../agent/runtime/node.exe");
+        let node = crate::studio_agent_cli::discover("node", &search_directories())
+            .expect("Node is required for this process-tree test")
+            .program;
         let mut command = tokio::process::Command::new(node);
         command.args(["-e", "process.stdin.once('data',()=>{const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore',windowsHide:true});console.log(c.pid);setInterval(()=>{},1000);});"])
             .stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::null()).kill_on_drop(true).creation_flags(0x08000000);
@@ -365,6 +506,7 @@ mod tests {
         }
         assert!(request_valid("", "pi", "hi", "", "").is_err());
         assert!(request_valid("id", "shell", "hi", "", "").is_err());
+        assert!(request_valid("id", "pi-bundled", "hi", "", "").is_err());
         assert!(request_valid("id", "pi", "", "", "").is_err());
         assert!(request_valid("id", "pi", &"x".repeat(512_001), "", "").is_err());
     }

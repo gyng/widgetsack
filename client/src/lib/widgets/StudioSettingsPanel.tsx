@@ -318,7 +318,7 @@ export default function StudioSettingsPanel({
 						<>
 							<div className="pl-title">Overlay</div>
 							<div className="pl-desc">
-								How the transparent overlay sits on the desktop (window layer + taskbar).
+								Choose where desktop widgets appear and how their windows behave.
 							</div>
 							<label className="rp-row set-check">
 								<input
@@ -337,11 +337,20 @@ export default function StudioSettingsPanel({
 									aria-label="Window layer"
 								/>
 							</div>
-							<div className="pl-desc">
-								“Below windows” sits behind apps (above desktop icons; Show Desktop hides it).
-								“Behind desktop icons” parents the overlay to the desktop so it renders under the
-								icons — experimental, Windows-only, takes effect on the live overlay.
-							</div>
+							<ul className="pl-desc set-help-list">
+								<li>
+									<strong>Below windows:</strong> Widgets appear behind apps and above desktop
+									icons. Show Desktop hides them.
+								</li>
+								<li>
+									<strong>Always on top:</strong> Widgets appear above other windows.
+								</li>
+								<li>
+									<strong>Behind desktop icons:</strong> Widgets appear below the icons. This
+									Windows feature is experimental.
+								</li>
+							</ul>
+							<p className="pl-desc">Layer changes apply to the desktop widgets immediately.</p>
 							<div className="pl-desc set-status">
 								Current layer: <strong>{overlayLayerLabel(overlayPrefs.overlayLayer)}</strong>
 								{layerStatus && (
@@ -365,17 +374,18 @@ export default function StudioSettingsPanel({
 								/>
 								<span>windowed mode</span>
 							</label>
-							<div className="pl-desc">
-								Render overlays as ordinary decorated, interactive, alt-tab-able windows (opaque,
-								taskbar-present, not click-through), so a crashing or misbehaving overlay is
-								visible, clickable (its “Reload” page), and inspectable — the borderless
-								click-through overlay otherwise hides all of that. Takes effect on the live overlay.
-							</div>
-							<div className="pl-desc">
-								Stuck behind a click-through window? Press <code>Ctrl+Alt+Shift+E</code> anytime —
-								the rescue shortcut forces every window interactive (works even if its webview
-								crashed).
-							</div>
+							<p className="pl-desc">
+								Use windowed mode to inspect a widget window or recover from an error.
+							</p>
+							<ul className="pl-desc set-help-list">
+								<li>Each widget window has a title bar and an opaque background.</li>
+								<li>You can click the window and select it from the taskbar or with Alt+Tab.</li>
+								<li>If an error page appears, you can select Reload.</li>
+							</ul>
+							<p className="pl-desc">
+								To recover a window you cannot click, press <code>Ctrl+Alt+Shift+E</code>. This
+								shortcut brings all widget windows forward and makes them interactive.
+							</p>
 						</>
 					)}
 					{tab === 'startup' && (

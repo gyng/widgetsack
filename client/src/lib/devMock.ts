@@ -30,14 +30,11 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 					backends: [
 						{ id: 'pi', label: 'Pi (installed)', available: true },
 						{ id: 'codex', label: 'Codex', available: false },
-						{ id: 'claude', label: 'Claude', available: false },
-						{ id: 'pi-bundled', label: 'Pi (bundled SDK)', available: true }
-					],
-					models: [],
-					defaultModel: ''
+						{ id: 'claude', label: 'Claude', available: false }
+					]
 				};
 			case COMMANDS.studioAgentRun:
-				throw new Error('Configure an AI provider to run the studio assistant.');
+				throw new Error('Sign in with an installed agent to run the studio assistant.');
 			case COMMANDS.studioAgentCancel:
 			case COMMANDS.studioAgentReply:
 				return undefined;

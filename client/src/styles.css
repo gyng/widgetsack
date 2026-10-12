@@ -30,6 +30,7 @@ body {
 	/* Spacing scale (gaps, paddings, margins) */
 	--ui-font: 'IBM Plex Sans Variable', 'Segoe UI', sans-serif;
 	--ui-font-mono: 'Cascadia Code', Consolas, monospace;
+	--ui-font-weight: 450;
 	--space-1: 2px;
 	--space-2: 4px;
 	--space-3: 6px;
@@ -77,8 +78,8 @@ body {
 	--ui-scrim: rgba(0, 0, 0, 0.5); /* menu / modal backdrops */
 	/* Text */
 	--ui-fg: #eee; /* primary text */
-	--ui-fg-muted: #aaa; /* secondary text */
-	--ui-fg-dim: #9a9a9a; /* tertiary / help text (== legacy --dim-fg); lifted from #8a8a8a for contrast */
+	--ui-fg-muted: #b8b8c0; /* secondary text */
+	--ui-fg-dim: #a8a8b2; /* help text, still readable on raised surfaces */
 	/* Borders */
 	--ui-border: #2a2a30;
 	--ui-border-strong: #444;
@@ -130,6 +131,51 @@ html.ov-fade-in #root {
 	position: fixed;
 	inset: 0;
 	background: var(--ui-bg);
+}
+
+/* Slightly firmer variable-font weight makes small chrome text easier to read on dark surfaces. */
+.canvas.studio
+	:is(
+		.rail-panel,
+		.inspector,
+		.outline,
+		.studio-assistant,
+		.studio-bar,
+		.nav-rail,
+		.theme-editor,
+		.ctx
+	) {
+	font-weight: var(--ui-font-weight);
+}
+.canvas.studio
+	:is(.rail-panel, .inspector, .outline, .studio-assistant, .studio-bar, .theme-editor, .ctx)
+	:is(button, input, select, textarea) {
+	font-weight: var(--ui-font-weight);
+}
+
+/* Baseline for chrome text entry. Widget controls keep their own styling. */
+.canvas.studio
+	:where(.rail-panel, .inspector, .outline, .studio-bar, .theme-editor, .studio-assistant)
+	:where(
+		input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']):not(
+			.np-select-input
+		),
+		textarea
+	) {
+	box-sizing: border-box;
+	min-height: var(--control-h);
+	background: var(--ui-raised);
+	color: var(--ui-fg);
+	border: 1px solid var(--ui-border-strong);
+	border-radius: var(--radius-control);
+	padding: var(--space-3) var(--space-4);
+	font-family: var(--ui-font);
+	font-size: var(--text-md);
+	line-height: var(--line-body);
+}
+.canvas.studio :where(input, textarea)::placeholder {
+	color: var(--ui-fg-dim);
+	opacity: 1;
 }
 
 /* Windowed-debug mode (Settings → Overlay → Debug): an overlay temporarily rendered as a normal

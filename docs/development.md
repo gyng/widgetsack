@@ -80,18 +80,30 @@ asset-less release.
 > but it is visible for the ~10 minutes the build takes before its asset appears.
 ## Studio assistant agents
 
-The studio assistant prefers installed Pi, Codex, and Claude CLIs, in that order. The Pi SDK from
-`agent/` is the fallback and an explicit sidebar choice. Build with Node.js 24 or newer.
-In `client/`, run `npm run build:agent` before a direct
-`cargo build`, `cargo test`, or `cargo clippy`. `cargo tauri build` and `cargo tauri dev` do this automatically.
+The studio assistant prefers installed Pi, Codex, and Claude CLIs, in that order.
+Rust discovers executables on PATH and in common user installation directories. On Windows,
+standard npm command shims are resolved to their JavaScript entry point and an installed Node
+executable. No shell receives user prompts or model arguments. Standalone agents need no Node.
 
-The build copies a matching Node executable, the SDK, and its dependencies into the ignored
-`agent/runtime/` directory. Tauri bundles that directory as `studio-agent/`. End users do not need
-Node or a separate Pi installation. Dependency versions are locked in `agent/package-lock.json`.
-Run `npm test` in `agent/` for protocol and real SDK tests. The SDK test uses a local fake provider.
+The installer ships no agent runtime, SDK, or node_modules. There is no fallback download.
+Agents use their existing login and model settings; an optional model ID overrides the default.
+No provider credentials are copied from the widget AI Provider integration.
 
-The sidecar runs only for an explicit studio request. Its tool set is `studio_read` and `studio_apply`.
-The frontend validates actions and uses the editor's commit path. Each batch is undoable; stale
-snapshots cannot overwrite newer edits. No SDK extensions, context files, skills, or filesystem tools
-are loaded. Backend credentials go through the child stdin pipe, never through the webview.
-Windows job objects terminate the sidecar and its CLI children on cancellation or timeout.
+`studio_agent_cli.rs` owns discovery, CLI arguments, and reply decoding. `studio_agent.rs` owns
+processes, cancellation, bounded output, timeouts, and the studio-only Channel bridge.
+Prompts go through stdin. Each CLI turn returns either text or a structured `studio_read` /
+`studio_apply` request; the frontend validates edits and commits each batch as one undo step.
+Tools are disabled in each CLI, and stale snapshots cannot overwrite newer edits.
+Windows job objects terminate the agent and its children on cancellation or timeout.
+
+Run `cargo test studio_agent` for native protocol, discovery, and process-lifecycle checks.
+Frontend component and browser tests cover agent setup, refresh, cancellation, and undoable edits.
+
+The assistant keeps its own dock across Studio sections. It does not replace the widget palette
+or Inspector. At compact window widths, the three docks use narrower columns to keep the canvas
+usable. Sensor readings use monospace; labels and help use the Studio body font.
+
+Upgrades remove the legacy `studio-agent/` installation resources from v0.0.62, including Node and
+`node_modules`. Layouts, themes, and user-installed agents are preserved. After an NSIS build,
+run `./widgetsack/windows/test-agent-cleanup.ps1` to verify the real hook against isolated fixtures.
+The release workflow runs this check before uploading an installer.

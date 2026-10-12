@@ -24,6 +24,7 @@ import { outlineRows, type OutlineRow } from '../core/layoutEdit';
 import { getMeta } from '../core/widget';
 import type { LayoutOp } from './ops';
 import './Outline.css';
+import WidgetIcon from './WidgetIcon';
 import { contextMenuAnchor } from './canvas/menuPosition';
 
 type Props = {
@@ -235,16 +236,17 @@ function Outline({
 	function rowParts(node: LayoutNode): { primary: string; hint: string } {
 		if (isContainer(node)) return { primary: `▦ ${node.kind}`, hint: node.id };
 		if (isGroup(node.unit))
-			return { primary: '• group', hint: node.unit.name ?? node.unit.def ?? node.id };
+			return { primary: 'group', hint: node.unit.name ?? node.unit.def ?? node.id };
 		const label = node.unit.config?.label;
 		const hint = (typeof label === 'string' && label) || node.unit.sensor || '';
-		return { primary: `• ${getMeta(node.unit.type)?.label ?? node.unit.type}`, hint };
+		return { primary: getMeta(node.unit.type)?.label ?? node.unit.type, hint };
 	}
 
 	const rowLabel = (node: LayoutNode) => {
 		const { primary, hint } = rowParts(node);
 		return (
 			<>
+				{!isContainer(node) && <WidgetIcon type={isGroup(node.unit) ? 'group' : node.unit.type} />}
 				{primary}
 				{hint && (
 					<span className="hint" title={hint}>

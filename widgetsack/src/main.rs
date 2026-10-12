@@ -53,6 +53,7 @@ pub mod service_health;
 pub mod state;
 pub mod stocks;
 pub mod studio_agent;
+mod studio_agent_cli;
 pub mod timings;
 pub mod update;
 pub mod watchdog;

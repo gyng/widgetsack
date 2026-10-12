@@ -14,6 +14,7 @@ const CHROME_TOKENS: { name: string; purpose: string }[] = [
 		purpose: 'Studio text: locally bundled IBM Plex Sans with system fallbacks.'
 	},
 	{ name: '--ui-font-mono', purpose: 'Code, expressions, and identifiers.' },
+	{ name: '--ui-font-weight', purpose: 'Studio body and control weight (450 by default).' },
 	{ name: '--ui-bg', purpose: 'Base window + opaque panel background.' },
 	{ name: '--ui-surface', purpose: 'Translucent rails / docked panels.' },
 	{ name: '--ui-bar-bg', purpose: 'Top / sub / bottom bars (incl. the title bar).' },
