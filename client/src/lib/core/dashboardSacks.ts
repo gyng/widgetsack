@@ -49,7 +49,7 @@ function dashboard(
 export const DASHBOARD_SACKS: Record<string, Sack> = {
 	'Built-in: Work': dashboard('Work', '#77c4d3', [
 		{ type: 'clock', height: 42, config: { format: 'ddd D MMM · HH:mm' } },
-		{ type: 'agenda', height: 160 },
+		{ type: 'agenda', height: 160, config: { maxRows: 2 } },
 		{ type: 'checklist', height: 180 },
 		{ type: 'timer', height: 70 },
 		{ type: 'alerts', height: 90 }
@@ -63,7 +63,7 @@ export const DASHBOARD_SACKS: Record<string, Sack> = {
 	'Built-in: Home': dashboard('Home', '#9bd385', [
 		{ type: 'clock', height: 42, config: { format: 'dddd · HH:mm' } },
 		{ type: 'weather', height: 100 },
-		{ type: 'agenda', height: 140 },
+		{ type: 'agenda', height: 140, config: { maxRows: 2 } },
 		{ type: 'servicehealth', height: 85, config: { label: 'Home Assistant', url: '' } },
 		{ type: 'checklist', height: 150, config: { label: 'Home tasks' } }
 	]),
