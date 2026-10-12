@@ -1,0 +1,72 @@
+.np-tool-widget {
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	padding: 10px;
+	color: var(--np-fg, #eee);
+	background: var(--np-bg, rgba(20, 20, 24, 0.9));
+	font:
+		12px/1.5 system-ui,
+		sans-serif;
+	border: 1px solid rgba(128, 128, 128, 0.35);
+	border-radius: 6px;
+	overflow: hidden;
+}
+.np-tool-widget header,
+.np-tool-widget form {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex: none;
+}
+.np-tool-widget header strong {
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.np-tool-widget .tool-output {
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	overflow-wrap: anywhere;
+	scrollbar-width: thin;
+}
+.np-tool-widget :is(input, button) {
+	font: inherit;
+	color: inherit;
+	background: transparent;
+	border: 1px solid currentColor;
+	border-radius: 4px;
+	padding: 4px 8px;
+}
+.np-tool-widget input {
+	flex: 1;
+	min-width: 0;
+}
+.np-tool-widget button {
+	cursor: pointer;
+}
+.np-tool-widget button:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.np-tool-widget :is(p, pre) {
+	margin: 4px 0 10px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+.np-tool-widget :is(.tool-hint, small) {
+	opacity: 0.7;
+}
+.np-tool-widget .tool-error {
+	color: var(--ui-danger-fg, #e6a0a0);
+}
+.np-tool-widget .chat-turn {
+	padding: 4px 0;
+	border-bottom: 1px solid rgba(128, 128, 128, 0.2);
+}

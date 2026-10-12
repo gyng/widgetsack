@@ -58,7 +58,7 @@ describe('usePaneSizes', () => {
 		const { result } = renderHook(() => usePaneSizes(true));
 		expect(result.current.vars).toEqual({
 			'--rail-l': '250px',
-			'--rail-r': '264px',
+			'--rail-r': '360px',
 			'--tree-w': '200px'
 		});
 	});
@@ -71,7 +71,7 @@ describe('usePaneSizes', () => {
 		const { result } = renderHook(() => usePaneSizes(true));
 		expect(result.current.vars).toEqual({
 			'--rail-l': '520px', // clamped to max
-			'--rail-r': '264px', // non-number → default
+			'--rail-r': '360px', // non-number → default
 			'--tree-w': '150px'
 		});
 	});
@@ -125,8 +125,8 @@ describe('usePaneSizes', () => {
 		act(() => {
 			window.dispatchEvent(new MouseEvent('pointermove', { clientX: 150 })); // dx -50
 		});
-		// 264 - (-50)?? right grows by -dx → 264 + 50 = 314.
-		expect(result.current.vars['--rail-r' as keyof typeof result.current.vars]).toBe('314px');
+		// Right grows by -dx: 360 + 50 = 410.
+		expect(result.current.vars['--rail-r' as keyof typeof result.current.vars]).toBe('410px');
 	});
 
 	it('drags the tree column too (covers the tree startVal branch)', () => {

@@ -272,7 +272,7 @@ function TemplatePreviewButton({ t, onPreview }: { t: Template; onPreview: (id: 
 }
 
 // A template that exposes insert-time options (e.g. the clock cluster's languages / time format):
-// a name + a select per param + an Insert button. The selects render from the template's ParamSpecs
+// a name + a select or text field per param + an Insert button, rendered from its ParamSpecs
 // — the SAME spec a def cloned from the template keeps as instance params — holding the chosen
 // values locally and passing them up on insert. Templates without params render as a plain button
 // instead (see the palette below).
@@ -294,19 +294,28 @@ function TemplateOptionsForm({
 			</span>
 			<div className="tpl-opts-fields">
 				{/* All registered templates normalize params to an array. */}
-				{t
-					.params!.filter((p) => p.choices)
-					.map((p) => (
-						<label key={p.key}>
-							{p.label ?? p.key}
+				{t.params!.map((p) => (
+					<label key={p.key}>
+						{p.label ?? p.key}
+						{p.choices ? (
 							<Select
 								value={opts[p.key]}
-								options={p.choices!}
+								options={p.choices}
 								onChange={(v) => setOpts((prev) => ({ ...prev, [p.key]: v }))}
-								aria-label={`${t.name} — ${p.label ?? p.key}`}
+								aria-label={t.name + ' — ' + (p.label ?? p.key)}
 							/>
-						</label>
-					))}
+						) : (
+							<input
+								value={opts[p.key]}
+								onChange={(e) => {
+									const value = e.currentTarget.value;
+									setOpts((prev) => ({ ...prev, [p.key]: value }));
+								}}
+								aria-label={t.name + ' — ' + (p.label ?? p.key)}
+							/>
+						)}
+					</label>
+				))}
 			</div>
 			<button
 				type="button"

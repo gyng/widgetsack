@@ -7,6 +7,12 @@ import type { ComponentType } from 'react';
 import { getMeta, listMetas, registerMeta, type WidgetMeta } from '../core/widget';
 import { asMeter, type MeterComponent, type MeterProps } from './meterProps';
 import Gauge from './meters/Gauge';
+import AlertsHost from './AlertsHost';
+import ChecklistHost from './ChecklistHost';
+import ServiceHealthHost from './ServiceHealthHost';
+import AudioMixerHost from './AudioMixerHost';
+import History from './meters/History';
+import CommandHost from './CommandHost';
 import Sparkline from './meters/Sparkline';
 import Text from './meters/Text';
 import Clock from './meters/Clock';
@@ -41,6 +47,12 @@ export type { MeterComponent };
 export { asMeter };
 
 const components: Record<string, MeterComponent> = {
+	alerts: asMeter(AlertsHost),
+	checklist: asMeter(ChecklistHost),
+	servicehealth: asMeter(ServiceHealthHost),
+	audiomixer: asMeter(AudioMixerHost),
+	history: asMeter(History),
+	command: asMeter(CommandHost),
 	gauge: asMeter(Gauge),
 	sparkline: asMeter(Sparkline),
 	text: asMeter(Text),

@@ -4,20 +4,50 @@
   <img src="docs/img/demo.png" alt="widgetsack demo layout: clock, CPU/GPU gauges, a countdown timer, memory/VRAM bars, up/down network graphs, an audio spectrum, a now-playing card, a stock ticker, an analog clock, Home Assistant temperature/climate/light tiles, and a DDC monitor input switcher" width="900">
 </p>
 
-[**👉 installer download for the latest release**](https://github.com/gyng/widgetsack/releases/latest)
+[**Download the latest installer**](https://github.com/gyng/widgetsack/releases/latest)
 
-A themable desktop widget overlay for Windows.
+A desktop widget overlay for Windows. Your meters, your layout, your little control room.
 
-Put system meters (CPU, per-core, GPU/VRAM, memory, network), clocks, and the currently-playing track on a transparent, click-through overlay across all your monitors and arrange them with a
-built-in visual editor. Widgets follow a sensor + meter model but the layout is a live CSS-flow editor, styling is plain CSS + design
-tokens, and it ships with Home Assistant, MQTT, and stock-quote integrations.
+Show system meters, clocks, and music on a transparent overlay across your monitors.
+Arrange widgets in the built-in visual editor, called the **studio**. Use CSS and design tokens
+to change their appearance. Connect Home Assistant, MQTT, or stock quotes for more live data.
+
+A sensor supplies a value. A widget shows it. The overlay lets clicks pass to the desktop,
+while widget buttons and controls remain available.
 
 ## Widget gallery
 
-See: [**widget reference**](docs/widgets.md) · [**templating & formulas**](docs/templating.md) · [**theming**](docs/theming.md)
+[**Widget reference**](docs/widgets.md) · [**Templates and formulas**](docs/templating.md) · [**Themes**](docs/theming.md)
 
-The screenshots regenerate from the registry: `npm run gen:gallery` (in `client/`); both reference
-docs regenerate from the code with `npm run gen:docs`.
+To update the screenshots and reference docs, run `npm run gen:gallery` in `client/`.
+To update only the reference docs, run `npm run gen:docs`.
+
+## Dashboard presets
+
+Start with one of four bundled dashboards. Keep it as supplied, or make it yours.
+
+| Work | Gaming |
+| --- | --- |
+| <img src="docs/img/presets/work.png" width="400" alt="Work preset with agenda, checklist, focus timer, and disk-space alert"> | <img src="docs/img/presets/gaming.png" width="400" alt="Gaming preset with CPU/GPU history, GPU metrics, ping, app audio mixer, microphone mute, and now playing"> |
+| Agenda, tasks, focus timer, and alerts. | Performance history, GPU stats, latency, audio controls, and music. |
+
+| Home | Minimal |
+| --- | --- |
+| <img src="docs/img/presets/home.png" width="400" alt="Home preset with clock, weather, agenda, Home Assistant endpoint health, and household checklist"> | <img src="docs/img/presets/minimal.png" width="400" alt="Minimal preset with time, download speed, CPU history, and an active alert"> |
+| Weather, upcoming events, service health, and household tasks. | Time, download speed, CPU history, and alerts when needed. |
+
+1. Open **Share** in the studio.
+2. Select **Built-in: Work**, **Built-in: Gaming**, **Built-in: Home**, or **Built-in: Minimal** to import it.
+3. Open **Layout → Add → My widgets**. Insert the dashboard.
+4. Configure its widgets in the inspector. Select **Save** to save the layout.
+
+Configure Weather and Agenda in their plugin settings. For the Home Assistant health card,
+enter the URL of the endpoint to check.
+
+The screenshots use sample data and a configured health endpoint. New task lists are empty.
+Alerts appear when a rule triggers. To update these images, run `npm run gen:presets` in `client/`.
+
+To save a monitor's full arrangement for later use, use the studio's **Presets** section.
 
 ## Layout studio
 
@@ -27,75 +57,69 @@ docs regenerate from the code with `npm run gen:docs`.
 
 ## Features
 
-- **Widgets:** gauges, bars, sparklines, text, digital + analog clocks, a month calendar, a per-core
-  CPU grid, a GPU panel, a battery indicator, a disk/storage panel, a top-process monitor, an audio
-  spectrum, a now-playing card, a weather card, a stock ticker, an application fence or zone, a web
-  iframe, action buttons, a DDC monitor input switcher, an audio output switcher, and Home Assistant
-  tiles — sensor- or [formula-driven](docs/templating.md)
-  and fully restylable ([reference](docs/widgets.md)).
-- **Sensors:** CPU (total/per-core/freq), memory + swap, network, disks (+ I/O), uptime, battery, the
-  busiest process (by CPU/RAM/disk/GPU), and NVIDIA GPU (NVML) — demand-gated, so only what's on screen
-  is sampled.
-- **Now playing:** Windows media via GSMTC — Spotify, foobar2000, browsers, and more
+- **Widgets:** show gauges, bars, graphs, text, clocks, calendars, system meters, weather, and stock
+  quotes. Add alerts, checklists, sensor history, service health, or an audio mixer. Control media,
+  audio outputs, monitor inputs, and Home Assistant devices. See the [widget reference](docs/widgets.md)
+  for the full list. Use sensors or [formulas](docs/templating.md) to supply values.
+- **Sensors:** read CPU load and frequency, memory, swap, network traffic, disk use and I/O, uptime,
+  battery, and process activity. Read NVIDIA GPU data through NVML. Sensors run when visible widgets need them.
+- **Now playing:** show Windows media through GSMTC. Sources include Spotify, foobar2000, and browsers
   ([support table](https://github.com/ModernFlyouts-Community/ModernFlyouts/blob/main/docs/GSMTC-Support-And-Popular-Apps.md)).
-- **Integrations:** Home Assistant (live states + light/climate/fan/cover/lock/scene/switch/media
-  controls), MQTT, stock quotes, and
-  weather (Open-Meteo, keyless).
-- **Overlay:** transparent, click-through, one per monitor (below windows by default, or always
-  on top / behind desktop icons) — per-widget click-through still lets buttons/controls catch
-  clicks. Single-instance, optional launch at login.
-- **Studio:** visual editor — drag/resize/snap a CSS-flow layout, browse sensors, build reusable
-  custom widgets, edit themes, save layout presets, share "sacks". Live-reloaded `widgets.json`.
-- **Templates:** one-click starter groups (clock, system, network, now-playing) recreated from
-  classic Rainmeter skins.
-- **Macros:** bind a button to a sequence of actions (HA service calls, media transport).
-- **Plugin packages:** drop-in template/theme bundles from the community — declarative, opt-in,
-  scanned ([authoring guide](docs/third-party-plugins.md)).
-- **Theming:** per-widget CSS (highlighting/linting editor), design-token themes (one for every
-  monitor, or a different theme per monitor), system fonts.
-- **Window zones:** define snap regions and drag any app's window — including custom-titlebar apps
-  like Electron/UWP — into them, or auto-arrange open windows by rule.
-- **Perfect for secondary and side monitors**: Corsair Xeneon Edge, Lamptron, Turzx, etc.
-- Built with Tauri + React.
+- **Integrations:** connect Home Assistant, MQTT, stock quotes, and Open-Meteo weather.
+  Open-Meteo needs no API key. Home Assistant tiles show device states and control lights,
+  climate, fans, covers, locks, scenes, switches, and media.
+- **Overlay:** use one transparent overlay per monitor. Keep it below windows, always on top,
+  or behind desktop icons. Widget controls can receive clicks. Run one app instance and optionally start it at login.
+- **Studio:** drag, resize, and snap widgets. Browse sensors, build reusable widgets, edit themes,
+  and save layouts. Share widget bundles, called **sacks**. Layouts reload when `widgets.json` changes.
+- **Templates:** insert starter groups for clocks, system meters, network traffic, and music.
+  Some recreate classic Rainmeter skins.
+- **Macros:** make a button run a sequence of actions, such as Home Assistant calls or media commands.
+- **Plugin packages:** install community templates, themes, and sensor sources. Enable each package
+  when you choose. See the [authoring guide](docs/third-party-plugins.md).
+- **Themes:** edit each widget's CSS with syntax highlighting and lint checks. Use design tokens
+  and system fonts. Apply one theme to all monitors, or choose a theme for each monitor.
+- **Window zones:** define snap regions for app windows, including Electron and UWP apps.
+  Drag windows into a region, or arrange them with rules.
+- **Side monitors:** use the extra space on displays such as the Corsair Xeneon Edge, Lamptron, or Turzx.
+
+Built with Tauri and React.
 
 ## Coming from Rainmeter?
 
-widgetsack is a web-first take on what a widget suite does — system meters, clocks, now-playing, and a transparent always-on-top overlay — with a few differences:
+The meters, clocks, and music cards will feel familiar. The editor and layout use web technology.
 
-- **Higher memory usage**: as this is a web and browser-based overlay each monitor with active widgets will take a minimum of 100MB of RAM and 40MB of VRAM
-- **Sensor + meter instead of `.ini`:** the same measure→meter idea (a sensor feeds a meter), but you
-  wire it in a visual **studio** instead of hand-editing config files. Layout is CSS flexbox and
-  styling is plain per-widget CSS + design tokens.
-- **Built-in skins as templates:** the bundled templates recreate classic skin layouts and drop in
-  with one click; build your own reusable widgets in the widget designer.
-- **Built-in sources:** beyond local system sensors, pull in Home Assistant, MQTT, and live stock
-  quotes.
-- **Layout containers**: Grids, rows, columns and floating widgets that use HTML and CSS for styling
+- **Memory use:** each monitor has a browser-based overlay. Allow about 100 MB of RAM and 40 MB
+  of VRAM per monitor with active widgets. Actual use depends on the layout and hardware.
+- **Sensor and meter:** connect sensors in the studio. Layouts use CSS flexbox.
+  Each widget can have its own CSS and design tokens.
+- **Templates:** insert a bundled skin layout, or build reusable widgets in the widget designer.
+- **Data sources:** combine local system data with Home Assistant, MQTT, and stock quotes.
+- **Layout containers:** arrange widgets in grids, rows, or columns. Use floating widgets for free placement.
 
 ## Usage
 
 Download the installer from the [latest release](https://github.com/gyng/widgetsack/releases/latest).
 
-The overlay starts passive (click-through). To arrange widgets:
+The overlay starts in passive mode. Clicks pass through it to the desktop. To arrange widgets:
 
-1. **Open the studio** — left-click the tray icon, or use the Start-menu shortcut (the tray
-   menu's **Open studio** does the same). The studio's **Layout** section is the editor: drag
-   widgets to move, drag the handles to resize, use **Add** to place widgets and the
-   **inspector** to edit a selected widget's sensor / position / config.
-2. **Edit on the desktop** — press **`Ctrl+Alt+E`** to toggle desktop edit mode and arrange
-   widgets right on the overlay (`Ctrl+E` does the same inside a widgetsack window). Press it
-   again to go back to passive.
-3. The layout saves to `widgets.json` (in the app config dir) and reloads automatically if you
-   hand-edit that file. **Presets** save and restore a monitor's whole arrangement.
+1. **Open the studio.** Left-click the tray icon, use the Start menu shortcut, or select
+   **Open studio** in the tray menu.
+2. **Arrange widgets.** Open **Layout**. Select **Add** to insert a widget. Drag it to move it.
+   Drag its handles to resize it. Use the inspector to change its sensor, position, or settings.
+3. **Save the layout.** Layout data is stored in `widgets.json` in the app configuration directory.
+   Changes to this file reload automatically. Use **Presets** to save and restore a monitor's arrangement.
 
-Stuck behind a click-through window, or an overlay stopped responding? **`Ctrl+Alt+Shift+E`** is
-the rescue shortcut: it forces every widgetsack window interactive and brings it forward, even if
-its webview crashed. Settings → Diagnostics has the same button, a live **logs** pane, and
-**Copy diagnostics** for bug reports.
+To edit directly on the desktop, press **`Ctrl+Alt+E`**. Press it again to return to passive mode.
+Inside a widgetsack window, use **`Ctrl+E`**.
+
+If the overlay stops responding, press **`Ctrl+Alt+Shift+E`**. This rescue shortcut brings every
+widgetsack window forward and lets it receive clicks, even after a webview crash.
+**Settings → Diagnostics** has the same control, live logs, and **Copy diagnostics** for bug reports.
 
 ### Theming
 
-Each widget can take a CSS override. Eg, to turn images grayscale:
+Add CSS to a widget to change its appearance. For example, this rule makes its images grayscale:
 
 ```css
 img {
@@ -103,58 +127,55 @@ img {
 }
 ```
 
-### Now playing — source priority
+### Now playing: source priority
 
-If multiple audio sources are active, a priority list of executable names decides which to
-show (reachable in edit mode; "All media" lists the current sources).
+If several media sources are active, set their priority in edit mode. The list uses executable names.
+The widget shows the source with the highest priority. **All media** lists the current sources.
 
 ### Launch at login
 
-Toggle **launch at login** in Settings → Startup (or the tray menu), or tick it on the installer's
-finish page. Settings → About has an optional **check for updates automatically** toggle — it's off
-by default, and nothing is ever downloaded or installed without you opening the release page.
+Enable **Launch at login** in **Settings → Startup**, in the tray menu, or on the installer's final page.
+
+To enable automatic update checks, open **Settings → About**. These checks are off by default.
+To download or install an update, open the release page.
 
 ## Plugins
 
-widgetsack has two plugin layers, both managed from the studio's **Plugins** section:
+Manage both plugin types in the studio's **Plugins** section:
 
-- **Built-in integrations** — Home Assistant, MQTT, stock quotes, and the AI provider are
-  first-party plugins configured in the studio. Tokens and API keys stay in the Rust backend;
-  the webview never holds them.
-- **Third-party plugin packages** — drop-in community bundles that add **templates**
-  (ready-made widget clusters with insert-time options), optionally a **theme**, and optionally
-  a **sandboxed sensor source**: a small `source.js` that polls an HTTP API and feeds custom
-  sensors you can bind to any meter or formula as `pkg.<id>.*`.
+- **Built-in integrations:** configure Home Assistant, MQTT, stock quotes, and the AI provider.
+  Tokens and API keys stay in the Rust backend. The webview does not hold them.
+- **Third-party packages:** add community templates, themes, or sensor sources.
+  Templates are widget groups with options you set when you insert them. A sensor source uses
+  `source.js` to request API data. Bind its `pkg.<id>.*` sensors to meters or formulas.
 
-Install a package by dropping its folder into the app-config `plugins/` directory, or via
-**Plugins → Packages → Install a package** — type `owner/repo`, a GitHub link, or any https
-`plugin.json` URL and press Install. Update checks are manual (per-package *Check updates*);
-nothing is fetched in the background.
+To install a package, copy its folder to `plugins/` in the app configuration directory.
+You can also use **Plugins → Packages → Install a package**. Enter `owner/repo`, a GitHub link,
+or an HTTPS URL for `plugin.json`. Select **Install**.
 
-Packages are opt-in and sandboxed by design:
+To check for a package update, select its **Check updates** control. Package update checks are manual.
 
-- **Nothing runs on install.** Every package lands disabled; enabling it is a per-machine
-  allowlist, and re-installing starts from zero trust.
-- **Templates and themes are declarative data** — a package can't ship its own components. The
-  only code surface is `source.js`, which runs in a QuickJS-in-WASM sandbox with zero
-  capabilities: no network, no DOM, no Tauri, a ~100 ms CPU budget per tick.
-- **The host does the fetching** against a Rust-enforced https allowlist of exact hostnames the
-  manifest declares — consented by name on first enable, re-confirmed if an update changes the
-  list.
-- **Theme CSS is the trust boundary:** it's scanned (remote `url()`/`@import`, viewport
-  overlays), and a flagged theme asks for explicit confirmation. Don't enable packages from
-  sources you don't trust.
+You control which packages can run:
 
-To write one, see the [authoring guide](docs/third-party-plugins.md) and the reference
-[sample pack](examples/packages/sample-pack) — a parameterized clock template, a weather card
-driven by a sandboxed [open-meteo](https://open-meteo.com) source, and a small theme, CI-tested
-against the real pipeline on every build.
+- **Installation:** packages start disabled. Enable each package on each machine.
+  A reinstalled package needs approval again.
+- **Code:** templates and themes contain data. Packages cannot add their own components.
+  Only `source.js` can run code. It runs in a QuickJS WebAssembly sandbox with no direct network,
+  DOM, or Tauri access. Each tick has a CPU time limit of about 100 ms.
+- **Network:** the Rust backend makes requests to approved HTTPS hostnames from the package manifest.
+  Approve these names when you first enable the package. Approve them again if an update changes the list.
+- **Theme CSS:** the app scans for remote `url()` and `@import` references, and overlays that cover
+  the viewport. A flagged theme needs confirmation. Enable packages only from sources you trust.
+
+To make a package, read the [authoring guide](docs/third-party-plugins.md).
+The [sample pack](examples/packages/sample-pack) includes a clock template with options,
+an [Open-Meteo](https://open-meteo.com) weather source, and a small theme.
+CI tests the sample against the package pipeline on each build.
 
 ## Development
 
-Build/run instructions, the test gates, and the release process live in
-[docs/development.md](docs/development.md). The architecture and roadmap are in
-[docs/widget-platform.md](docs/widget-platform.md).
+For build commands, required checks, and release steps, read [Development](docs/development.md).
+For the architecture and roadmap, read [Widget platform](docs/widget-platform.md).
 
 ## License
 

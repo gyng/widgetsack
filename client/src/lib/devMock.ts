@@ -24,6 +24,16 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 	let evtId = 0;
 	const handleCommand: Parameters<typeof mockIPC>[0] = (cmd, args) => {
 		switch (cmd) {
+			case COMMANDS.getAudioMixer:
+				return {
+					sessions: [{ id: 'mock-session', name: 'Music app', level: 0.5, muted: false }],
+					microphone: { level: 1, muted: false }
+				};
+			case COMMANDS.setAudioSession:
+			case COMMANDS.setMicrophoneMute:
+				return undefined;
+			case COMMANDS.checkServiceHealth:
+				return { status: 200, latencyMs: 25, certificateDays: 60, error: null };
 			// --- boot: persistence / themes / controls / fonts (empty so the studio opens blank,
 			// unless the caller supplies a canned layout — the screenshot rig does) ---
 			case COMMANDS.loadLayout:
@@ -241,6 +251,8 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 				return null;
 
 			// --- widget actuation (only fired by clicking a live control, never at boot) ---
+			case COMMANDS.runWidgetCommand:
+				return { stdout: 'Mock command output', stderr: '', exitCode: 0, truncated: false };
 			case COMMANDS.mediaControl:
 			case COMMANDS.haCallService:
 				return null;

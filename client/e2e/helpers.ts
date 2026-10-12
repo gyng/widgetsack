@@ -62,6 +62,7 @@ export async function addWidget(page: Page, type: string): Promise<Locator> {
 	// The Add palette lives in a <details> that auto-collapses once a node is selected, so re-open it
 	// (a no-op on a fresh boot where nothing is selected) before reaching for a palette button.
 	const summary = page.locator('.inspector .add-panel > summary');
+	await expect(summary).toBeVisible();
 	if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
 	const label = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape regex metachars in the label
 	await page

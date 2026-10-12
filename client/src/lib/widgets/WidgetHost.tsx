@@ -30,6 +30,7 @@ type Props = {
 	hub: TelemetryHub;
 	instance: WidgetInstance;
 	editMode?: boolean;
+	previewMode?: boolean;
 	selected?: boolean;
 	// This widget is part of a MULTI-selection (>1 selected). Gives it a focal, on-stage cue (a dashed
 	// vs solid outline) so the user can see "more than one is selected" without reading the Inspector —
@@ -92,6 +93,7 @@ function WidgetHost({
 	hub,
 	instance,
 	editMode = false,
+	previewMode = false,
 	selected = false,
 	multi = false,
 	highlighted = false,
@@ -432,7 +434,9 @@ function WidgetHost({
 							{...multiSensorProps}
 							{...haStatusProps}
 							widgetId={instance.id}
+							widgetInstanceId={domId}
 							editMode={editMode}
+							previewMode={previewMode}
 							onControl={handleControl}
 						/>
 					) : binds === 'json' || binds === 'text' ? (

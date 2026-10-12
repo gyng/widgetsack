@@ -9,6 +9,7 @@ import type { WidgetInstance } from './layout';
 import { topProcessSensors } from './topProcess';
 import { pingSensors } from './ping';
 import { procWatchSensors } from './procWatch';
+import { dashboardMetas } from './dashboardMetas';
 
 // A typed config field, so the inspector can render a real input instead of raw JSON. `help` is a
 // one-line description surfaced in the inspector; `default` is the field's own reset value (falls
@@ -216,6 +217,24 @@ const DO: FieldGroup = 'Behaviour';
 // default look/behaviour is unchanged). Components are attached in registry.ts. Every field
 // carries a `group` + `help` (the docs check lints for missing help).
 export const BUILTIN_METAS: WidgetMeta[] = [
+	{
+		type: 'command',
+		label: 'CLI Command',
+		category: 'Utilities',
+		description:
+			'Run a configured PowerShell command on demand and view its output and exit status. Never runs automatically. A 30-second timeout and 64 KiB per output stream keep execution bounded.',
+		binds: 'none',
+		interactive: true,
+		defaultSize: { w: 360, h: 220 },
+		defaultConfig: { label: 'CLI Command', command: '' },
+		configFields: [
+			text('label', 'title', { group: DATA, help: 'Header displayed above the output.' }),
+			text('command', 'PowerShell command', {
+				group: DATA,
+				help: 'Command or script to run when you press Run. Executes with your Windows user permissions.'
+			})
+		]
+	},
 	{
 		type: 'gauge',
 		description:
@@ -1336,7 +1355,8 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 				help: 'which Windows output’s volume to set (blank = whatever is the default output at the time)'
 			}
 		]
-	}
+	},
+	...dashboardMetas
 ];
 
 // The defaultConfig keys with no matching ConfigField — i.e. config a user could only reach via the

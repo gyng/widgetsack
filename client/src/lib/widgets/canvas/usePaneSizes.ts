@@ -18,7 +18,7 @@ import { readJson, writeJson } from '../../../stores/persist';
 export type Edge = 'left' | 'right' | 'tree';
 export type PaneSizes = { railL: number; railR: number; treeW: number };
 
-export const PANE_DEFAULTS: PaneSizes = { railL: 250, railR: 264, treeW: 200 };
+export const PANE_DEFAULTS: PaneSizes = { railL: 250, railR: 360, treeW: 200 };
 const LIMITS: Record<Edge, [number, number]> = {
 	left: [180, 520],
 	right: [180, 520],

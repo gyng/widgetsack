@@ -1131,6 +1131,7 @@ describe('Inspector template options form — unlabeled param', () => {
 				description: 'param without a label',
 				size: { w: 10, h: 10 },
 				params: [
+					{ key: 'note', target: 'unit.config.text' },
 					{
 						key: 'lang',
 						default: 'a',
@@ -1149,6 +1150,7 @@ describe('Inspector template options form — unlabeled param', () => {
 			unmount = render(<Inspector onOp={vi.fn()} />).unmount;
 			// No `label` on the spec → the key names both the visible row and the select's aria-label.
 			expect(within(palette()).getByLabelText('Key Only — lang')).toBeTruthy();
+			expect(within(palette()).getByRole('textbox', { name: 'Key Only — note' })).toHaveValue('');
 			expect(within(palette()).getByText('lang', { selector: 'label' })).toBeTruthy();
 		} finally {
 			unmount();

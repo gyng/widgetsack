@@ -1,17 +1,11 @@
-// Gallery entry. Runs in a plain browser (no Tauri): freeze the clock and seed the media store, then
-// render. We deliberately do NOT install the Tauri dev mock — the now-playing widget's startup calls
-// (get_initial_sessions / media_capabilities) then simply reject and are caught, leaving our seeded
-// session intact (the mock would answer get_initial_sessions with an empty set and wipe it).
+// Gallery entry: freeze the clock, seed illustrative data, and render in a browser without Tauri.
 import { createRoot } from 'react-dom/client';
 import { freezeClock, seedMedia } from './seed';
 import Gallery from './Gallery';
+import { mediaStore } from '../src/stores/stores';
 
-// Minimal Tauri stub: in a plain browser `invoke()` would sync-throw on `transformCallback`. Resolve
-// `undefined` for most commands — un-awaited `listen()` calls then settle cleanly (no unhandled
-// rejection), and get_initial_sessions' `.then(ev => ...ev.sessions)` throws on undefined → caught by
-// its own `.catch`, leaving the seeded media session intact (the full dev mock would return an empty
-// set and wipe it). The Audio Switcher + Volume widgets source from commands (not the hub), so a few
-// audio commands return canned data here so they render a representative shot.
+// Minimal Tauri stub: listeners settle cleanly, the media snapshot preserves the seeded track,
+// and command-backed widgets receive canned data without accessing devices or the network.
 const GALLERY_INVOKE: Record<string, unknown> = {
 	list_audio_outputs: [
 		{ id: 'spk', name: 'Speakers (Realtek)' },
@@ -20,6 +14,14 @@ const GALLERY_INVOKE: Record<string, unknown> = {
 	],
 	default_audio_output: 'spk',
 	get_audio_volume: { level: 0.62, muted: false },
+	get_audio_mixer: {
+		sessions: [
+			{ id: 'player', name: 'Music player', level: 0.65, muted: false },
+			{ id: 'browser', name: 'Browser', level: 0.3, muted: true }
+		],
+		microphone: { level: 1, muted: true }
+	},
+	check_service_health: { status: 200, latencyMs: 24, certificateDays: 45, error: null },
 	// The Monitor Switch sources its rows from list_monitor_inputs (DDC/CI VCP 0x60), not the hub —
 	// canned a representative 4K monitor (current = HDMI 1; DP/HDMI×2/USB-C supported) so it renders.
 	list_monitor_inputs: [
@@ -38,14 +40,37 @@ const GALLERY_INVOKE: Record<string, unknown> = {
 // oxlint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).__TAURI_INTERNALS__ = {
 	transformCallback: (cb: unknown) => cb,
-	invoke: (cmd: string) => Promise.resolve(cmd in GALLERY_INVOKE ? GALLERY_INVOKE[cmd] : undefined)
+	invoke: (cmd: string) =>
+		Promise.resolve(
+			cmd === 'get_initial_sessions'
+				? { sessions: mediaStore.getSnapshot().sessions }
+				: cmd in GALLERY_INVOKE
+					? GALLERY_INVOKE[cmd]
+					: undefined
+		)
 };
 
 async function boot(): Promise<void> {
 	freezeClock();
+	for (const [id, tasks] of Object.entries({
+		'dashboard-work-2': [
+			{ id: 'review', text: 'Review today’s agenda', done: true },
+			{ id: 'ship', text: 'Ship the update', done: false },
+			{ id: 'reply', text: 'Reply to Sam', done: false }
+		],
+		'dashboard-home-4': [
+			{ id: 'plants', text: 'Water the plants', done: true },
+			{ id: 'shopping', text: 'Pick up groceries', done: false }
+		]
+	}))
+		localStorage.setItem(`checklist:preset/${id}`, JSON.stringify(tasks));
 	// Seed the Sticky Note's localStorage (keyed by the gallery instance id) so it shows real text.
 	try {
 		localStorage.setItem('scratch:w-note', '• Ship v0.0.34\n• Water the plants\n• Reply to Sam');
+		localStorage.setItem(
+			'checklist:w-checklist',
+			'[{"id":"one","text":"Review today’s agenda","done":true},{"id":"two","text":"Ship the update","done":false}]'
+		);
 	} catch {
 		/* localStorage unavailable */
 	}

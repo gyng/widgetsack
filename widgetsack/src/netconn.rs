@@ -241,7 +241,7 @@ fn read_tcp_table() -> Vec<RawConn> {
 /// pid → executable name via a single Toolhelp process snapshot (cheap; no per-process handle). Empty
 /// on failure — rows then fall back to `pid N`.
 #[cfg(target_os = "windows")]
-fn process_names() -> HashMap<u32, String> {
+pub(crate) fn process_names() -> HashMap<u32, String> {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::System::Diagnostics::ToolHelp::{
         CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,

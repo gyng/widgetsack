@@ -113,7 +113,7 @@ const COM_CALL_MAX_IN_FLIGHT: usize = 4;
 /// Run `f` on the blocking pool with a hard `budget`. On timeout the blocking task keeps running
 /// to completion on its pool thread (it cannot be cancelled) but the caller is released. `label`
 /// names the command in the error/log line.
-async fn com_call<T: Send + 'static>(
+pub(crate) async fn com_call<T: Send + 'static>(
     label: &'static str,
     budget: Duration,
     f: impl FnOnce() -> T + Send + 'static,
@@ -159,7 +159,7 @@ async fn com_call<T: Send + 'static>(
 /// flag makes it exactly one init per pool thread (never uninitialised — the thread's lifetime is the
 /// apartment's). `RPC_E_CHANGED_MODE` (COM already up in another mode) is harmless for these calls.
 #[cfg(target_os = "windows")]
-fn ensure_com_mta() {
+pub(crate) fn ensure_com_mta() {
     use std::cell::Cell;
     use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
     thread_local! {

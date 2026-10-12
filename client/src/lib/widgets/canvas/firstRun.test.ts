@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { dismissFirstRun, isFirstRun } from './firstRun';
 
-describe('first-run strip flag', () => {
+describe('monitor onboarding dismissal', () => {
 	beforeEach(() => localStorage.clear());
 
 	it('is a first run until dismissed, then never again', () => {

@@ -39,6 +39,20 @@ describe('isRemoteUrl', () => {
 });
 
 describe('scanTreeThreats', () => {
+	it('discloses automatic service requests in imported layouts without flagging blank endpoints', () => {
+		const tree = container('root', 'col', [
+			leaf(unit('health', 'servicehealth', { url: 'http://nas.local/health' })),
+			leaf(unit('blank', 'servicehealth', { url: '' }))
+		]);
+		const threats = scanTreeThreats(tree);
+		expect(threats).toEqual([
+			{ kind: 'service-check', id: 'health', detail: 'http://nas.local/health' }
+		]);
+		expect(treeThreatSummary(threats)).toBe('1 service endpoint check that sends HTTP requests');
+		expect(treeThreatSummary([...threats, ...threats])).toBe(
+			'2 service endpoint checks that send HTTP requests'
+		);
+	});
 	it('reports iframes with their url, sandbox-off and click-catching flags', () => {
 		const tree = container('r', 'col', [
 			leaf(unit('f1', 'iframe', { url: 'https://dash.example', sandbox: false, interact: true })),

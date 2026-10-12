@@ -116,3 +116,23 @@ figcaption {
 	position: relative;
 	/* No card surface — the widgets sit directly on the wallpaper (the real overlay behaviour). */
 }
+/* Preset shots use the shipped flow trees at their native size. */
+.preset-grid {
+	display: grid;
+	grid-template-columns: repeat(2, 440px);
+	gap: 24px;
+	align-items: start;
+}
+.preset-stage {
+	padding: 24px;
+	background: #0b0f14;
+	width: 392px;
+}
+.preset-stage figcaption {
+	margin-top: 16px;
+	text-align: center;
+	font:
+		600 16px 'Segoe UI',
+		sans-serif;
+	color: #e9eef3;
+}

@@ -43,6 +43,15 @@ function tree(): MonitorLayout {
 const lib: Library = { version: 1, defs: [] };
 
 describe('FlowNode — data-id parity with the collectors (drop-in guard)', () => {
+	it('exposes the definition hook on in-flow group roots for panel styling', () => {
+		const instance = group('panel', { w: 100, h: 100 }, leaf(prim('inner')), {
+			def: 'dashboard-home'
+		});
+		const { container: dom } = render(
+			<FlowNode node={leaf(instance)} parentKind="col" renderLeaf={renderLeaf} />
+		);
+		expect(dom.querySelector('[data-id="panel"]')).toHaveAttribute('data-def', 'dashboard-home');
+	});
 	it('renders a data-id for every collector key (renderables + container boxes)', () => {
 		const mon = tree();
 		const view = render(

@@ -26,7 +26,11 @@ test('clock template options: 12-hour + colon time format applies on insert', as
 
 	// The Time select's choice VALUE is the dayjs format itself; '· 5:00 PM' is the 12-hour + colon one.
 	await pickClockOption(page, 'Time', '5:00 PM');
-	await page.locator('.tpl-opts-insert').click();
+	await page
+		.locator('.tpl-opts')
+		.filter({ hasText: 'Clock (JP weekday)' })
+		.locator('.tpl-opts-insert')
+		.click();
 
 	// 12-hour + colon → "h:mm AM/PM" (vs the default 24-hour 4-digit "HHmm" with no separator).
 	const time = page.locator('.np-clock .value').first();
@@ -37,7 +41,11 @@ test('clock template options: English weekday applies on insert', async ({ page 
 	await gotoStudio(page);
 
 	await pickClockOption(page, 'Weekday', 'English');
-	await page.locator('.tpl-opts-insert').click();
+	await page
+		.locator('.tpl-opts')
+		.filter({ hasText: 'Clock (JP weekday)' })
+		.locator('.tpl-opts-insert')
+		.click();
 
 	// The weekday clock (2nd, `ddd`) is an English short day now, not the default Japanese glyph (月…).
 	const weekday = page.locator('.np-clock .value').nth(1);

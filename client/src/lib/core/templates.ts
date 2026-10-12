@@ -17,7 +17,8 @@ import type {
 } from './layoutTree';
 import { container, group, isContainer, isGroup, leaf } from './layoutTree';
 import { applyParams } from './solve';
-import { NOWPLAYING_DEFAULT_CSS } from './widget';
+import { NOWPLAYING_DEFAULT_CSS, createWidget } from './widget';
+import { dashboardMetas } from './dashboardMetas';
 
 const rand = (): string => Math.random().toString(36).slice(2, 8);
 
@@ -254,7 +255,7 @@ export type Template = {
 	name: string;
 	description: string;
 	size: { w: number; h: number }; // the group def's canvas size
-	/** The template's configurable options as library ParamSpecs (selects: every spec carries
+	/** The template's configurable options as library ParamSpecs (select specs carry
 	 * `choices` + a `default` + a dotted `target`/`targets` path into the tree). ONE spec drives both
 	 * the insert-time options form AND the params of a def cloned from the template (newFromTemplate),
 	 * so a cloned clock still switches 12/24-hour per instance. Absent → a one-click insert. */
@@ -316,6 +317,33 @@ const CLOCK_PARAMS: ParamSpec[] = [
 ];
 
 export const TEMPLATES: Template[] = [
+	...dashboardMetas.map((meta) => ({
+		id: `dashboard-widget-${meta.type}`,
+		name: meta.label!,
+		description: meta.description!,
+		size: meta.defaultSize!,
+		tree: () => leaf(createWidget(meta.type, `template-${meta.type}`))
+	})),
+	{
+		id: 'ai-assistant',
+		name: 'AI Assistant',
+		description: 'Chat with your configured AI provider',
+		size: { w: 360, h: 300 },
+		tree: () => leaf(prim('ai-chat', 'aichat', { label: 'AI Assistant' }, { w: 360, h: 300 }))
+	},
+	{
+		id: 'cli-command',
+		name: 'CLI Command',
+		description: 'Run a PowerShell command and see its output',
+		size: { w: 360, h: 220 },
+		tree: () =>
+			leaf(
+				prim('cli-command', 'command', { label: 'CLI Command', command: '' }, { w: 360, h: 220 })
+			),
+		params: [
+			{ key: 'command', label: 'PowerShell command', default: '', target: 'unit.config.command' }
+		]
+	},
 	{
 		id: 'clock-jp',
 		name: 'Clock (JP weekday)',
@@ -425,10 +453,11 @@ export function resolveTemplateOptions(
 ): Record<string, string> {
 	const out: Record<string, string> = {};
 	for (const p of t.params ?? []) {
-		if (!p.choices) continue; // template params are selects; anything else has no picker row
 		const v = partial[p.key];
 		out[p.key] =
-			v !== undefined && p.choices.some((c) => c.value === v) ? v : String(p.default ?? '');
+			v !== undefined && (!p.choices || p.choices.some((c) => c.value === v))
+				? v
+				: String(p.default ?? '');
 	}
 	return out;
 }

@@ -30,6 +30,7 @@ export type TreeThreatKind =
 	| 'iframe-interactive' // `interact: true` — the frame catches clicks on the passive overlay
 	| 'remote-image' // an image unit with an http(s) / protocol-relative src
 	| 'remote-background' // a monitor wallpaper (`background.src`) that is a remote URL
+	| 'service-check' // a configured HTTP endpoint contacted automatically by Service Health
 	| 'button-macro' // a button carrying service calls (domain.service list)
 	| 'css'; // unit / def css or token values with CSS threats (cssThreats.ts)
 
@@ -103,6 +104,8 @@ export function scanTreeThreats(input: ScannableTree): TreeThreat[] {
 			if (cfg.interact === true) add('iframe-interactive', unit.id, 'interact: true');
 		} else if (unit.type === 'image') {
 			if (isRemoteUrl(cfg.src)) add('remote-image', unit.id, snippet(cfg.src));
+		} else if (unit.type === 'servicehealth') {
+			if (isRemoteUrl(cfg.url)) add('service-check', unit.id, snippet(cfg.url));
 		} else if (unit.type === 'button') {
 			const macro = normalizeMacro(cfg.actions);
 			if (macro.length) {
@@ -165,6 +168,15 @@ export function treeThreatSummary(threats: readonly TreeThreat[]): string {
 	}
 	const remote = n('remote-image') + n('remote-background');
 	if (remote) bits.push(plural(remote, 'remote image', 'remote images') + ' (could phone home)');
+	const checks = n('service-check');
+	if (checks)
+		bits.push(
+			plural(
+				checks,
+				'service endpoint check that sends HTTP requests',
+				'service endpoint checks that send HTTP requests'
+			)
+		);
 	const macros = n('button-macro');
 	if (macros)
 		bits.push(plural(macros, 'button that runs service calls', 'buttons that run service calls'));

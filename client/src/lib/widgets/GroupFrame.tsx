@@ -23,6 +23,7 @@ type Props = {
 	id: string; // the group leaf id (== selectId)
 	rect: Rect; // absolute box (floatingGroupBox)
 	name?: string;
+	defId?: string;
 	editMode?: boolean;
 	selected?: boolean;
 	multi?: boolean; // part of a multi-selection → focal dashed outline (see WidgetHost)
@@ -44,6 +45,7 @@ export default function GroupFrame({
 	id,
 	rect,
 	name,
+	defId,
 	editMode = false,
 	selected = false,
 	multi = false,
@@ -167,6 +169,7 @@ export default function GroupFrame({
 		<div
 			data-id={id}
 			data-group=""
+			data-def={defId}
 			className={cls.join(' ')}
 			style={{
 				position: 'absolute',

@@ -20,6 +20,7 @@ use crate::state::updater;
 pub mod agenda;
 pub mod art;
 pub mod audio;
+pub mod audio_mixer;
 pub mod autostart;
 pub mod bridge;
 pub mod clickthrough;
@@ -48,6 +49,7 @@ pub mod recyclebin;
 pub mod rss;
 pub mod secure_config;
 pub mod sensors;
+pub mod service_health;
 pub mod state;
 pub mod stocks;
 pub mod timings;
@@ -282,6 +284,7 @@ async fn main() -> Result<(), ()> {
         .register_uri_scheme_protocol("art", |ctx, request| art::serve_art(ctx, request))
         .invoke_handler(tauri::generate_handler![
             get_initial_sessions,
+            command::runner::run_widget_command,
             is_dev_instance,
             command::layouts::load_layout,
             command::layouts::save_layout,
@@ -345,6 +348,10 @@ async fn main() -> Result<(), ()> {
             audio::default_audio_output,
             audio::set_default_audio_output,
             audio::get_audio_volume,
+            audio_mixer::get_audio_mixer,
+            audio_mixer::set_audio_session,
+            audio_mixer::set_microphone_mute,
+            service_health::check_service_health,
             audio::set_audio_volume,
             audio::set_audio_mute,
             media::media_control,

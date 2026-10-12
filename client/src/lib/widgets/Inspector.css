@@ -27,7 +27,7 @@
 	left: auto;
 	bottom: var(--bar-b, 0); /* sit above the bottom powerline hint bar */
 	/* leave a --pane-gap gutter on the left for the resize handle (fallback matches the handle's) */
-	width: calc(var(--rail-r, 264px) - var(--pane-gap, 6px));
+	width: calc(var(--rail-r, 360px) - var(--pane-gap, 6px));
 	max-height: none;
 	overflow-y: auto;
 	border-width: 0 0 0 1px;
@@ -712,4 +712,8 @@
 	color: var(--ui-fg-dim);
 	font-size: var(--text-sm);
 	padding: var(--space-2);
+}
+
+.inspector .palette .tpl-opts-fields label:has(input) {
+	grid-column: 1 / -1;
 }

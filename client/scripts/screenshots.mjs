@@ -15,6 +15,10 @@ import { createServer } from 'vite';
 
 const clientRoot = fileURLToPath(new URL('..', import.meta.url));
 const outDir = path.resolve(clientRoot, '../docs/img');
+// Optional focused capture avoids regenerating unrelated documentation images.
+const typeArg = process.argv.find((arg) => arg.startsWith('--types='));
+const wanted = typeArg ? new Set(typeArg.slice('--types='.length).split(',')) : null;
+const presetsOnly = process.argv.includes('--presets');
 
 async function main() {
 	const server = await createServer({
@@ -26,7 +30,7 @@ async function main() {
 	await server.listen();
 	const base = server.resolvedUrls?.local?.[0];
 	if (!base) throw new Error('Vite did not report a local URL');
-	const url = new URL('gallery/', base).href;
+	const url = new URL(presetsOnly ? 'gallery/?presets' : 'gallery/', base).href;
 	console.log(`gallery: ${url}`);
 
 	// deviceScaleFactor 2 → crisp 2× screenshots for the docs.
@@ -57,13 +61,25 @@ async function main() {
 	for (const el of shots) {
 		const name = await el.getAttribute('data-shot');
 		if (!name) continue;
-		const rel =
-			name === 'demo' ? 'demo.png' : path.join('widgets', `${name.replace(/^widget-/, '')}.png`);
+		if (presetsOnly && !name.startsWith('preset-')) continue;
+		if (wanted && !wanted.has(name.replace(/^widget-/, ''))) continue;
+		const rel = name.startsWith('preset-')
+			? path.join('presets', `${name.slice('preset-'.length)}.png`)
+			: name === 'demo'
+				? 'demo.png'
+				: path.join('widgets', `${name.replace(/^widget-/, '')}.png`);
 		const file = path.join(outDir, rel);
 		await mkdir(path.dirname(file), { recursive: true });
 		await el.screenshot({ path: file });
 		console.log(`  ${rel}`);
 		n++;
+	}
+	if (wanted || presetsOnly) {
+		await browser.close();
+		await server.close();
+		if (errors.length) throw new Error(errors.join('\n'));
+		console.log(`wrote ${n} focused screenshot(s) to ${outDir}`);
+		return;
 	}
 
 	// The studio (editor) view — its own page (gallery/studio.html) renders the real app in studio

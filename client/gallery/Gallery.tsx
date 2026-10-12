@@ -28,6 +28,7 @@ import type { WidgetInstance } from '../src/lib/core/layout';
 import type { TelemetryHub } from '../src/lib/core/telemetry';
 import { fakeSpectrum, makeHub } from './seed';
 import './gallery.css';
+import PresetGallery from './PresetGallery';
 
 registerHomeAssistantPlugin();
 registerNowPlayingPlugin();
@@ -60,6 +61,8 @@ const PHOTO =
 // Per-type tweaks so each widget renders a representative, good-looking demo. Anything not listed
 // uses the meta's own defaults (sensor + config + size).
 const OVERRIDES: Record<string, { sensor?: string; config?: Record<string, unknown> }> = {
+	alerts: { config: { rules: 'cpu.total|above|20|CPU is busy', meetingMinutes: 0 } },
+	servicehealth: { config: { label: 'Home server', url: 'https://home.example/health' } },
 	gauge: { sensor: 'cpu.total', config: { label: 'CPU', unit: '%' } },
 	bar: { sensor: 'mem.used', config: { label: 'MEM' } },
 	sparkline: { sensor: 'gpu.util', config: { seconds: 60, fill: true } },
@@ -282,6 +285,14 @@ export default function Gallery() {
 		requestAnimationFrame(() => document.body.setAttribute('data-ready', 'true'));
 	}, []);
 
+	if (new URLSearchParams(location.search).has('presets'))
+		return (
+			<>
+				<StyleLayer css={styleCss} />
+				<PresetGallery />
+			</>
+		);
+
 	return (
 		<TelemetryHubContext.Provider value={hub}>
 			<SpectrumContext.Provider value={fakeSpectrum}>
@@ -310,6 +321,7 @@ export default function Gallery() {
 					})}
 				</section>
 
+				<PresetGallery />
 				<h2>Demo layout</h2>
 				<div className="demo-panel" data-shot="demo">
 					{DEMO.map((inst) => (

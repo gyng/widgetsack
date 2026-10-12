@@ -97,6 +97,7 @@ export default function FlowNode({
 			<div
 				data-id={id}
 				data-group=""
+				data-def={leaf.unit.def}
 				style={merge(self, overlap, {
 					display: 'flex',
 					flexDirection: 'column',

@@ -14,7 +14,7 @@ const overlay = (el: HTMLElement) => el.querySelector('.drag-overlay') as HTMLEl
 describe('GroupFrame', () => {
 	it('renders its children inside one measurable, .widget-styled group box', () => {
 		const { container, getByText } = render(
-			<GroupFrame id="grp-1" rect={rect}>
+			<GroupFrame id="grp-1" rect={rect} defId="dashboard-work">
 				<span>inner</span>
 			</GroupFrame>
 		);
@@ -24,6 +24,7 @@ describe('GroupFrame', () => {
 		expect(b.classList.contains('floating-group')).toBe(true);
 		expect(b.style.left).toBe('10px');
 		expect(b.style.width).toBe('100px');
+		expect(b).toHaveAttribute('data-def', 'dashboard-work');
 	});
 
 	it('drags the whole group as one unit — move fires onChange(id), commit on release', () => {

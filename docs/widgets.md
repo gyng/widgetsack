@@ -34,6 +34,21 @@ A **WidgetInstance** (`leaf.unit`):
 
 ## Widgets
 
+### CLI Command — `command`
+
+![CLI Command widget](img/widgets/command.png)
+
+Run a configured PowerShell command on demand and view its output and exit status. Never runs automatically. A 30-second timeout and 64 KiB per output stream keep execution bounded.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 360×220
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text | "CLI Command" |  | Header displayed above the output. |
+| `command` | text | "" |  | Command or script to run when you press Run. Executes with your Windows user permissions. |
+
 ### Gauge — `gauge`
 
 ![Gauge widget](img/widgets/gauge.png)
@@ -526,6 +541,89 @@ Switch a monitor’s input source (HDMI / DisplayPort / …) with a tap, over DD
 | `volumeTarget` | select | "off" | `off`, `system`, `monitor` | what a source’s paired volume changes when you switch (off = volumes are ignored) — The paired volume is the @NN in sources. system = the Windows master volume, set after the switch; monitor = the monitor’s own speakers over DDC/CI, set just before the switch. |
 | `volumeDevice` | select |  | (runtime list) — from `audioOutputs` | which Windows output’s volume to set (blank = whatever is the default output at the time) |
 
+### Status / Alerts — `alerts`
+
+![Status / Alerts widget](img/widgets/alerts.png)
+
+Show sensor threshold alerts only when attention is needed; snooze individual alerts.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 320×150
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text | "Needs attention" |  | Heading above active alerts. |
+| `rules` | text | "cpu.total\|above\|90\|CPU busy;mem.used\|above\|90\|Memory nearly full;disk.c.used.pct\|above\|90\|Disk C nearly full" |  | Separate rules with semicolons: sensor\|above/below\|threshold\|message. Thresholds are inclusive; missing readings do not alert. |
+| `snoozeMin` | number | 15 | min 1, max 1440 | Hide an individual alert for this many minutes. |
+| `meetingMinutes` | number | 10 | min 0, max 120 | Show upcoming timed events from the configured Agenda feed; 0 disables reminders. |
+
+### Service Health — `servicehealth`
+
+![Service Health widget](img/widgets/servicehealth.png)
+
+HTTP/HTTPS endpoint status, latency, and certificate expiry. Checks pause while hidden.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 260×85
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text | "Service health" |  | Name of the service being monitored. |
+| `url` | text | "" |  | HTTP or HTTPS health endpoint. Tries HEAD, then GET if unsupported; reads headers only and reports redirects without following them. |
+| `interval` | number | 60 | min 15, max 3600 | Seconds between checks; requests time out after 10 seconds. |
+| `slowMs` | number | 1000 | min 1 | Mark responses at or above this latency as slow. |
+| `warnDays` | number | 14 | min 0 | Warn when the HTTPS certificate expires within this many days. Unavailable for plain HTTP. |
+
+### App Audio / Microphone — `audiomixer`
+
+![App Audio / Microphone widget](img/widgets/audiomixer.png)
+
+Independent app-session volume and mute, plus default communications microphone mute.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 340×200
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `showMicrophone` | toggle | true |  | Show mute status and a toggle for the default communications microphone. |
+
+### Task Checklist — `checklist`
+
+![Task Checklist widget](img/widgets/checklist.png)
+
+Persistent task list with checkboxes and add/remove controls; syncs across studio and overlay.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 270×200
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text | "Today" |  | Heading above your tasks and completed count. |
+
+### Sensor History — `history`
+
+![Sensor History widget](img/widgets/history.png)
+
+Compare sensor histories on one scale, with a threshold band and min/average/max summaries.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 360×150
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text | "History" |  | Heading above the comparison chart. |
+| `sensorIds` | text | "cpu.total,gpu.util" |  | Comma-separated numeric sensor IDs. Compare sensors with the same units. |
+| `seconds` | number | 60 | min 5, max 600 | Number of recent samples to display (roughly seconds for 1 Hz system sensors). |
+| `fixedScale` | toggle | true |  | Pin the shared range instead of automatically scaling all lines together. |
+| `min` | number | 0 |  | Bottom of the fixed chart scale. |
+| `max` | number | 100 |  | Top of the fixed chart scale. |
+| `showThreshold` | toggle | false |  | Shade the area at or above the threshold. |
+| `threshold` | number | 80 |  | Beginning of the shaded warning band. |
+| `showStats` | toggle | true |  | Show summaries of each visible history window in the legend. |
+
 ### HA Sensor — `ha.sensor`
 
 ![HA Sensor widget](img/widgets/ha.sensor.png)
@@ -766,6 +864,20 @@ Your upcoming calendar events from a configured ICS feed.
 | `title` | text | "" |  | optional title above the list |
 | `maxRows` | number | 6 | min 1, max 20, step 1 | how many upcoming events to show |
 | `color` | color |  |  | header / bullet colour (blank = theme accent) |
+
+### AI Assistant — `aichat`
+
+![AI Assistant widget](img/widgets/aichat.png)
+
+An interactive chat with your configured AI provider. Send messages, stop a reply, or clear the conversation. Chat is shared within each window.
+
+- **Sensor:** none (self-sourcing)
+- **Default size:** 360×300
+- **Interactive:** catches clicks in passive mode (per-widget click-through)
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `label` | text | "AI Assistant" |  | Header displayed above the conversation. |
 
 ### AI Briefing — `assistant`
 

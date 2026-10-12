@@ -848,6 +848,8 @@ export default function Canvas({ studio = false }: Props) {
 				continue;
 			}
 			const targets = el.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR);
+			// A dormant status widget explicitly opts out of the whole-box fallback.
+			if (el.querySelector('[data-widget-interactive="none"]')) continue;
 			if (targets.length === 0) {
 				out.push({
 					rect: screenRectToLayout(el.getBoundingClientRect(), w0, z),
@@ -1984,9 +1986,9 @@ export default function Canvas({ studio = false }: Props) {
 	// Developer items (instance ids in labels, "Copy debug JSON", "Inspect (devtools)") show only
 	// with the Settings → Developer mode pref on; everyone else gets the plain vocabulary.
 	const developerMode = overlayPrefs.developerMode ?? false;
-	// First-boot onboarding strip (dismissible once, persisted) — studio only.
+	// First-boot monitor hint (dismissible once, persisted) — studio only.
 	const [firstRun, setFirstRun] = useState(() => studio && isFirstRun());
-	const dismissStrip = useCallback(() => {
+	const dismissMonitorHint = useCallback(() => {
 		dismissFirstRun();
 		setFirstRun(false);
 	}, []);
@@ -2037,6 +2039,7 @@ export default function Canvas({ studio = false }: Props) {
 				defId={r.defId}
 				groupId={r.groupId}
 				editMode={editMode && !previewing}
+				previewMode={previewing}
 				selected={r.selectId === selectedId || selectedSet.has(r.selectId)}
 				multi={multiSelected && (r.selectId === selectedId || selectedSet.has(r.selectId))}
 				highlighted={hoverId !== null && r.selectId === hoverId}
@@ -2073,7 +2076,14 @@ export default function Canvas({ studio = false }: Props) {
 		return r ? (
 			renderHost(r, true)
 		) : (
-			<WidgetHost flow hub={hub} instance={lf.unit as WidgetInstance} domId={id} selectId={id} />
+			<WidgetHost
+				flow
+				hub={hub}
+				instance={lf.unit as WidgetInstance}
+				domId={id}
+				selectId={id}
+				previewMode={previewing}
+			/>
 		);
 	};
 
@@ -2093,6 +2103,7 @@ export default function Canvas({ studio = false }: Props) {
 				selectId={r?.selectId ?? id}
 				defId={r?.defId}
 				groupId={r?.groupId}
+				previewMode={previewing || editMode}
 				onControl={onWidgetControl}
 			/>
 		);
@@ -2276,6 +2287,7 @@ export default function Canvas({ studio = false }: Props) {
 										id={lf.id}
 										rect={box}
 										name={(lf.unit as Group).name}
+										defId={lf.unit.def}
 										editMode={editMode && !previewing}
 										selected={lf.id === selectedId || selectedSet.has(lf.id)}
 										multi={multiSelected && (lf.id === selectedId || selectedSet.has(lf.id))}
@@ -2435,15 +2447,34 @@ export default function Canvas({ studio = false }: Props) {
 									<span className="lbl" data-tauri-drag-region>
 										Monitor
 									</span>
-									<Select
-										className="sb-select"
-										value={myMonitor}
-										options={monitorOptions.map((o) => ({ value: o.key, label: o.label }))}
-										disabled={designing}
-										title={designing ? 'Finish the widget (Done) to switch monitor' : undefined}
-										onChange={switchMonitor}
-										aria-label="Monitor"
-									/>
+									<div className="monitor-picker">
+										<Select
+											className="sb-select"
+											value={myMonitor}
+											options={monitorOptions.map((o) => ({ value: o.key, label: o.label }))}
+											disabled={designing}
+											title={designing ? 'Finish the widget (Done) to switch monitor' : undefined}
+											onChange={switchMonitor}
+											aria-label="Monitor"
+										/>
+										{firstRun && !designing && (
+											<div className="monitor-onboarding" role="note" aria-label="Monitor tip">
+												<span>
+													<strong>Switch monitor</strong>
+													<br />
+													Choose which screen’s widgets you’re editing.
+												</span>
+												<button
+													type="button"
+													aria-label="Dismiss monitor tip"
+													title="Got it"
+													onClick={dismissMonitorHint}
+												>
+													✕
+												</button>
+											</div>
+										)}
+									</div>
 									{/* The studio previews every edit straight through to the desktop overlays, so
 									    "Save" is the KEEP decision (baseline + the queued cross-monitor moves) and
 									    Cancel is the way back — the cue says so instead of implying an unsaved
@@ -2625,27 +2656,6 @@ export default function Canvas({ studio = false }: Props) {
 								)}
 								{/* First-boot strip (dismissed once, persisted): the three steps in the order they
 								    happen. Sits above the stage, under the bars; never covers the rails. */}
-								{firstRun && (
-									<div className="first-run-strip" role="note">
-										<span className="frs-step">
-											<b>1</b> Pick a widget from <b>Add</b> (right)
-										</span>
-										<span className="frs-step">
-											<b>2</b> Drag it into place
-										</span>
-										<span className="frs-step">
-											<b>3</b> <b>Save</b> to keep it on your desktop
-										</span>
-										<button
-											type="button"
-											aria-label="Dismiss"
-											title="Got it"
-											onClick={dismissStrip}
-										>
-											✕
-										</button>
-									</div>
-								)}
 								{/* Contextual subbar: canvas/stage controls (undo·redo, zoom, drop, debug). Only on
 								    the Layouts / Widget-designer stage — irrelevant on Themes / Sensors / Settings. */}
 								{showSubbar && (

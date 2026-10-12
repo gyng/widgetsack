@@ -15,6 +15,7 @@ import '../src/styles.css';
 // Forces the studio role + serves the showcase layout for load_layout (a full monitor's worth of
 // widgets — the null fallback left the stage nearly empty). Install before the app boots.
 installDevMock({ layout: studioShotLayout() });
+localStorage.setItem('widgetsack.studio.firstRunDismissed', '1');
 freezeClock();
 // Seed one playing session so the now-playing card shows a real track + cover (async; lands well
 // before the capture's settle waits).

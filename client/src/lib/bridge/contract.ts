@@ -38,6 +38,11 @@ export const EVENTS = {
 /** Tauri invoke command names (TS `invoke` → the `#[tauri::command]` fns registered in
  * widgetsack/src/main.rs `invoke_handler`; a command's wire name IS its Rust fn name). */
 export const COMMANDS = {
+	getAudioMixer: 'get_audio_mixer',
+	setAudioSession: 'set_audio_session',
+	setMicrophoneMute: 'set_microphone_mute',
+	checkServiceHealth: 'check_service_health',
+	runWidgetCommand: 'run_widget_command',
 	// media / now-playing (command/sessions.rs, media.rs)
 	getInitialSessions: 'get_initial_sessions',
 	// dev/extra-instance flag (main.rs) — drives the studio's "dev" badge

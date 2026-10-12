@@ -111,7 +111,14 @@ export default function WidgetPreview({ type, node, size, w = 200, h = 120 }: Pr
 	if (!tree) return null;
 	const scale = Math.min(w / nat.w, h / nat.h, 1);
 	const renderLeaf: RenderLeaf = (lf, id) => (
-		<WidgetHost flow hub={hub} instance={lf.unit as WidgetInstance} domId={id} selectId={id} />
+		<WidgetHost
+			flow
+			hub={hub}
+			instance={lf.unit as WidgetInstance}
+			domId={id}
+			selectId={id}
+			previewMode
+		/>
 	);
 
 	return (

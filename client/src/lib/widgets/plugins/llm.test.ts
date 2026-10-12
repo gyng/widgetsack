@@ -36,6 +36,7 @@ beforeEach(() => vi.clearAllMocks());
 describe('llm (ai-provider) plugin', () => {
 	it('registers the assistant + transcribe widgets', () => {
 		expect(getMeta('assistant')).toBeTruthy();
+		expect(getMeta('aichat')?.interactive).toBe(true);
 		expect(getMeta('transcribe')).toBeTruthy();
 	});
 

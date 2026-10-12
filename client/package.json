@@ -17,6 +17,7 @@
 		"gen:docs": "vite-node scripts/gen-widget-docs.ts",
 		"check:docs": "vite-node scripts/gen-widget-docs.ts --check",
 		"gen:shots": "node scripts/screenshots.mjs",
+		"gen:presets": "node scripts/screenshots.mjs --presets",
 		"gen:gallery": "npm run gen:shots && npm run gen:docs"
 	},
 	"devDependencies": {

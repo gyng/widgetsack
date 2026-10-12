@@ -52,6 +52,7 @@ describe('meta registry', () => {
 	it('lists the built-ins with labels + bind kinds', () => {
 		const types = listMetas().map((m) => m.type);
 		expect(types).toEqual([
+			'command',
 			'gauge',
 			'bar',
 			'sparkline',
@@ -80,7 +81,12 @@ describe('meta registry', () => {
 			'spacer',
 			'countdown',
 			'timer',
-			'monitorswitch'
+			'monitorswitch',
+			'alerts',
+			'servicehealth',
+			'audiomixer',
+			'checklist',
+			'history'
 		]);
 		expect(getMeta('gauge')).toMatchObject({ label: 'Gauge', binds: 'scalar' });
 		expect(getMeta('sparkline')?.binds).toBe('series');

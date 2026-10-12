@@ -6,6 +6,7 @@ import { registerPlugin } from '../plugin';
 import type { SensorSource } from '../../core/plugin';
 import LlmSettings from './LlmSettings';
 import AssistantHost from '../AssistantHost';
+import AiChatHost from '../AiChatHost';
 import Transcribe from '../meters/Transcribe';
 import { llmConfigStatus } from './llm-commands';
 import { ingestLlmStatus, LLM_STATUS_SENSOR } from './llm-status';
@@ -45,6 +46,28 @@ export const registerLlmPlugin = (): void =>
 			return () => setLlmStudioApi(null);
 		},
 		widgets: [
+			{
+				meta: {
+					type: 'aichat',
+					label: 'AI Assistant',
+					description:
+						'An interactive chat with your configured AI provider. Send messages, stop a reply, or clear the conversation. Chat is shared within each window.',
+					binds: 'none',
+					interactive: true,
+					defaultSize: { w: 360, h: 300 },
+					defaultConfig: { label: 'AI Assistant' },
+					configFields: [
+						{
+							key: 'label',
+							label: 'title',
+							kind: 'text',
+							group: 'Data',
+							help: 'Header displayed above the conversation.'
+						}
+					]
+				},
+				component: asMeter(AiChatHost)
+			},
 			{
 				meta: {
 					// No bound sensor (binds:'none'): the AssistantHost container generates the text on a

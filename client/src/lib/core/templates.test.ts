@@ -44,6 +44,13 @@ function treeOf(id: string): LayoutNode {
 describe('templates', () => {
 	it('every template is a flow tree of known widget types, with a positive size', () => {
 		const known = new Set([
+			'alerts',
+			'servicehealth',
+			'audiomixer',
+			'checklist',
+			'history',
+			'aichat',
+			'command',
 			'clock',
 			'text',
 			'sparkline',
@@ -271,26 +278,26 @@ describe('freshIds (group leaf)', () => {
 	});
 });
 
-describe('resolveTemplateOptions (non-select params)', () => {
-	// A synthetic template exercising the param-without-choices skip and the undefined-default fallback —
-	// the built-in templates only carry select params, so these arms need a hand-built spec.
-	const tpl: Template = {
-		id: 'synthetic',
-		name: 'Synthetic',
-		description: '',
-		size: { w: 10, h: 10 },
-		params: [
-			{ key: 'note', label: 'Note', default: 'x', target: 'a' }, // no `choices` → skipped (not a select)
-			{ key: 'pick', label: 'Pick', target: 'b', choices: [{ value: 'one', label: 'One' }] } // no default
-		],
-		tree: () => leaf({ id: 'w', type: 'text', rect: { x: 0, y: 0, w: 10, h: 10 }, config: {} })
-	};
-
-	it('skips params with no choices and defaults a choice-param with no `default` to an empty string', () => {
-		// 'note' (no choices) is dropped entirely; 'pick' (choices, no default) → '' (the `?? ''` fallback).
-		expect(resolveTemplateOptions(tpl)).toEqual({ pick: '' });
-		// A valid override for the select still takes; the non-select is still skipped.
-		expect(resolveTemplateOptions(tpl, { pick: 'one', note: 'ignored' })).toEqual({ pick: 'one' });
+describe('resolveTemplateOptions (text params)', () => {
+	it('preserves text overrides and defaults without accepting unknown keys', () => {
+		const tpl: Template = {
+			id: 'text',
+			name: 'Text',
+			description: '',
+			size: { w: 10, h: 10 },
+			params: [{ key: 'note', default: 'default' }, { key: 'empty' }],
+			tree: () => leaf({ id: 'w', type: 'text', rect: { x: 0, y: 0, w: 10, h: 10 }, config: {} })
+		};
+		expect(resolveTemplateOptions(tpl)).toEqual({ note: 'default', empty: '' });
+		expect(
+			resolveTemplateOptions(tpl, { note: '', empty: 'Get-Date', unknown: 'ignored' })
+		).toEqual({ note: '', empty: 'Get-Date' });
+	});
+	it('applies the CLI command to its leaf without changing the template default', () => {
+		const tpl = getTemplate('cli-command')!;
+		const tree = instantiateTemplate(tpl, { command: 'Get-Date' });
+		expect(leaves(tree)[0].config.command).toBe('Get-Date');
+		expect(leaves(tpl.tree())[0].config.command).toBe('');
 	});
 });
 

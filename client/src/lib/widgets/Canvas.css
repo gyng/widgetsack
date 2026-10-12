@@ -47,7 +47,7 @@
 	--nav-w: 56px; /* the left nav strip; the section panel fills the rest of --rail-l */
 	--tree-w: 200px; /* widget-designer: the def's structure tree, between the list and the canvas */
 	--rail-l: 250px;
-	--rail-r: 264px;
+	--rail-r: 360px;
 	--pane-gap: 6px; /* empty gutter at each resizable divider — the drag handle lives here */
 	background: var(--ui-bg);
 	top: calc(var(--bar-h) + var(--subbar-h)); /* the stage (only) drops by the subbar row */
@@ -683,7 +683,7 @@
 .canvas .studio-bar.studio-subbar {
 	top: var(--bar-h, 36px);
 	left: var(--rail-l, 250px);
-	right: var(--rail-r, 264px);
+	right: var(--rail-r, 360px);
 	height: var(--subbar-h, 30px);
 	background: var(--ui-bar-bg);
 	border-bottom-color: rgba(var(--ui-accent-rgb), 0.25);
@@ -947,7 +947,7 @@
 .canvas .theme-editor {
 	position: fixed;
 	top: calc(var(--bar-h, 36px) + 16px);
-	right: calc(var(--rail-r, 264px) + 16px);
+	right: calc(var(--rail-r, 360px) + 16px);
 	width: 320px;
 	display: flex;
 	flex-direction: column;
@@ -1104,46 +1104,53 @@
 	pointer-events: none;
 }
 
-/* First-boot strip: three steps in a row above the stage (under the bars), dismissible once. */
-.canvas .first-run-strip {
-	position: absolute;
-	top: var(--space-2);
-	left: 50%;
-	transform: translateX(-50%);
+/* The onboarding hint follows the monitor picker without covering the stage's widgets. */
+.canvas .monitor-picker {
+	position: relative;
 	display: flex;
-	align-items: center;
+	min-width: 0;
+}
+.canvas .monitor-onboarding {
+	position: absolute;
+	top: calc(100% + 8px);
+	left: 0;
+	width: 240px;
+	display: flex;
+	align-items: flex-start;
 	gap: var(--space-5);
-	max-width: calc(100% - 200px);
-	padding: var(--space-2) var(--space-4);
+	padding: var(--space-5);
+	box-sizing: border-box;
+	color: var(--ui-fg);
+	background: var(--ui-raised);
+	border: 1px solid rgba(var(--ui-accent-rgb), 0.5);
+	border-radius: var(--radius-panel);
+	box-shadow: 0 4px 14px var(--ui-scrim);
+	white-space: normal;
+	line-height: 1.5;
 	font-family: system-ui, sans-serif;
 	font-size: var(--text-md);
-	color: var(--ui-fg);
-	background: var(--ui-surface);
-	border: 1px solid rgba(var(--ui-accent-rgb), 0.5);
-	border-radius: var(--radius-control);
-	box-shadow: 0 4px 14px var(--ui-scrim);
-	pointer-events: auto;
-	z-index: 6;
-	white-space: nowrap;
+	z-index: 1;
 }
-
-.canvas .first-run-strip .frs-step b:first-child {
-	display: inline-block;
-	min-width: 1.4em;
-	margin-right: var(--space-1);
-	text-align: center;
-	color: var(--ui-bg);
-	background: rgb(var(--ui-accent-rgb));
-	border-radius: 999px;
+.canvas .monitor-onboarding strong {
+	color: var(--ui-accent-fg);
 }
-
-.canvas .first-run-strip button {
-	margin-left: var(--space-2);
+.canvas .studio-bar .monitor-onboarding button {
+	flex: none;
 	padding: 0 var(--space-2);
 	border: none;
 	background: transparent;
 	color: var(--ui-fg-muted);
 	cursor: pointer;
+}
+
+/* Keep studio list scrollbars quiet and visible in both dark and light themes. */
+.canvas.studio :is(.designer-list, .rail-panel, .outline, .inspector) {
+	scrollbar-width: thin;
+	scrollbar-color: var(--ui-border-strong) transparent;
+	scrollbar-gutter: stable;
+}
+.canvas.studio :is(.designer-list, .rail-panel, .outline, .inspector):hover {
+	scrollbar-color: var(--ui-fg-muted) transparent;
 }
 
 /* Empty-stage card (Layouts, nothing on this monitor): centred over the stage, unscaled. */
@@ -1242,4 +1249,8 @@
 	color: inherit;
 	font: inherit;
 	cursor: pointer;
+}
+
+.canvas .studio-bar:not(.studio-subbar) {
+	z-index: 8;
 }

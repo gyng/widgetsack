@@ -139,3 +139,20 @@ describe('Inspector add-palette — filter', () => {
 		expect(within(palette()).getByText(/No matches for/)).toBeTruthy();
 	});
 });
+
+it('accepts a command when inserting the CLI template', () => {
+	const onOp = vi.fn();
+	render(<Inspector onOp={onOp} />);
+	fireEvent.change(screen.getByRole('textbox', { name: 'CLI Command — PowerShell command' }), {
+		target: { value: 'Get-Date' }
+	});
+	const card = screen
+		.getByText('CLI Command', { selector: '.tpl-opts-name' })
+		.closest('.tpl-opts') as HTMLElement;
+	fireEvent.click(within(card).getByRole('button', { name: '＋ Insert' }));
+	expect(onOp).toHaveBeenCalledWith({
+		op: 'insertTemplate',
+		templateId: 'cli-command',
+		options: { command: 'Get-Date' }
+	});
+});

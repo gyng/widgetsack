@@ -2,7 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { addWidget, gotoStudio, navItem, openSection, watchConsole } from './helpers';
 
 // UX round 1: the sticky add target, first-free-spot placement + the just-added flash, the Text
-// placeholder, the empty-stage card + first-run strip, per-section error boundaries, the
+// placeholder, the empty-stage card + monitor hint, per-section error boundaries, the
 // corrupt-layout banner, the inline sack export, the theme-editor dirty check, Ctrl+9 and
 // zoom-to-content. Geometry / flow behaviour that happy-dom can't prove lives here.
 
@@ -69,21 +69,28 @@ test('new floating widgets take the first free spot (never stacked) and flash in
 	await expect(a).not.toHaveAttribute('data-just-added', '', { timeout: 3000 });
 });
 
-test('empty stage shows the "Nothing on this monitor yet" card; first-run strip is dismissible once', async ({
+test('empty stage shows the "Nothing on this monitor yet" card; monitor hint is dismissible once', async ({
 	page
 }) => {
 	await gotoStudioWithLayout(page, EMPTY_LAYOUT);
 	const card = page.locator('.stage-empty');
 	await expect(card).toBeVisible();
 	await expect(card).toContainText('Nothing on this monitor yet');
-	const strip = page.locator('.first-run-strip');
+	const strip = page.locator('.monitor-onboarding');
 	await expect(strip).toBeVisible();
-	await strip.getByRole('button', { name: 'Dismiss' }).click();
+	await expect(strip).toContainText('Switch monitor');
+	await expect(page.locator('.first-run-strip')).toHaveCount(0);
+	const picker = await page.getByRole('combobox', { name: 'Monitor', exact: true }).boundingBox();
+	const hint = await strip.boundingBox();
+	expect(picker && hint).toBeTruthy();
+	expect(Math.abs(hint!.x - picker!.x)).toBeLessThan(2);
+	expect(hint!.y).toBeGreaterThanOrEqual(picker!.y + picker!.height);
+	await strip.getByRole('button', { name: 'Dismiss monitor tip' }).click();
 	await expect(strip).toHaveCount(0);
 	// Dismissal persists across a reload.
 	await page.reload();
 	await expect(page.locator('.canvas.studio.edit')).toBeVisible();
-	await expect(page.locator('.first-run-strip')).toHaveCount(0);
+	await expect(page.locator('.monitor-onboarding')).toHaveCount(0);
 	// The card's button opens the Add palette; adding a widget clears the card.
 	await card.getByRole('button', { name: /Add a widget/ }).click();
 	await expect(page.locator('.inspector .palette-filter')).toBeFocused();

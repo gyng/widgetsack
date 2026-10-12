@@ -244,6 +244,7 @@ export function seedHub(hub: TelemetryHub): void {
 	text(hub, 'stocks.NVDA.state', 'OPEN');
 
 	// Home Assistant demo entities (the gallery binds each HA widget to one of these ids).
+	text(hub, 'ha.status', 'connected');
 	json(hub, 'demo.temperature', {
 		state: '21.4',
 		attributes: { friendly_name: 'Living room', unit_of_measurement: '°C' }
