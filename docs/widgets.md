@@ -21,7 +21,6 @@ For the layout file structure, see the [developer reference](dev/layout-format.m
 
 Run a configured PowerShell command and show its output and exit status. Select Run to start. Execution stops after 30 seconds.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 360×220
 - **Controls:** available on the desktop.
 
@@ -119,7 +118,6 @@ Show a formatted sensor value with an optional label. Formats include percentage
 
 Show the date and time using a configurable format.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 160×40
 - **Intrinsic size:** adjusts to the displayed content.
 
@@ -136,7 +134,6 @@ Show the date and time using a configurable format.
 
 Show a month calendar and highlight today. Choose the first weekday and whether to show dates from the next month.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 220×200
 
 | key | type | default | options / range | description |
@@ -155,7 +152,6 @@ Show a month calendar and highlight today. Choose the first weekday and whether 
 
 Show the time on an analog clock with hour, minute, and second hands.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 120×120
 
 | key | type | default | options / range | description |
@@ -175,7 +171,6 @@ Show the time on an analog clock with hour, minute, and second hands.
 
 Run Home Assistant service calls or media controls when you select the button.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 90×44
 - **Controls:** available on the desktop.
 
@@ -190,7 +185,6 @@ Run Home Assistant service calls or media controls when you select the button.
 
 Show CPU usage as per-core charts or one combined gauge.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 160×90
 
 | key | type | default | options / range | description |
@@ -210,7 +204,6 @@ Show CPU usage as per-core charts or one combined gauge.
 
 Show battery charge and charging status or remaining time. A computer without a battery shows “—”.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 150×44
 
 | key | type | default | options / range | description |
@@ -224,7 +217,6 @@ Show battery charge and charging status or remaining time. A computer without a 
 
 Show NVIDIA GPU usage and available temperature, memory, power, clock, and fan readings. Unavailable readings show “—”.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×96
 
 | key | type | default | options / range | description |
@@ -239,7 +231,6 @@ Show NVIDIA GPU usage and available temperature, memory, power, clock, and fan r
 
 Show used space for each detected drive. Nearly full drives show a warning.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×80
 
 | key | type | default | options / range | description |
@@ -253,7 +244,6 @@ Show used space for each detected drive. Nearly full drives show a warning.
 
 Show the process with the highest CPU, memory, disk activity, or GPU memory usage.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×44
 
 | key | type | default | options / range | description |
@@ -268,7 +258,6 @@ Show the process with the highest CPU, memory, disk activity, or GPU memory usag
 
 Show whether a named process is running. Combine CPU and memory usage across its instances.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×44
 
 | key | type | default | options / range | description |
@@ -283,7 +272,6 @@ Show whether a named process is running. Combine CPU and memory usage across its
 
 Show network connections by process. Include established connections, listening connections, and connections to public IP addresses.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 240×150
 
 | key | type | default | options / range | description |
@@ -298,7 +286,6 @@ Show network connections by process. Include established connections, listening 
 
 Check whether a host responds to ping and show its round-trip time. The default host is 1.1.1.1.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 150×24
 - **Intrinsic size:** adjusts to the displayed content.
 
@@ -315,7 +302,6 @@ Check whether a host responds to ping and show its round-trip time. The default 
 
 Show the Wi-Fi network name, signal strength, and connection details. The widget shows “Not connected” when Wi-Fi is disconnected.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×76
 
 | key | type | default | options / range | description |
@@ -329,7 +315,6 @@ Show the Wi-Fi network name, signal strength, and connection details. The widget
 
 Show output audio as frequency bars or a scrolling spectrogram.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 220×90
 
 | key | type | default | options / range | description |
@@ -348,7 +333,6 @@ Show output audio as frequency bars or a scrolling spectrogram.
 
 Show a web page in a frame. Enable interaction to use its controls.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 320×240
 - **Controls:** available on the desktop.
 
@@ -369,7 +353,6 @@ Show a web page in a frame. Enable interaction to use its controls.
 
 Define an area for application windows. Hold Shift while dragging a window into it to snap. The zone is hidden on the overlay.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 600×400
 
 | key | type | default | options / range | description |
@@ -384,7 +367,6 @@ Define an area for application windows. Hold Shift while dragging a window into 
 
 Select the default audio output device. The widget lists available devices and marks the active one.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×120
 - **Controls:** available on the desktop.
 
@@ -398,7 +380,6 @@ Select the default audio output device. The widget lists available devices and m
 
 Show the Recycle Bin item count and size. Set a size threshold for a warning.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 150×48
 
 | key | type | default | options / range | description |
@@ -412,7 +393,6 @@ Show the Recycle Bin item count and size. Set a size threshold for a warning.
 
 Adjust or mute the default audio output device.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 190×36
 - **Controls:** available on the desktop.
 
@@ -426,7 +406,6 @@ Adjust or mute the default audio output device.
 
 Show an image from an HTTPS URL, data URL, or file in the wallpapers folder. Choose how it fits the widget.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×150
 
 | key | type | default | options / range | description |
@@ -441,7 +420,6 @@ Show an image from an HTTPS URL, data URL, or file in the wallpapers folder. Cho
 
 Enter a note on the overlay. The widget keeps the text across restarts.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 200×140
 - **Controls:** available on the desktop.
 
@@ -456,7 +434,6 @@ Enter a note on the overlay. The widget keeps the text across restarts.
 
 Reserve empty space between widgets. Studio shows an outline while editing.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 60×40
 
 _No configurable fields._
@@ -468,7 +445,6 @@ _No configurable fields._
 
 Count down to a date and time, or alternate Pomodoro work and break periods. Use Timer if you need start and pause controls.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 170×80
 - **Intrinsic size:** adjusts to the displayed content.
 
@@ -489,7 +465,6 @@ Count down to a date and time, or alternate Pomodoro work and break periods. Use
 
 Use a countdown timer or stopwatch with start, pause, and reset controls. Drag the dial to set up to 60 minutes. Release to start.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 160×96
 - **Controls:** available on the desktop.
 
@@ -509,7 +484,6 @@ Use a countdown timer or stopwatch with start, pause, and reset controls. Drag t
 
 Switch monitor inputs and show the current source. Enable DDC/CI in the monitor settings. Available input codes depend on the monitor.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 220×150
 - **Controls:** available on the desktop.
 
@@ -531,7 +505,6 @@ Switch monitor inputs and show the current source. Enable DDC/CI in the monitor 
 
 Show sensor threshold alerts only when attention is needed; snooze individual alerts.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 320×150
 - **Controls:** available on the desktop.
 
@@ -548,7 +521,6 @@ Show sensor threshold alerts only when attention is needed; snooze individual al
 
 HTTP/HTTPS endpoint status, latency, and certificate expiry. Checks pause while hidden.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 260×85
 
 | key | type | default | options / range | description |
@@ -565,7 +537,6 @@ HTTP/HTTPS endpoint status, latency, and certificate expiry. Checks pause while 
 
 Independent app-session volume and mute, plus default communications microphone mute.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 340×200
 - **Controls:** available on the desktop.
 
@@ -579,7 +550,6 @@ Independent app-session volume and mute, plus default communications microphone 
 
 Persistent task list with checkboxes and add/remove controls; syncs across studio and overlay.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 270×200
 - **Controls:** available on the desktop.
 
@@ -593,7 +563,6 @@ Persistent task list with checkboxes and add/remove controls; syncs across studi
 
 Compare sensor histories on one scale, with a threshold band and min/average/max summaries.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 360×150
 
 | key | type | default | options / range | description |
@@ -753,7 +722,6 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![Now Playing widget](img/widgets/nowplaying.png)
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 160×200
 - **Controls:** available on the desktop.
 
@@ -765,7 +733,6 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![Stock Ticker widget](img/widgets/ticker.png)
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 180×110
 
 | key | type | default | options / range | description |
@@ -780,7 +747,6 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ![Weather widget](img/widgets/weather.png)
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 220×160
 
 | key | type | default | options / range | description |
@@ -796,7 +762,6 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 Show sunrise and sunset for the configured weather location. Show the current moon phase and illumination.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 210×64
 
 | key | type | default | options / range | description |
@@ -811,7 +776,6 @@ Show sunrise and sunset for the configured weather location. Show the current mo
 
 Show the European Air Quality Index, PM2.5, and UV index for the configured weather location.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 190×86
 
 | key | type | default | options / range | description |
@@ -826,7 +790,6 @@ Show the European Air Quality Index, PM2.5, and UV index for the configured weat
 
 Show headlines from the configured RSS or Atom feed.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 260×150
 
 | key | type | default | options / range | description |
@@ -841,7 +804,6 @@ Show headlines from the configured RSS or Atom feed.
 
 Show upcoming events from the configured ICS calendar feed.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 280×260
 - **Controls:** available on the desktop.
 
@@ -855,7 +817,6 @@ Show upcoming events from the configured ICS calendar feed.
 
 An interactive chat with your configured AI provider. Send messages, stop a reply, or clear the conversation. Chat is shared within each window.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 360×300
 - **Controls:** available on the desktop.
 
@@ -867,7 +828,6 @@ An interactive chat with your configured AI provider. Send messages, stop a repl
 
 Generate a briefing from sensor readings with the configured AI Provider. Set an interval or cron schedule. Use manual refresh in Studio.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 280×96
 - **Controls:** available on the desktop.
 
@@ -884,7 +844,6 @@ Generate a briefing from sensor readings with the configured AI Provider. Set an
 
 Select the microphone to record speech. Select it again to stop and transcribe. Configure an OpenAI-compatible AI Provider. Translation and speech playback are optional.
 
-- **Data:** Configured in the widget settings or Plugins.
 - **Default size:** 320×120
 - **Controls:** available on the desktop.
 

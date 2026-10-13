@@ -60,11 +60,10 @@ function widgetSection(meta: WidgetMeta, screenshots?: ReadonlySet<string>): str
 		series: 'Sensor history',
 		json: 'Structured sensor data'
 	};
-	facts.push(
-		binds === 'none'
-			? '- **Data:** Configured in the widget settings or Plugins.'
-			: `- **Data:** ${dataKinds[binds]}.${meta.defaultSensor ? ` Default: \`${meta.defaultSensor}\`.` : ''}`
-	);
+	if (binds !== 'none')
+		facts.push(
+			`- **Data:** ${dataKinds[binds]}.${meta.defaultSensor ? ` Default: \`${meta.defaultSensor}\`.` : ''}`
+		);
 	if (meta.defaultSize)
 		facts.push(`- **Default size:** ${meta.defaultSize.w}×${meta.defaultSize.h}`);
 	if (meta.interactive) facts.push('- **Controls:** available on the desktop.');

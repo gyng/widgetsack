@@ -8,7 +8,7 @@ Read [AGENTS.md](../../AGENTS.md) for repository conventions and testing require
 [App.tsx](../../client/src/App.tsx) selects the role by window label.
 Both roles render [Canvas.tsx](../../client/src/lib/widgets/Canvas.tsx).
 
-- Overlay windows display the saved layout on each monitor. Their background is transparent and clicks pass through empty areas.
+- Overlay windows display the current layout on each monitor, including live Studio previews. Empty areas let clicks reach the desktop.
 - Studio edits layouts, widget definitions, themes, connections, and shared bundles.
 
 The primary overlay uses the `main` label. Studio uses `studio`.
@@ -30,7 +30,7 @@ Update both Rust and TypeScript when a serialized bridge contract changes.
 ## Layouts
 
 The frontend owns layout, widget, theme-token, and sack schemas.
-The backend validates filenames and performs file operations.
+The backend validates filenames, merges touched document fields, and performs file operations.
 It does not solve or edit layout trees.
 
 The editor reducer owns selection, modes, undo, redo, and the saved baseline.
@@ -38,7 +38,10 @@ The solver converts layout trees into rectangles and renderable widgets.
 Library groups reference reusable definitions and can have instance parameters or styles.
 See [Layout format](layout-format.md).
 
-Saving writes `widgets.json` in the app configuration directory.
+Studio writes debounced layout previews to `widgets.json` in the app configuration directory.
+Preview, Save, and revert writes share one ordered queue.
+Save records the new baseline. Cancel restores the prior baseline.
+Closing Studio flushes a pending preview write.
 A file watcher emits `layout_changed` so overlays can reload.
 Themes use the same write, watch, and reload pattern.
 File replacement must preserve a valid prior file when a write fails.

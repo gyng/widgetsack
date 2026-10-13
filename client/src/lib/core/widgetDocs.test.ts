@@ -45,9 +45,9 @@ describe('widgetReferenceMarkdown', () => {
 		expect(md).toContain('### Clock');
 	});
 
-	it('documents the sensor binding (and self-sourcing)', () => {
+	it('documents direct bindings without inventing a data source for self-sourcing widgets', () => {
 		expect(md).toContain('Numeric sensor. Default: `cpu.total`.');
-		expect(md).toContain('Configured in the widget settings or Plugins.');
+		expect(widgetReferenceMarkdown([metas[1]!])).not.toContain('**Data:**');
 	});
 
 	it('renders a config table with defaults pulled from defaultConfig', () => {

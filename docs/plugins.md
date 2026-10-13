@@ -18,10 +18,9 @@ Use this link when a widget reports that its connection is not configured.
 
 1. Open **Plugins**.
 2. Find **Packages**.
-3. Select **Install from URL…**.
-4. Enter a package URL or a GitHub repository.
-5. Install the package.
-6. Enable it after you review the requested permissions.
+3. Enter a package URL or GitHub repository in **Install a package**.
+4. Select **Install**.
+5. Enable the package after you review its requested permissions.
 
 Accepted sources include `owner/repo`, a GitHub repository URL, and an HTTPS URL ending in `plugin.json`.
 A repository URL uses its `main` branch.

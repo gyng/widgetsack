@@ -21,6 +21,13 @@ describe('themingReferenceMarkdown', () => {
 		expect(md).not.toMatch(/can't accidentally repaint/i);
 	});
 
+	it('separates theme selection from CSS editing and identifies the editor controls', () => {
+		expect(md).toContain('## Select a theme');
+		expect(md).toContain('## Edit theme CSS');
+		expect(md).toContain('**Edit CSS**');
+		expect(md).toContain('**Save & apply**');
+	});
+
 	it('lists the built-in theme catalog', () => {
 		expect(md).toMatch(/Built-in themes/i);
 		expect(md).toContain('Duplicate');
@@ -32,6 +39,9 @@ describe('themingReferenceMarkdown', () => {
 
 	it('explains the cascade order and the scoping caveat', () => {
 		expect(md).toMatch(/cascade/i);
+		expect(md).toContain('Global token overrides from Themes.');
+		expect(md).toContain('Token overrides and CSS on individual widgets or groups.');
+		expect(md).toContain('CSS selector specificity');
 		expect(md).toContain('dev/theming.md');
 		expect(md).not.toContain('client/src/');
 		expect(md).toMatch(/@font-face/);

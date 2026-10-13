@@ -19,7 +19,7 @@ The overlay remains available on a monitor whose layout contains only zones.
 ## Native behavior
 
 Windows event hooks detect move and size operations.
-The configured modifier arms snapping during a drag.
+Holding Shift arms snapping during a drag.
 Release snaps the target window to the highlighted zone.
 Dragging out restores the prior size under the cursor.
 Location-change handling supports some applications with nonstandard title bars.
@@ -43,7 +43,7 @@ Run it only in an interactive Windows session.
 Live dragging still needs a manual check:
 
 1. Create floating and docked zones on two monitors.
-2. Hold the modifier and drag a normal window through each zone.
+2. Hold Shift and drag a normal window through each zone.
 3. Check the highlight and release position.
 4. Drag out and check size restoration.
 5. Test a custom-titlebar window and an elevated window.

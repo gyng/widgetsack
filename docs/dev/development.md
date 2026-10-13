@@ -6,7 +6,8 @@ Read [AGENTS.md](../../AGENTS.md) before making changes.
 
 ## Setup
 
-Install the Windows prerequisites for Tauri, Rust 1.90 or later, and Node with npm.
+Install the Windows prerequisites for Tauri and Rust 1.90 or later.
+Use Node 24 with npm, as CI does.
 Use a Tauri v2 CLI.
 Install client dependencies from `client/`:
 

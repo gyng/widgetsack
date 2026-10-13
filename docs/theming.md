@@ -4,10 +4,22 @@
 
 Use a theme to change widget colors, fonts, and spacing.
 
+## Select a theme
+
 1. Open **Themes** in Studio.
-2. Select a theme.
-3. Adjust its settings or select **Duplicate** to create an editable copy.
-4. Select **Save & apply** to keep your CSS changes.
+2. Select a theme from the catalog.
+
+The app applies and saves the selection automatically.
+
+## Edit theme CSS
+
+1. Open **Themes** in Studio.
+2. Select **Duplicate** on a built-in theme to create an editable copy.
+3. Edit the CSS in the dialog.
+4. Select **Save & apply**.
+
+For an existing custom theme, select its **Edit CSS** button to open the dialog.
+Built-in themes are read-only.
 
 To set a different theme for each monitor, clear **apply theme to all monitors** in **Settings → Monitor**.
 Select a monitor in **Layout**, then choose its theme.
@@ -121,15 +133,20 @@ Built-in themes are read-only. Use **Duplicate** to create a copy you can edit.
 
 ## Style priority
 
-Styles follow this cascade order. Later settings override earlier settings for the same property.
+The CSS cascade combines these style layers. The app loads them in this order.
+CSS selector specificity and inheritance also determine which value applies.
+For equal selectors and importance, later declarations take priority.
 
 1. Built-in defaults.
 2. The selected theme.
-3. Token overrides from Themes or the Inspector.
+3. Global token overrides from Themes.
 4. Styles saved with a custom widget.
-5. Styles on an individual widget or group.
+5. Token overrides and CSS on individual widgets or groups.
 
-Token overrides stay active when you change themes. Use **Clear overrides** to remove them.
+Global token overrides stay active when you change themes.
+Use the **Clear overrides** control in Themes to remove them.
+The control label includes the number of overrides.
+Inspector overrides apply to the selected widget or group only.
 
 ## Widget CSS
 

@@ -16,15 +16,18 @@ RGB channel tokens support solid and translucent color expressions.
 
 ## Cascade
 
-Styles apply in this order:
+The app assembles style layers in this order:
 
 1. Built-in defaults.
 2. Selected theme.
-3. Token overrides.
+3. Global token overrides from Themes.
 4. Custom widget styles.
-5. Instance and group styles.
+5. Instance and group token overrides, followed by their CSS.
 
-Token overrides remain active across theme changes.
+CSS specificity, importance, and inheritance still apply.
+Later source order wins only when the other cascade rules are equal.
+An Inspector override is scoped to its widget or group, rather than written at the global token layer.
+Global token overrides remain active across theme changes.
 Scoped widget rules use `&` to select the widget root.
 Group token overrides apply within the group's scope.
 Put global `@font-face` and `@keyframes` rules in theme CSS.
