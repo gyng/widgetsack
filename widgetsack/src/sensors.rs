@@ -45,6 +45,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use nvml_wrapper::{
     Nvml,
     enum_wrappers::device::{Clock, TemperatureSensor},
+    error::NvmlError,
 };
 use serde::Serialize;
 use sysinfo::{Disks, Networks, ProcessesToUpdate, System};
@@ -116,6 +117,30 @@ fn percent(used: u64, total: u64) -> f64 {
 }
 
 /// Convert a per-tick byte delta into a bytes-per-second rate.
+/// PURE SEAM: the real span a network byte delta covers. Ticks are skipped while a slow sample runs,
+/// and the machine can sleep, so the delta can cover several seconds; dividing by the nominal
+/// interval would report a multiple of the true rate. The first sample has no previous refresh.
+fn net_interval_ms(since_last_refresh: Option<Duration>) -> u64 {
+    since_last_refresh.map_or(INTERVAL_MS, |elapsed| (elapsed.as_millis() as u64).max(1))
+}
+
+/// How long to wait between attempts to (re)acquire the NVIDIA GPU.
+const GPU_RETRY: Duration = Duration::from_secs(30);
+
+/// PURE SEAM: errors after which the device handle is dead (driver update/reinstall, TDR reset,
+/// driver not yet loaded at autostart) and must be re-acquired; others (NotSupported, …) are per-call.
+fn gpu_lost(error: &NvmlError) -> bool {
+    matches!(
+        error,
+        NvmlError::GpuLost | NvmlError::Uninitialized | NvmlError::DriverNotLoaded
+    )
+}
+
+/// PURE SEAM: whether a GPU (re)acquisition attempt may run now.
+fn gpu_retry_due(retry_at: Option<std::time::Instant>, now: std::time::Instant) -> bool {
+    retry_at.is_none_or(|at| now >= at)
+}
+
 fn rate_per_sec(bytes: u64, interval_ms: u64) -> f64 {
     if interval_ms == 0 {
         0.0
@@ -940,6 +965,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         }
     };
     let gpu = nvml.and_then(|nvml| nvml.device_by_index(0).ok());
+    let gpu_retry_at = gpu.is_none().then(|| std::time::Instant::now() + GPU_RETRY);
     let gpu_name = gpu
         .as_ref()
         .and_then(|d| d.name().ok())
@@ -949,13 +975,16 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         app,
         sys,
         networks,
+        networks_refreshed: None,
         disks,
         disk_io_prev: HashMap::new(),
         cpu_brand,
         logical_cores,
         physical_cores,
+        nvml,
         gpu,
         gpu_name,
+        gpu_retry_at,
         latest: HashMap::new(),
         snap_tick: 0,
         recyclebin_cadence: crate::recyclebin::PollCadence::default(),
@@ -1019,14 +1048,20 @@ struct Sampler<R: Runtime> {
     app: AppHandle<R>,
     sys: System,
     networks: Networks,
+    /// When `networks` was last refreshed: its byte deltas span the time since then.
+    networks_refreshed: Option<std::time::Instant>,
     disks: Disks,
     /// Previous per-volume I/O counters, keyed by drive letter — disk rates/active-time are deltas.
     disk_io_prev: HashMap<String, DiskIo>,
     cpu_brand: Option<String>,
     logical_cores: usize,
     physical_cores: Option<usize>,
+    /// The leaked NVML library handle; `None` until a successful init (or after the GPU was lost).
+    nvml: Option<&'static Nvml>,
     gpu: Option<nvml_wrapper::Device<'static>>,
     gpu_name: Option<String>,
+    /// Earliest time to retry acquiring the GPU while `gpu` is `None`.
+    gpu_retry_at: Option<std::time::Instant>,
     /// Latest value per sensor id, mirrored to <config>/mcp/state.json every few ticks for the MCP
     /// server's read_sensors tool (live readings for an external agent).
     latest: HashMap<String, SensorValue>,
@@ -1041,13 +1076,16 @@ impl<R: Runtime> Sampler<R> {
             app,
             sys,
             networks,
+            networks_refreshed,
             disks,
             disk_io_prev,
             cpu_brand,
             logical_cores,
             physical_cores,
+            nvml,
             gpu,
             gpu_name,
+            gpu_retry_at,
             latest,
             snap_tick,
             recyclebin_cadence,
@@ -1064,6 +1102,9 @@ impl<R: Runtime> Sampler<R> {
             sys.refresh_memory();
             networks.refresh(true);
         }
+        let refreshed = std::time::Instant::now();
+        let net_ms = net_interval_ms(networks_refreshed.map(|at| refreshed - at));
+        *networks_refreshed = Some(refreshed);
 
         let ts = now_ms();
 
@@ -1093,9 +1134,9 @@ impl<R: Runtime> Sampler<R> {
             SensorSample::scalar("swap.used.bytes", ts, used_swap as f64),
             SensorSample::scalar("swap.free", ts, sys.free_swap() as f64),
             // Network: live rates + cumulative byte counters
-            SensorSample::scalar("net.down", ts, rate_per_sec(down, INTERVAL_MS)),
-            SensorSample::scalar("net.up", ts, rate_per_sec(up, INTERVAL_MS)),
-            SensorSample::scalar("net.total", ts, rate_per_sec(down + up, INTERVAL_MS)),
+            SensorSample::scalar("net.down", ts, rate_per_sec(down, net_ms)),
+            SensorSample::scalar("net.up", ts, rate_per_sec(up, net_ms)),
+            SensorSample::scalar("net.total", ts, rate_per_sec(down + up, net_ms)),
             SensorSample::scalar("net.down.total", ts, down_total as f64),
             SensorSample::scalar("net.up.total", ts, up_total as f64),
             // Host
@@ -1314,15 +1355,35 @@ impl<R: Runtime> Sampler<R> {
             }
         }
 
+        let now = std::time::Instant::now();
+        if want_gpu && gpu.is_none() && gpu_retry_due(*gpu_retry_at, now) {
+            // Best-effort recovery: the driver was not ready at autostart, or was updated/reset.
+            *gpu_retry_at = Some(now + GPU_RETRY);
+            if nvml.is_none() {
+                *nvml = Nvml::init().ok().map(|n| &*Box::leak(Box::new(n)));
+            }
+            *gpu = nvml.and_then(|n| n.device_by_index(0).ok());
+            *gpu_name = gpu
+                .as_ref()
+                .and_then(|d| d.name().ok())
+                .filter(|s| !s.is_empty());
+            if gpu.is_some() {
+                log::info("sensors", "GPU sensors available").emit();
+            }
+        }
+        let mut lost = false;
         if want_gpu && let Some(device) = &gpu {
             let _t = timings.start("sensors.gpu");
-            if let Ok(util) = device.utilization_rates() {
-                batch.push(SensorSample::scalar("gpu.util", ts, f64::from(util.gpu)));
-                batch.push(SensorSample::scalar(
-                    "gpu.mem.util",
-                    ts,
-                    f64::from(util.memory),
-                ));
+            match device.utilization_rates() {
+                Ok(util) => {
+                    batch.push(SensorSample::scalar("gpu.util", ts, f64::from(util.gpu)));
+                    batch.push(SensorSample::scalar(
+                        "gpu.mem.util",
+                        ts,
+                        f64::from(util.memory),
+                    ));
+                }
+                Err(err) => lost = gpu_lost(&err),
             }
             if let Ok(mem) = device.memory_info() {
                 batch.push(SensorSample::scalar(
@@ -1395,6 +1456,13 @@ impl<R: Runtime> Sampler<R> {
                     batch.push(SensorSample::scalar("proc.gpu.top.bytes", ts, *bytes));
                 }
             }
+        }
+        if lost {
+            // The driver went away under us: re-initialize NVML on the retry cadence.
+            log::warn("sensors", "GPU lost; retrying NVML").emit();
+            *gpu = None;
+            *nvml = None;
+            *gpu_retry_at = Some(now + GPU_RETRY);
         }
 
         if want_perf {
@@ -1502,6 +1570,28 @@ mod tests {
     fn percent_computes_ratio() {
         assert_eq!(percent(50, 200), 25.0);
         assert_eq!(percent(8, 16), 50.0);
+    }
+
+    #[test]
+    fn gpu_recovery_retries_only_dead_handles_on_its_cadence() {
+        assert!(gpu_lost(&NvmlError::GpuLost));
+        assert!(gpu_lost(&NvmlError::Uninitialized));
+        assert!(gpu_lost(&NvmlError::DriverNotLoaded));
+        assert!(!gpu_lost(&NvmlError::NotSupported));
+        let now = std::time::Instant::now();
+        assert!(gpu_retry_due(None, now));
+        assert!(gpu_retry_due(Some(now), now));
+        assert!(!gpu_retry_due(Some(now + GPU_RETRY), now));
+    }
+
+    #[test]
+    fn network_rates_divide_by_the_real_refresh_span() {
+        assert_eq!(net_interval_ms(None), INTERVAL_MS);
+        assert_eq!(net_interval_ms(Some(Duration::from_millis(2_300))), 2_300);
+        assert_eq!(net_interval_ms(Some(Duration::ZERO)), 1);
+        // 2 MB over a 2 s span (one skipped tick) is 1 MB/s, not 2 MB/s.
+        let span = net_interval_ms(Some(Duration::from_secs(2)));
+        assert_eq!(rate_per_sec(2_000_000, span), 1_000_000.0);
     }
 
     #[test]
