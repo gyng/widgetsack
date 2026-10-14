@@ -157,6 +157,18 @@ describe('createPackageSandbox', () => {
 		r.sandbox.dispose();
 	});
 
+	it('gives the one-time compile more time than a call, but still stops a runaway', async () => {
+		// ~200 ms of top-level setup: over a call's budget, within the compile budget.
+		const slowSetup = `var until = Date.now() + 200; while (Date.now() < until) {}
+${GOOD_SCRIPT}`;
+		const slow = await createPackageSandbox(slowSetup);
+		expect(slow.ok).toBe(true);
+		if (slow.ok) slow.sandbox.dispose();
+		const runaway = await createPackageSandbox(`while (true) {}
+${GOOD_SCRIPT}`);
+		expect(runaway.ok).toBe(false);
+	});
+
 	it('kills a runaway transform() via the per-call deadline', async () => {
 		const r = await createPackageSandbox(`
 			module.exports = {

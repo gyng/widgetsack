@@ -18,6 +18,9 @@ import { loadQuickJSModule } from './engine';
 // Per-call CPU budget. Wider than the formula engine's 50ms (a transform may JSON.parse a
 // few-hundred-KiB body) but still interactive-frame-class.
 const CALL_DEADLINE_MS = 100;
+// The one-time compile parses the whole source cold and runs its top-level setup; on a busy PC that
+// alone can exceed a call's budget, failing a valid package. Still bounded against a runaway.
+const COMPILE_DEADLINE_MS = 1000;
 const MEMORY_LIMIT = 16 * 1024 * 1024;
 const STACK_LIMIT = 512 * 1024;
 
@@ -56,8 +59,8 @@ export async function createPackageSandbox(script: string): Promise<CreateSandbo
 	const ctx: QuickJSContext = runtime.newContext();
 
 	// Evaluate `code` (which must produce a JSON string) under the deadline; never throws.
-	const evalJson = (code: string): SandboxResult => {
-		const deadline = Date.now() + CALL_DEADLINE_MS;
+	const evalJson = (code: string, budgetMs = CALL_DEADLINE_MS): SandboxResult => {
+		const deadline = Date.now() + budgetMs;
 		runtime.setInterruptHandler(() => Date.now() > deadline);
 		try {
 			const out = ctx.evalCode(code);
@@ -95,7 +98,8 @@ export async function createPackageSandbox(script: string): Promise<CreateSandbo
 			${script}
 			;globalThis.__src = module.exports;
 			return typeof __src.requests === 'function' && typeof __src.transform === 'function';
-		})())`
+		})())`,
+		COMPILE_DEADLINE_MS
 	);
 	if (!compiled.ok || compiled.value !== true) {
 		ctx.dispose();
