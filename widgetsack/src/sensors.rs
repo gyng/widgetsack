@@ -14,7 +14,7 @@
 //!   Windows commit/cache/kernel (gated): `mem.commit.{used,limit,peak}` / `mem.cached` /
 //!   `mem.kernel.{paged,nonpaged}` (bytes).
 //! - Network: `net.down` / `net.up` / `net.total` (bytes/s), `net.down.total` / `net.up.total`
-//!   (cumulative bytes, per-process lifetime — reset on restart, unlike a persisted counter).
+//!   (cumulative bytes from the adapters' OS counters — they reset when an adapter resets or Windows restarts).
 //!   Primary-adapter detail (Windows, gated): `net.linkspeed.{rx,tx}` (bytes/s), `net.adapter`
 //!   (text), `net.state` (text).
 //! - Disks (gated, dynamic): capacity `disk.<letter>.{total,free,used}` (bytes) +
