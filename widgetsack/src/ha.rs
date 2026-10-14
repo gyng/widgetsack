@@ -163,11 +163,17 @@ impl HaState {
 
     /// Lift the latch and start a new token epoch.
     fn clear_auth_failed(&self) {
-        let _ = self
-            .auth
-            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
-                Some(((v >> 1) + 1) << 1)
-            });
+        // A CAS loop rather than `fetch_update` (deprecated in Rust 1.99 for `try_update`, which
+        // the crate's minimum Rust doesn't have).
+        let mut v = self.auth.load(Ordering::SeqCst);
+        while let Err(actual) = self.auth.compare_exchange_weak(
+            v,
+            ((v >> 1) + 1) << 1,
+            Ordering::SeqCst,
+            Ordering::SeqCst,
+        ) {
+            v = actual;
+        }
     }
 
     fn is_auth_failed(&self) -> bool {

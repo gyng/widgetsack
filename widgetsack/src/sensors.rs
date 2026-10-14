@@ -847,7 +847,7 @@ pub async fn set_active_sensors<R: Runtime>(
     window: tauri::WebviewWindow<R>,
     state: tauri::State<'_, ActiveSensors>,
     ids: Vec<String>,
-) -> Result<(), ()> {
+) -> Result<(), String> {
     let ids: HashSet<String> = ids.into_iter().collect();
     let Some(added) = record_window_demand(&state, window.label(), ids, || {
         window

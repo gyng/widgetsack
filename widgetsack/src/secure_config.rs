@@ -64,7 +64,9 @@ fn hex_decode(value: &str) -> Result<Vec<u8>, String> {
     }
     value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| {
             let hi = hex_nibble(pair[0])?;
             let lo = hex_nibble(pair[1])?;
