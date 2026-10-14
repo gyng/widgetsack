@@ -191,6 +191,13 @@ fn hann_window(n: usize) -> Vec<f32> {
         .collect()
 }
 
+/// Whether a capture session tracks the system default output: nothing was chosen, or the chosen
+/// device was unavailable and `open_render_device` fell back to the default. Pure.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+fn follows_default_device(chosen: Option<&str>, opened_id: &str) -> bool {
+    chosen.is_none_or(|id| id.is_empty() || id != opened_id)
+}
+
 /// Average interleaved channels down to a mono signal. `channels <= 1` returns the input as-is.
 /// A trailing partial frame (fewer than `channels` samples) is dropped.
 fn downmix_mono(interleaved: &[f32], channels: usize) -> Vec<f32> {
@@ -857,6 +864,9 @@ mod capture {
         }
     }
 
+    /// How often a session that follows the system default re-checks which endpoint that is.
+    const DEFAULT_DEVICE_CHECK: Duration = Duration::from_secs(1);
+
     /// Resolve the render device to capture: the one whose WASAPI id matches `wanted`, else the
     /// system default (covers an unplugged / renamed device — fall back rather than fail).
     fn open_render_device(
@@ -889,6 +899,12 @@ mod capture {
         let device_name = device
             .get_friendlyname()
             .unwrap_or_else(|_| "unknown".to_string());
+        // Following the system default (nothing chosen, or the chosen device is gone): Windows can
+        // switch the default to a headset while the old endpoint stays alive but silent, so the
+        // session must notice and re-open on the new default.
+        let opened_id = device.get_id().unwrap_or_default();
+        let follows_default = follows_default_device(session_device.as_deref(), &opened_id);
+        let mut default_checked = Instant::now();
         let mut audio_client = device.get_iaudioclient()?;
 
         let format = WaveFormat::new(
@@ -981,6 +997,18 @@ mod capture {
                             let _ = audio_client.stop_stream();
                             return Ok(SessionEnd::DeviceLost { emitted });
                         }
+                        if follows_default && default_checked.elapsed() >= DEFAULT_DEVICE_CHECK {
+                            default_checked = Instant::now();
+                            let current = enumerator
+                                .get_default_device(&Direction::Render)
+                                .and_then(|d| d.get_id())
+                                .unwrap_or_default();
+                            if !current.is_empty() && current != opened_id {
+                                log::info("audio", "spectrum: default output changed").emit();
+                                let _ = audio_client.stop_stream();
+                                return Ok(SessionEnd::DeviceLost { emitted });
+                            }
+                        }
                         // band count + scale are read live so inspector changes apply without a re-init.
                         (inner.band_count.clamp(MIN_BANDS, MAX_BANDS), inner.linear)
                     };
@@ -1029,6 +1057,15 @@ mod tests {
         // Degenerate sizes don't panic.
         assert_eq!(hann_window(0), Vec::<f32>::new());
         assert_eq!(hann_window(1), vec![1.0]);
+    }
+
+    #[test]
+    fn sessions_follow_the_default_unless_the_chosen_device_opened() {
+        assert!(follows_default_device(None, "{speakers}"));
+        assert!(follows_default_device(Some(""), "{speakers}"));
+        // The chosen headset is unplugged: the session fell back to the default.
+        assert!(follows_default_device(Some("{headset}"), "{speakers}"));
+        assert!(!follows_default_device(Some("{headset}"), "{headset}"));
     }
 
     #[test]
