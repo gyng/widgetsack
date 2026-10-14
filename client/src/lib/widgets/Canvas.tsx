@@ -87,6 +87,7 @@ import { createMcpStudioController } from '../llm/mcpStudioController';
 import { listenMcpStudio, mcpStudioPorts } from '../bridge/mcp';
 import type { StudioSnapshot } from '../llm/studioAgentSession';
 import { verifyStudioSnapshot } from '../llm/verifyStudioSnapshot';
+import { currentWindowLabel } from '../bridge/studioWindow';
 import { waitForStudioRender } from './canvas/waitForStudioRender';
 import type { LayoutOp } from './ops';
 import { sensorCatalog } from '../core/sensors';
@@ -1191,6 +1192,7 @@ export default function Canvas({ studio = false }: Props) {
 
 	useStudioInit({
 		studio,
+		windowLabel: currentWindowLabel(),
 		hub,
 		updateWorkArea,
 		reloadLayout,

@@ -1,13 +1,18 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { getAllWebviewWindows, WebviewWindow } from '@tauri-apps/api/webviewWindow';
 
+/** This window's label ('' outside Tauri). Layout writes are attributed to it. */
+export function currentWindowLabel(): string {
+	try {
+		return getCurrentWindow().label;
+	} catch {
+		return '';
+	}
+}
+
 /** True when this window is the studio (a normal app window for the designers, 5s). */
 export function isStudioWindow(): boolean {
-	try {
-		return getCurrentWindow().label === 'studio';
-	} catch {
-		return false;
-	}
+	return currentWindowLabel() === 'studio';
 }
 
 /**

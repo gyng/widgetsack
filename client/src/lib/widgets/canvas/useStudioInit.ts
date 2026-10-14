@@ -29,6 +29,7 @@ import { isForeignWriter } from './externalChange';
 
 export type StudioInitDeps = {
 	studio: boolean;
+	windowLabel: string; // this window's label, to tell its own layout writes from others'
 	hub: TelemetryHub;
 	updateWorkArea: () => Promise<void>;
 	reloadLayout: () => Promise<void>;
@@ -151,8 +152,9 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			if (scope.disposed) return;
 			scope.add(await listen(EVENTS.controlsChanged, () => d.current.reloadControls()));
 
-			// Live-reload external edits to widgets.json. An OVERLAY ignores them while actively editing
-			// (its own edits are what's being written); on the primary main window a reload also
+			// Live-reload external edits to widgets.json. An OVERLAY in edit mode skips only its own
+			// writes (already reflected): reloading for other writers keeps its next preview write from
+			// putting a stale tree back over the studio's save. On the primary main window a reload also
 			// reconciles overlays + own visibility as monitors gain/lose widgets. The STUDIO is always
 			// editing, so it instead filters on the WRITER: its own preview/save round-trips are already
 			// reflected in the editor, while a change by any other writer (an overlay in edit mode, a
@@ -164,7 +166,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 						if (isForeignWriter(e.payload?.writer, 'studio')) d.current.onForeignLayoutChange();
 						return;
 					}
-					if (d.current.editMode()) return;
+					if (d.current.editMode() && !isForeignWriter(e.payload?.writer, dep.windowLabel)) return;
 					d.current.reloadLayout().then(() => {
 						d.current.syncRects();
 						if (!monitorParam()) d.current.syncPrimaryOverlays();

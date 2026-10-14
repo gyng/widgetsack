@@ -61,6 +61,7 @@ vi.mock('@tauri-apps/api/event', () => ({
 function makeDeps(overrides: Partial<StudioInitDeps> = {}): StudioInitDeps {
 	return {
 		studio: false,
+		windowLabel: 'main',
 		hub: {} as unknown as TelemetryHub,
 		updateWorkArea: vi.fn(() => Promise.resolve()),
 		reloadLayout: vi.fn(() => Promise.resolve()),
@@ -225,7 +226,7 @@ describe('useStudioInit layout_changed routing', () => {
 		expect(deps.reloadLayout).not.toHaveBeenCalled();
 	});
 
-	it('overlay: reloads unless it is itself in edit mode; the primary also reconciles overlays', async () => {
+	it('overlay: reloads for other writers even while editing; the primary also reconciles overlays', async () => {
 		let editing = false;
 		const deps = makeDeps({ editMode: () => editing });
 		renderHook(() => useStudioInit(deps));
@@ -233,12 +234,15 @@ describe('useStudioInit layout_changed routing', () => {
 		vi.mocked(deps.reloadLayout).mockClear();
 		vi.mocked(deps.syncPrimaryOverlays).mockClear();
 		editing = true;
-		fire({ writer: 'studio' });
+		fire({ writer: 'main' }); // its own edit-mode write: already reflected
 		expect(deps.reloadLayout).not.toHaveBeenCalled();
-		editing = false;
+		// The studio saved this monitor: a stale overlay tree must not be written back over it.
 		fire({ writer: 'studio' });
 		await waitFor(() => expect(deps.syncPrimaryOverlays).toHaveBeenCalledTimes(1));
-		expect(deps.reloadLayout).toHaveBeenCalledTimes(1);
+		editing = false;
+		fire({ writer: 'main' });
+		await waitFor(() => expect(deps.syncPrimaryOverlays).toHaveBeenCalledTimes(2));
+		expect(deps.reloadLayout).toHaveBeenCalledTimes(2);
 		expect(deps.onForeignLayoutChange).not.toHaveBeenCalled();
 	});
 });
