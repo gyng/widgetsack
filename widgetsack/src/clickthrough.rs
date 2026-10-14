@@ -121,7 +121,19 @@ pub fn run_clickthrough_watcher<R: Runtime>(app: AppHandle<R>) {
             let Some((x, y)) = cursor_position(&app) else {
                 continue;
             };
+            // Re-read which labels still have rects: a rescue / whole-window-interactive call may have
+            // forgotten one during the sleep, and applying this stale snapshot's verdict would put
+            // click-through back on a window that was just made interactive.
+            let live: Vec<String> = {
+                let guard = app.state::<InteractiveRects>();
+                let map = guard.0.lock().unwrap_or_else(|e| e.into_inner());
+                map.keys().cloned().collect()
+            };
             for (label, rects) in &map {
+                if !live.contains(label) {
+                    ignoring.remove(label);
+                    continue;
+                }
                 let over = rects.iter().any(|r| r.contains(x, y));
                 let want_ignore = !over;
                 if ignoring.get(label).copied() != Some(want_ignore) {

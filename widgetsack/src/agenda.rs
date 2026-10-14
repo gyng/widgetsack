@@ -281,6 +281,10 @@ struct BridgedEvent {
     /// An override's RECURRENCE-ID date, and whether it applies RANGE=THISANDFUTURE.
     recurrence_id: Option<u32>,
     this_and_future: bool,
+    /// The revision group the client picks ONE (the newest SEQUENCE/DTSTAMP) from: UID plus the raw
+    /// RECURRENCE-ID value. No UID → the client never merges it with anything.
+    uid: Option<String>,
+    recurrence_value: Option<String>,
 }
 
 impl BridgedEvent {
@@ -327,6 +331,10 @@ impl BridgedEvent {
 // agenda never shows.
 fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
     let mut output = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n");
+    // VEVENTs are decided per revision group once the whole feed is read (`pruned_events`), so the
+    // body is assembled from chunks: plain text, or the index of a buffered VEVENT.
+    let mut chunks: Vec<Result<String, usize>> = Vec::new();
+    let mut events: Vec<BridgedEvent> = Vec::new();
     let mut event: Option<BridgedEvent> = None;
     let mut stack: Vec<String> = Vec::new();
     let mut started = false;
@@ -368,7 +376,7 @@ fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
                     ..Default::default()
                 });
             } else if kept(&stack) {
-                output.push_str(&format!("BEGIN:{}\r\n", stack.last().unwrap()));
+                chunks.push(Ok(format!("BEGIN:{}\r\n", stack.last().unwrap())));
             }
             continue;
         }
@@ -378,14 +386,13 @@ fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
                 .is_some_and(|last| last.eq_ignore_ascii_case(name))
             {
                 if stack == ["VCALENDAR", "VEVENT"] {
-                    if let Some(mut done) = event.take()
-                        && !done.ended_before(cutoff)
-                    {
+                    if let Some(mut done) = event.take() {
                         done.text.push_str("END:VEVENT\r\n");
-                        output.push_str(&done.text);
+                        chunks.push(Err(events.len()));
+                        events.push(done);
                     }
                 } else if kept(&stack) {
-                    output.push_str(&format!("END:{}\r\n", name.to_ascii_uppercase()));
+                    chunks.push(Ok(format!("END:{}\r\n", name.to_ascii_uppercase())));
                 }
                 if stack.len() == 1 {
                     ended = true;
@@ -457,11 +464,14 @@ fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
                     "RECURRENCE-ID" => {
                         // An unreadable RECURRENCE-ID dates nothing: keep the override.
                         current.recurrence_id = Some(property_date(&line).unwrap_or(u32::MAX));
+                        current.recurrence_value =
+                            line.split_once(':').map(|(_, v)| v.trim().to_string());
                         current.this_and_future =
                             line.split_once(':').is_some_and(|(params, _)| {
                                 params.to_ascii_uppercase().contains("RANGE=THISANDFUTURE")
                             });
                     }
+                    "UID" => current.uid = line.split_once(':').map(|(_, v)| v.to_string()),
                     "DTSTART" => current.start = property_date(&line),
                     "DTEND" => current.end = property_date(&line),
                     "DURATION" => current.open_ended = true,
@@ -470,17 +480,48 @@ fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
                 current.text.push_str(&line);
                 current.text.push_str("\r\n");
             }
-            _ => {
-                output.push_str(&line);
-                output.push_str("\r\n");
-            }
+            _ => chunks.push(Ok(format!("{line}\r\n"))),
         }
     }
     if !started || !ended || !stack.is_empty() {
         return "invalid calendar".into();
     }
+    let pruned = pruned_events(&events, cutoff);
+    for chunk in chunks {
+        match chunk {
+            Ok(text) => output.push_str(&text),
+            Err(index) if !pruned[index] => output.push_str(&events[index].text),
+            Err(_) => {}
+        }
+    }
     output.push_str("END:VCALENDAR\r\n");
     output
+}
+
+/// Which buffered VEVENTs to drop. The client keeps only the newest revision (SEQUENCE/DTSTAMP) per
+/// UID + RECURRENCE-ID, so pruning decides per revision group: dropping a newer past revision on
+/// its own would resurrect an older one that is still upcoming. A group goes only when EVERY
+/// revision in it ended before `cutoff`; an event without a UID is its own group. Pure.
+fn pruned_events(events: &[BridgedEvent], cutoff: u32) -> Vec<bool> {
+    let group = |event: &BridgedEvent| {
+        event
+            .uid
+            .as_deref()
+            .map(|uid| (uid.to_string(), event.recurrence_value.clone()))
+    };
+    let mut live: std::collections::HashMap<(String, Option<String>), bool> = Default::default();
+    for event in events {
+        if let Some(key) = group(event) {
+            *live.entry(key).or_default() |= !event.ended_before(cutoff);
+        }
+    }
+    events
+        .iter()
+        .map(|event| match group(event) {
+            Some(key) => !live[&key],
+            None => event.ended_before(cutoff),
+        })
+        .collect()
 }
 
 /// The largest bridged calendar the webview worker accepts, in UTF-8 bytes. MIRRORS
@@ -934,6 +975,48 @@ mod tests {
         );
         assert_eq!(property_date("DTSTART;VALUE=DATE:20261014"), Some(20261014));
         assert_eq!(property_date("DTSTART:bad"), None);
+    }
+
+    #[test]
+    fn bridge_prunes_revisions_per_uid_and_recurrence_id_group() {
+        let event =
+            |uid: &str, props: &str| format!("BEGIN:VEVENT\nUID:{uid}\n{props}END:VEVENT\n");
+        let body = [
+            "BEGIN:VCALENDAR\n".to_string(),
+            // The newest revision moved the meeting into the past; the older one is still upcoming.
+            // Dropping only the newer one would resurrect the stale future revision in the agenda.
+            event("moved", "SEQUENCE:0\nSUMMARY:moved-v0\nDTSTART:20301014T090000Z\n"),
+            event("moved", "SEQUENCE:1\nSUMMARY:moved-v1\nDTSTART:20200101T090000Z\n"),
+            // Same for an override's revisions (grouped by UID + RECURRENCE-ID).
+            event(
+                "series",
+                "RECURRENCE-ID:20200108T090000Z\nSEQUENCE:0\nSUMMARY:ovr-v0\nDTSTART:20301014T090000Z\n",
+            ),
+            event(
+                "series",
+                "RECURRENCE-ID:20200108T090000Z\nSEQUENCE:1\nSUMMARY:ovr-v1\nDTSTART:20200108T120000Z\n",
+            ),
+            // Another occurrence's past override is its own group and still prunes.
+            event(
+                "series",
+                "RECURRENCE-ID:20200115T090000Z\nSUMMARY:ovr-other\nDTSTART:20200115T120000Z\n",
+            ),
+            // Every revision ended → the whole group goes.
+            event("past", "SEQUENCE:0\nSUMMARY:past-v0\nDTSTART:20200101T090000Z\n"),
+            event("past", "SEQUENCE:1\nSUMMARY:past-v1\nDTSTART:20200102T090000Z\n"),
+            "END:VCALENDAR\n".to_string(),
+        ]
+        .concat();
+        let bridged = calendar_for_bridge(&body, 20261012);
+        for kept in ["moved-v0", "moved-v1", "ovr-v0", "ovr-v1"] {
+            assert!(bridged.contains(&format!("SUMMARY:{kept}\r\n")), "{kept}");
+        }
+        for dropped in ["ovr-other", "past-v0", "past-v1"] {
+            assert!(
+                !bridged.contains(&format!("SUMMARY:{dropped}\r\n")),
+                "{dropped}"
+            );
+        }
     }
 
     #[test]

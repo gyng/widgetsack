@@ -19,12 +19,16 @@ import { DEFAULT_TOKENS, tokensToCss } from './tokens';
  * Whether a CSS fragment's `{`/`}` are balanced the way the BROWSER's tokenizer will see them:
  * braces inside `/* … *\/` comments are ignored, braces inside quoted strings are ignored — but a
  * string ends at an unescaped NEWLINE too (a "bad string" in CSS), so `content: "` + newline can't
- * hide a closing brace from us that the browser would honour. Returns the reason it is NOT
- * balanced, or null when it is. Pure.
+ * hide a closing brace from us that the browser would honour. An unclosed comment, or a string that
+ * is never closed (or only ended by a newline), is flagged too: concatenated with the CSS after it
+ * in the same <style>, it swallows or invalidates the next rule. Returns the reason the fragment is
+ * NOT self-contained, or null when it is. Pure.
  */
 export function cssBraceImbalance(css: string): string | null {
 	let depth = 0;
 	let quote: string | null = null;
+	let badString = false;
+	let openComment = false;
 	const n = css.length;
 	let i = 0;
 	while (i < n) {
@@ -34,12 +38,14 @@ export function cssBraceImbalance(css: string): string | null {
 				i += 2; // an escaped char (incl. an escaped newline, a legal string continuation)
 				continue;
 			}
-			if (c === quote || c === '\n') quote = null; // a bare newline terminates a (bad) string
+			if (c === '\n') badString = true; // a bare newline terminates a (bad) string
+			if (c === quote || c === '\n') quote = null;
 			i++;
 			continue;
 		}
 		if (c === '/' && css[i + 1] === '*') {
 			const end = css.indexOf('*/', i + 2);
+			if (end === -1) openComment = true;
 			i = end === -1 ? n : end + 2;
 			continue;
 		}
@@ -53,7 +59,10 @@ export function cssBraceImbalance(css: string): string | null {
 		}
 		i++;
 	}
-	return depth > 0 ? `${depth} unclosed "{"` : null;
+	if (depth > 0) return `${depth} unclosed "{"`;
+	if (openComment) return 'an unclosed "/*" comment';
+	if (quote || badString) return 'an unterminated string';
+	return null;
 }
 
 /**
@@ -118,17 +127,32 @@ export function assembleStyles(opts: {
 	library?: Library;
 	monitor: MonitorLayout;
 	includeDefaults?: boolean;
-	/** Called for each def/instance css block REFUSED by scopeCss (unbalanced braces), with the
-	 * selector it would have been scoped to — so the host can surface it instead of silently
-	 * dropping the styles. */
+	/** Generated global token overrides, emitted right after the theme (so they win) but checked
+	 * separately, so a broken theme is dropped without taking the overrides with it. */
+	tokenCss?: string;
+	/** Called for each css block REFUSED (unbalanced braces / unclosed comment or string), with the
+	 * selector it would have been scoped to (`theme` / `tokens` for the global blocks) — so the host
+	 * can surface it instead of silently dropping the styles. */
 	onRejectCss?: (selector: string, reason: string) => void;
 }): string {
 	const parts: string[] = [];
 
 	if (opts.includeDefaults) parts.push(tokensToCss(DEFAULT_TOKENS));
 
-	const theme = (opts.themeCss ?? '').trim();
-	if (theme) parts.push(theme);
+	// The theme is user/sack-authored and shares ONE <style> with everything below: an unclosed
+	// `{`, `/*` or string would swallow every token override and widget style after it, on every
+	// monitor. Drop it (reported) instead; the defaults and scoped css still apply.
+	const globals = [
+		['theme', opts.themeCss],
+		['tokens', opts.tokenCss]
+	] as const;
+	for (const [label, raw] of globals) {
+		const block = (raw ?? '').trim();
+		if (!block) continue;
+		const reason = cssBraceImbalance(block);
+		if (reason === null) parts.push(block);
+		else opts.onRejectCss?.(label, reason);
+	}
 
 	for (const def of opts.library?.defs ?? []) {
 		const defSel = `[data-def="${cssAttrValue(def.id)}"]`;

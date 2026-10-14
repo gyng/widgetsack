@@ -18,7 +18,7 @@ import {
 	matchesChip,
 	type ReportMonitor
 } from '../core/diagnosticsReport';
-import { LOG_LEVELS, type LogLevel, type LogRecord } from '../core/logs';
+import { LOG_LEVELS, mergeLogBacklog, type LogLevel, type LogRecord } from '../core/logs';
 import { getLogFilePath, getLogs, revealLogDir, subscribeLogs } from '../logs';
 import { copyToClipboard, studioMonitorOptions } from '../overlay';
 import { heapUsedFraction } from '../core/diagnostics';
@@ -49,10 +49,11 @@ export default function DiagnosticsPanel({ appVersion = null }: Props) {
 
 	useEffect(() => {
 		let alive = true;
-		// The backend buffers a record BEFORE emitting it, so the backlog already holds anything
-		// streamed while this request was in flight — replace rather than merge.
+		// Until the backlog lands, state holds only live records. Most are also in the backlog (the
+		// backend buffers before it emits), but one buffered after the snapshot and streamed before the
+		// reply exists only here — merge (deduped) rather than replace.
 		void getLogs().then((backlog) => {
-			if (alive) setLogs(backlog.slice(-LOG_KEEP));
+			if (alive) setLogs((live) => mergeLogBacklog(backlog, live).slice(-LOG_KEEP));
 		});
 		const off = subscribeLogs((r) => {
 			if (alive) setLogs((prev) => [...prev, r].slice(-LOG_KEEP));

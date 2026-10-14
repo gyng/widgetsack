@@ -18,10 +18,12 @@ export const EVENTS = {
 	layoutChanged: 'layout_changed',
 	themesChanged: 'themes_changed',
 	controlsChanged: 'controls_changed',
-	// tray / global-hotkey / single-instance broadcasts (main.rs; toggle_edit is also
-	// emitted by the client's Ctrl+E handler)
+	// tray / global-hotkey / single-instance broadcasts (main.rs). toggle_edit carries the NEW
+	// backend-owned overlay edit state (boolean) — from the hotkey or toggle_overlay_edit (Ctrl+E)
 	toggleEdit: 'toggle_edit',
 	arrangeZones: 'arrange_zones',
+	// tray Quit: flush pending writes, then ack with quit_flushed (command/windows.rs; bridge/appQuit.ts)
+	appQuitting: 'app_quitting',
 	// re-fit overlays to the current display layout (tray "Re-fit overlays" + auto on display change)
 	refitOverlays: 'refit_overlays',
 	// foreign-window drag watcher (windowmgr.rs)
@@ -112,6 +114,10 @@ export const COMMANDS = {
 	openDevtoolsFor: 'open_devtools_for',
 	setWindowInteractive: 'set_window_interactive',
 	rescueWindows: 'rescue_windows',
+	// backend-owned overlay edit mode (command/windows.rs OverlayEditState; bridge/editMode.ts)
+	toggleOverlayEdit: 'toggle_overlay_edit',
+	getOverlayEdit: 'get_overlay_edit',
+	quitFlushed: 'quit_flushed',
 	reloadWindow: 'reload_window',
 	logDiag: 'log_diag',
 	logClient: 'log_client',

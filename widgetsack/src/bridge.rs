@@ -27,11 +27,15 @@ pub const LAYOUT_CHANGED_EVENT: &str = "layout_changed";
 pub const THEMES_CHANGED_EVENT: &str = "themes_changed";
 pub const CONTROLS_CHANGED_EVENT: &str = "controls_changed";
 
-/// Tray / global-hotkey broadcasts (main.rs). `toggle_edit` is also emitted by the client's own
-/// Ctrl+E handler. (There is no `open_studio` event any more: main.rs `open_or_focus_studio` builds
+/// Tray / global-hotkey broadcasts (main.rs). `toggle_edit` carries the NEW overlay edit state
+/// (`bool`, owned by command/windows.rs `OverlayEditState`); both the hotkey and the client's Ctrl+E
+/// (`toggle_overlay_edit`) emit it from the backend. (There is no `open_studio` event any more: main.rs `open_or_focus_studio` builds
 /// the studio window itself rather than relying on main's JS listener.)
 pub const TOGGLE_EDIT_EVENT: &str = "toggle_edit";
 pub const ARRANGE_ZONES_EVENT: &str = "arrange_zones";
+/// Tray Quit (command/windows.rs `quit_after_flush`): every window flushes pending writes, then
+/// acknowledges with `quit_flushed` before the app exits.
+pub const APP_QUITTING_EVENT: &str = "app_quitting";
 /// Re-fit every overlay to the CURRENT display layout (tray "Re-fit overlays" + the manual trigger).
 /// Each overlay/studio listens and re-runs its fit/reconcile — used when monitors are
 /// added/removed/moved/resized at runtime, which fires no per-window scale-change event.

@@ -106,6 +106,22 @@ describe('formatLogLine', () => {
 });
 
 describe('composeDiagnosticsReport', () => {
+	it('redacts the user profile prefix from paths in the copied report', () => {
+		const text = composeDiagnosticsReport({
+			appVersion: null,
+			now: 0,
+			monitors: [],
+			process: null,
+			logs: [rec({ level: 'error', message: String.raw`open C:\Users\Jane Doe\x.css failed` })],
+			logFilePath: String.raw`C:\Users\Jane Doe\AppData\Roaming\widgetsack\logs\widgetsack.log`
+		});
+		expect(text).toContain(
+			String.raw`log file: %USERPROFILE%\AppData\Roaming\widgetsack\logs\widgetsack.log`
+		);
+		expect(text).toContain(String.raw`open %USERPROFILE%\x.css failed`);
+		expect(text).not.toContain('Jane');
+	});
+
 	it('lists version, log path, monitors with stable keys, the process row and the selected log', () => {
 		const text = composeDiagnosticsReport({
 			appVersion: '0.0.55',

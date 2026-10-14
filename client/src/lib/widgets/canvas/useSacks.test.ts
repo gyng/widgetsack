@@ -7,6 +7,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { importSummary, sackNameError, sackSummary, useSacks } from './useSacks';
 import { packSack } from '../../core/sack';
+import { ThemeNotFoundError } from '../../bridge/themes';
 import type { Library } from '../../core/layoutTree';
 import { container } from '../../core/layoutTree';
 import type { EditorState } from './types';
@@ -300,6 +301,19 @@ describe('exportSack', () => {
 		});
 	});
 
+	it('exports without the theme (and says so) when the selected theme file was deleted', async () => {
+		resolveThemeCss.mockRejectedValueOnce(new ThemeNotFoundError('Gone'));
+		themeLabel.mockReturnValue('Gone');
+		const { result } = setup({ navSection: 'settings', selectedTheme: 'Gone', library: libWith() });
+		await act(async () => result.current.exportSack());
+		expect(JSON.parse(writeSack.mock.calls[0][1]).theme).toBeUndefined();
+		expect(result.current.notice).toEqual({
+			tone: 'ok',
+			text: 'Exported Gone · theme “Gone” is missing, so the sack has no theme',
+			path: 'C:/cfg/sacks/x.sack.json'
+		});
+	});
+
 	it('packs library + resolved theme CSS + tokens, writes, and reports the saved path inline', async () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		resolveThemeCss.mockResolvedValue(':root{--np-accent:#abc}');
@@ -454,6 +468,25 @@ describe('importSack', () => {
 		});
 		expect(saveThemeCss).toHaveBeenCalledWith('Nord-imported3', ':root{}', false);
 	});
+
+	it.each([
+		['Rosé', 'Rose'],
+		['a.b', 'a-b']
+	])(
+		'saves a theme named %j under a valid file name (%j) instead of aborting',
+		async (raw, safe) => {
+			readSack.mockResolvedValue(
+				JSON.stringify(packSack({ theme: { name: raw, css: ':root{}' } }))
+			);
+			vi.spyOn(window, 'confirm').mockReturnValue(true);
+			const { result } = setup({ navSection: 'settings' });
+			await act(async () => {
+				await result.current.importSack('s');
+			});
+			expect(saveThemeCss).toHaveBeenCalledWith(safe, ':root{}', false);
+			expect(adoptTheme).toHaveBeenCalledWith(safe);
+		}
+	);
 
 	it('serializes imports so they cannot choose the same theme filename', async () => {
 		const raw = JSON.stringify(packSack({ theme: { name: 'Nord', css: ':root{}' } }));

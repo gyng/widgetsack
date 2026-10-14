@@ -13,13 +13,21 @@ export async function listThemes(requireComplete = false): Promise<string[]> {
 	}
 }
 
+/** A user theme's file does not exist (deleted outside the app) — distinct from an unreadable one. */
+export class ThemeNotFoundError extends Error {
+	constructor(name: string) {
+		super(`Theme "${name}" was not found.`);
+		this.name = 'ThemeNotFoundError';
+	}
+}
+
 /** The CSS of a USER theme `name` (empty for '(default)' / a missing theme). Disk-backed. */
 // Editing and export requireReadable so missing/unreadable files cannot be copied as empty CSS.
 export async function loadThemeCss(name: string, requireReadable = false): Promise<string> {
 	if (!name) return '';
 	try {
 		const css = await invoke<string | null>(COMMANDS.loadTheme, { name });
-		if (requireReadable && css === null) throw new Error(`Theme "${name}" was not found.`);
+		if (requireReadable && css === null) throw new ThemeNotFoundError(name);
 		return css ?? '';
 	} catch (err) {
 		if (requireReadable) throw err;

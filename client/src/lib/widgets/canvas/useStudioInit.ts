@@ -7,6 +7,8 @@ import { useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { disposalScope } from '../../core/disposalScope';
 import { EVENTS, type LayoutChangedPayload } from '../../bridge/contract';
+import { followOverlayEdit } from '../../bridge/editMode';
+import { onAppQuitting } from '../../bridge/appQuit';
 import { startAllSources } from '../../core/plugin';
 import { singleFlight } from '../../core/singleFlight';
 import type { TelemetryHub } from '../../core/telemetry';
@@ -149,6 +151,9 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			if (ownKey) await refit();
 			scope.add(await listen(EVENTS.refitOverlays, triggerRefit));
 			if (scope.disposed) return;
+			// Tray Quit: land a debounced preview write before the app exits (the backend waits ≤1 s).
+			scope.add(await onAppQuitting(() => d.current.flushPreviewWrite()));
+			if (scope.disposed) return;
 			// #12: DPI/scale hot-plug — wired ONCE here (not inside the fit functions, where it raced
 			// the fit that moves the window across the DPI boundary) and routed through the same
 			// single-flight refit, so the poller, the tray trigger and a scale change never run
@@ -253,7 +258,13 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// main overlay starts interactive and a secondary starts click-through); here we only seed the
 			// per-widget interactive rects for a passive overlay.
 			d.current.syncRects();
-			scope.add(await listen(EVENTS.toggleEdit, () => d.current.setEdit(!d.current.editMode())));
+			// Edit mode is app-wide and backend-owned: SET the broadcast state (never flip locally), and
+			// adopt the current one now so a window created/reloaded mid-edit joins in the same mode.
+			scope.add(
+				await followOverlayEdit((edit) => {
+					if (!scope.disposed && edit !== d.current.editMode()) d.current.setEdit(edit);
+				})
+			);
 		})().catch((err) => {
 			// The primary main window is born hidden (config `visible:false`) and only revealed once
 			// init reaches `syncPrimaryOverlays`; a secondary is born hidden and reveals itself via

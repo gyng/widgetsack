@@ -730,6 +730,9 @@ struct StdioLink {
     initialize: Option<Value>,
     /// Bumped per recovery so concurrent failures of the same stale link recover only once.
     generation: u64,
+    /// A recovery reloaded the endpoint but its `initialize` replay failed: the link has no session
+    /// yet, so the next request must retry the recovery instead of posting session-less.
+    replay_pending: bool,
 }
 
 struct StdioBridge {
@@ -750,6 +753,7 @@ impl StdioBridge {
                 session: None,
                 initialize: None,
                 generation: 0,
+                replay_pending: false,
             }),
             reload,
         })
@@ -758,13 +762,16 @@ impl StdioBridge {
     /// Post one message. A stale link is recovered once — re-read the descriptor, replay the cached
     /// `initialize` for a new session — and the message retried; a second failure is reported.
     async fn post(&self, value: &Value) -> Result<Option<Vec<u8>>, String> {
-        let (endpoint, session, generation) = self.snapshot().await;
-        let stale =
+        let (endpoint, session, generation, replay_pending) = self.snapshot().await;
+        let stale = if replay_pending {
+            "MCP session was not re-established".to_string()
+        } else {
             match post_stdio_request(&self.client, &endpoint, session.as_deref(), value).await {
                 Ok(reply) => return Ok(self.accept(reply, value, generation).await),
                 Err(PostError::Failed(error)) => return Err(error),
                 Err(PostError::Stale(error)) => error,
-            };
+            }
+        };
         let (endpoint, session, generation) = self
             .recover(generation, value)
             .await
@@ -775,9 +782,14 @@ impl StdioBridge {
         }
     }
 
-    async fn snapshot(&self) -> (StdioEndpoint, Option<String>, u64) {
+    async fn snapshot(&self) -> (StdioEndpoint, Option<String>, u64, bool) {
         let link = self.link.lock().await;
-        (link.endpoint.clone(), link.session.clone(), link.generation)
+        (
+            link.endpoint.clone(),
+            link.session.clone(),
+            link.generation,
+            link.replay_pending,
+        )
     }
 
     async fn accept(
@@ -799,25 +811,29 @@ impl StdioBridge {
     }
 
     /// Re-read the descriptor and open a new session — unless another request already recovered
-    /// from the same stale link (`seen` is behind), in which case its result is reused.
+    /// from the same stale link (`seen` is behind), in which case its result is reused. A failed
+    /// `initialize` replay leaves the link `replay_pending`, so the next request recovers again.
     async fn recover(
         &self,
         seen: u64,
         value: &Value,
     ) -> Result<(StdioEndpoint, Option<String>, u64), String> {
         let mut link = self.link.lock().await;
-        if link.generation == seen {
+        if link.generation == seen || link.replay_pending {
             link.endpoint = (self.reload)()?;
             link.session = None;
             link.generation += 1;
+            link.replay_pending = false;
             if value["method"] != "initialize"
                 && let Some(initialize) = link.initialize.clone()
             {
-                let (_, assigned) =
-                    post_stdio_request(&self.client, &link.endpoint, None, &initialize)
-                        .await
-                        .map_err(PostError::message)?;
-                link.session = assigned;
+                match post_stdio_request(&self.client, &link.endpoint, None, &initialize).await {
+                    Ok((_, assigned)) => link.session = assigned,
+                    Err(error) => {
+                        link.replay_pending = true;
+                        return Err(error.message());
+                    }
+                }
             }
         }
         Ok((link.endpoint.clone(), link.session.clone(), link.generation))
@@ -1183,6 +1199,91 @@ mod tests {
 
         drop(input);
         forward.await.unwrap().unwrap();
+        server.abort();
+    }
+
+    /// A failed `initialize` replay must not leave the bridge posting session-less forever: the
+    /// next request retries the recovery and gets a fresh session.
+    #[tokio::test]
+    async fn stdio_retries_a_failed_initialize_replay_on_the_next_request() {
+        use tokio::io::AsyncReadExt;
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url =
+            reqwest::Url::parse(&format!("http://{}/mcp", listener.local_addr().unwrap())).unwrap();
+        // Scripted replies: initialize → s1; the call on s1 → 404 (evicted); the replay → 500; then
+        // every initialize → s2 and every call → 200. Records each call's session header.
+        let calls: Arc<Mutex<Vec<Option<String>>>> = Arc::default();
+        let seen = calls.clone();
+        let server = tokio::spawn(async move {
+            let mut initializes = 0;
+            loop {
+                let (mut stream, _) = listener.accept().await.unwrap();
+                let mut raw = Vec::new();
+                let mut buf = [0u8; 4096];
+                let (head, body) = loop {
+                    let n = stream.read(&mut buf).await.unwrap();
+                    raw.extend_from_slice(&buf[..n]);
+                    let text = String::from_utf8_lossy(&raw).to_string();
+                    if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                        let length = head
+                            .lines()
+                            .find_map(|l| {
+                                let (k, v) = l.split_once(':')?;
+                                k.eq_ignore_ascii_case("content-length")
+                                    .then(|| v.trim().parse::<usize>().ok())?
+                            })
+                            .unwrap_or(0);
+                        if body.len() >= length {
+                            break (head.to_ascii_lowercase(), body.to_string());
+                        }
+                    }
+                };
+                let session = head
+                    .lines()
+                    .find_map(|l| l.strip_prefix("mcp-session-id:"))
+                    .map(|v| v.trim().to_string());
+                let request: Value = serde_json::from_str(&body).unwrap();
+                let (status, assigned) = if request["method"] == "initialize" {
+                    initializes += 1;
+                    match initializes {
+                        1 => ("200 OK", Some("s1")),
+                        2 => ("500 Internal Server Error", None),
+                        _ => ("200 OK", Some("s2")),
+                    }
+                } else {
+                    let mut calls = seen.lock().unwrap();
+                    calls.push(session.clone());
+                    if calls.len() == 1 {
+                        ("404 Not Found", None)
+                    } else {
+                        ("200 OK", None)
+                    }
+                };
+                let reply = json!({"jsonrpc":"2.0","id":request["id"],"result":{}}).to_string();
+                let header =
+                    assigned.map_or(String::new(), |id| format!("Mcp-Session-Id: {id}\r\n"));
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{header}Content-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                );
+                stream.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        let bridge = fixed_bridge(url);
+        let tool = |id: i64| json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"studio_read","arguments":{}}});
+
+        bridge
+            .post(&json!({"jsonrpc":"2.0","id":0,"method":"initialize"}))
+            .await
+            .unwrap();
+        // Evicted, and the replay fails: this call reports the failure.
+        assert!(bridge.post(&tool(1)).await.is_err());
+        // The next call replays initialize first instead of posting without a session.
+        bridge.post(&tool(2)).await.unwrap();
+        assert_eq!(
+            *calls.lock().unwrap(),
+            vec![Some("s1".to_string()), Some("s2".to_string())]
+        );
         server.abort();
     }
 

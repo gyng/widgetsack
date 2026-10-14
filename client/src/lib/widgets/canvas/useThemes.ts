@@ -14,6 +14,7 @@ import {
 } from '../../bridge/themes';
 import { parseTokens, swatchFromTokens, type Swatch } from '../../core/tokens';
 import { unusedFileName } from '../../core/fileNames';
+import { cssBraceImbalance } from '../../core/style';
 import { builtinById, builtinIdOf } from '../../core/builtinThemes';
 import type { EditorModel } from './useEditorModel';
 
@@ -51,6 +52,8 @@ export type Themes = {
 	themeNameRef: React.RefObject<HTMLInputElement | null>;
 	/** The draft (name or CSS) differs from what the editor opened with — the close paths confirm. */
 	themeEditorDirty: boolean;
+	/** Why the open draft can't be saved (unclosed `{` / comment / string), or null when it can. */
+	themeDraftError: string | null;
 	openThemeEditor: (name?: string) => Promise<void>;
 	saveThemeEditor: () => Promise<void>;
 	duplicateTheme: (name: string) => Promise<void>;
@@ -201,10 +204,18 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 		},
 		[selectedTheme]
 	);
+	const themeDraftError = themeEditorOpen ? cssBraceImbalance(themeDraft) : null;
 	const saveThemeEditor = useCallback(async () => {
 		const request = editorRequestRef.current;
 		const name = themeDraftName.trim();
 		if (!name) return;
+		// The theme shares one <style> with every token override and widget style: a draft with an
+		// unclosed `{`, comment or string would be dropped at render anyway, so don't save it.
+		const problem = cssBraceImbalance(themeDraft);
+		if (problem) {
+			window.alert(`Fix the theme CSS before saving: ${problem}.`);
+			return;
+		}
 		let existing: string[];
 		try {
 			existing = await listThemes(true);
@@ -321,6 +332,7 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 		setThemeDraftName,
 		themeNameRef,
 		themeEditorDirty,
+		themeDraftError,
 		openThemeEditor,
 		saveThemeEditor,
 		duplicateTheme,

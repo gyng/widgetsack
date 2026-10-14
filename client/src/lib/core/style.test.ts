@@ -44,6 +44,14 @@ describe('scopeCss', () => {
 		expect(cssBraceImbalance(badString)).toBe('a "}" closes more blocks than were opened');
 		expect(scopeCss('.value { fill: red }', '[data-w="x"]')).toContain('fill: red');
 	});
+
+	it('flags an unclosed comment or string even when the braces balance (it would swallow what follows)', () => {
+		expect(cssBraceImbalance('.a { color: red } /* open')).toBe('an unclosed "/*" comment');
+		expect(cssBraceImbalance('.a { color: red } "open')).toBe('an unterminated string');
+		// a bare newline ends the string as a BAD string — the browser drops the following rule
+		expect(cssBraceImbalance('"open\n.a { color: red }')).toBe('an unterminated string');
+		expect(cssBraceImbalance('.a { color: red } /* ok */')).toBeNull();
+	});
 });
 
 describe('assembleStyles', () => {
@@ -189,6 +197,41 @@ describe('assembleStyles', () => {
 		]);
 		// without a reporter the block is still dropped, silently
 		expect(assembleStyles({ library: lib, monitor })).toBe('[data-w="ok"] {\ncolor: lime\n}');
+	});
+
+	it.each([
+		['an unclosed block', ':root { --np-accent: gold', '1 unclosed "{"'],
+		['an unclosed comment', ':root { --np-accent: gold } /* note', 'an unclosed "/*" comment'],
+		['an unterminated string', ':root { --np-accent: gold } "x', 'an unterminated string']
+	])(
+		'drops a theme with %s (reported) so it cannot swallow the tokens and widget css after it',
+		(_, theme, reason) => {
+			const lib: Library = {
+				version: 1,
+				defs: [
+					{ id: 'd', name: 'd', size: { w: 1, h: 1 }, child: leaf(prim('x')), css: 'color: red' }
+				]
+			};
+			const rejected: string[] = [];
+			const css = assembleStyles({
+				themeCss: theme,
+				tokenCss: ':root { --np-fg: white }',
+				library: lib,
+				monitor: { root: emptyRoot(), floating: [] },
+				onRejectCss: (sel, r) => rejected.push(`${sel}: ${r}`)
+			});
+			expect(css).toBe(':root { --np-fg: white }\n[data-def="d"] {\ncolor: red\n}');
+			expect(rejected).toEqual([`theme: ${reason}`]);
+		}
+	);
+
+	it('emits token overrides after the theme so they win the cascade', () => {
+		const css = assembleStyles({
+			themeCss: ':root { --np-fg: red }',
+			tokenCss: ':root { --np-fg: white }',
+			monitor: { root: emptyRoot(), floating: [] }
+		});
+		expect(css).toBe(':root { --np-fg: red }\n:root { --np-fg: white }');
 	});
 
 	it('prepends the DEFAULT_TOKENS :root base when includeDefaults, before the theme', () => {

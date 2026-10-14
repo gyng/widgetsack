@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { unusedFileName } from './fileNames';
+import { safeFileStem, unusedFileName } from './fileNames';
 
 describe('unusedFileName', () => {
 	it('keeps an available import name and skips case-insensitive collisions', () => {
@@ -16,5 +16,25 @@ describe('unusedFileName', () => {
 		expect(first).toHaveLength(64);
 		expect(second).toHaveLength(64);
 		expect(second).toMatch(/-imported2$/);
+	});
+});
+
+describe('safeFileStem', () => {
+	it.each([
+		['Nord', 'Nord'],
+		['Rosé', 'Rose'],
+		['a.b', 'a-b'],
+		['../evil', 'evil'],
+		['  spaced  ', 'spaced'],
+		['日本', 'theme'],
+		['', 'theme'],
+		['CON', 'CON-theme'],
+		['com1', 'com1-theme']
+	])('%j → %j (a name the backend valid_name accepts)', (input, expected) => {
+		expect(safeFileStem(input, 'theme')).toBe(expected);
+	});
+	it('keeps the result within the 64-character limit with no trailing space', () => {
+		const out = safeFileStem(`${'a'.repeat(63)} b`, 'theme');
+		expect(out).toBe('a'.repeat(63));
 	});
 });

@@ -403,6 +403,26 @@ describe('theme editor dialog', () => {
 		await waitFor(() => expect(result.current.themeList).toEqual(['fresh']));
 	});
 
+	it('refuses to save a draft whose braces, comment or string never close (it would break every style after it)', async () => {
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		const { result, dispatch } = setup();
+		act(() => {
+			result.current.setThemeEditorOpen(true);
+			result.current.setThemeDraftName('broken');
+			result.current.setThemeDraft(':root { --np-accent: gold');
+		});
+		expect(result.current.themeDraftError).toBe('1 unclosed "{"');
+		await act(async () => {
+			await result.current.saveThemeEditor();
+		});
+		expect(saveThemeCss).not.toHaveBeenCalled();
+		expect(dispatch).not.toHaveBeenCalled();
+		expect(result.current.themeEditorOpen).toBe(true);
+		expect(alert).toHaveBeenCalledWith(expect.stringContaining('1 unclosed "{"'));
+		act(() => result.current.setThemeDraft(':root { --np-accent: gold }'));
+		expect(result.current.themeDraftError).toBeNull();
+	});
+
 	it('keeps the editor and draft open when persistence fails', async () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		saveThemeCss.mockRejectedValue(new Error('disk full'));

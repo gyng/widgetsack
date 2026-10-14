@@ -6,7 +6,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from '../../bridge/contract';
-import { unusedFileName } from '../../core/fileNames';
+import { safeFileStem, unusedFileName } from '../../core/fileNames';
+import { ThemeNotFoundError } from '../../bridge/themes';
 import type { Library } from '../../core/layoutTree';
 import {
 	mergeLibrary,
@@ -188,19 +189,24 @@ export function useSacks({
 		if (exists && !window.confirm(`Overwrite the sack "${name}"?`)) return;
 		// Re-read the theme CSS at export time so a not-yet-loaded `themeCss` can't silently drop it. A
 		// built-in is baked into the sack under its catalog name (the `builtin:` id never leaves the app).
-		let css: string;
+		// A theme file deleted outside the app leaves the selection dangling: export without it and say
+		// so, rather than refusing the whole export. Any other read failure still aborts (no empty CSS).
+		let theme: { name: string; css: string } | undefined;
+		let missingTheme: string | null = null;
 		try {
-			css = selectedTheme ? await resolveThemeCss(selectedTheme, true) : '';
+			if (selectedTheme)
+				theme = {
+					name: themeLabel(selectedTheme),
+					css: await resolveThemeCss(selectedTheme, true)
+				};
 		} catch (error) {
-			setNotice({ tone: 'error', text: `Could not read the theme for export: ${String(error)}` });
-			return;
+			if (!(error instanceof ThemeNotFoundError)) {
+				setNotice({ tone: 'error', text: `Could not read the theme for export: ${String(error)}` });
+				return;
+			}
+			missingTheme = themeLabel(selectedTheme);
 		}
-		const sack = packSack({
-			name,
-			library,
-			theme: selectedTheme ? { name: themeLabel(selectedTheme), css } : undefined,
-			tokens: tokenOverrides
-		});
+		const sack = packSack({ name, library, theme, tokens: tokenOverrides });
 		const path = await writeSack(name, JSON.stringify(sack, null, '\t'), exists);
 		await refreshSacks();
 		if (!path) {
@@ -211,7 +217,10 @@ export function useSacks({
 			window.alert(text);
 			return;
 		}
-		setNotice({ tone: 'ok', text: `Exported ${name}`, path });
+		const note = missingTheme
+			? ` · theme “${missingTheme}” is missing, so the sack has no theme`
+			: '';
+		setNotice({ tone: 'ok', text: `Exported ${name}${note}`, path });
 	}, [editingDefId, exportName, selectedTheme, themeLabel, library, tokenOverrides, refreshSacks]);
 
 	const importSackNow = useCallback(
@@ -239,7 +248,9 @@ export function useSacks({
 			if (sack.theme) {
 				const existing = await listThemes(true);
 				if (!current()) return;
-				themeName = unusedFileName(sack.theme.name, existing, '-imported');
+				// The display name comes from a shared file: fold it to a stem the backend accepts (`Rosé`,
+				// `a.b` would otherwise fail valid_name and abort the whole import after consent).
+				themeName = unusedFileName(safeFileStem(sack.theme.name, 'theme'), existing, '-imported');
 				try {
 					await saveThemeCss(themeName, sack.theme.css, false);
 				} catch (err) {

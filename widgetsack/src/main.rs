@@ -298,6 +298,8 @@ async fn main() -> Result<(), ()> {
         // instead of being shipped as JSON byte arrays. See art.rs.
         .manage(art::ArtState::default())
         .manage(clickthrough::InteractiveRects::default())
+        .manage(command::windows::OverlayEditState::default())
+        .manage(command::windows::QuitFlush::default())
         .manage(control::ControlState::default())
         .manage(mcp::McpState::new(browser_port))
         .manage(ha::HaState::default())
@@ -360,6 +362,9 @@ async fn main() -> Result<(), ()> {
             command::windows::open_devtools_for,
             command::windows::set_window_interactive,
             command::windows::rescue_windows,
+            command::windows::toggle_overlay_edit,
+            command::windows::get_overlay_edit,
+            command::windows::quit_flushed,
             command::windows::reload_window,
             command::logging::log_diag,
             command::logging::log_client,
@@ -644,7 +649,7 @@ async fn main() -> Result<(), ()> {
                         // Open the last-known newer release's page in the default browser.
                         update::open_release_page(app);
                     }
-                    "quit" => app.exit(0),
+                    "quit" => command::windows::quit_after_flush(app),
                     _ => {}
                 })
                 // Left-click (primary button release) opens the designer; right-click still shows
@@ -662,15 +667,15 @@ async fn main() -> Result<(), ()> {
                 .build(app)?;
 
             // Global hotkey: toggle edit mode from anywhere (a passive click-through
-            // overlay receives no in-app keys). Broadcasts the same event the tray and
-            // Ctrl+E use, so every monitor's overlay toggles together.
+            // overlay receives no in-app keys). Flips the backend-owned edit state and broadcasts
+            // it (same path as Ctrl+E), so every monitor's overlay lands in the same mode.
             let toggle_edit_shortcut =
                 Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyE);
             if let Err(err) =
                 app.global_shortcut()
                     .on_shortcut(toggle_edit_shortcut, |app, _shortcut, event| {
                         if event.state() == ShortcutState::Pressed {
-                            let _ = app.emit(bridge::TOGGLE_EDIT_EVENT, ());
+                            command::windows::toggle_overlay_edit_and_broadcast(app);
                         }
                     })
             {

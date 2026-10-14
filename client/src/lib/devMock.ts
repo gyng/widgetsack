@@ -22,6 +22,7 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 	mockWindows('studio');
 
 	let evtId = 0;
+	let overlayEdit = false; // backend-owned overlay edit state (the mock has no overlays to notify)
 	const handleCommand: Parameters<typeof mockIPC>[0] = (cmd, args) => {
 		switch (cmd) {
 			case COMMANDS.mcpStatus:
@@ -140,6 +141,13 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case 'plugin:window|current_monitor':
 			case 'plugin:window|primary_monitor':
 				return MONITOR;
+
+			// --- overlay edit mode (Ctrl+E in the studio flips the shared overlay state) ---
+			case COMMANDS.toggleOverlayEdit:
+				overlayEdit = !overlayEdit;
+				return overlayEdit;
+			case COMMANDS.getOverlayEdit:
+				return overlayEdit;
 
 			// --- event plugin: listen returns a handle id; everything else resolves ---
 			case 'plugin:event|listen':

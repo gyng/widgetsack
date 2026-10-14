@@ -59,6 +59,12 @@ vi.mock('@tauri-apps/api/event', () => ({
 	})
 }));
 
+/** The backend's shared overlay edit state, as `get_overlay_edit` reports it at join. */
+let backendEdit = false;
+vi.mock('@tauri-apps/api/core', () => ({
+	invoke: vi.fn(async (cmd: string) => (cmd === 'get_overlay_edit' ? backendEdit : undefined))
+}));
+
 function makeDeps(overrides: Partial<StudioInitDeps> = {}): StudioInitDeps {
 	return {
 		studio: false,
@@ -91,6 +97,34 @@ beforeEach(() => {
 	onStableDisplayTick = null;
 	mainAlive = false;
 	onScaleChange = null;
+	backendEdit = false;
+});
+
+describe('useStudioInit overlay edit mode', () => {
+	it('a window created while the others edit joins in edit mode', async () => {
+		backendEdit = true;
+		const deps = makeDeps();
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(deps.setEdit).toHaveBeenCalledWith(true));
+	});
+
+	it('broadcasts set the shared state instead of flipping the local one', async () => {
+		let editing = true;
+		const deps = makeDeps({
+			editMode: () => editing,
+			setEdit: vi.fn((v: boolean) => void (editing = v))
+		});
+		backendEdit = true;
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(listeners.has('toggle_edit')).toBe(true));
+		await waitFor(() => expect(deps.syncRects).toHaveBeenCalled());
+		listeners.get('toggle_edit')!({ payload: true }); // already editing → stays editing
+		expect(deps.setEdit).not.toHaveBeenCalled();
+		listeners.get('toggle_edit')!({ payload: false });
+		listeners.get('toggle_edit')!({ payload: false });
+		expect(deps.setEdit).toHaveBeenCalledTimes(1);
+		expect(editing).toBe(false);
+	});
 });
 
 describe('useStudioInit display-change refit', () => {

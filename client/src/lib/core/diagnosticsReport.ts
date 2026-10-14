@@ -124,5 +124,11 @@ export function composeDiagnosticsReport(input: DiagnosticsReportInput): string 
 	);
 	if (selected.length === 0) lines.push('(nothing captured)');
 	for (const r of selected) lines.push(formatLogLine(r));
-	return lines.join('\n');
+	return redactUserProfile(lines.join('\n'));
+}
+
+/** Replace a Windows user-profile prefix (`C:\Users\<name>`, either slash) with `%USERPROFILE%` so
+ * a pasted bug report doesn't carry the account name. Pure. */
+export function redactUserProfile(text: string): string {
+	return text.replace(/\b[A-Za-z]:[\\/]Users[\\/][^\\/\r\n]+/gi, '%USERPROFILE%');
 }

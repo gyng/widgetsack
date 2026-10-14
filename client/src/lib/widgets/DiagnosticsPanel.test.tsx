@@ -447,6 +447,21 @@ describe('DiagnosticsPanel logs pane', () => {
 		expect(() => logCb?.(logRec({ level: 'error', message: 'late' }))).not.toThrow();
 	});
 
+	it('keeps a live record that streamed in before the backlog reply (merge, not replace)', async () => {
+		let resolveLogs!: (l: LogRecord[]) => void;
+		vi.mocked(getLogs).mockReturnValueOnce(new Promise((r) => (resolveLogs = r)));
+		const { findByText, container } = render(<DiagnosticsPanel />);
+		await flush();
+		const shared = logRec({ level: 'warn', target: 'ha', message: 'in both' });
+		act(() => logCb?.(shared));
+		act(() => logCb?.(logRec({ level: 'error', target: 'panic', message: 'after snapshot' })));
+		await act(async () => {
+			resolveLogs([logRec({ level: 'warn', target: 'old', message: 'backlog only' }), shared]);
+		});
+		expect(await findByText(/panic: after snapshot/)).toBeTruthy();
+		expect(hasText(container, '3 shown · 3 buffered')).toBeTruthy();
+	});
+
 	it('ignores a backlog / log-path read that resolves after unmount (alive guard)', async () => {
 		let resolveLogs: ((l: LogRecord[]) => void) | undefined;
 		let resolvePath: ((p: string | null) => void) | undefined;

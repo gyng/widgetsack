@@ -19,7 +19,7 @@ import {
 	useState
 } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { emit, listen } from '@tauri-apps/api/event';
+import { listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
 import { COMMANDS, EVENTS } from '../bridge/contract';
 import { createTelemetryHub } from '../core/telemetry';
@@ -88,6 +88,7 @@ import { listenMcpStudio, mcpStudioPorts } from '../bridge/mcp';
 import type { StudioSnapshot } from '../llm/studioAgentSession';
 import { verifyStudioSnapshot } from '../llm/verifyStudioSnapshot';
 import { currentWindowLabel } from '../bridge/studioWindow';
+import { toggleOverlayEdit } from '../bridge/editMode';
 import { waitForStudioRender } from './canvas/waitForStudioRender';
 import type { LayoutOp } from './ops';
 import { sensorCatalog } from '../core/sensors';
@@ -630,7 +631,9 @@ export default function Canvas({ studio = false }: Props) {
 				// Inject the DEFAULT_TOKENS :root base so the token vocabulary is the real runtime source
 				// of truth — meters resolve bare var(--np-*) to a defined value, and the theme + overrides
 				// (appended after) still win via the cascade.
-				themeCss: [themeCss, tokenCss].filter(Boolean).join('\n'),
+				// The token overrides go separately so a broken theme (dropped) can't take them with it.
+				themeCss,
+				tokenCss,
 				library,
 				monitor,
 				includeDefaults: true,
@@ -1940,7 +1943,10 @@ export default function Canvas({ studio = false }: Props) {
 				if (menuRef.current !== null) closeMenu();
 				else if (!focusInTextField()) clearSelection();
 			},
-			'global.toggleEdit': () => emit(EVENTS.toggleEdit), // broadcast: every monitor's overlay toggles
+			// The backend flips the shared overlay edit state and broadcasts it to every monitor's overlay.
+			'global.toggleEdit': () => {
+				toggleOverlayEdit().catch((err) => console.warn('toggle_overlay_edit failed', err));
+			},
 			'studio.save': commitSave,
 			'studio.undo': undo,
 			'studio.redo': redo,
