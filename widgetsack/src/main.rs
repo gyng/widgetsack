@@ -421,6 +421,7 @@ async fn main() -> Result<(), ()> {
             timings::set_subsystem_profiling,
             timings::subsystem_timings,
             llm::save_llm_config,
+            llm::set_agent_control,
             llm::llm_config_status,
             llm::llm_test_connection,
             llm::llm_complete,

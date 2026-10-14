@@ -274,6 +274,7 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 					maxTokens: 1024,
 					agentControl: false
 				};
+			case COMMANDS.setAgentControl:
 			case COMMANDS.controlStart:
 			case COMMANDS.controlStop:
 				return undefined;

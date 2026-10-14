@@ -32,6 +32,10 @@ export const controlStop = (): Promise<void> => invoke(COMMANDS.controlStop);
 export const llmConfigStatus = (): Promise<LlmStatus> =>
 	invoke<LlmStatus>(COMMANDS.llmConfigStatus);
 
+/** Persist only the global agent-control toggle, never the unsaved provider form. Studio-only. */
+export const setAgentControl = (enabled: boolean): Promise<void> =>
+	invoke(COMMANDS.setAgentControl, { enabled });
+
 /** Persist `plugins/llm.json`. A blank `apiKey` keeps the previously-saved one. Studio-only. */
 export const saveLlmConfig = (cfg: LlmConfigInput): Promise<void> =>
 	invoke(COMMANDS.saveLlmConfig, { ...cfg });

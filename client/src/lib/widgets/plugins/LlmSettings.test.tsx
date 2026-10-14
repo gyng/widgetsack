@@ -28,6 +28,7 @@ vi.mock('./llm-commands', () => ({
 		})
 	),
 	saveLlmConfig: vi.fn(() => Promise.resolve()),
+	setAgentControl: vi.fn(() => Promise.resolve()),
 	llmTestConnection: vi.fn(() => Promise.resolve({ model: 'gpt-4o', reply: 'pong' })),
 	llmComplete: vi.fn(() => Promise.resolve('{"ops":[],"summary":"ok"}')),
 	llmListModels: vi.fn(() =>
@@ -67,7 +68,8 @@ import {
 	llmStream,
 	llmTestConnection,
 	llmTranscribe,
-	saveLlmConfig
+	saveLlmConfig,
+	setAgentControl
 } from './llm-commands';
 import type { LlmStatus } from './llm-types';
 import { setLlmStudioApi } from './llm-studio';
@@ -359,18 +361,19 @@ describe('LlmSettings', () => {
 		);
 	});
 
-	it('persists + starts the agent-control server when the toggle is enabled (independent of the key)', async () => {
+	it('persists only agent control, leaving an unsaved provider switch unsaved', async () => {
 		const { container } = renderPanel();
 		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
+		fireEvent.change(providerSelect(container), { target: { value: 'anthropic' } });
 		const toggle = [...container.querySelectorAll('input[type="checkbox"]')].find((c) =>
 			c.closest('label')?.textContent?.includes('agent control')
 		) as HTMLInputElement;
 		fireEvent.click(toggle);
-		// The toggle saves directly (not gated behind Save) and then boots the local control server.
-		await waitFor(() =>
-			expect(saveLlmConfig).toHaveBeenCalledWith(expect.objectContaining({ agentControl: true }))
-		);
+		// The toggle applies directly (not gated behind Save) and then boots the local control server.
 		await waitFor(() => expect(controlStart).toHaveBeenCalled());
+		expect(setAgentControl).toHaveBeenCalledWith(true);
+		expect(saveLlmConfig).not.toHaveBeenCalled();
+		expect(providerSelect(container).value).toBe('anthropic');
 	});
 
 	it('sends a chat message: shows the user turn and streams via llm_stream', async () => {
@@ -391,7 +394,7 @@ describe('LlmSettings', () => {
 	});
 
 	it('reports an agent-control toggle failure in the test line', async () => {
-		vi.mocked(saveLlmConfig).mockRejectedValueOnce('locked');
+		vi.mocked(setAgentControl).mockRejectedValueOnce('locked');
 		const { container, findByText } = renderPanel();
 		await waitFor(() => expect(baseUrlInput(container).value).toBe('https://my-proxy.test/v1'));
 		const toggle = [...container.querySelectorAll('input[type="checkbox"]')].find((c) =>
@@ -514,10 +517,8 @@ describe('LlmSettings', () => {
 		) as HTMLInputElement;
 		expect(toggle.checked).toBe(true);
 		fireEvent.click(toggle);
-		await waitFor(() =>
-			expect(saveLlmConfig).toHaveBeenCalledWith(expect.objectContaining({ agentControl: false }))
-		);
 		await waitFor(() => expect(controlStop).toHaveBeenCalled());
+		expect(setAgentControl).toHaveBeenCalledWith(false);
 		expect(controlStart).not.toHaveBeenCalled();
 	});
 
@@ -846,6 +847,7 @@ it('ignores agent-control changes while saving and discards dictation after unmo
 	)!;
 	fireEvent.click(toggle);
 	expect(saveLlmConfig).toHaveBeenCalledOnce();
+	expect(setAgentControl).not.toHaveBeenCalled();
 	await act(async () => saved());
 	let transcribed!: (text: string) => void;
 	vi.mocked(startRecording).mockResolvedValueOnce({

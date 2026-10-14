@@ -691,10 +691,16 @@ fn ai_request_error(error: reqwest::Error) -> String {
 
 // ---- HTTP ----
 
-/// A reqwest client honouring the `insecure` opt-in (mirrors ha_http_client). 120s timeout — LLM
-/// responses can be slow.
+/// A reqwest client honouring the `insecure` opt-in (mirrors ha_http_client). The 120s limit is an
+/// IDLE timeout per read, not a total deadline: a slow local model may stream for minutes.
 fn llm_http_client(insecure: bool) -> Result<reqwest::Client, String> {
-    let mut builder = reqwest::Client::builder().timeout(Duration::from_secs(120));
+    llm_http_client_with(insecure, Duration::from_secs(120))
+}
+
+fn llm_http_client_with(insecure: bool, idle: Duration) -> Result<reqwest::Client, String> {
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(15))
+        .read_timeout(idle);
     if insecure {
         builder = builder
             .danger_accept_invalid_certs(true)
@@ -801,6 +807,46 @@ fn check_base_url(base_url: &str) -> Result<(), String> {
     }
 }
 
+/// PURE SEAM: the save-time twin of `check_base_url` + `key_fallback_allowed`. When the saved entry
+/// will hold a key, its target must be https:// (or loopback http://), and a BLANK incoming key may keep
+/// the saved one only for the saved base URL with TLS verification on. Keyless entries have nothing to
+/// protect, so a LAN `http://` Ollama stays saveable.
+fn check_saved_key_target(
+    provider: &str,
+    saved: Option<&StoredProvider>,
+    base_url: &str,
+    insecure: bool,
+    incoming_key: &str,
+) -> Result<(), String> {
+    let saved_key = saved.is_some_and(|s| !s.api_key.trim().is_empty());
+    if !needs_key(provider) || (incoming_key.is_empty() && !saved_key) {
+        return Ok(());
+    }
+    check_base_url(base_url)?;
+    let saved_base = effective_base_of(provider, saved.map_or("", |s| &s.base_url));
+    if incoming_key.is_empty()
+        && !key_fallback_allowed(
+            &saved_base,
+            &effective_base_of(provider, base_url),
+            insecure,
+        )
+    {
+        return Err(
+            "enter the API key again to save a different base URL or an insecure connection".into(),
+        );
+    }
+    Ok(())
+}
+
+/// Validate an ad-hoc base URL only when the request can carry a key; keyless providers send none.
+fn check_request_base_url(provider: &str, base_url: &str) -> Result<(), String> {
+    if needs_key(provider) {
+        check_base_url(base_url)
+    } else {
+        Ok(())
+    }
+}
+
 /// Resolve the api_key for an ad-hoc (UNSAVED) request to `provider`: a blank incoming key means "use
 /// that provider's saved one" (the UI holds the key write-only, so testing a changed model must reuse
 /// the stored secret) — but ONLY when the request targets the saved base URL with TLS verification on
@@ -832,6 +878,27 @@ fn resolve_key<R: Runtime>(
 }
 
 // ---- Tauri commands ----
+
+/// Persist ONLY the global agent-control toggle. The toggle applies immediately, so it must not save
+/// (or activate) whatever unsaved provider/base URL/key the settings form currently shows. Studio-only.
+#[tauri::command]
+pub async fn set_agent_control(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    enabled: bool,
+) -> Result<(), String> {
+    if window.label() != "studio" {
+        return Err("set_agent_control is only allowed from the studio window".into());
+    }
+    let path = llm_config_path(&app)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    let mut file = load_llm_file(&app)?.unwrap_or_else(LlmFile::empty);
+    file.agent_control = enabled;
+    let txt = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
+    crate::secure_config::write(&path, &txt)
+}
 
 /// Persist one provider's entry in `plugins/llm.json` and make it the ACTIVE provider (creates
 /// `plugins/`). The api_key is written server-side only; a blank `api_key` keeps that provider's
@@ -868,7 +935,17 @@ pub async fn save_llm_config(
     };
     let mut file = load_llm_file(&app)?.unwrap_or_else(LlmFile::empty);
     // Merge into THIS provider's entry — leave the others (and their keys) alone.
-    let mut entry = file.providers.get(&id).cloned().unwrap_or_default();
+    let saved = file.providers.get(&id);
+    check_saved_key_target(
+        &id,
+        saved,
+        base_url
+            .as_deref()
+            .unwrap_or_else(|| saved.map_or("", |s| &s.base_url)),
+        insecure.unwrap_or_else(|| saved.is_some_and(|s| s.insecure)),
+        &api_key,
+    )?;
+    let mut entry = saved.cloned().unwrap_or_default();
     if !api_key.is_empty() {
         entry.api_key = api_key; // blank keeps the saved one
     }
@@ -969,7 +1046,7 @@ pub async fn llm_test_connection(
         provider
     };
     let base_url = base_url.unwrap_or_default();
-    check_base_url(&base_url)?;
+    check_request_base_url(&id, &base_url)?;
     let insecure = insecure.unwrap_or(false);
     let requested_base = effective_base_of(&id, &base_url);
     let cfg = LlmConfig {
@@ -1037,7 +1114,7 @@ pub async fn llm_list_models<R: Runtime>(
     let (provider, base, key, insecure) = match provider.filter(|p| !p.is_empty()) {
         Some(p) => {
             let base_url = base_url.unwrap_or_default();
-            check_base_url(&base_url)?;
+            check_request_base_url(&p, &base_url)?;
             let insecure = insecure.unwrap_or(false);
             let base = effective_base_of(&p, &base_url);
             let key = resolve_key(&app, &p, api_key.unwrap_or_default(), &base, insecure)?;
@@ -1758,6 +1835,102 @@ mod tests {
         assert_eq!(cfg.temperature, 0.7);
         assert_eq!(cfg.max_tokens, 1024);
         assert!(cfg.api_key.is_empty());
+    }
+
+    #[test]
+    fn saving_cannot_redirect_a_stored_key_or_send_one_over_plain_http() {
+        let saved = StoredProvider {
+            api_key: "sk-saved".into(),
+            ..Default::default()
+        };
+        let keyless = StoredProvider::default();
+        // Same target with a blank key keeps the saved key.
+        assert!(check_saved_key_target("openai", Some(&saved), "", false, "").is_ok());
+        assert!(
+            check_saved_key_target(
+                "openai",
+                Some(&saved),
+                "https://api.openai.com/v1/",
+                false,
+                ""
+            )
+            .is_ok()
+        );
+        // A new target or insecure TLS needs the key re-entered.
+        assert!(
+            check_saved_key_target(
+                "openai",
+                Some(&saved),
+                "https://other.example/v1",
+                false,
+                ""
+            )
+            .is_err()
+        );
+        assert!(check_saved_key_target("openai", Some(&saved), "", true, "").is_err());
+        assert!(
+            check_saved_key_target(
+                "openai",
+                Some(&saved),
+                "https://other.example/v1",
+                true,
+                "sk-new"
+            )
+            .is_ok()
+        );
+        // A key never goes over plain http to a non-loopback host.
+        for key in ["", "sk-new"] {
+            assert!(
+                check_saved_key_target("openai", Some(&saved), "http://192.168.1.5/v1", false, key)
+                    .is_err()
+            );
+        }
+        assert!(
+            check_saved_key_target(
+                "openai",
+                Some(&saved),
+                "http://localhost:1234/v1",
+                false,
+                "sk"
+            )
+            .is_ok()
+        );
+        // Nothing to protect: keyless providers and providers without any key.
+        assert!(
+            check_saved_key_target("ollama", None, "http://192.168.1.5:11434", false, "").is_ok()
+        );
+        assert!(
+            check_saved_key_target("openai", Some(&keyless), "http://192.168.1.5/v1", false, "")
+                .is_ok()
+        );
+        assert!(check_saved_key_target("openai", None, "ftp://x", false, "").is_ok());
+        assert!(check_request_base_url("ollama", "http://192.168.1.5:11434").is_ok());
+        assert!(check_request_base_url("openai", "http://192.168.1.5:11434").is_err());
+    }
+
+    #[tokio::test]
+    async fn slow_streams_are_not_cut_off_while_bytes_keep_arriving() {
+        use tokio::io::AsyncWriteExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut head = [0u8; 1024];
+            let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut head).await;
+            stream
+                .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n")
+                .await
+                .unwrap();
+            for _ in 0..6 {
+                tokio::time::sleep(Duration::from_millis(60)).await;
+                stream.write_all(b"1\r\nx\r\n").await.unwrap();
+            }
+            stream.write_all(b"0\r\n\r\n").await.unwrap();
+        });
+        let client = llm_http_client_with(false, Duration::from_millis(200)).unwrap();
+        let body = client.get(url).send().await.unwrap().text().await;
+        server.await.unwrap();
+        assert_eq!(body.unwrap(), "xxxxxx");
     }
 
     #[test]

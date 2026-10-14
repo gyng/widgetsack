@@ -33,7 +33,8 @@ import {
 	llmListModels,
 	llmTestConnection,
 	llmTranscribe,
-	saveLlmConfig
+	saveLlmConfig,
+	setAgentControl as persistAgentControl
 } from './llm-commands';
 import { sttAvailable } from '../../stt';
 import { useRecording } from '../../useRecording';
@@ -149,17 +150,16 @@ export default function LlmSettings() {
 		: meta.sampleModels.map((m) => ({ value: m, label: m }));
 	const sampleOptions = (xs: string[]) => xs.map((x) => ({ value: x, label: x }));
 
-	// One save body for both the Save button and the agent-control toggle (the active provider's entry +
-	// the global params). A blank apiKey keeps the saved key.
-	const configBody = (overrides: { apiKey?: string; agentControl?: boolean } = {}) => ({
+	// The Save body: the active provider's entry + the global params. A blank apiKey keeps the saved key.
+	const configBody = () => ({
 		provider,
 		baseUrl: baseUrl.trim(),
-		apiKey: overrides.apiKey ?? apiKey,
+		apiKey,
 		model: model.trim(),
 		insecure,
 		temperature,
 		maxTokens,
-		agentControl: overrides.agentControl ?? agentControl,
+		agentControl,
 		sttModel: sttModel.trim(),
 		ttsModel: ttsModel.trim(),
 		ttsVoice: ttsVoice.trim()
@@ -186,17 +186,16 @@ export default function LlmSettings() {
 	};
 	// Agent control is INDEPENDENT of the LLM provider key (it actuates media/HA for an external MCP
 	// agent, it doesn't call the provider), so the toggle applies + persists directly — NOT gated behind
-	// the key-dependent Save button.
+	// the key-dependent Save button. It persists ONLY the toggle: unsaved provider edits stay unsaved.
 	const applyAgentControl = async (next: boolean) => {
 		if (saving) return;
 		setAgentControl(next);
-		dirtied();
 		await save(
 			async () => {
-				await saveLlmConfig(configBody({ agentControl: next }));
+				await persistAgentControl(next);
 				await (next ? controlStart() : controlStop());
 			},
-			() => setDirty(false)
+			() => undefined
 		);
 	};
 	const onTest = async () => {
