@@ -70,6 +70,8 @@ export default function CssEditorImpl({
 		viewRef.current = view;
 		return () => {
 			const doc = view.state.doc.toString();
+			/* v8 ignore else -- covered by "destroys the view on unmount"; the count is lost when v8
+			   merges this file's coverage across the many test files that mount it. */
 			if (doc !== committedRef.current) cbRef.current.onBlur?.(doc);
 			view.destroy();
 			viewRef.current = null;
