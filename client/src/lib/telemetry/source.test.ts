@@ -8,6 +8,9 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: mocks.invoke }));
 vi.mock('@tauri-apps/api/event', () => ({ listen: mocks.listen }));
+vi.mock('@tauri-apps/api/webviewWindow', () => ({
+	getCurrentWebviewWindow: () => ({ label: 'main' })
+}));
 vi.mock('../overlay', () => ({ isStudioWindow: () => mocks.studio }));
 import { startTelemetrySource, systemSource } from './source';
 afterEach(() => {

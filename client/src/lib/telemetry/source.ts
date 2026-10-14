@@ -4,6 +4,7 @@
 
 import * as tauriEvent from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import type { TelemetryBatch, TelemetryHub } from '../core/telemetry';
 import { registerSource, type SensorSource } from '../core/plugin';
 import { isStudioWindow } from '../overlay';
@@ -27,9 +28,17 @@ const reportActive = (ids: string[]): void => {
  * Resolves to an unlisten function that tears down the listen, the active-set
  * subscription, and any pending debounce timer. */
 export async function startTelemetrySource(hub: TelemetryHub): Promise<tauriEvent.UnlistenFn> {
-	const unlisten = await tauriEvent.listen<TelemetryBatch>(TELEMETRY_EVENT, (ev) => {
-		hub.ingestBatch(ev.payload);
-	});
+	// Listen as THIS window: an Any-target listener would also receive the cached batches the backend
+	// primes into other windows (`emit_to(label)`), re-ingesting old samples here. Broadcasts
+	// (`emit`) still reach a window-targeted listener.
+	const label = getCurrentWebviewWindow().label;
+	const unlisten = await tauriEvent.listen<TelemetryBatch>(
+		TELEMETRY_EVENT,
+		(ev) => {
+			hub.ingestBatch(ev.payload);
+		},
+		{ target: { kind: 'WebviewWindow', label } }
+	);
 
 	// Discovery reads identifiers only. It does not ask the sampler to collect their values.
 	const studio = isStudioWindow();
