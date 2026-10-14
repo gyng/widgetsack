@@ -33,7 +33,7 @@ export type StudioInitDeps = {
 	windowLabel: string; // this window's label, to tell its own layout writes from others'
 	hub: TelemetryHub;
 	updateWorkArea: () => Promise<void>;
-	reloadLayout: () => Promise<void>;
+	reloadLayout: () => Promise<unknown>;
 	reloadControls: () => Promise<void>; // load control remaps (startup + controls_changed)
 	editMode: () => boolean; // for the layout_changed guard
 	syncRects: () => void;

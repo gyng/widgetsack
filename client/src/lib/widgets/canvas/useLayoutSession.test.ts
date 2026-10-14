@@ -134,7 +134,7 @@ describe('layout session', () => {
 					release = resolve;
 				})
 		);
-		let loading!: Promise<void>;
+		let loading!: Promise<boolean>;
 		await act(async () => {
 			loading = result.current.reloadLayout();
 		});
@@ -178,7 +178,7 @@ describe('layout session', () => {
 		const { result, rerender } = renderHook(({ key }) => useSession(key), {
 			initialProps: { key: 'a' }
 		});
-		let old!: Promise<void>;
+		let old!: Promise<boolean>;
 		act(() => {
 			old = result.current.reloadLayout();
 		});
@@ -250,5 +250,28 @@ it('keeps unsaved edits and the saved baseline when reloading fails', async () =
 	invoke.mockResolvedValue(document('a', 'saved'));
 	await act(async () => {
 		await result.current.flushPreviewWrite();
+	});
+});
+
+describe('switching monitors', () => {
+	it('stays on the current monitor when the new one cannot be loaded', async () => {
+		invoke.mockResolvedValue(document('a', 'kept'));
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		const { result } = renderHook(() => useSession('a'));
+		await act(async () => {
+			await result.current.reloadLayout();
+		});
+		invoke.mockImplementation(async (command: string) => {
+			if (command === 'load_layout') throw new Error('file temporarily locked');
+			return undefined;
+		});
+		await act(async () => {
+			await result.current.switchMonitor('b');
+		});
+		// The placeholder empty tree must not stay under either key: the next write would replace
+		// a monitor's saved layout with it.
+		expect(result.current.state.monitor.root.id).toBe('kept');
+		expect(setMyMonitor).toHaveBeenLastCalledWith('a');
+		expect(alert).toHaveBeenCalled();
 	});
 });

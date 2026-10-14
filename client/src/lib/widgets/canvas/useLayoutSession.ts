@@ -168,7 +168,7 @@ export function useLayoutSession({
 		let nextTheme: string | null = null;
 		try {
 			const raw = await invoke<string | null>(COMMANDS.loadLayout);
-			if (!isCurrent()) return;
+			if (!isCurrent()) return true;
 			const decoded = decodeLayoutDocument(raw);
 			const valid = decoded.kind === 'valid' ? decoded : null;
 			if (
@@ -194,9 +194,9 @@ export function useLayoutSession({
 			if (patch.selectedTheme !== stateThemeRef.current) nextTheme = patch.selectedTheme;
 			patch.tokenOverrides = valid?.tokens ?? {};
 		} catch (err) {
-			if (!isCurrent()) return;
+			if (!isCurrent()) return true; // superseded by a newer load, not this load's failure
 			logClient('error', 'layout', `load_layout failed; keeping the current edits: ${String(err)}`);
-			return;
+			return false;
 		}
 		// historyReady=false during the load + interim awaits; clear pendingExtras; reset history;
 		// set baseline — all folded into one dispatch so the loaded layout is the committed baseline.
@@ -210,6 +210,7 @@ export function useLayoutSession({
 		dispatch({ type: 'resetHistory' });
 		dispatch({ type: 'setBaseline' });
 		if (nextTheme !== null) await adoptTheme(nextTheme);
+		return true;
 		// oxlint-disable-next-line react-hooks/exhaustive-deps
 	}, [dispatch, adoptTheme, backupLayoutFile]);
 	// myMonitor latest, for reloadLayout/persist reading inside listeners. Mirrored in the commit
@@ -358,6 +359,8 @@ export function useLayoutSession({
 				if (!window.confirm('Discard unsaved changes to this monitor and switch?')) return;
 				if (!(await revertDraftToDisk())) return;
 			}
+			const previousKey = myMonitorRef.current;
+			const previousMonitor = stateRef.current.monitor;
 			setMyMonitor(key);
 			// Eager latest-ref sync (mirrors the ref-sync effect below); read by later async steps in this
 			// handler. (react-hooks/immutability flagged this under eslint-plugin-react-hooks v7; oxlint's
@@ -367,7 +370,14 @@ export function useLayoutSession({
 			dispatch({ type: 'patch', patch: { selectedId: null, selectedIds: [] } });
 			switchUiRef.current();
 			dispatch({ type: 'replaceMonitor', monitor: { root: emptyRoot(), floating: [] } });
-			await reloadLayout();
+			if (await reloadLayout()) return;
+			// The new monitor could not be read: an edit now would write the empty placeholder over
+			// its saved layout. Go back to the monitor that was showing.
+			setMyMonitor(previousKey);
+			myMonitorRef.current = previousKey;
+			if (studio) writeStudioMonitor(previousKey);
+			dispatch({ type: 'replaceMonitor', monitor: previousMonitor });
+			window.alert('Could not load that monitor’s layout. Staying on the current monitor.');
 		},
 		[studio, dispatch, revertDraftToDisk, reloadLayout, flushPreviewWrite, setMyMonitor]
 	);
