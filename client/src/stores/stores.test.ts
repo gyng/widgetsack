@@ -188,17 +188,14 @@ describe('handleInitialize', () => {
 		expect(s[2].source).toBe('b.exe');
 	});
 
-	it('dedupes a same-source duplicate in the initial set (no startup leak seed)', async () => {
+	it('bounds same-source sessions in the initial set (no startup leak seed)', async () => {
 		const { mediaStore, handleInitialize } = await load();
-		handleInitialize({
-			sessions: {
-				1: rec({ session_id: 1, source: 'dup.exe' }),
-				2: rec({ session_id: 2, source: 'dup.exe' })
-			}
-		});
-		const s = mediaStore.getSnapshot().sessions;
-		// only the later upsert for that source survives
-		expect(Object.keys(s)).toEqual(['2']);
+		const sessions = Object.fromEntries(
+			[1, 2, 3, 4, 5].map((id) => [id, rec({ session_id: id, source: 'dup.exe' })])
+		);
+		handleInitialize({ sessions });
+		// the four newest records for that source survive
+		expect(Object.keys(mediaStore.getSnapshot().sessions)).toEqual(['2', '3', '4', '5']);
 	});
 });
 
@@ -235,12 +232,11 @@ describe('handleUpdate', () => {
 		expect(mediaStore.getSnapshot().sessions[6].source).toBe('live.exe');
 	});
 
-	it('evicts a stale record for the SAME source recreated under a new id', async () => {
+	it('keeps a bounded set of records for one source recreated under new ids', async () => {
 		const { mediaStore, handleUpdate } = await load();
-		handleUpdate({ sessionRecord: rec({ session_id: 1, source: 'player.exe' }) });
-		handleUpdate({ sessionRecord: rec({ session_id: 2, source: 'player.exe' }) });
-		const s = mediaStore.getSnapshot().sessions;
-		expect(Object.keys(s)).toEqual(['2']);
+		for (const id of [1, 2, 3, 4, 5])
+			handleUpdate({ sessionRecord: rec({ session_id: id, source: 'player.exe' }) });
+		expect(Object.keys(mediaStore.getSnapshot().sessions)).toEqual(['2', '3', '4', '5']);
 	});
 });
 

@@ -263,14 +263,28 @@ describe('upsertSession', () => {
 		expect(Object.keys(next)).toEqual(['7']);
 	});
 
-	it('evicts a stale entry that shares the source under a different session_id (the leak fix)', () => {
-		// Spotify recreated its SMTC session: same source, new id, no session_delete for the old one.
-		const sessions = { 7: rec(7, 'spotify.exe'), 9: rec(9, 'foobar2000.exe') };
-		const next = upsertSession(sessions, rec(12, 'spotify.exe'));
-		// The orphaned id 7 (and its retained art bytes) is gone; the unrelated player survives.
-		expect(Object.keys(next).sort()).toEqual(['12', '9']);
-		expect(next[12].source).toBe('spotify.exe');
-		expect(next[9].source).toBe('foobar2000.exe');
+	it('keeps concurrent sessions from one app, such as two browser tabs', () => {
+		const sessions = { 7: rec(7, 'chrome.exe') };
+		const next = upsertSession(sessions, rec(8, 'chrome.exe'));
+		expect(Object.keys(next).sort()).toEqual(['7', '8']);
+	});
+
+	it('bounds records per app, evicting the oldest (a player recreating its session)', () => {
+		// Each recreation is a new id with no session_delete for the old one.
+		let sessions: Record<number, SessionRecord> = { 99: rec(99, 'foobar2000.exe') };
+		for (let id = 1; id <= 10; id++) sessions = upsertSession(sessions, rec(id, 'spotify.exe'));
+		expect(
+			Object.keys(sessions)
+				.map(Number)
+				.sort((a, b) => a - b)
+		).toEqual([7, 8, 9, 10, 99]);
+		// Updating a retained old session keeps the newest ones rather than evicting by arrival.
+		sessions = upsertSession(sessions, rec(7, 'spotify.exe'));
+		expect(
+			Object.keys(sessions)
+				.map(Number)
+				.sort((a, b) => a - b)
+		).toEqual([7, 8, 9, 10, 99]);
 	});
 
 	it('keeps sessions with distinct sources', () => {
