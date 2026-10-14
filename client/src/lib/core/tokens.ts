@@ -128,6 +128,12 @@ export function safeTokenEntry(key: string, value: unknown): boolean {
 			if (c === '\\') i++;
 			else if (c === '\n') return false;
 			else if (c === quote) quote = null;
+		} else if (c === '\\') {
+			// An escape outside a string makes the next character literal (`\'` is not a quote, `\;`
+			// not an end). A trailing `\` would escape the `;` this emitter appends; `\` + newline is
+			// invalid CSS.
+			if (i + 1 >= value.length || value[i + 1] === '\n') return false;
+			i++;
 		} else if (c === '"' || c === "'") quote = c;
 		else if (c === '(' || c === '[') open.push(c === '(' ? ')' : ']');
 		else if (c === ')' || c === ']') {
