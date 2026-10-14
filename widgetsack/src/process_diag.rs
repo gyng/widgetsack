@@ -53,7 +53,7 @@ fn machine_cpu_percent(summed: f32, cpus: usize) -> f64 {
 /// Snapshot THIS process's CPU% + memory. Refreshes only our own PID (cheap — one process) on the
 /// persistent `System`, so successive polls give a real CPU delta. Returns the live pid/cpus with zero
 /// metrics if the process can't be read — never errors.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn process_diagnostics(state: tauri::State<'_, ProcDiag>) -> ProcessDiag {
     let pid = std::process::id();
     let spid = Pid::from_u32(pid);

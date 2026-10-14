@@ -75,7 +75,7 @@ fn read_package_text(path: &Path) -> std::io::Result<String> {
 /// Every `plugins/<id>/plugin.json`, sorted by id. Directories only (first-party config FILES in
 /// `plugins/` are skipped), ids must pass `valid_name` (they become path segments in
 /// `read_plugin_package_asset`). Missing `plugins/` dir → empty vec.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_plugin_packages(app: tauri::AppHandle) -> Result<Vec<PluginPackageFile>, String> {
     let dir = plugins_dir(&app)?;
     let mut out = Vec::new();
@@ -114,7 +114,7 @@ pub fn list_plugin_packages(app: tauri::AppHandle) -> Result<Vec<PluginPackageFi
 
 /// Read `plugins/<id>/<name>` — a manifest-declared asset (theme CSS / extra JSON). Both segments
 /// are sanitized (no traversal); only `.css`/`.json` files are readable. `None` if absent.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn read_plugin_package_asset(
     app: tauri::AppHandle,
     id: String,

@@ -39,7 +39,7 @@ fn valid_wallpaper_name(name: &str) -> bool {
 
 /// The media filenames in `wallpapers/` (image + video only), sorted. Creates the folder so the
 /// studio's "open folder" button always has somewhere to point.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_wallpapers(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     let dir = wallpapers_dir(&app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -72,7 +72,7 @@ pub fn wallpaper_path(app: tauri::AppHandle, name: String) -> Result<String, Str
 }
 
 /// Open the `wallpapers/` folder in Explorer so the user can drop media in. Creates it first.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_wallpapers_dir(app: tauri::AppHandle) -> Result<(), String> {
     let dir = wallpapers_dir(&app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

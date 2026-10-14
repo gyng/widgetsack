@@ -22,13 +22,13 @@ fn theme_event_matches(event: &notify::Event) -> bool {
 
 /// The theme names (file stems of `themes/*.css`), sorted. The frontend adds a synthetic
 /// "(default)" option (no theme = the meters' token fallbacks).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_themes(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     list_named_files(&themes_dir(&app)?, ".css")
 }
 
 /// The CSS of theme `name` (a bare file stem), or `None` if it doesn't exist.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn load_theme(app: tauri::AppHandle, name: String) -> Result<Option<String>, String> {
     if !valid_name(&name) {
         return Err("invalid theme name".to_string());
@@ -44,7 +44,7 @@ pub fn load_theme(app: tauri::AppHandle, name: String) -> Result<Option<String>,
 /// Write theme `name` (used by the studio's theme editor + token panel, Phase 7d). Creates
 /// `themes/`. Atomic (temp + rename) so a concurrent overlay reload never reads a half-written file.
 /// `overwrite: false` rejects an existing destination at publication time, including concurrent saves.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_theme(
     app: tauri::AppHandle,
     name: String,
@@ -66,7 +66,7 @@ pub fn save_theme(
 
 /// Delete theme `name` → removes `themes/<name>.css`. Ok even if it's already gone (idempotent),
 /// mirroring `delete_layout`. The themes watcher then emits `themes_changed` so the picker refreshes.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_theme(app: tauri::AppHandle, name: String) -> Result<(), String> {
     if !valid_name(&name) {
         return Err("invalid theme name".to_string());

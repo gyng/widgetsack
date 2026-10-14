@@ -341,13 +341,13 @@ fn layouts_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 /// The saved-layout names (file stems of `layouts/*.layout.json`), sorted.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_layouts(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     list_named_files(&layouts_dir(&app)?, ".layout.json")
 }
 
 /// The JSON of saved layout `name`, or `None` if it doesn't exist. The frontend parses/validates it.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn read_layout(app: tauri::AppHandle, name: String) -> Result<Option<String>, String> {
     if !valid_name(&name) {
         return Err("invalid layout name".to_string());
@@ -362,7 +362,7 @@ pub fn read_layout(app: tauri::AppHandle, name: String) -> Result<Option<String>
 
 /// Write saved layout `name` (creates `layouts/`). Returns the absolute path written.
 /// `overwrite: false` publishes only if no file exists, even if another save wins after discovery.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn save_layout_as(
     app: tauri::AppHandle,
     name: String,
@@ -384,7 +384,7 @@ pub fn save_layout_as(
 }
 
 /// Delete saved layout `name`. Ok even if it's already gone (idempotent).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn delete_layout(app: tauri::AppHandle, name: String) -> Result<(), String> {
     if !valid_name(&name) {
         return Err("invalid layout name".to_string());

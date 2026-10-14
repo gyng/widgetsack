@@ -12,13 +12,13 @@ fn sacks_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 }
 
 /// The sack names (file stems of `sacks/*.sack.json`), sorted.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_sacks(app: tauri::AppHandle) -> Result<Vec<String>, String> {
     list_named_files(&sacks_dir(&app)?, ".sack.json")
 }
 
 /// The JSON of sack `name`, or `None` if it doesn't exist. The frontend parses/validates it.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn read_sack(app: tauri::AppHandle, name: String) -> Result<Option<String>, String> {
     if !valid_name(&name) {
         return Err("invalid sack name".to_string());
@@ -32,7 +32,7 @@ pub fn read_sack(app: tauri::AppHandle, name: String) -> Result<Option<String>, 
 }
 
 /// Write sack `name` (creates `sacks/`). Returns the absolute path written, for the UI to show.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn write_sack(
     app: tauri::AppHandle,
     name: String,
