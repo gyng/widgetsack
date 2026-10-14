@@ -208,8 +208,11 @@ fn read_tcp_table() -> Vec<RawConn> {
     if rc != ERROR_INSUFFICIENT_BUFFER.0 || size == 0 {
         return Vec::new();
     }
-    let mut buf = vec![0u8; size as usize];
-    // SAFETY: `buf` is `size` bytes; GetExtendedTcpTable fills it with a MIB_TCPTABLE_OWNER_PID.
+    // A `u32`-backed buffer: MIB_TCPTABLE_OWNER_PID (all DWORD fields) needs 4-byte alignment, which a
+    // `Vec<u8>` does not guarantee — dereferencing a misaligned table pointer is undefined behaviour.
+    let mut buf = vec![0u32; (size as usize).div_ceil(std::mem::size_of::<u32>())];
+    // SAFETY: `buf` holds at least `size` bytes; GetExtendedTcpTable fills it with a
+    // MIB_TCPTABLE_OWNER_PID.
     let rc = unsafe {
         GetExtendedTcpTable(
             Some(buf.as_mut_ptr().cast()),
@@ -223,9 +226,9 @@ fn read_tcp_table() -> Vec<RawConn> {
     if rc != NO_ERROR.0 {
         return Vec::new();
     }
-    // SAFETY: on success `buf` begins with a MIB_TCPTABLE_OWNER_PID whose `table` is a flexible array
-    // of `dwNumEntries` rows within the same allocation.
-    let table = unsafe { &*(buf.as_ptr() as *const MIB_TCPTABLE_OWNER_PID) };
+    // SAFETY: on success the (4-byte aligned) `buf` begins with a MIB_TCPTABLE_OWNER_PID whose
+    // `table` is a flexible array of `dwNumEntries` rows within the same allocation.
+    let table = unsafe { &*(buf.as_ptr().cast::<MIB_TCPTABLE_OWNER_PID>()) };
     let n = table.dwNumEntries as usize;
     let rows = unsafe { std::slice::from_raw_parts(table.table.as_ptr(), n) };
     rows.iter()

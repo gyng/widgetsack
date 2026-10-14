@@ -66,6 +66,9 @@ pub struct AgendaEvent {
 #[derive(Default)]
 pub struct AgendaState {
     task: crate::integration_task::IntegrationTask,
+    /// The latest emitted batch (incl. `agenda.status`), to prime windows that mount between
+    /// polls (`prime_window`).
+    latest: crate::sample_cache::SampleCache,
 }
 
 fn now_ms() -> u64 {
@@ -459,8 +462,27 @@ fn normalize_url(url: &str) -> String {
 // ---- telemetry + demand gate ----
 
 fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &str) {
-    let batch = vec![SensorSample::text("agenda.status", now_ms(), status)];
-    let _ = app.emit(TELEMETRY_EVENT, &batch);
+    emit_batch(
+        app,
+        &[SensorSample::text("agenda.status", now_ms(), status)],
+    );
+}
+
+/// Emit `batch` app-wide and remember it, so a window that starts consuming these ids before the
+/// next poll is primed at once (`prime_window`) instead of staying blank for a whole interval.
+fn emit_batch<R: Runtime>(app: &AppHandle<R>, batch: &[SensorSample]) {
+    if let Some(state) = app.try_state::<AgendaState>() {
+        state.latest.remember(batch);
+    }
+    let _ = app.emit(TELEMETRY_EVENT, batch);
+}
+
+/// Send `window` the cached `agenda.*` samples among the ids it just started consuming (called from
+/// `set_active_sensors` with the ADDED ids only). A no-op when nothing is cached.
+pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[String]) {
+    if let Some(state) = window.app_handle().try_state::<AgendaState>() {
+        crate::sample_cache::prime_window(window, &state.latest, added);
+    }
 }
 
 fn agenda_wanted<R: Runtime>(app: &AppHandle<R>) -> bool {
@@ -491,6 +513,10 @@ async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, Strin
 }
 
 pub async fn run_agenda_client<R: Runtime>(app: AppHandle<R>, cfg: AgendaConfig) {
+    // A new worker (or a new config) starts without the previous one's values.
+    if let Some(state) = app.try_state::<AgendaState>() {
+        state.latest.clear();
+    }
     let client = match http_client() {
         Ok(c) => c,
         Err(err) => {
@@ -525,7 +551,7 @@ pub async fn run_agenda_client<R: Runtime>(app: AppHandle<R>, cfg: AgendaConfig)
                         && matches!(&sample.value, SensorValue::Text(status) if status == "error")
                 });
                 fails = if invalid { (fails + 1).min(5) } else { 0 };
-                let _ = app.emit(TELEMETRY_EVENT, &batch);
+                emit_batch(&app, &batch);
             }
             Err(err) => {
                 eprintln!("agenda: fetch {err}");
@@ -635,6 +661,7 @@ pub async fn agenda_connect<R: Runtime>(
 #[tauri::command]
 pub async fn agenda_disconnect(state: State<'_, AgendaState>) -> Result<(), String> {
     state.task.stop().await;
+    state.latest.clear();
     Ok(())
 }
 

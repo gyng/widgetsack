@@ -64,6 +64,12 @@ pub struct StocksStatus {
 #[derive(Default)]
 pub struct StocksState {
     task: crate::integration_task::IntegrationTask,
+    /// The latest emitted batch (incl. `stocks.status`), to prime windows that mount between
+    /// polls (`prime_window`).
+    latest: crate::sample_cache::SampleCache,
+    /// Cuts the poll sleep short when a window starts demanding a symbol the last fetch didn't
+    /// cover (a freshly placed Ticker), so it isn't blank for a whole interval.
+    wake: tokio::sync::Notify,
 }
 
 fn now_ms() -> u64 {
@@ -237,8 +243,42 @@ fn merge_symbols(configured: &[String], active: &[String]) -> Vec<String> {
 /// Surface the feed state to widgets as a `stocks.status` text sample (a Text meter / the settings
 /// badge bind it) — mirrors mqtt.rs / ha.rs's single-status-transport design.
 fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &str) {
-    let batch = vec![SensorSample::text("stocks.status", now_ms(), status)];
-    let _ = app.emit(TELEMETRY_EVENT, &batch);
+    emit_batch(
+        app,
+        &[SensorSample::text("stocks.status", now_ms(), status)],
+    );
+}
+
+/// Emit `batch` app-wide and remember it, so a window that starts consuming these ids before the
+/// next poll is primed at once (`prime_window`) instead of staying blank for a whole interval.
+fn emit_batch<R: Runtime>(app: &AppHandle<R>, batch: &[SensorSample]) {
+    if let Some(state) = app.try_state::<StocksState>() {
+        state.latest.remember(batch);
+    }
+    let _ = app.emit(TELEMETRY_EVENT, batch);
+}
+
+/// Send `window` the cached `stocks.*` samples among the ids it just started consuming (called from
+/// `set_active_sensors` with the ADDED ids only). A no-op when nothing is cached.
+/// Also wakes the poll loop when a newly demanded symbol has nothing cached yet.
+pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[String]) {
+    if let Some(state) = window.app_handle().try_state::<StocksState>() {
+        crate::sample_cache::prime_window(window, &state.latest, added);
+        if has_uncached_symbol(added, |sym| {
+            let prefix = format!("stocks.{sym}.");
+            state.latest.any(|id| id.starts_with(&prefix))
+        }) {
+            state.wake.notify_one();
+        }
+    }
+}
+
+/// Whether `added` demands a symbol (`stocks.<SYM>.<field>`) for which `cached(SYM)` is false — i.e.
+/// the last fetch didn't cover it and the poll loop should run now. Pure.
+fn has_uncached_symbol(added: &[String], cached: impl Fn(&str) -> bool) -> bool {
+    symbols_from_active(added.iter().map(String::as_str))
+        .iter()
+        .any(|sym| !cached(sym))
 }
 
 /// True while any window is consuming a `stocks.*` sensor (a ticker is mounted). Lets the poll loop
@@ -302,6 +342,10 @@ async fn fetch_chart(client: &reqwest::Client, symbol: &str) -> Result<Value, St
 /// tick. Demand-gated: when nothing is mounted it idles (no network). Runs until aborted by
 /// `stocks_disconnect`.
 pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig) {
+    // A new worker (or a new config) starts without the previous one's values.
+    if let Some(state) = app.try_state::<StocksState>() {
+        state.latest.clear();
+    }
     let client = match http_client() {
         Ok(c) => c,
         Err(err) => {
@@ -334,6 +378,7 @@ pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig)
     // exponential backoff on consecutive fetch failures so a rate-limited / down provider isn't
     // hammered every interval.
     let timings = app.state::<crate::timings::SubsystemTimings>();
+    let stocks = app.state::<StocksState>();
     let mut idle = true;
     let mut fails: u32 = 0;
     loop {
@@ -367,7 +412,7 @@ pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig)
                     let _t = timings.start("plugin.stocks");
                     let batch = quote_to_samples(symbol, &json, now_ms());
                     if !batch.is_empty() {
-                        let _ = app.emit(TELEMETRY_EVENT, &batch);
+                        emit_batch(&app, &batch);
                     }
                 }
                 Err(err) => eprintln!("stocks: fetch {err}"),
@@ -384,7 +429,12 @@ pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig)
                 .saturating_mul(1u32 << fails.min(4))
                 .min(Duration::from_secs(1800))
         };
-        tokio::time::sleep(wait).await;
+        // A newly demanded, never-fetched symbol ends the wait early — but never during a failure
+        // backoff, so a rate-limited provider isn't hammered by widgets (re)mounting.
+        tokio::select! {
+            _ = tokio::time::sleep(wait) => {}
+            _ = stocks.wake.notified(), if fails == 0 => {}
+        }
     }
 }
 
@@ -479,6 +529,7 @@ pub async fn stocks_connect<R: Runtime>(
 #[tauri::command]
 pub async fn stocks_disconnect(state: State<'_, StocksState>) -> Result<(), String> {
     state.task.stop().await;
+    state.latest.clear();
     Ok(())
 }
 
@@ -486,6 +537,21 @@ pub async fn stocks_disconnect(state: State<'_, StocksState>) -> Result<(), Stri
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn only_an_uncached_demanded_symbol_wakes_the_poll() {
+        let cached = |sym: &str| sym == "AAPL";
+        assert!(!has_uncached_symbol(&["stocks.AAPL.price".into()], cached));
+        assert!(has_uncached_symbol(
+            &["stocks.AAPL.price".into(), "stocks.msft.series".into()],
+            cached
+        ));
+        // Status / the wildcard / other sources name no symbol.
+        assert!(!has_uncached_symbol(
+            &["stocks.status".into(), "*".into(), "cpu.total".into()],
+            cached
+        ));
+    }
 
     #[test]
     fn url_encodes_caret_and_uppercases() {

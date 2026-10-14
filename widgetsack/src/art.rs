@@ -186,7 +186,7 @@ pub fn serve_art<R: Runtime>(
     request: Request<Vec<u8>>,
 ) -> Response<Cow<'static, [u8]>> {
     let state = ctx.app_handle().state::<ArtState>();
-    let reg = state.0.lock().unwrap();
+    let reg = state.0.lock().unwrap_or_else(|e| e.into_inner());
     build_response(lookup(&reg, request.uri().path()).map(|a| a.as_ref()))
 }
 
@@ -194,7 +194,11 @@ pub fn serve_art<R: Runtime>(
 /// the media-update record is the only kind carrying a cover (model/timeline updates strip it).
 pub fn note_record(state: &ArtState, record: &SessionRecord) {
     if let Some(SessionUpdateEventWrapper::Media(_, Some(art))) = &record.last_media_update {
-        state.0.lock().unwrap().insert(art.hash, art.clone());
+        state
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(art.hash, art.clone());
     }
 }
 

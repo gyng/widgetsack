@@ -131,6 +131,26 @@ fn is_denied_service(domain: &str, service: &str) -> bool {
     }
 }
 
+/// PURE SEAM: why a `/ha` call for `domain.service` must be refused, as `(status, body)`, or `None`
+/// when it may proceed. Both parts must be plain HA slugs FIRST — they are formatted raw into the
+/// service URL, so `unlock?x`, `alarm_disarm#` or `unl%6Fck` would reach HA as a denied service the
+/// denylist never saw — then the physical-security denylist applies.
+fn ha_target_rejection(domain: &str, service: &str) -> Option<(&'static str, Value)> {
+    if !crate::ha::valid_service_slug(domain) || !crate::ha::valid_service_slug(service) {
+        return Some((
+            "400 Bad Request",
+            json!({ "error": "domain/service must be lowercase [a-z0-9_] slugs" }),
+        ));
+    }
+    if is_denied_service(domain, service) {
+        return Some((
+            "403 Forbidden",
+            json!({ "error": format!("{domain}.{service} is not allowed via agent control") }),
+        ));
+    }
+    None
+}
+
 /// Whether the content type is JSON (forces a CORS preflight a drive-by page can't satisfy).
 pub(crate) fn is_json(headers: &HashMap<String, String>) -> bool {
     headers
@@ -170,8 +190,10 @@ fn now_playing_from_records(records: &[Value]) -> Vec<Value> {
 
 // ---- config file ----
 
+/// Under the config root (like `mcp/server.json`), so a `--multi` dev instance never overwrites or
+/// deletes the installed release's descriptor.
 fn control_path<R: Runtime>(app: &AppHandle<R>) -> Option<std::path::PathBuf> {
-    let dir = app.path().app_config_dir().ok()?;
+    let dir = crate::file_io::config_root(app).ok()?;
     Some(dir.join("mcp").join("control.json"))
 }
 
@@ -341,17 +363,13 @@ async fn handle_conn<R: Runtime>(app: AppHandle<R>, token: String, mut stream: T
                 .await;
                 return;
             }
-            if is_denied_service(&domain, &service) {
-                log::warn("control", "refused a denylisted HA service call")
+            if let Some((status, body)) = ha_target_rejection(&domain, &service) {
+                log::warn("control", "refused an HA service call")
+                    .field("status", status)
                     .field("domain", &domain)
                     .field("service", &service)
                     .emit();
-                write_resp(
-                    &mut stream,
-                    "403 Forbidden",
-                    &json!({ "error": format!("{domain}.{service} is not allowed via agent control") }),
-                )
-                .await;
+                write_resp(&mut stream, status, &body).await;
                 return;
             }
             let data = v.get("data").cloned().unwrap_or_else(|| json!({}));
@@ -535,6 +553,28 @@ mod tests {
         assert!(!is_denied_service("alarm_control_panel", "alarm_trigger"));
         assert!(!is_denied_service("media_player", "media_play"));
         assert!(!is_denied_service("", ""));
+    }
+
+    #[test]
+    fn ha_target_check_rejects_denylist_bypasses_before_the_denylist() {
+        // Encoded / suffixed variants of denied services would reach HA as `lock/unlock` etc. once
+        // the URL is parsed (`?x` and `#` are cut off, `%6F` decodes) — they must never get through.
+        for (domain, service) in [
+            ("lock", "unlock?x"),
+            ("alarm_control_panel", "alarm_disarm#"),
+            ("lock", "unl%6Fck"),
+            ("lock", "unlock/"),
+            ("lo%63k", "unlock"),
+            ("", "turn_on"),
+            ("light", ""),
+        ] {
+            let (status, _) = ha_target_rejection(domain, service).expect(service);
+            assert_eq!(status, "400 Bad Request", "{domain}.{service}");
+        }
+        let (status, _) = ha_target_rejection("lock", "unlock").unwrap();
+        assert_eq!(status, "403 Forbidden");
+        assert!(ha_target_rejection("light", "turn_on").is_none());
+        assert!(ha_target_rejection("lock", "lock").is_none());
     }
 
     #[test]

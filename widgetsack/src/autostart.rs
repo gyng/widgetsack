@@ -163,7 +163,7 @@ pub fn reconcile(app: &tauri::AppHandle) {
 }
 
 /// Whether the app is currently registered to launch at login (the live OS state).
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
     use tauri_plugin_autostart::ManagerExt;
     app.autolaunch().is_enabled().map_err(|e| e.to_string())
@@ -171,7 +171,7 @@ pub fn get_autostart_enabled(app: tauri::AppHandle) -> Result<bool, String> {
 
 /// Enable/disable launch at login: persist the durable preference (so it survives installs) AND
 /// update the OS registration. Returns the re-read OS state.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_autostart_enabled(app: tauri::AppHandle, enabled: bool) -> Result<bool, String> {
     use tauri_plugin_autostart::ManagerExt;
     write_pref(enabled)?;

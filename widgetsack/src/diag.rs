@@ -40,7 +40,7 @@ pub fn log_file_path(app: AppHandle) -> Result<String, String> {
 
 /// Open the log folder in Explorer (creating it first, so a fresh install still has somewhere to
 /// land). Best-effort: spawn failure is returned as the error string.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn reveal_log_dir(app: AppHandle) -> Result<(), String> {
     let dir = dir_to_reveal(&resolve_log_file(&app)?);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -56,7 +56,7 @@ pub fn reveal_log_dir(app: AppHandle) -> Result<(), String> {
 /// a fresh install still has somewhere to land. Same best-effort shape as `reveal_log_dir`.
 /// Register alongside it in `main.rs` (`diag::reveal_sacks_dir`); the studio's Sacks section calls
 /// `invoke("reveal_sacks_dir")` from its "Open sacks folder" button.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn reveal_sacks_dir(app: AppHandle) -> Result<(), String> {
     let dir = crate::file_io::config_root(&app)?.join("sacks");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;

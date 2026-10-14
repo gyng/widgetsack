@@ -827,11 +827,15 @@ pub async fn set_active_sensors<R: Runtime>(
         state.1.store(true, Ordering::Release);
         newly_added(previous.as_ref(), &ids)
     };
-    // Demand-gated peer sources only stream what some window wants; a window that just started
-    // wanting an HA entity or MQTT topic is primed from the cached latest state so it isn't blank
-    // until that value next changes.
+    // Demand-gated peer sources only stream what some window wants, and the pollers emit once per
+    // fetch; a window that just started wanting an HA entity, MQTT topic or polled value is primed
+    // from the cached latest state so it isn't blank until that value next changes / is next polled.
     crate::ha::prime_window(&window, &added);
     crate::mqtt::prime_window(&window, &added);
+    crate::weather::prime_window(&window, &added);
+    crate::rss::prime_window(&window, &added);
+    crate::agenda::prime_window(&window, &added);
+    crate::stocks::prime_window(&window, &added);
     Ok(())
 }
 

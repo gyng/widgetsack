@@ -62,6 +62,9 @@ pub struct WeatherStatus {
 #[derive(Default)]
 pub struct WeatherState {
     task: crate::integration_task::IntegrationTask,
+    /// The latest emitted batch (incl. `weather.status`), to prime windows that mount between
+    /// polls (`prime_window`).
+    latest: crate::sample_cache::SampleCache,
 }
 
 fn now_ms() -> u64 {
@@ -207,8 +210,27 @@ fn unit_letter(unit: &str) -> &'static str {
 // ---- telemetry emission + demand gate ----
 
 fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &str) {
-    let batch = vec![SensorSample::text("weather.status", now_ms(), status)];
-    let _ = app.emit(TELEMETRY_EVENT, &batch);
+    emit_batch(
+        app,
+        &[SensorSample::text("weather.status", now_ms(), status)],
+    );
+}
+
+/// Emit `batch` app-wide and remember it, so a window that starts consuming these ids before the
+/// next poll is primed at once (`prime_window`) instead of staying blank for a whole interval.
+fn emit_batch<R: Runtime>(app: &AppHandle<R>, batch: &[SensorSample]) {
+    if let Some(state) = app.try_state::<WeatherState>() {
+        state.latest.remember(batch);
+    }
+    let _ = app.emit(TELEMETRY_EVENT, batch);
+}
+
+/// Send `window` the cached `weather.*` samples among the ids it just started consuming (called from
+/// `set_active_sensors` with the ADDED ids only). A no-op when nothing is cached.
+pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[String]) {
+    if let Some(state) = window.app_handle().try_state::<WeatherState>() {
+        crate::sample_cache::prime_window(window, &state.latest, added);
+    }
 }
 
 /// True while any window is consuming a `weather.*` sensor (a Weather widget is mounted). Default OFF
@@ -247,6 +269,10 @@ async fn fetch_forecast(client: &reqwest::Client, url: &str) -> Result<Value, St
 /// (no network) while no Weather widget is mounted, and skips when no location is set. Backs off on
 /// consecutive failures. Runs until aborted by `weather_disconnect`.
 pub async fn run_weather_client<R: Runtime>(app: AppHandle<R>, cfg: WeatherConfig) {
+    // A new worker (or a new config) starts without the previous one's values.
+    if let Some(state) = app.try_state::<WeatherState>() {
+        state.latest.clear();
+    }
     let client = match http_client() {
         Ok(c) => c,
         Err(err) => {
@@ -281,7 +307,7 @@ pub async fn run_weather_client<R: Runtime>(app: AppHandle<R>, cfg: WeatherConfi
                     let _t = timings.start("plugin.weather");
                     let batch = weather_to_samples(&json, letter, now_ms());
                     if !batch.is_empty() {
-                        let _ = app.emit(TELEMETRY_EVENT, &batch);
+                        emit_batch(&app, &batch);
                     }
                 }
                 emit_status(&app, "connected");
@@ -292,7 +318,7 @@ pub async fn run_weather_client<R: Runtime>(app: AppHandle<R>, cfg: WeatherConfi
                     let _t = timings.start("plugin.weather");
                     let batch = air_to_samples(&air, now_ms());
                     if !batch.is_empty() {
-                        let _ = app.emit(TELEMETRY_EVENT, &batch);
+                        emit_batch(&app, &batch);
                     }
                 }
             }
@@ -408,6 +434,7 @@ pub async fn weather_connect<R: Runtime>(
 #[tauri::command]
 pub async fn weather_disconnect(state: State<'_, WeatherState>) -> Result<(), String> {
     state.task.stop().await;
+    state.latest.clear();
     Ok(())
 }
 

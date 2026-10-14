@@ -131,9 +131,41 @@ pub struct HaState {
     /// secondary overlay, a reload) is primed from here — otherwise its tiles never learn the
     /// connection state.
     status: std::sync::Mutex<Option<String>>,
+    /// HA rejected the saved token (WS `auth_invalid` or a REST 401). Every further attempt with it
+    /// is another failed login for HA's `ip_ban_enabled` counter, so while set a window's
+    /// ensure-connect leaves the worker stopped and the REST commands refuse locally. Cleared only by
+    /// a new config (`save_ha_config`) or an explicit studio restart.
+    auth_failed: std::sync::atomic::AtomicBool,
 }
 
 impl HaState {
+    fn mark_auth_failed(&self) {
+        self.auth_failed.store(true, Ordering::SeqCst);
+    }
+
+    fn clear_auth_failed(&self) {
+        self.auth_failed.store(false, Ordering::SeqCst);
+    }
+
+    fn is_auth_failed(&self) -> bool {
+        self.auth_failed.load(Ordering::SeqCst)
+    }
+
+    /// Whether `ha_connect` may (re)start the worker: an explicit restart always may; an ensure from a
+    /// window mount may not retry a token HA already rejected.
+    fn may_start(&self, restart: bool) -> bool {
+        restart || !self.is_auth_failed()
+    }
+
+    /// `Err` while the saved token is known to be rejected, so a REST command never sends it again.
+    fn rest_allowed(&self) -> Result<(), String> {
+        if self.is_auth_failed() {
+            Err("HA rejected the access token — update it in the Home Assistant settings".into())
+        } else {
+            Ok(())
+        }
+    }
+
     fn remember(&self, entity_id: &str, state: &Value) {
         let mut latest = self.latest.lock().unwrap_or_else(|e| e.into_inner());
         if state.is_null() {
@@ -239,7 +271,8 @@ pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[Strin
         batch
     };
     if !batch.is_empty() {
-        let _ = window.emit(TELEMETRY_EVENT, &batch);
+        // `emit_to` this window's label: a plain `emit` broadcasts to every window.
+        let _ = window.emit_to(window.label(), TELEMETRY_EVENT, &batch);
     }
 }
 
@@ -499,6 +532,16 @@ fn valid_entity_id(id: &str) -> bool {
             .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
+/// An HA service domain or service name: a non-empty `^[a-z0-9_]+$` slug. Both parts are formatted
+/// raw into `/api/services/<domain>/<service>`, so anything else (`?`, `#`, `%xx`, `/`, `.`) could
+/// make HA run a different service than the caller checked (`unlock?x` → `unlock`) — the agent-control
+/// denylist relies on this. Pure.
+pub(crate) fn valid_service_slug(s: &str) -> bool {
+    !s.is_empty()
+        && s.bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+}
+
 /// A safe HA `entity_picture` path to fetch: host-absolute (`/api/...`), no scheme/host (`//`), no
 /// traversal (`..`) or whitespace. The path is appended raw to the REST base, so this guards it.
 fn valid_art_path(path: &str) -> bool {
@@ -587,6 +630,31 @@ fn auth_outcome(v: &Value) -> Option<Result<HaTestResult, String>> {
             Some(Err(format!("auth_invalid: {m}")))
         }
         _ => None,
+    }
+}
+
+/// The token a BLANK incoming token stands for: the saved one, but only when the request targets the
+/// saved server (same REST base) and does not newly switch off certificate checks — mirroring
+/// `llm::key_fallback_allowed`, so editing the URL can't ship the old server's token to a new host.
+/// `Ok("")` when nothing is saved. Pure.
+fn token_fallback(
+    saved: Option<&HaConfig>,
+    url: &str,
+    base_path: &str,
+    insecure: bool,
+) -> Result<String, String> {
+    let Some(saved) = saved.filter(|c| !c.token.is_empty()) else {
+        return Ok(String::new());
+    };
+    let same_server = rest_base(&saved.url, &saved.base_path) == rest_base(url, base_path);
+    let newly_insecure = insecure && !saved.insecure;
+    if same_server && !newly_insecure {
+        Ok(saved.token.clone())
+    } else {
+        Err(
+            "enter the access token again to use a different server or an insecure connection"
+                .into(),
+        )
     }
 }
 
@@ -934,6 +1002,33 @@ async fn connect_and_stream<R: Runtime>(
     Ok(())
 }
 
+/// A REST status that means HA rejected the token (HA answers a bad/expired token with 401). Pure.
+fn is_rest_auth_rejection(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::UNAUTHORIZED
+}
+
+/// Record that HA rejected the saved token: stop further attempts (`HaState::auth_failed`) and tell
+/// every window, so the tiles show the auth failure instead of a generic error.
+fn note_auth_rejected<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(state) = app.try_state::<HaState>() {
+        state.mark_auth_failed();
+    }
+    emit_status(app, "auth_failed");
+}
+
+/// Inspect a failed REST response's status; a 401 latches the auth failure.
+fn note_rest_failure<R: Runtime>(app: &AppHandle<R>, status: reqwest::StatusCode) {
+    if is_rest_auth_rejection(status) {
+        note_auth_rejected(app);
+    }
+}
+
+/// The REST guard for commands holding an `AppHandle` (see `HaState::rest_allowed`).
+fn rest_allowed<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+    app.try_state::<HaState>()
+        .map_or(Ok(()), |state| state.rest_allowed())
+}
+
 /// PURE SEAM: a rejected token is fatal. Retrying it on the backoff schedule records a failed login
 /// with HA every ~30s, which HA's `ip_ban_enabled` can turn into a permanent ban of this PC's IP.
 fn is_auth_rejection(error: &str) -> bool {
@@ -944,7 +1039,7 @@ fn is_auth_rejection(error: &str) -> bool {
 /// jitter; the backoff is reset to 1s only after a session that stayed up long enough to be
 /// considered healthy (so an auth-then-immediate-close flap can't pin a 1s hammer loop).
 /// Runs until the task is aborted by `ha_disconnect`, or until HA rejects the token
-/// (`auth_failed`); a saved config or a window's ensure-connect starts it again.
+/// (`auth_failed`, latched in `HaState`); only a saved config or a studio restart starts it again.
 pub async fn run_ha_client<R: Runtime>(app: AppHandle<R>, cfg: HaConfig) {
     if let Some(state) = app.try_state::<HaState>() {
         state.forget_all();
@@ -954,6 +1049,15 @@ pub async fn run_ha_client<R: Runtime>(app: AppHandle<R>, cfg: HaConfig) {
     const STABLE: Duration = Duration::from_secs(30);
     const CAP: Duration = Duration::from_secs(30);
     loop {
+        // A REST 401 latched while this worker was streaming: reconnecting would replay the
+        // rejected token, so stop here (keeping the auth failure as the status).
+        if app
+            .try_state::<HaState>()
+            .is_some_and(|s| s.is_auth_failed())
+        {
+            emit_status(&app, "auth_failed");
+            return;
+        }
         emit_status(&app, "connecting");
         let started = Instant::now();
         match connect_and_stream(&app, &ws_url, &cfg.token, cfg.insecure).await {
@@ -962,7 +1066,7 @@ pub async fn run_ha_client<R: Runtime>(app: AppHandle<R>, cfg: HaConfig) {
                 let rejected = is_auth_rejection(&err.to_string());
                 log::warn("ha", "client error").field("error", err).emit();
                 if rejected {
-                    emit_status(&app, "auth_failed");
+                    note_auth_rejected(&app);
                     return;
                 }
                 emit_status(&app, "error");
@@ -997,21 +1101,29 @@ pub async fn save_ha_config(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
+    let insecure = insecure.unwrap_or(false);
+    let base_path = base_path.unwrap_or_default();
     // A blank token means "keep the existing one" — the UI never reads the token back (it is
-    // write-only), so editing just the URL/insecure must not silently wipe a saved token.
+    // write-only), so editing just the insecure flag must not silently wipe a saved token. Only for
+    // the SAME server, though: a changed URL must not inherit the old server's credential.
     let token = if token.is_empty() {
-        load_ha_config(&app)?.map(|c| c.token).unwrap_or_default()
+        token_fallback(load_ha_config(&app)?.as_ref(), &url, &base_path, insecure)?
     } else {
         token
     };
     let cfg = HaConfig {
         url,
         token,
-        insecure: insecure.unwrap_or(false),
-        base_path: base_path.unwrap_or_default(),
+        insecure,
+        base_path,
     };
     let txt = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
-    crate::secure_config::write(&path, &txt)
+    crate::secure_config::write(&path, &txt)?;
+    // A new config is a new chance for the token: lift the rejected-token latch.
+    if let Some(state) = app.try_state::<HaState>() {
+        state.clear_auth_failed();
+    }
+    Ok(())
 }
 
 /// Validate an UNSAVED url/token/insecure combination by running the WS auth handshake, so the
@@ -1030,18 +1142,20 @@ pub async fn ha_test_connection(
     if window.label() != "studio" {
         return Err("ha_test_connection is only allowed from the studio window".into());
     }
-    // Blank token = "test with the already-saved token" (the UI can't hold it — write-only), so
-    // the user can validate a changed URL/insecure against their existing credential.
+    let insecure = insecure.unwrap_or(false);
+    let base_path = base_path.unwrap_or_default();
+    // Blank token = "test with the already-saved token" (the UI can't hold it — write-only) — but
+    // only against the saved server: a changed URL must not be sent the old server's credential.
     let token = if token.is_empty() {
-        load_ha_config(&app)?.map(|c| c.token).unwrap_or_default()
+        token_fallback(load_ha_config(&app)?.as_ref(), &url, &base_path, insecure)?
     } else {
         token
     };
     if token.is_empty() {
         return Err("no access token — enter one to test".into());
     }
-    let ws_url = ws_url_from(&url, &base_path.unwrap_or_default());
-    let mut ws = connect_ws(&ws_url, insecure.unwrap_or(false))
+    let ws_url = ws_url_from(&url, &base_path);
+    let mut ws = connect_ws(&ws_url, insecure)
         .await
         .map_err(|e| format!("could not connect: {e}"))?;
     expect_type(&mut ws, "auth_required")
@@ -1051,15 +1165,30 @@ pub async fn ha_test_connection(
     ws.send(Message::Text(auth))
         .await
         .map_err(|e| e.to_string())?;
-    while let Some(msg) = ws.next().await {
-        if let Message::Text(txt) = msg.map_err(|e| e.to_string())? {
-            let v: Value = serde_json::from_str(&txt).map_err(|e| e.to_string())?;
-            if let Some(outcome) = auth_outcome(&v) {
-                return outcome; // `ws` is dropped here, closing the throwaway socket.
+    // `ws` is dropped on return, closing the throwaway socket.
+    await_auth_outcome(&mut ws, WS_CONNECT_TIMEOUT).await
+}
+
+/// Read frames until the auth verdict (`auth_outcome`), bounded by `budget` — a server that accepts
+/// the socket but never answers the `auth` frame must not hang the settings test forever.
+async fn await_auth_outcome<S>(ws: &mut S, budget: Duration) -> Result<HaTestResult, String>
+where
+    S: Stream<Item = Result<Message, WsError>> + Unpin,
+{
+    let read = async {
+        while let Some(msg) = ws.next().await {
+            if let Message::Text(txt) = msg.map_err(|e| e.to_string())? {
+                let v: Value = serde_json::from_str(&txt).map_err(|e| e.to_string())?;
+                if let Some(outcome) = auth_outcome(&v) {
+                    return outcome;
+                }
             }
         }
-    }
-    Err("connection closed during authentication".into())
+        Err("connection closed during authentication".into())
+    };
+    tokio::time::timeout(budget, read)
+        .await
+        .map_err(|_| "timed out waiting for the authentication result".to_string())?
 }
 
 /// Whether HA is configured + its URL — NEVER the token.
@@ -1098,6 +1227,16 @@ pub async fn ha_connect<R: Runtime>(
     let restart = restart.unwrap_or(false);
     if restart && window.label() != "studio" {
         return Err("integration restart is only allowed from the studio window".into());
+    }
+    if !state.may_start(restart) {
+        // The saved token was rejected: a window mount must not replay it (each try is a failed
+        // login toward HA's IP ban). Re-announce the failure so this window's tiles show it.
+        emit_status(&app, "auth_failed");
+        return Ok(());
+    }
+    if restart {
+        // The user explicitly asked to try again (e.g. after fixing the token in HA).
+        state.clear_auth_failed();
     }
     state
         .task
@@ -1138,6 +1277,7 @@ pub async fn ha_disconnect<R: Runtime>(
 /// fetch, so it works regardless of the WS task's timing.
 #[tauri::command]
 pub async fn list_ha_entities<R: Runtime>(app: AppHandle<R>) -> Result<Vec<HaEntity>, String> {
+    rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let client = ha_http_client(cfg.insecure)?;
     let resp = client
@@ -1151,6 +1291,7 @@ pub async fn list_ha_entities<R: Runtime>(app: AppHandle<R>) -> Result<Vec<HaEnt
         .await
         .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
+        note_rest_failure(&app, resp.status());
         return Err(format!("GET /api/states failed: {}", resp.status()));
     }
     let states: Vec<Value> = crate::http_response::read_json(resp, JSON_BODY_LIMIT).await?;
@@ -1162,6 +1303,7 @@ pub async fn list_ha_entities<R: Runtime>(app: AppHandle<R>) -> Result<Vec<HaEnt
 /// rows carry no secrets. The frontend joins these with live states into the tree.
 #[tauri::command]
 pub async fn ha_registry_snapshot<R: Runtime>(app: AppHandle<R>) -> Result<HaRegistry, String> {
+    rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let ws_url = ws_url_from(&cfg.url, &cfg.base_path);
     let results = ws_request_many(
@@ -1175,7 +1317,13 @@ pub async fn ha_registry_snapshot<R: Runtime>(app: AppHandle<R>) -> Result<HaReg
         ],
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| {
+        let e = e.to_string();
+        if is_auth_rejection(&e) {
+            note_auth_rejected(&app);
+        }
+        e
+    })?;
     let as_rows = |v: &Value| v.as_array().cloned().unwrap_or_default();
     Ok(HaRegistry {
         areas: as_rows(&results[0]).iter().filter_map(area_from).collect(),
@@ -1191,8 +1339,9 @@ pub async fn ha_registry_snapshot<R: Runtime>(app: AppHandle<R>) -> Result<HaReg
 }
 
 /// Call an HA service (REST `POST /api/services/<domain>/<service>`). `data` is the body
-/// (e.g. `{ "entity_id": "light.kitchen" }`). Domain/service are validated to contain no
-/// path separators (`/`, `.`) to prevent path injection. Returns HA's changed-states array.
+/// (e.g. `{ "entity_id": "light.kitchen" }`). Domain/service must be plain HA slugs
+/// (`valid_service_slug`) so neither can inject path/query/fragment syntax. Returns HA's
+/// changed-states array.
 #[tauri::command]
 pub async fn ha_call_service<R: Runtime>(
     app: AppHandle<R>,
@@ -1200,10 +1349,10 @@ pub async fn ha_call_service<R: Runtime>(
     service: String,
     data: Value,
 ) -> Result<Value, String> {
-    let bad = |s: &str| s.is_empty() || s.contains('/') || s.contains('.');
-    if bad(&domain) || bad(&service) {
+    if !valid_service_slug(&domain) || !valid_service_slug(&service) {
         return Err("invalid domain/service".to_string());
     }
+    rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let client = ha_http_client(cfg.insecure)?;
     let resp = client
@@ -1220,6 +1369,7 @@ pub async fn ha_call_service<R: Runtime>(
         .await
         .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
+        note_rest_failure(&app, resp.status());
         return Err(format!("HA service call failed: {}", resp.status()));
     }
     crate::http_response::read_json(resp, JSON_BODY_LIMIT).await
@@ -1245,6 +1395,7 @@ pub async fn ha_history<R: Runtime>(
     if iso8601_to_ms(&start).is_none() || iso8601_to_ms(&end).is_none() {
         return Err("invalid time range".to_string());
     }
+    rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let client = ha_http_client(cfg.insecure)?;
     // parse_with_params percent-encodes the query (the ISO `end_time` carries ':' and '+').
@@ -1270,6 +1421,7 @@ pub async fn ha_history<R: Runtime>(
         .await
         .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
+        note_rest_failure(&app, resp.status());
         return Err(format!("GET /api/history failed: {}", resp.status()));
     }
     // HA returns an array-of-arrays (one inner array per filtered entity); we filtered to one.
@@ -1290,6 +1442,7 @@ pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result
     if !valid_art_path(&path) {
         return Err("invalid art path".to_string());
     }
+    rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let client = ha_http_client(cfg.insecure)?;
     let resp = client
@@ -1300,6 +1453,7 @@ pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result
         .await
         .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
+        note_rest_failure(&app, resp.status());
         return Err(format!("GET art failed: {}", resp.status()));
     }
     let content_type = resp
@@ -1330,7 +1484,7 @@ pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result
     app.state::<crate::art::ArtState>()
         .0
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .insert(hash, img);
     Ok(crate::art::art_url(hash))
 }
@@ -1823,6 +1977,135 @@ mod tests {
         assert_eq!(e.original_name.as_deref(), Some("Kitchen"));
         assert_eq!(e.platform.as_deref(), Some("hue"));
         assert!(entity_reg_from(&json!({ "name": "no id" })).is_none());
+    }
+
+    #[test]
+    fn service_slugs_reject_url_metacharacters_and_encodings() {
+        for ok in ["light", "turn_on", "alarm_arm_away", "scene_2"] {
+            assert!(valid_service_slug(ok), "{ok}");
+        }
+        // Each of these would reach HA as a DIFFERENT path than the denylist saw (query, fragment,
+        // percent-decoding, traversal) or is simply not an HA slug.
+        for bad in [
+            "",
+            "unlock?x",
+            "alarm_disarm#",
+            "unl%6Fck",
+            "lock/unlock",
+            "lock.unlock",
+            "..",
+            "Unlock",
+            "turn on",
+            "turn_on\n",
+        ] {
+            assert!(!valid_service_slug(bad), "{bad:?}");
+        }
+    }
+
+    #[test]
+    fn an_auth_rejection_blocks_ensure_connect_and_rest_until_cleared() {
+        let state = HaState::default();
+        // Fresh: a window's ensure-connect may start the worker and REST commands may run.
+        assert!(state.may_start(false));
+        assert!(state.rest_allowed().is_ok());
+
+        state.mark_auth_failed();
+        // A window mount (restart=false) must not retry the rejected token…
+        assert!(!state.may_start(false));
+        // …and REST commands short-circuit instead of sending another 401 to HA's ban counter.
+        let err = state.rest_allowed().unwrap_err();
+        assert!(err.contains("rejected"), "{err}");
+        // An explicit studio restart is the user asking to try again.
+        assert!(state.may_start(true));
+
+        state.clear_auth_failed();
+        assert!(state.may_start(false));
+        assert!(state.rest_allowed().is_ok());
+    }
+
+    #[test]
+    fn only_a_401_counts_as_a_rest_auth_rejection() {
+        assert!(is_rest_auth_rejection(reqwest::StatusCode::UNAUTHORIZED));
+        for other in [
+            reqwest::StatusCode::OK,
+            reqwest::StatusCode::FORBIDDEN,
+            reqwest::StatusCode::NOT_FOUND,
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        ] {
+            assert!(!is_rest_auth_rejection(other), "{other}");
+        }
+    }
+
+    #[test]
+    fn a_blank_token_reuses_the_saved_one_only_for_the_saved_server() {
+        let saved = HaConfig {
+            url: "http://ha.local:8123/".into(),
+            token: "secret".into(),
+            insecure: false,
+            base_path: String::new(),
+        };
+        // Same server (trailing slash / whitespace are not a different target) → saved token.
+        assert_eq!(
+            token_fallback(Some(&saved), " http://ha.local:8123", "", false).unwrap(),
+            "secret"
+        );
+        // A different host, scheme or base path must not receive the saved token.
+        for (url, base) in [
+            ("http://evil.example:8123", ""),
+            ("https://ha.local:8123", ""),
+            ("http://ha.local:8123", "/proxy"),
+        ] {
+            let err = token_fallback(Some(&saved), url, base, false).unwrap_err();
+            assert!(err.contains("token"), "{err}");
+        }
+        // Newly turning off certificate checks needs the token re-entered (like llm.rs)…
+        assert!(token_fallback(Some(&saved), "http://ha.local:8123", "", true).is_err());
+        // …but an already-insecure saved config keeps working.
+        let insecure_saved = HaConfig {
+            insecure: true,
+            ..saved.clone()
+        };
+        assert_eq!(
+            token_fallback(Some(&insecure_saved), "http://ha.local:8123", "", true).unwrap(),
+            "secret"
+        );
+        // Nothing saved (or no saved token) → nothing to fall back to, never an error.
+        assert_eq!(token_fallback(None, "http://x", "", false).unwrap(), "");
+        let tokenless = HaConfig {
+            token: String::new(),
+            ..saved
+        };
+        assert_eq!(
+            token_fallback(Some(&tokenless), "http://other", "", false).unwrap(),
+            ""
+        );
+    }
+
+    #[tokio::test]
+    async fn test_connection_auth_wait_is_bounded() {
+        let mut silent = futures_util::stream::pending::<Result<Message, WsError>>();
+        let err = await_auth_outcome(&mut silent, Duration::from_millis(20))
+            .await
+            .unwrap_err();
+        assert!(err.contains("timed out"), "{err}");
+
+        let mut ok = futures_util::stream::iter(vec![
+            Ok(Message::Text(json!({ "type": "noise" }).to_string())),
+            Ok(Message::Text(
+                json!({ "type": "auth_ok", "ha_version": "2026.10.0" }).to_string(),
+            )),
+        ]);
+        let res = await_auth_outcome(&mut ok, Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(res.ha_version.as_deref(), Some("2026.10.0"));
+
+        let mut ended = futures_util::stream::iter(Vec::<Result<Message, WsError>>::new());
+        assert!(
+            await_auth_outcome(&mut ended, Duration::from_secs(5))
+                .await
+                .is_err()
+        );
     }
 
     #[test]

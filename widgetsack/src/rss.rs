@@ -65,6 +65,9 @@ pub struct FeedItem {
 #[derive(Default)]
 pub struct RssState {
     task: crate::integration_task::IntegrationTask,
+    /// The latest emitted batch (incl. `rss.status`), to prime windows that mount between
+    /// polls (`prime_window`).
+    latest: crate::sample_cache::SampleCache,
 }
 
 fn now_ms() -> u64 {
@@ -187,8 +190,24 @@ fn has_feed(cfg: &RssConfig) -> bool {
 // ---- telemetry emission + demand gate ----
 
 fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &str) {
-    let batch = vec![SensorSample::text("rss.status", now_ms(), status)];
-    let _ = app.emit(TELEMETRY_EVENT, &batch);
+    emit_batch(app, &[SensorSample::text("rss.status", now_ms(), status)]);
+}
+
+/// Emit `batch` app-wide and remember it, so a window that starts consuming these ids before the
+/// next poll is primed at once (`prime_window`) instead of staying blank for a whole interval.
+fn emit_batch<R: Runtime>(app: &AppHandle<R>, batch: &[SensorSample]) {
+    if let Some(state) = app.try_state::<RssState>() {
+        state.latest.remember(batch);
+    }
+    let _ = app.emit(TELEMETRY_EVENT, batch);
+}
+
+/// Send `window` the cached `rss.*` samples among the ids it just started consuming (called from
+/// `set_active_sensors` with the ADDED ids only). A no-op when nothing is cached.
+pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[String]) {
+    if let Some(state) = window.app_handle().try_state::<RssState>() {
+        crate::sample_cache::prime_window(window, &state.latest, added);
+    }
 }
 
 /// True while any window is consuming an `rss.*` sensor (an RSS widget is mounted). Default OFF — an
@@ -258,6 +277,10 @@ async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, Strin
 /// Poll the configured feed on the interval, emitting `rss.*` telemetry. Demand-gated: idles (no
 /// network) while no RSS widget is mounted, and skips when no feed URL is set. Backs off on failures.
 pub async fn run_rss_client<R: Runtime>(app: AppHandle<R>, cfg: RssConfig) {
+    // A new worker (or a new config) starts without the previous one's values.
+    if let Some(state) = app.try_state::<RssState>() {
+        state.latest.clear();
+    }
     let client = match http_client() {
         Ok(c) => c,
         Err(err) => {
@@ -290,7 +313,7 @@ pub async fn run_rss_client<R: Runtime>(app: AppHandle<R>, cfg: RssConfig) {
                     // Time the CPU work (parse + emit) only — the fetch above is network wait.
                     let _t = timings.start("plugin.rss");
                     let items = parse_feed_items(&body, max);
-                    let _ = app.emit(TELEMETRY_EVENT, &feed_to_samples(&items, now_ms()));
+                    emit_batch(&app, &feed_to_samples(&items, now_ms()));
                 }
                 emit_status(&app, "connected");
                 fails = 0;
@@ -399,6 +422,7 @@ pub async fn rss_connect<R: Runtime>(
 #[tauri::command]
 pub async fn rss_disconnect(state: State<'_, RssState>) -> Result<(), String> {
     state.task.stop().await;
+    state.latest.clear();
     Ok(())
 }
 

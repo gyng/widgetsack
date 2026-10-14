@@ -89,7 +89,7 @@ fn save_prefs(app: &AppHandle, prefs: &AppPrefs) -> Result<(), String> {
 }
 
 /// Studio: the current preferences.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_app_prefs(app: AppHandle) -> AppPrefs {
     load_prefs(&app)
 }
@@ -250,7 +250,7 @@ pub fn open_release_page(app: &AppHandle) {
 
 /// Open a project release page in the default browser (ShellExecuteW). Refuses anything that isn't
 /// an https URL under github.com/gyng/widgetsack — the value comes from the network, not the user.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_url(url: String) -> Result<(), String> {
     open_url_impl(&url)
 }

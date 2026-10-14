@@ -49,6 +49,7 @@ pub mod ping;
 pub mod process_diag;
 pub mod recyclebin;
 pub mod rss;
+mod sample_cache;
 pub mod secure_config;
 pub mod sensors;
 pub mod service_health;

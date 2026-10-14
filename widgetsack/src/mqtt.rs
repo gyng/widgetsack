@@ -349,13 +349,31 @@ fn try_subscribe_many(client: &AsyncClient, topics: &[String]) -> bool {
 
 /// Surface the connection state to widgets as an `mqtt.status` text sample (a Text meter bound to
 /// `mqtt.status` shows it) — mirrors ha.rs's single-status-transport design.
+/// Remembered in `MqttState::latest` (like ha.rs's status) so a window that mounts later is primed
+/// with it — status is only emitted on transitions.
 fn emit_status<R: Runtime>(app: &AppHandle<R>, status: &str) {
-    let batch = vec![SensorSample {
-        sensor: "mqtt.status".to_string(),
-        ts_ms: now_ms(),
-        value: SensorValue::Text(status.to_string()),
-    }];
+    let batch = vec![status_sample(status, now_ms())];
+    if let Some(state) = app.try_state::<MqttState>() {
+        remember_status(
+            &mut state.latest.lock().unwrap_or_else(|e| e.into_inner()),
+            &batch[0],
+        );
+    }
     let _ = app.emit(TELEMETRY_EVENT, &batch);
+}
+
+fn status_sample(status: &str, ts_ms: u64) -> SensorSample {
+    SensorSample {
+        sensor: "mqtt.status".to_string(),
+        ts_ms,
+        value: SensorValue::Text(status.to_string()),
+    }
+}
+
+/// Cache the connection status. Unlike topic samples it is never subject to the catalog cap — a
+/// broker with thousands of topics must still prime the status. Pure.
+fn remember_status(cache: &mut HashMap<String, SensorSample>, sample: &SensorSample) {
+    cache.insert(sample.sensor.clone(), sample.clone());
 }
 
 // ---- connection task ----
@@ -526,8 +544,8 @@ pub async fn run_mqtt_client<R: Runtime>(
 
 // ---- Tauri commands ----
 
-/// Persist `plugins/mqtt.json` (creates `plugins/`). A blank `password` keeps the saved one
-/// (write-only over the bridge, like HA's token).
+/// Persist `plugins/mqtt.json` (creates `plugins/`). A blank `password` keeps the saved one for the
+/// same broker (write-only over the bridge, like HA's token; see `password_fallback`).
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn save_mqtt_config(
@@ -551,9 +569,7 @@ pub async fn save_mqtt_config(
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let password = if password.is_empty() {
-        load_mqtt_config(&app)?
-            .map(|c| c.password)
-            .unwrap_or_default()
+        password_fallback(load_mqtt_config(&app)?.as_ref(), &host, port, tls, insecure)?
     } else {
         password
     };
@@ -570,6 +586,31 @@ pub async fn save_mqtt_config(
     };
     let txt = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
     crate::secure_config::write(&path, &txt)
+}
+
+/// The password a BLANK incoming password stands for: the saved one, but only for the saved broker
+/// (same host + port) with no security downgrade (TLS dropped, or certificate checks newly
+/// skipped) — so editing the host can't ship the old broker's password to a new one (mirrors
+/// `llm::key_fallback_allowed`). `Ok("")` when nothing is saved. Pure.
+fn password_fallback(
+    saved: Option<&MqttConfig>,
+    host: &str,
+    port: u16,
+    tls: bool,
+    insecure: bool,
+) -> Result<String, String> {
+    let Some(saved) = saved.filter(|c| !c.password.is_empty()) else {
+        return Ok(String::new());
+    };
+    let same_broker = saved.host.trim().eq_ignore_ascii_case(host.trim()) && saved.port == port;
+    // `insecure` implies TLS (see `MqttConfig::insecure`).
+    let dropped_tls = (saved.tls || saved.insecure) && !(tls || insecure);
+    let downgraded = dropped_tls || (insecure && !saved.insecure);
+    if same_broker && !downgraded {
+        Ok(saved.password.clone())
+    } else {
+        Err("enter the password again to use a different broker or a less secure connection".into())
+    }
 }
 
 /// The non-secret config (everything except the password).
@@ -677,6 +718,20 @@ mod tests {
     }
 
     #[test]
+    fn status_is_cached_for_priming_even_past_the_topic_cap() {
+        let mut cache = HashMap::new();
+        remember_samples(&mut cache, &payload_to_samples("door", "open", 1), 1);
+        remember_status(&mut cache, &status_sample("connecting", 2));
+        remember_status(&mut cache, &status_sample("connected", 3));
+        let primed = primed_samples(&cache, &["mqtt.status".into()]);
+        assert_eq!(primed.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&primed[0]).unwrap()["value"]["value"],
+            "connected"
+        );
+    }
+
+    #[test]
     fn topic_id_keeps_slashes() {
         assert_eq!(topic_to_id("zigbee2mqtt/sensor"), "mqtt.zigbee2mqtt/sensor");
     }
@@ -780,6 +835,34 @@ mod tests {
         assert!(!cfg.tls);
         assert!(!cfg.discovery);
         assert!(cfg.topics.is_empty());
+    }
+
+    #[test]
+    fn a_blank_password_reuses_the_saved_one_only_for_the_saved_broker() {
+        let saved: MqttConfig = serde_json::from_str(
+            r#"{ "host": "Broker.lan", "port": 8883, "password": "pw", "tls": true }"#,
+        )
+        .unwrap();
+        // Same broker (host case / whitespace aside) and no security downgrade → saved password.
+        assert_eq!(
+            password_fallback(Some(&saved), " broker.lan ", 8883, true, false).unwrap(),
+            "pw"
+        );
+        // A different host or port, dropping TLS, or newly skipping cert checks needs it re-entered.
+        for (host, port, tls, insecure) in [
+            ("evil.example", 8883, true, false),
+            ("broker.lan", 1883, true, false),
+            ("broker.lan", 8883, false, false),
+            ("broker.lan", 8883, true, true),
+        ] {
+            let err = password_fallback(Some(&saved), host, port, tls, insecure).unwrap_err();
+            assert!(err.contains("password"), "{err}");
+        }
+        // Nothing saved → nothing to fall back to, never an error.
+        assert_eq!(
+            password_fallback(None, "x", 1883, false, false).unwrap(),
+            ""
+        );
     }
 
     #[test]
