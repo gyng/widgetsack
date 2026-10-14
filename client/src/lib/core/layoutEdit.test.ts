@@ -285,15 +285,22 @@ describe('ungroupNode', () => {
 	};
 	const lib: Library = { version: 1, defs: [def] };
 
-	it("replaces a def-backed group leaf with a clone of the def's child", () => {
+	it("replaces a def-backed group leaf with a fresh-id clone of the def's child", () => {
 		const root = container('root', 'col', [
 			leaf(group('g', { w: 1, h: 1 }, leaf(prim('fallback')), { def: 'd' })),
+			leaf(group('g2', { w: 1, h: 1 }, leaf(prim('fallback2')), { def: 'd' })),
 			leaf(prim('Z'))
 		]);
-		const r = ungroupNode(root, 'g', lib);
-		expect(r.children.map((c) => c.id)).toEqual(['inner', 'Z']);
-		expect(findNode(r, 'X')?.id).toBe('X');
+		const r = ungroupNode(ungroupNode(root, 'g', lib), 'g2', lib);
+		const [first, second, z] = r.children as Container[];
+		expect(z.id).toBe('Z');
+		expect([first.kind, first.children.length]).toEqual(['row', 2]);
 		expect(findNode(r, 'g')).toBeNull();
+		// Every instance shares the def's ids: ungrouping two must not create duplicates.
+		const ids = [first, second].flatMap((c) => [c.id, ...c.children.map((n) => n.id)]);
+		expect(new Set(ids).size).toBe(6);
+		expect(ids).not.toContain('inner');
+		expect(ids).not.toContain('X');
 		// def is untouched (clone), and the original tree is not mutated
 		expect((def.child as Container).children).toHaveLength(2);
 		expect(findNode(root, 'inner')).toBeNull();

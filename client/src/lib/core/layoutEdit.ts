@@ -16,6 +16,7 @@ import {
 	isLeaf
 } from './layoutTree';
 import { gridCellRects } from './solve';
+import { freshIds } from './templates';
 
 function clone<T>(node: T): T {
 	return JSON.parse(JSON.stringify(node)) as T;
@@ -218,7 +219,8 @@ export function ungroupNode(root: Container, groupId: string, library?: Library)
 	const def = g.def && library ? library.defs.find((d) => d.id === g.def) : undefined;
 	const baseChild = def ? def.child : g.child;
 	if (!baseChild) return removeNode(root, groupId);
-	return updateNode(root, groupId, () => clone(baseChild));
+	// A def's child is shared by every instance: its ids would repeat across ungrouped instances.
+	return updateNode(root, groupId, () => (def ? freshIds(clone(baseChild)) : clone(baseChild)));
 }
 
 /** Whether a node holds a widget (a leaf) anywhere in its subtree. */

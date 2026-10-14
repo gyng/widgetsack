@@ -717,6 +717,8 @@ export function ungroupSelected(s: EditorState, id: string): Patch {
 		const base = def ? def.child : g.child;
 		if (base && isLeaf(base) && !isGroup(base.unit)) {
 			const u = clone(base.unit) as WidgetInstance;
+			// A def's child is shared by every instance: its id would repeat across ungrouped instances.
+			if (def) u.id = `${u.type}-${rand()}`;
 			u.rect = { ...u.rect, x: cfgNum(g.config, 'x'), y: cfgNum(g.config, 'y') };
 			return {
 				monitor: {

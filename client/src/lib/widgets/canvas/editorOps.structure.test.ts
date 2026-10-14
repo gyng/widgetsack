@@ -299,11 +299,16 @@ describe('ungroupSelected', () => {
 		s.monitor.floating = [leaf(g), bystander];
 		const patch = ungroupSelected(s, 'grpF');
 		const u = patch.monitor!.floating[0].unit as ReturnType<typeof gauge>;
-		expect(u.id).toBe('def-inner'); // the def child wins over the inline child
+		// The def child wins over the inline child, under a fresh id: every instance shares the def's
+		// ids, so two ungrouped instances would otherwise collide.
+		expect(u.id).not.toBe('def-inner');
+		expect(u.id).not.toBe('inline-inner');
+		expect(u.type).toBe('gauge');
 		expect(u.rect.x).toBe(5);
 		expect(u.rect.y).toBe(6);
 		expect(patch.monitor!.floating[1]).toBe(bystander); // pass-through by reference
-		expect(patch.selectedId).toBe('def-inner');
+		expect(patch.selectedId).toBe(u.id);
+		expect(patch.monitor!.floating[0].id).toBe(u.id);
 	});
 
 	it('falls back to the inline child when the group names a def but no library is loaded', () => {
