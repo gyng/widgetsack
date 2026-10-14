@@ -288,8 +288,27 @@ export function useLayoutSession({
 		// The layout never loaded, so nothing here can be saved (commitSave refuses): don't trap the
 		// window open — the user was already told edits are not being saved.
 		if (!stateRef.current.savedBaseline) return true;
+		const hasDraft = dirtyRef.current || pendingExtrasRef.current.length > 0;
+		// "Layout changed on disk" is up: saving now would be an implicit Keep mine over the other
+		// writer's change. Ask — keep mine (save), discard (close, the file stays), or stay open.
+		let discard = false;
+		if (holdPreview.current && hasDraft) {
+			if (
+				!window.confirm(
+					'The layout changed on disk while you were editing.\n\n' +
+						'OK: keep your changes (they replace the change on disk).\n' +
+						'Cancel: choose whether to discard them.'
+				)
+			) {
+				if (!window.confirm('Discard your unsaved changes and close? The layout on disk is kept.'))
+					return false;
+				discard = true;
+			}
+		}
 		try {
-			if (dirtyRef.current || pendingExtrasRef.current.length > 0) {
+			if (discard) {
+				// Nothing to write: the file already holds the other writer's layout.
+			} else if (hasDraft) {
 				if (!(await commitSaveRef.current())) return false;
 			} else if (!(await flushPreviewWrite()) && !(await commitSaveRef.current())) {
 				return false;

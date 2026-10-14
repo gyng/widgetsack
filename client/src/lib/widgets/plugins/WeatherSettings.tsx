@@ -82,8 +82,10 @@ export default function WeatherSettings() {
 
 			<div className="rp-hd">Location</div>
 			<div className="has-help">
-				Weather uses <a href="https://open-meteo.com">Open-Meteo</a>. No API key is needed. Enter
-				the latitude and longitude of your location. Find these values on the Open-Meteo website.
+				{/* Plain text, not a link: an <a href> would navigate the studio webview itself (the
+				    navguard blocks it) and the backend open_url only opens project URLs. */}
+				Weather uses Open-Meteo (open-meteo.com). No API key is needed. Enter the latitude and
+				longitude of your location. Find these values on the Open-Meteo website.
 			</div>
 
 			<label className="has-field">

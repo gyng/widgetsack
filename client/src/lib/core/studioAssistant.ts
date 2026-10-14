@@ -171,7 +171,7 @@ export function applyStudioOps(
 					const config = sanitizeAssistantConfig(unit.type, op.config);
 					result.errors.push(...config.errors);
 					const next = { ...unit, config: { ...unit.config, ...config.config } };
-					const refusal = agentUnitRefusal(next);
+					const refusal = agentUnitRefusal(next, unit);
 					if (refusal) {
 						refused = true;
 						result.errors.push(refusal);

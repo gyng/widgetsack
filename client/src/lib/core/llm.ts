@@ -509,9 +509,16 @@ const AGENT_REFUSED = new Set<TreeThreatKind>([
 ]);
 
 /** Why an agent-added or agent-changed unit is refused (core/treeThreats rules), or null when it is
- * safe. Local images, unconfigured service checks and ordinary widgets pass. Pure. */
-export function agentUnitRefusal(unit: WidgetInstance): string | null {
-	const threats = scanTreeThreats(leaf(unit)).filter((t) => AGENT_REFUSED.has(t.kind));
+ * safe. Local images, unconfigured service checks and ordinary widgets pass. For a change, pass the
+ * unit as it was (`previous`): capabilities the USER already gave it (same kind + detail) stay, so a
+ * harmless key (title, fit) can still be edited — only a new or different one is refused. Pure. */
+export function agentUnitRefusal(unit: WidgetInstance, previous?: WidgetInstance): string | null {
+	const allowed = new Set(
+		previous ? scanTreeThreats(leaf(previous)).map((t) => `${t.kind}|${t.detail}`) : []
+	);
+	const threats = scanTreeThreats(leaf(unit)).filter(
+		(t) => AGENT_REFUSED.has(t.kind) && !allowed.has(`${t.kind}|${t.detail}`)
+	);
 	if (!threats.length) return null;
 	const detail = threats.map((t) => `${t.kind} (${t.detail})`).join(', ');
 	return `"${unit.id}": refused ${detail} — add it in the studio yourself`;
@@ -610,7 +617,7 @@ export function applyAssistantOps(
 				const safe = sanitizeAssistantConfig(unit.type, op.config);
 				errors.push(...safe.errors);
 				const next = { ...unit, config: { ...unit.config, ...safe.config } };
-				const refusal = agentUnitRefusal(next);
+				const refusal = agentUnitRefusal(next, unit);
 				if (refusal) {
 					errors.push(refusal);
 					break;

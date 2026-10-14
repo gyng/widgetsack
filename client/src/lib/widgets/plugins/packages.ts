@@ -139,6 +139,19 @@ const netConsentPackages = createPersistedStore<Record<string, string>>(
 	parseConsentMap
 );
 
+// Per-package install revision, bumped after every successful install/update. An update in place
+// leaves the allowlist and consent maps unchanged, so without this synced key other windows would
+// keep the old version's theme, templates and source until a restart.
+// Stored as decimal strings so the consent-map parser validates it.
+const packageRevisions = createPersistedStore<Record<string, string>>(
+	'widgetsack.packages.revision',
+	parseConsentMap
+);
+
+function bumpRevision(id: string): void {
+	packageRevisions.update((m) => ({ ...m, [id]: String((Number(m[id]) || 0) + 1) }));
+}
+
 /** The discovered package rows, for the Plugins panel (subscribe via useStore). */
 export const packagesStore = createStore<PackageRow[]>([]);
 
@@ -375,7 +388,8 @@ const SYNC_KEYS = new Set([
 	'widgetsack.packages.enabled',
 	'widgetsack.packages.cssTrusted',
 	'widgetsack.packages.templateConsent',
-	'widgetsack.packages.netConsent'
+	'widgetsack.packages.netConsent',
+	'widgetsack.packages.revision'
 ]);
 
 let syncQueued = false;
@@ -480,12 +494,14 @@ export type PackageOpResult = { ok: boolean; error?: string };
  * (the opt-in allowlist is untouched) — same trust gate as a hand-dropped folder.
  */
 async function installPackageNow(source: string): Promise<PackageOpResult> {
+	let installed: { id: string };
 	try {
-		await installPluginPackage(source);
+		installed = await installPluginPackage(source);
 	} catch (err) {
 		return { ok: false, error: String(err) };
 	}
 	await refreshPackagesNow();
+	bumpRevision(installed.id); // a reinstall over an enabled package must reach the overlays
 	return { ok: true };
 }
 
@@ -541,6 +557,7 @@ async function updatePackageNow(id: string): Promise<PackageOpResult> {
 		id,
 		nextThreats.length ? templateThreatFingerprint(nextThreats) : null
 	);
+	bumpRevision(id); // overlays re-scan and apply the new version
 	return { ok: true };
 }
 
@@ -606,6 +623,7 @@ export function resetPackagesForTest(): void {
 	trustedCssPackages.set({});
 	netConsentPackages.set({});
 	templateConsentPackages.set({});
+	packageRevisions.set({});
 	hubRef = null;
 	globalThis.removeEventListener?.('storage', onStorage);
 	syncQueued = false;

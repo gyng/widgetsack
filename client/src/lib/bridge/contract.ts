@@ -21,7 +21,6 @@ export const EVENTS = {
 	// tray / global-hotkey / single-instance broadcasts (main.rs; toggle_edit is also
 	// emitted by the client's Ctrl+E handler)
 	toggleEdit: 'toggle_edit',
-	openStudio: 'open_studio',
 	arrangeZones: 'arrange_zones',
 	// re-fit overlays to the current display layout (tray "Re-fit overlays" + auto on display change)
 	refitOverlays: 'refit_overlays',

@@ -713,4 +713,35 @@ describe('agent-added capability units', () => {
 		});
 		expect(res.monitor.floating[0]).toMatchObject({ unit: { config: { url: '' } } });
 	});
+
+	it('lets the agent change harmless keys on a user-placed capability unit, not add new threats', () => {
+		const placed: MonitorLayout = {
+			root: container('root', 'col', [
+				leaf({ ...createWidget('iframe', 'web'), config: { url: 'https://a.example' } }),
+				leaf({ ...createWidget('image', 'pic'), config: { src: 'https://cdn.example/p.png' } })
+			]),
+			floating: []
+		};
+		const res = applyAssistantOps(
+			placed,
+			[
+				{ op: 'setConfig', id: 'web', config: { scroll: true } },
+				{ op: 'setConfig', id: 'pic', config: { alt: 'sunset' } },
+				// A different page, or a capability the user never enabled, is still refused.
+				{ op: 'setConfig', id: 'web', config: { url: 'https://b.example' } },
+				{ op: 'setConfig', id: 'web', config: { interact: true } }
+			],
+			counter()
+		);
+		expect(res.applied).toBe(2);
+		expect(res.errors).toHaveLength(2);
+		expect(res.errors.join(' ')).toMatch(/iframe \(https:\/\/b\.example/);
+		expect(res.errors.join(' ')).toMatch(/iframe-interactive/);
+		expect(res.monitor.root.children[0]).toMatchObject({
+			unit: { config: { url: 'https://a.example', scroll: true } }
+		});
+		expect(res.monitor.root.children[1]).toMatchObject({
+			unit: { config: { src: 'https://cdn.example/p.png', alt: 'sunset' } }
+		});
+	});
 });

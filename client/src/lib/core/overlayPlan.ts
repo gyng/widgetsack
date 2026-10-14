@@ -6,6 +6,8 @@
 // monitor vanished (HDMI switched away — Windows relocated the orphan onto another screen) or became
 // the primary (`main` covers it; its overlay stacked on top). No Tauri, no DOM; tested directly.
 
+import { monitorHasWidgets, type MonitorLayout } from './layoutTree';
+
 /** A connected monitor as the plan sees it: its stable layout key and whether it is the primary. */
 export type PlanMonitor = { key: string; primary: boolean };
 
@@ -21,6 +23,9 @@ export type OverlayPlan = {
 export function planOverlays(input: {
 	monitors: readonly PlanMonitor[];
 	populated: ReadonlySet<string>;
+	/** Keys whose saved record could not be parsed: whether they hold widgets is unknown, so an
+	 * existing window for one is kept (never closed, never created). */
+	unknown?: ReadonlySet<string>;
 	existingLabels: readonly string[];
 }): OverlayPlan {
 	const wanted = new Set<string>();
@@ -33,7 +38,38 @@ export function planOverlays(input: {
 		if (!existing.has(label)) create.push(label.slice(OVERLAY_LABEL_PREFIX.length));
 	}
 	const close = input.existingLabels.filter(
-		(label) => label.startsWith(OVERLAY_LABEL_PREFIX) && !wanted.has(label)
+		(label) =>
+			label.startsWith(OVERLAY_LABEL_PREFIX) &&
+			!wanted.has(label) &&
+			!input.unknown?.has(label.slice(OVERLAY_LABEL_PREFIX.length))
 	);
 	return { create, close };
+}
+
+/** Which saved monitor keys hold widgets (`populated`), and which raw keys were present in the file
+ * but dropped by the parser (`unknown` — an unknown container kind after a downgrade, a hand edit).
+ * A dropped record must not freeze reconciliation for every other monitor, nor be read as empty. */
+export function monitorPresence(
+	rawKeys: readonly string[],
+	monitors: Readonly<Record<string, MonitorLayout>>
+): { populated: Set<string>; unknown: Set<string> } {
+	const populated = new Set<string>();
+	const unknown = new Set<string>();
+	for (const key of rawKeys) {
+		if (!Object.hasOwn(monitors, key)) unknown.add(key);
+		else if (monitorHasWidgets(monitors[key])) populated.add(key);
+	}
+	return { populated, unknown };
+}
+
+/** The monitor keys a key migration changed (renamed-away legacy keys and their new keys), so the
+ * rewrite can go through save_layout's per-monitor merge instead of replacing the whole document. */
+export function changedMonitorKeys(
+	before: Readonly<Record<string, unknown>>,
+	after: Readonly<Record<string, unknown>>
+): string[] {
+	const keys = new Set([...Object.keys(before), ...Object.keys(after)]);
+	return [...keys].filter(
+		(k) => Object.hasOwn(before, k) !== Object.hasOwn(after, k) || before[k] !== after[k]
+	);
 }

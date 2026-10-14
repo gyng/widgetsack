@@ -306,4 +306,39 @@ describe('layout changed on disk', () => {
 		});
 		expect(saves()).toBe(1);
 	});
+
+	it.each([
+		{ answers: [true], saves: 1, closes: true },
+		{ answers: [false, true], saves: 0, closes: true },
+		{ answers: [false, false], saves: 0, closes: false }
+	])(
+		'asks before a close overwrites the external change (answers $answers)',
+		async ({ answers, saves, closes }) => {
+			invoke.mockImplementation(async (command: string) =>
+				command === 'load_layout' ? document('a', 'saved') : undefined
+			);
+			const confirm = vi.spyOn(window, 'confirm');
+			for (const answer of answers) confirm.mockReturnValueOnce(answer);
+			const { result } = renderHook(() => useSession('a'));
+			await act(async () => {
+				await result.current.reloadLayout();
+			});
+			act(() =>
+				result.current.commitOp(() => ({
+					monitor: { root: container('mine', 'row', []), floating: [] }
+				}))
+			);
+			act(() => result.current.onForeignLayoutChangeRef.current());
+			let closed!: boolean;
+			await act(async () => {
+				closed = await result.current.prepareClose();
+			});
+			expect(confirm).toHaveBeenCalledTimes(answers.length);
+			expect(closed).toBe(closes);
+			expect(invoke.mock.calls.filter(([command]) => command === 'save_layout')).toHaveLength(
+				saves
+			);
+			confirm.mockRestore();
+		}
+	);
 });

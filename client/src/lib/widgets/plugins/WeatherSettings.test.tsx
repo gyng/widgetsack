@@ -52,6 +52,13 @@ beforeEach(() => {
 });
 
 describe('WeatherSettings', () => {
+	it('names the Open-Meteo site without a link that would navigate the studio window', async () => {
+		const { container, getByText } = renderPanel();
+		await waitFor(() => expect(weatherConnect).toHaveBeenCalled());
+		expect(getByText(/open-meteo\.com/)).toBeTruthy();
+		expect(container.querySelector('a[href]')).toBeNull();
+	});
+
 	it('prefills the form from weather_config_status and starts the live feed', async () => {
 		const { container, getByText } = renderPanel();
 		const lat = container.querySelector('input[placeholder="51.5072"]') as HTMLInputElement;

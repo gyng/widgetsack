@@ -1,5 +1,5 @@
 // Init is NON-IDEMPOTENT (item 4): on mount run updateWorkArea + startAllSources(hub) + reloadLayout
-// + listen(layout_changed/themes_changed/toggle_edit/open_studio) + (primary) fill/reconcile. The
+// + listen(layout_changed/themes_changed/toggle_edit) + (primary) fill/reconcile. The
 // Cleanup releases a disposal scope and flushes pending writes. Resources acquired after
 // unmount are immediately released by the scope. Assumes NO React.StrictMode — this runs once.
 // Ported verbatim from the Svelte onMount/onDestroy pair (same Tauri event/command strings).
@@ -18,7 +18,6 @@ import {
 	mainWindowExists,
 	monitorParam,
 	onOwnScaleChanged,
-	openStudio,
 	overlayDrift,
 	reconcileOverlays,
 	setMainWindowVisible,
@@ -248,7 +247,6 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// landing during init can't run a second fit/reconcile alongside this one.
 			if (!monitorParam()) {
 				await refit();
-				scope.add(await listen(EVENTS.openStudio, () => openStudio()));
 			}
 			if (scope.disposed) return;
 			// Initial whole-window click-through is established by Canvas's presentation effect (so the

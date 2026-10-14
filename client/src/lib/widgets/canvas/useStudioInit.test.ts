@@ -35,7 +35,6 @@ vi.mock('../../overlay', () => ({
 		onScaleChange = cb;
 		return () => undefined;
 	}),
-	openStudio: vi.fn(() => Promise.resolve()),
 	overlayDrift: vi.fn(async () => null),
 	reconcileOverlays: vi.fn(async () => undefined),
 	studioMonitorOptions: vi.fn(async () => []),

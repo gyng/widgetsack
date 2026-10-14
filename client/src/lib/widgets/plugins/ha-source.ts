@@ -46,7 +46,10 @@ export async function refreshHaCatalog(): Promise<HaEntity[]> {
 export const haSource: SensorSource = {
 	id: 'home-assistant',
 	start: async (hub) => {
-		await refreshHaCatalog();
+		// Not awaited: with HA unreachable the catalog fetch can take seconds, and app init (main's
+		// first reveal, the studio's layout load) waits on every source's start. The catalog only
+		// feeds the inspector dropdown and fills in when the fetch settles (it never rejects).
+		void refreshHaCatalog();
 		// Backfill recent HA history into this window's hub so sparklines bound to HA entities aren't
 		// blank on launch (reactive: fires as widgets subscribe). Order-stable ingest merges the
 		// back-dated samples — see core/telemetry.ts + plugins/ha-backfill.ts.

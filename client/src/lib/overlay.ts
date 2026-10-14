@@ -16,7 +16,6 @@ import { getAllWebviewWindows, WebviewWindow } from '@tauri-apps/api/webviewWind
 import { invoke } from '@tauri-apps/api/core';
 import { emit } from '@tauri-apps/api/event';
 import type { Rect } from './core/layout';
-import { monitorHasWidgets } from './core/layoutTree';
 import { compareMonitorOptions, monitorOptionLabel } from './monitorLabel';
 import { gdiTag, monitorByKey, monitorDeviceKey, type StableIds } from './monitorKey';
 import { migrateMonitorKeys } from './core/migration';
@@ -26,7 +25,12 @@ import {
 	type LegacyKeyMapping,
 	type WindowGeometryHint
 } from './core/monitorMigration';
-import { OVERLAY_LABEL_PREFIX, planOverlays } from './core/overlayPlan';
+import {
+	changedMonitorKeys,
+	monitorPresence,
+	OVERLAY_LABEL_PREFIX,
+	planOverlays
+} from './core/overlayPlan';
 import { readOverlayPrefs, type OverlayLayer } from './widgets/canvas/overlayPrefs';
 import type { OverlayPresentation } from './widgets/canvas/overlayPresentation';
 import { COMMANDS, EVENTS } from './bridge/contract';
@@ -85,46 +89,57 @@ export async function applyOverlayLayer(layer: OverlayLayer): Promise<void> {
 // in monitorKey.ts — a pure seam, unit-tested without a window.
 export { monitorDeviceKey };
 
-/** The set of saved-layout monitor keys that hold at least one widget (so an overlay there would
- * render something). Keys: 'default' (primary) or the device key, matching studioMonitorOptions.
- * When `legacyMapping` is given (reconcile path), legacy numeric index keys from pre-device-key
- * saves are migrated to device keys and the file is rewritten ONCE (raw keys renamed in place —
- * the value JSON is not round-tripped through the parser). A genuinely empty/missing layout
- * (no `widgets.json` yet) yields an empty set. A `load_layout` invoke failure or a JSON/parse
- * error yields `null` — that's "we couldn't tell", NOT "the layout is empty", and callers must
- * NOT treat it as license to close every overlay (a transient IPC hiccup would otherwise tear
- * down a perfectly working desktop). */
-async function populatedMonitorKeys(legacyMapping?: LegacyKeyMapping): Promise<Set<string> | null> {
-	const keys = new Set<string>();
+/** Saved-layout monitor presence: `populated` = keys holding at least one widget (so an overlay
+ * there would render something), `unknown` = keys whose record is in the file but failed to parse
+ * (hand edit, downgrade — usually a disconnected monitor's). Keys: 'default' (primary) or the device
+ * key, matching studioMonitorOptions. An unknown key only freezes ITS OWN window; every parseable
+ * monitor is still reconciled. When `legacyMapping` is given (reconcile path), legacy numeric index
+ * keys from pre-device-key saves are migrated to device keys and ONLY those keys are rewritten,
+ * through save_layout's per-monitor merge (raw keys renamed in place — the value JSON is not
+ * round-tripped through the parser — and a concurrent save to another monitor isn't lost). A
+ * genuinely empty/missing layout (no `widgets.json` yet) yields empty sets. A `load_layout` invoke
+ * failure or a JSON/parse error yields `null` — that's "we couldn't tell", NOT "the layout is
+ * empty", and callers must NOT treat it as license to close every overlay (a transient IPC hiccup
+ * would otherwise tear down a perfectly working desktop). */
+async function monitorKeyPresence(
+	legacyMapping?: LegacyKeyMapping
+): Promise<{ populated: Set<string>; unknown: Set<string> } | null> {
 	// Assigned once load_layout resolves — so the catch can tell "file read but UNPARSEABLE" (worth
 	// backing up before anything saves over it) from "couldn't read it at all" (nothing to copy).
 	let raw: string | null = null;
 	try {
 		raw = await invoke<string | null>(COMMANDS.loadLayout);
 		const decoded = decodeLayoutDocument(raw);
-		if (decoded.kind === 'missing') return keys;
+		if (decoded.kind === 'missing') return { populated: new Set(), unknown: new Set() };
 		if (decoded.kind === 'corrupt') throw new Error(decoded.reason);
 		if (decoded.droppedMonitors.length) {
 			requestLayoutBackup();
-			return null; // keep current windows until the damaged document is repaired
+			logClient(
+				'warn',
+				'overlay',
+				`unreadable monitor record(s) in widgets.json kept as-is: ${decoded.droppedMonitors.join(', ')}`
+			);
 		}
 		const obj = decoded.raw;
 		let layout = decoded.layout;
-		if (obj && legacyMapping && typeof obj.monitors === 'object' && obj.monitors !== null) {
-			const migrated = migrateMonitorKeys(
-				obj.monitors as Record<string, unknown>,
-				legacyMapping.keys,
-				legacyMapping.evidence
-			);
+		let rawMonitors = obj.monitors as Record<string, unknown>;
+		// No key migration over a damaged document: a dropped legacy record could compete with a
+		// parsed one for the same stable key, and nothing should be rewritten before it's repaired.
+		if (legacyMapping && !decoded.droppedMonitors.length) {
+			const migrated = migrateMonitorKeys(rawMonitors, legacyMapping.keys, legacyMapping.evidence);
 			if (migrated) {
-				obj.monitors = migrated;
+				const touchedMonitors = changedMonitorKeys(rawMonitors, migrated);
+				rawMonitors = migrated;
 				layout = {
 					...layout,
 					monitors:
 						migrateMonitorKeys(layout.monitors, legacyMapping.keys, legacyMapping.evidence) ??
 						layout.monitors
 				};
-				await invoke(COMMANDS.saveLayout, { contents: JSON.stringify(obj, null, 2) });
+				await invoke(COMMANDS.saveLayout, {
+					contents: JSON.stringify({ ...obj, monitors: migrated }, null, 2),
+					touchedMonitors
+				});
 				// Persist it: a layout that lands on the wrong monitor after an upgrade is a question
 				// the log file must be able to answer ("which key became which, from which enumeration").
 				logClient(
@@ -137,17 +152,12 @@ async function populatedMonitorKeys(legacyMapping?: LegacyKeyMapping): Promise<S
 				);
 			}
 		}
-		if (layout) {
-			for (const [k, mon] of Object.entries(layout.monitors)) {
-				if (monitorHasWidgets(mon)) keys.add(k);
-			}
-		}
+		return monitorPresence(Object.keys(rawMonitors), layout.monitors);
 	} catch (err) {
-		logClient('error', 'overlay', `populatedMonitorKeys: load_layout failed: ${String(err)}`);
+		logClient('error', 'overlay', `monitorKeyPresence: load_layout failed: ${String(err)}`);
 		if (raw !== null) requestLayoutBackup();
 		return null;
 	}
-	return keys;
 }
 
 /** Overlay startup fade-in: ease this window's content up from transparent the first time it's
@@ -185,8 +195,11 @@ export async function setMainWindowVisible(visible: boolean): Promise<void> {
 			// While `main` is gone the reconcile driver moves off it; secondaries keep their own renderers.
 			// Tell keepalive WHY: if no secondary is populated either, zero windows is the steady state
 			// and it must not boot a renderer every 30 s hoping something changed.
-			const populated = await populatedMonitorKeys();
-			const populatedElsewhere = populated ? [...populated].some((k) => k !== 'default') : true;
+			// An unreadable record elsewhere might hold widgets: assume it does (keepalive keeps trying).
+			const presence = await monitorKeyPresence();
+			const populatedElsewhere = presence
+				? [...presence.populated, ...presence.unknown].some((k) => k !== 'default')
+				: true;
 			await invoke(COMMANDS.mainReclaimed, { populatedElsewhere }).catch(() => undefined);
 			await win.destroy();
 		}
@@ -213,15 +226,15 @@ export async function recreateMain(): Promise<void> {
 	try {
 		const all = await getAllWebviewWindows();
 		if (all.some((w) => w.label === 'main')) return; // already present
-		let populated = await populatedMonitorKeys();
-		if (populated === null) {
+		let presence = await monitorKeyPresence();
+		if (presence === null) {
 			// Transient read failure. This may be the ONLY recreate attempt (studio-close calls once;
 			// keepalive won't fire while secondaries keep windows alive), so retry once before giving
 			// up — a genuinely broken layout still bails below, with watch_layout covering later edits.
 			await new Promise((r) => setTimeout(r, 2000));
-			populated = await populatedMonitorKeys();
+			presence = await monitorKeyPresence();
 		}
-		if (populated === null) {
+		if (presence === null) {
 			logClient(
 				'warn',
 				'overlay',
@@ -229,7 +242,9 @@ export async function recreateMain(): Promise<void> {
 			);
 			return;
 		}
-		if (!populated.has('default')) return; // primary still empty — leave it gone
+		// Primary still empty (or its own record is unreadable) — leave it gone. Damage to OTHER
+		// monitors' records doesn't block the primary.
+		if (!presence.populated.has('default')) return;
 		const layer = readOverlayPrefs().overlayLayer;
 		const w = new WebviewWindow('main', {
 			url: '/',
@@ -789,11 +804,11 @@ async function reconcileOverlaysOnce(): Promise<void> {
 				.join(', ')}`
 		);
 	}
-	const populated = await populatedMonitorKeys(legacyMapping);
-	if (populated === null) {
+	const presence = await monitorKeyPresence(legacyMapping);
+	if (presence === null) {
 		// Couldn't read the layout this pass — skip it entirely rather than treat "no data" as
 		// "empty layout" (which would close every working overlay on a transient IPC failure).
-		logClient('warn', 'overlay', 'reconcileOverlays: populatedMonitorKeys failed; skipping pass');
+		logClient('warn', 'overlay', 'reconcileOverlays: monitorKeyPresence failed; skipping pass');
 		return;
 	}
 	const byLabel = new Map(existing.map((w) => [w.label, w]));
@@ -810,7 +825,8 @@ async function reconcileOverlaysOnce(): Promise<void> {
 			key: monitorDeviceKey(m.name, i, ids.stable),
 			primary: isPrimaryMon(m)
 		})),
-		populated,
+		populated: presence.populated,
+		unknown: presence.unknown,
 		existingLabels: existing.map((w) => w.label)
 	});
 	for (const label of plan.close) {

@@ -36,8 +36,8 @@ Both roles render the **same** [Canvas.tsx](client/src/lib/widgets/Canvas.tsx) c
   primary is the `main` window, secondaries spawn on demand ([overlay.ts](client/src/lib/overlay.ts)
   `reconcileOverlays`). Renders the saved layout passively.
 - **Studio** — a normal decorated window (`label === 'studio'`) for the layout designer,
-  widget designer, theme editor, and sack import/export. Opened from the tray, the
-  `open_studio` event, or `openStudio()`.
+  widget designer, theme editor, and sack import/export. Opened from the tray (the backend builds/focuses it)
+  or `openStudio()`.
 
 ### Data flow — media (now playing)
 
@@ -498,7 +498,7 @@ presentational (pure) components**. Current code already models the key split:
    must be reflected in the matching TS types ([stores.ts](client/src/stores/stores.ts) for
    sessions, [core/telemetry.ts](client/src/lib/core/telemetry.ts) for sensors), and vice
    versa (§5). Event-name strings (`"session_update"`, `"session_delete"`, `"telemetry"`,
-   `"layout_changed"`, `"themes_changed"`, `"toggle_edit"`, `"open_studio"`) and command
+   `"layout_changed"`, `"themes_changed"`, `"toggle_edit"`) and command
    names (`"get_initial_sessions"`, `"load_layout"`, `"save_layout"`, `"list_themes"`,
    `"ha_call_service"`, …) must match on both ends.
 5. **Make small, focused diffs.** Don't reformat untouched code. Don't add dependencies

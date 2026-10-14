@@ -787,6 +787,18 @@ describe('installPackage', () => {
 		expect(enabledPackages.getSnapshot()).toEqual([]); // opt-in: untouched
 	});
 
+	it('bumps the synced package revision only when an install succeeds', async () => {
+		installImpl = () => Promise.reject(new Error('network down'));
+		await installPackage('owner/repo');
+		expect(localStorage.getItem('widgetsack.packages.revision')).toBe('{}');
+		installImpl = () => Promise.resolve({ id: 'pack-a', version: '1.0.0' });
+		await installPackage('owner/repo');
+		await installPackage('owner/repo');
+		expect(JSON.parse(localStorage.getItem('widgetsack.packages.revision')!)).toEqual({
+			'pack-a': '2'
+		});
+	});
+
 	it('returns the backend error string on failure', async () => {
 		installImpl = () => Promise.reject(new Error('network down'));
 		const r = await installPackage('owner/repo');
@@ -842,6 +854,19 @@ describe('updatePackage', () => {
 		expect(installCalls).toEqual([source]);
 		expect(replaceCalls).toEqual(['pack-a']);
 	});
+	it('bumps the synced package revision on a successful update, not on a failed one', async () => {
+		setFiles([{ id: 'pack-a', manifest: manifestJson(), install: sidecarJson() }]);
+		await initPackages(hub);
+		installImpl = () => Promise.reject(new Error('network down'));
+		await updatePackage('pack-a');
+		expect(localStorage.getItem('widgetsack.packages.revision')).toBe('{}');
+		installImpl = () => Promise.resolve({ id: 'pack-a', version: '1.1.0' });
+		await updatePackage('pack-a');
+		expect(JSON.parse(localStorage.getItem('widgetsack.packages.revision')!)).toEqual({
+			'pack-a': '1'
+		});
+	});
+
 	it('refuses a hand-dropped (no-sidecar) package', async () => {
 		setFiles([{ id: 'pack-a', manifest: manifestJson(), install: null }]);
 		await initPackages(hub);
@@ -1404,6 +1429,17 @@ describe('cross-window package changes', () => {
 		fromOtherWindow('widgetsack.packages.enabled', []);
 		await vi.waitFor(() => expect(rowFor('pack-a')).toBeUndefined());
 		expect(hasGroup()).toBe(false);
+	});
+
+	it('re-applies a package another window updated in place (same enabled set)', async () => {
+		localStorage.setItem('widgetsack.packages.enabled', JSON.stringify(['pack-a']));
+		enabledPackages.set(['pack-a']);
+		await initPackages(hub);
+		expect(styleTagFor('pack-a')?.textContent).toContain('red');
+
+		assets.set('pack-a/theme.css', 'body { color: blue; }');
+		fromOtherWindow('widgetsack.packages.revision', { 'pack-a': '1' });
+		await vi.waitFor(() => expect(styleTagFor('pack-a')?.textContent).toContain('blue'));
 	});
 
 	it('coalesces a burst of storage events into one queued refresh', async () => {
