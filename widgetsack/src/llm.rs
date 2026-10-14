@@ -697,8 +697,29 @@ fn llm_http_client(insecure: bool) -> Result<reqwest::Client, String> {
     llm_http_client_with(insecure, Duration::from_secs(120))
 }
 
+/// PURE SEAM: a redirect the LLM client may follow. Anthropic's key travels in a custom
+/// `x-api-key` header, which reqwest does not strip on a cross-host redirect (it only strips
+/// Authorization/Cookie), so only same-origin redirects are followed.
+fn same_origin_redirect(from: &reqwest::Url, to: &reqwest::Url) -> bool {
+    from.scheme() == to.scheme()
+        && from.host_str() == to.host_str()
+        && from.port_or_known_default() == to.port_or_known_default()
+}
+
 fn llm_http_client_with(insecure: bool, idle: Duration) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            let allowed = attempt.previous().len() < 5
+                && attempt
+                    .previous()
+                    .last()
+                    .is_some_and(|from| same_origin_redirect(from, attempt.url()));
+            if allowed {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
         .connect_timeout(Duration::from_secs(15))
         .read_timeout(idle)
         // Backstop for a stalled upload or a server trickling bytes forever.
@@ -1942,6 +1963,32 @@ mod tests {
             ..Default::default()
         };
         assert!(check_saved_key_target("openai", Some(&insecure_saved), "", true, "").is_ok());
+    }
+
+    #[test]
+    fn only_same_origin_redirects_are_followed() {
+        let url = |s: &str| reqwest::Url::parse(s).unwrap();
+        let api = url("https://api.anthropic.com/v1/messages");
+        assert!(same_origin_redirect(
+            &api,
+            &url("https://api.anthropic.com/v2/messages")
+        ));
+        assert!(same_origin_redirect(
+            &api,
+            &url("https://api.anthropic.com:443/x")
+        ));
+        assert!(!same_origin_redirect(
+            &api,
+            &url("https://evil.example/v1/messages")
+        ));
+        assert!(!same_origin_redirect(
+            &api,
+            &url("http://api.anthropic.com/v1/messages")
+        ));
+        assert!(!same_origin_redirect(
+            &api,
+            &url("https://api.anthropic.com:8443/v1")
+        ));
     }
 
     #[tokio::test]
