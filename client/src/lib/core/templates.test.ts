@@ -277,6 +277,12 @@ describe('freshIds (group leaf)', () => {
 		expect(out.id).toBe(out.unit.id); // leaf id mirrors the unit id
 		expect(out.unit.name).toBe('Wrapped'); // non-id fields survive
 	});
+	it("remaps the group's inline child tree as well", () => {
+		const g = group('g-orig', { w: 50, h: 50 }, container('c', 'col', []));
+		const out = freshIds(leaf(g));
+		if (!isLeaf(out) || !isGroup(out.unit)) throw new Error('expected a group leaf');
+		expect(out.unit.child.id).toMatch(/^col-/);
+	});
 });
 
 describe('resolveTemplateOptions (text params)', () => {

@@ -31,6 +31,7 @@ import {
 	type LayoutNode
 } from '../../core/layoutTree';
 import type { EditorState } from './types';
+import { editorReducer, initialEditorState } from '../../core/editorReducer';
 
 // --- fixtures -------------------------------------------------------------------------------
 
@@ -700,3 +701,19 @@ function countLeaves(root: Container): number {
 	}
 	return n;
 }
+
+describe('palette adds while designing a definition', () => {
+	it.each([
+		['addWidget', (s: EditorState) => addWidget(s, 'text')],
+		['addWidgetAt', (s: EditorState) => addWidgetAt(s, 'text', 40, 40)]
+	])('%s with nothing selected lands in the definition child', (_name, run) => {
+		let s = initialEditorState(true, emptyMonitorLayout());
+		s = editorReducer(s, { type: 'newWidget', id: 'def-p', name: 'widget' });
+		s = editorReducer(s, { type: 'op', run, commit: true });
+		const added = s.selectedId!;
+		s = editorReducer(s, { type: 'endDefEdit' });
+		const def = s.library!.defs.find((d) => d.id === 'def-p')!;
+		expect(isContainer(def.child) && def.child.children.map((c) => c.id)).toEqual([added]);
+		expect(s.monitor.floating).toEqual([]);
+	});
+});

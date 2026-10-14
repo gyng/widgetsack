@@ -111,9 +111,9 @@ export function removeNode(root: Container, id: string): Container {
 }
 
 /**
- * Move node `id` to be a child of `newParentId` at `index`. No-op (clone) when the node
- * is absent, when `newParentId` is the node itself, or when `newParentId` lies inside
- * the node's own subtree (which would create a cycle).
+ * Move node `id` to be a child of `newParentId` at `index`. No-op when the node is absent,
+ * when `newParentId` is the node itself, absent or not a container, or when `newParentId` lies
+ * inside the node's own subtree (which would create a cycle).
  */
 export function moveNode(
 	root: Container,
@@ -125,6 +125,8 @@ export function moveNode(
 	const node = findNode(root, id);
 	if (!node) return root;
 	if (findNode(node, newParentId)) return root; // target is inside the moved subtree → cycle
+	const target = findNode(root, newParentId);
+	if (!target || !isContainer(target)) return root; // nowhere to put it: never drop the node
 	return insertChild(removeNode(root, id), newParentId, node, index);
 }
 
@@ -207,7 +209,7 @@ export function outlineRows(root: Container): OutlineRow[] {
 }
 
 /**
- * Ungroup the flow group leaf `groupId`: replace it with a clone of its concrete child
+ * Ungroup the flow group leaf `groupId`: replace it with a fresh-id clone of its concrete child
  * (the def's child when `groupId` references one, else the inline child). A no-op clone
  * when `groupId` isn't a group leaf; the group is removed if it has no resolvable child.
  * Pure (Phase 6a). Floating groups are ungrouped by the Canvas (placement-specific).
@@ -219,8 +221,9 @@ export function ungroupNode(root: Container, groupId: string, library?: Library)
 	const def = g.def && library ? library.defs.find((d) => d.id === g.def) : undefined;
 	const baseChild = def ? def.child : g.child;
 	if (!baseChild) return removeNode(root, groupId);
-	// A def's child is shared by every instance: its ids would repeat across ungrouped instances.
-	return updateNode(root, groupId, () => (def ? freshIds(clone(baseChild)) : clone(baseChild)));
+	// A def's child is shared by every instance, and an inline child is a copy of one: its ids would
+	// repeat across ungrouped instances, so every ungroup gets fresh ids.
+	return updateNode(root, groupId, () => freshIds(clone(baseChild)));
 }
 
 /** Whether a node holds a widget (a leaf) anywhere in its subtree. */

@@ -4,6 +4,8 @@ import {
 	container,
 	group,
 	isContainer,
+	isGroup,
+	isLeaf,
 	leaf,
 	type Container,
 	type Group,
@@ -27,6 +29,7 @@ import {
 } from './layoutEdit';
 import type { Rect } from './layout';
 
+const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const prim = (id: string): WidgetInstance => ({
 	id,
 	type: 'gauge',
@@ -230,6 +233,11 @@ describe('moveNode', () => {
 		const r = moveNode(tree(), 'nope', 'rowA', 0);
 		expect(r.children.map((c) => c.id)).toEqual(['rowA', 'C']);
 	});
+
+	it.each(['missing', 'B'])('keeps the node when the target %s is not a container', (target) => {
+		const t = tree();
+		expect(moveNode(t, 'C', target, 0)).toBe(t);
+	});
 });
 
 describe('updateNode / updateContainer', () => {
@@ -306,10 +314,28 @@ describe('ungroupNode', () => {
 		expect(findNode(root, 'inner')).toBeNull();
 	});
 
-	it('falls back to the inline child when there is no def', () => {
+	it('gives every level fresh ids when instances of one def are fully ungrouped', () => {
+		const inner = leaf(group('in', { w: 1, h: 1 }, leaf(prim('leafX'))));
+		const nested: Library = {
+			version: 1,
+			defs: [{ id: 'n', name: 'n', size: { w: 1, h: 1 }, child: inner }]
+		};
+		const instance = (id: string) => leaf(group(id, { w: 1, h: 1 }, clone(inner), { def: 'n' }));
+		let r = container('root', 'col', [instance('g1'), instance('g2')]);
+		r = ungroupNode(ungroupNode(r, 'g1', nested), 'g2', nested);
+		for (const id of r.children.map((c) => c.id)) r = ungroupNode(r, id, nested);
+		const ids = r.children.map((c) => c.id);
+		expect(r.children.every((c) => isLeaf(c) && !isGroup(c.unit))).toBe(true);
+		expect(new Set(ids).size).toBe(2);
+		expect(ids).not.toContain('leafX');
+	});
+
+	it('gives an inline group child fresh ids too', () => {
 		const root = container('root', 'col', [leaf(group('g', { w: 1, h: 1 }, leaf(prim('only'))))]);
 		const r = ungroupNode(root, 'g');
-		expect(findNode(r, 'only')?.id).toBe('only');
+		const [only] = r.children;
+		expect(isLeaf(only) && !isGroup(only.unit) && only.unit.type).toBe('gauge');
+		expect(only.id).not.toBe('only');
 	});
 
 	it('is a no-op for a non-group id', () => {

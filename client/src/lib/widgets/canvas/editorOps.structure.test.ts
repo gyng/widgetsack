@@ -264,7 +264,8 @@ describe('ungroupSelected', () => {
 		expect(root.children).toHaveLength(1);
 		const replaced = root.children[0];
 		expect(isLeaf(replaced)).toBe(true);
-		expect(replaced.id).toBe('inner');
+		// Inline children are copied between duplicated instances: ungrouping gives fresh ids.
+		expect(replaced.id).not.toBe('inner');
 		expect(isGroup((replaced as ReturnType<typeof leaf>).unit)).toBe(false);
 		expect(patch.selectedId).toBeNull();
 	});
@@ -320,7 +321,8 @@ describe('ungroupSelected', () => {
 		s.monitor.floating = [leaf(g)];
 		const patch = ungroupSelected(s, 'grpF');
 		const u = patch.monitor!.floating[0].unit as ReturnType<typeof gauge>;
-		expect(u.id).toBe('inline-inner');
+		expect(u.id).not.toBe('inline-inner'); // inline children are fresh-id'd like def children
+		expect(u.type).toBe('gauge');
 		expect(u.rect.x).toBe(1);
 	});
 

@@ -7,6 +7,20 @@ import { useCallback, useEffect, useRef } from 'react';
 import type { LayoutOp } from '../ops';
 import { defInUse, type EditorModel } from './useEditorModel';
 import type { EditorState } from './types';
+import type { MonitorLayout } from '../../core/layoutTree';
+import { decodeLayoutDocument } from '../../core/layoutDocument';
+import { loadLayoutRaw } from '../../bridge/layouts';
+
+// The layout's OTHER monitors live only in widgets.json (the editor holds just the current one), so
+// the delete guard reads their saved records. The current monitor's record is skipped: the live
+// editor state supersedes it. An unreadable/absent file has no other monitors to protect.
+async function savedMonitorsBesides(myMonitor: string): Promise<MonitorLayout[]> {
+	const decoded = decodeLayoutDocument(await loadLayoutRaw());
+	if (decoded.kind !== 'valid') return [];
+	return Object.entries(decoded.layout.monitors)
+		.filter(([key]) => key !== myMonitor)
+		.map(([, monitor]) => monitor);
+}
 
 type Deps = {
 	editingDefId: string | null;
@@ -15,6 +29,8 @@ type Deps = {
 	stateRef: React.RefObject<EditorState>;
 	dispatch: EditorModel['dispatch'];
 	handleOp: (op: LayoutOp) => void;
+	/** The studio's monitor key. When given, deleting checks the other monitors' saved layouts too. */
+	myMonitor?: string;
 };
 
 export type DefEditor = {
@@ -38,7 +54,8 @@ export function useDefEditor({
 	previewing,
 	stateRef,
 	dispatch,
-	handleOp
+	handleOp,
+	myMonitor
 }: Deps): DefEditor {
 	// Latest values for the stable callbacks (read in event handlers — no stale closure). Mirrored in
 	// a commit effect (not during render); the callbacks only read these later, from user actions.
@@ -104,17 +121,22 @@ export function useDefEditor({
 	// Delete a custom widget from My widgets. A def placed on a layout can't be deleted (it would
 	// orphan the copies) — tell the user instead of silently no-op'ing. If it's the one being
 	// designed, fold the def edit first so deleteDef isn't blocked. Destructive → keeps confirm().
+	// "Placed" covers other monitors (saved records), queued moves and other defs nesting it.
 	const deleteWidget = useCallback(
 		(defId: string, name: string) => {
-			if (defInUse(stateRef.current, defId)) {
-				window.alert(`“${name}” is placed on a layout — remove those copies before deleting it.`);
-				return;
-			}
-			if (!window.confirm(`Delete the custom widget “${name}” from My widgets?`)) return;
-			if (defId === editingDefIdRef.current) foldOpenDef();
-			handleOp({ op: 'deleteDef', defId });
+			const decide = (otherMonitors: MonitorLayout[]) => {
+				if (defInUse(stateRef.current, defId, otherMonitors)) {
+					window.alert(`“${name}” is placed on a layout — remove those copies before deleting it.`);
+					return;
+				}
+				if (!window.confirm(`Delete the custom widget “${name}” from My widgets?`)) return;
+				if (defId === editingDefIdRef.current) foldOpenDef();
+				handleOp({ op: 'deleteDef', defId });
+			};
+			if (myMonitor === undefined) decide([]);
+			else void savedMonitorsBesides(myMonitor).then(decide);
 		},
-		[stateRef, foldOpenDef, handleOp]
+		[stateRef, foldOpenDef, handleOp, myMonitor]
 	);
 
 	return {

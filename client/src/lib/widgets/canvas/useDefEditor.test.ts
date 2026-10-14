@@ -11,6 +11,9 @@ import { useDefEditor } from './useDefEditor';
 import type { EditorState } from './types';
 import { container, emptyRoot, group, leaf, type MonitorLayout } from '../../core/layoutTree';
 import { createWidget } from '../../core/widget';
+import { loadLayoutRaw } from '../../bridge/layouts';
+
+vi.mock('../../bridge/layouts', () => ({ loadLayoutRaw: vi.fn() }));
 
 // A minimal EditorState — only the fields defInUse() actually reads (monitor / editingDefId /
 // savedMonitor) need to be real; the rest are filled to satisfy the type.
@@ -230,6 +233,35 @@ describe('deleteWidget (in-use guard + confirm)', () => {
 		act(() => result.current.deleteWidget('self', 'Self'));
 		expect(dispatch).toHaveBeenCalledWith({ type: 'endDefEdit' });
 		expect(handleOp).toHaveBeenCalledWith({ op: 'deleteDef', defId: 'self' });
+	});
+});
+
+describe('deleteWidget (saved other monitors)', () => {
+	const saved = (monitors: Record<string, MonitorLayout>) =>
+		vi.mocked(loadLayoutRaw).mockResolvedValue(JSON.stringify({ version: 2, monitors }));
+
+	it('refuses a def placed only on another saved monitor', async () => {
+		saved({ mine: emptyMonitor(), other: monitorUsing('used') });
+		const { result, handleOp } = setup({ myMonitor: 'mine' });
+		await act(async () => result.current.deleteWidget('used', 'Elsewhere'));
+		expect(alert).toHaveBeenCalledTimes(1);
+		expect(handleOp).not.toHaveBeenCalled();
+	});
+
+	it("ignores the current monitor's saved record (the live editor state supersedes it)", async () => {
+		confirm.mockReturnValue(true);
+		saved({ mine: monitorUsing('used') });
+		const { result, handleOp } = setup({ myMonitor: 'mine' });
+		await act(async () => result.current.deleteWidget('used', 'Removed'));
+		expect(handleOp).toHaveBeenCalledWith({ op: 'deleteDef', defId: 'used' });
+	});
+
+	it('treats an unreadable layout file as having no other monitors', async () => {
+		confirm.mockReturnValue(true);
+		vi.mocked(loadLayoutRaw).mockResolvedValue(null);
+		const { result, handleOp } = setup({ myMonitor: 'mine' });
+		await act(async () => result.current.deleteWidget('free', 'Spare'));
+		expect(handleOp).toHaveBeenCalledWith({ op: 'deleteDef', defId: 'free' });
 	});
 });
 

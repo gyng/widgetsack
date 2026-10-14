@@ -5,6 +5,7 @@ import type { EditorState } from './editorState';
 import { emptyRoot } from './layoutTree';
 import { container, isLeaf, leaf, type Library, type MonitorLayout } from './layoutTree';
 import { createWidget } from './widget';
+import { findNode, removeNode } from './layoutEdit';
 
 // A tiny monitor with one docked text widget under the root (handy for `load` / baseline fixtures).
 function oneWidgetMonitor(id = 'w-fix'): MonitorLayout {
@@ -352,4 +353,69 @@ it('replays a prepared definition action deterministically without mutating the 
 	});
 	expect(state.mode.kind).toBe('layout');
 	expect(state.library).toBeUndefined();
+});
+
+describe('definition scope has no floating layer', () => {
+	const textLeaf = (id: string) => leaf(createWidget('text', id));
+	const floatIt =
+		(id: string) =>
+		(s: EditorState): Patch => ({
+			monitor: { ...s.monitor, floating: [...s.monitor.floating, textLeaf(id)] },
+			selectedId: id
+		});
+
+	it('docks a widget added to the floating layer into the definition, so endDefEdit keeps it', () => {
+		const { result } = createModel();
+		act(() => result.current.dispatch({ type: 'newWidget', id: 'def-f', name: 'widget' }));
+		act(() => result.current.commitOp(floatIt('added')));
+		const scoped = result.current.state.monitor;
+		expect(scoped.floating).toEqual([]);
+		expect(findNode(scoped.root, 'added')).not.toBeNull();
+		act(() => result.current.dispatch({ type: 'endDefEdit' }));
+		const def = result.current.state.library!.defs.find((d) => d.id === 'def-f')!;
+		expect(findNode(def.child, 'added')).not.toBeNull();
+	});
+
+	it('refuses to float a docked definition widget off the flow', () => {
+		const { result } = createModel();
+		act(() => result.current.dispatch({ type: 'newWidget', id: 'def-g', name: 'widget' }));
+		act(() => result.current.commitOp(floatIt('kept')));
+		const before = result.current.state.monitor;
+		act(() =>
+			result.current.commitOp((s) => ({
+				monitor: {
+					root: removeNode(s.monitor.root, 'kept'),
+					floating: [textLeaf('kept')]
+				}
+			}))
+		);
+		expect(result.current.state.monitor).toBe(before);
+	});
+
+	it('leaves the desktop floating layer alone in layout mode', () => {
+		const { result } = createModel();
+		act(() => result.current.commitOp(floatIt('free')));
+		expect(result.current.state.monitor.floating.map((l) => l.id)).toEqual(['free']);
+	});
+});
+
+describe('undo coalescing across a save', () => {
+	it('starts a new undo step after setBaseline so undo can return to the saved state', () => {
+		const { result } = createModel();
+		act(() => result.current.dispatch({ type: 'resetHistory' }));
+		const typed = (text: string, at: number): Action => ({
+			type: 'op',
+			commit: true,
+			coalesceKey: 'text',
+			at,
+			run: (s) => ({ tokenOverrides: { ...s.tokenOverrides, note: text } })
+		});
+		act(() => result.current.dispatch(typed('a', 0)));
+		act(() => result.current.dispatch(typed('ab', 100)));
+		act(() => result.current.dispatch({ type: 'setBaseline' }));
+		act(() => result.current.dispatch(typed('abc', 200)));
+		act(() => result.current.dispatch({ type: 'undo' }));
+		expect(result.current.state.tokenOverrides).toEqual({ note: 'ab' });
+		expect(result.current.state.savedBaseline?.tokens).toEqual({ note: 'ab' });
+	});
 });

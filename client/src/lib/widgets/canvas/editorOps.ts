@@ -1,5 +1,5 @@
 import { normalizeGridTrackCount, validGridTrackCount } from '../../core/gridDimensions';
-import { desktopMonitor, editingDefinitionId } from '../../core/editorMode';
+import { desktopMonitor, editedLibrary, editingDefinitionId } from '../../core/editorMode';
 import { definitionReaches } from '../../core/groupReferences';
 // The editor model's pure op helpers — ported VERBATIM from Canvas.svelte (via useEditorModel).
 // Each takes the current EditorState and returns a Patch (the new monitor/library/selection);
@@ -717,8 +717,9 @@ export function ungroupSelected(s: EditorState, id: string): Patch {
 		const base = def ? def.child : g.child;
 		if (base && isLeaf(base) && !isGroup(base.unit)) {
 			const u = clone(base.unit) as WidgetInstance;
-			// A def's child is shared by every instance: its id would repeat across ungrouped instances.
-			if (def) u.id = `${u.type}-${rand()}`;
+			// A def's child is shared by every instance (an inline child is a copy of one): its id would
+			// repeat across ungrouped instances.
+			u.id = `${u.type}-${rand()}`;
 			u.rect = { ...u.rect, x: cfgNum(g.config, 'x'), y: cfgNum(g.config, 'y') };
 			return {
 				monitor: {
@@ -790,24 +791,36 @@ export function insertTemplate(
 	};
 }
 
-export function defInUse(s: EditorState, defId: string): boolean {
+// Whether deleting def `defId` would break a placement: an instance on this monitor (the REAL one,
+// retained while designing, plus the scoped editing tree), on `otherMonitors` (the saved records of
+// the layout's other monitors — not in editor state, the caller reads them), queued to move to
+// another monitor, inside an inline group, or nested (transitively) in another library def.
+export function defInUse(
+	s: EditorState,
+	defId: string,
+	otherMonitors: readonly MonitorLayout[] = []
+): boolean {
 	let used = false;
 	const visit = (n: LayoutNode): void => {
-		if (isLeaf(n)) {
-			if (isGroup(n.unit) && n.unit.def === defId) used = true;
-		} else {
-			n.children.forEach(visit);
+		if (isContainer(n)) n.children.forEach(visit);
+		else if (isGroup(n.unit)) {
+			if (n.unit.def === defId) used = true;
+			else if (!n.unit.def) visit(n.unit.child);
 		}
 	};
 	const scan = (mon: MonitorLayout): void => {
 		visit(mon.root);
 		mon.floating.forEach(visit);
 	};
-	// Check the REAL monitor (stashed in savedMonitor while designing another def) plus, if designing,
-	// the scoped editing tree (a composite def could embed this one) — never just the scoped tree.
 	scan(desktopMonitor(s));
 	if (s.mode.kind !== 'layout') scan(s.monitor);
-	return used;
+	otherMonitors.forEach(scan);
+	s.pendingExtras.forEach((extra) => visit(extra.leaf));
+	// The open definition's in-progress tree counts as its child (editedLibrary).
+	const library = editedLibrary(s);
+	return (
+		used || !!library?.defs.some((d) => d.id !== defId && definitionReaches(library, d.id, defId))
+	);
 }
 
 export function renameDef(s: EditorState, defId: string, name: string): Patch {

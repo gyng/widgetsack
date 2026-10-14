@@ -502,15 +502,16 @@ export function instantiateTemplate(t: Template, options?: Record<string, string
 	return applyParams(tree, t.params, resolveTemplateOptions(t, options));
 }
 
-/** Deep-clone a flow tree with fresh, unique node/unit ids. Template-local ids are stable, so two
+/** Deep-clone a flow tree (group children included) with fresh, unique node/unit ids. Template-local ids are stable, so two
  * inserts/defs from the same template must not share ids; leaf id mirrors its unit id (leaf()
  * invariant). Pure (modulo Math.random for the ids). */
 export function freshIds(node: LayoutNode): LayoutNode {
 	if (isContainer(node)) {
 		return { ...node, id: `${node.kind}-${rand()}`, children: node.children.map(freshIds) };
 	}
+	// A group's inline child is remapped too: instances share it, so ungrouping must not repeat ids.
 	const unit = isGroup(node.unit)
-		? { ...node.unit, id: `group-${rand()}` }
+		? { ...node.unit, id: `group-${rand()}`, child: freshIds(node.unit.child) }
 		: { ...node.unit, id: `${node.unit.type}-${rand()}` };
 	return { ...node, id: unit.id, unit };
 }

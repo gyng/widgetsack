@@ -241,7 +241,9 @@ function reduceHistory(state: EditorState, action: HistoryAction): EditorState {
 		case 'resetHistory':
 			return { ...state, ...resetHistoryPatch(state) };
 		case 'setBaseline':
-			return { ...state, ...setBaselinePatch(action.snapshot ?? state, state) };
+			// A save is an undo boundary: the next same-key edit must not fold into the burst before it,
+			// or one Ctrl+Z would jump past the saved state.
+			return { ...state, ...setBaselinePatch(action.snapshot ?? state, state), lastCommit: null };
 	}
 }
 
@@ -476,12 +478,31 @@ export function editorReducer(state: EditorState, action: Action): EditorState {
 	return normalizeAddTarget(reduce(state, action));
 }
 
+// A definition's canvas has no floating layer — editedLibrary persists only the scoped root — so a
+// leaf an op adds to it (palette add/drop) docks at the end of the root, and floating an existing
+// flow leaf off the definition's flow is refused.
+function dockScopedFloating(prev: EditorState, next: EditorState): EditorState {
+	if (next.mode.kind === 'layout' || !next.monitor.floating.length) return next;
+	const { root, floating } = next.monitor;
+	if (floating.some((l) => findNode(prev.monitor.root, l.id))) {
+		return { ...next, monitor: prev.monitor };
+	}
+	return {
+		...next,
+		monitor: {
+			...next.monitor,
+			root: { ...root, children: [...root.children, ...floating] },
+			floating: []
+		}
+	};
+}
+
 function reduce(state: EditorState, action: Action): EditorState {
 	switch (action.type) {
 		case 'op': {
 			const patch = action.run(state);
 			const setSelectedIds = 'selectedIds' in patch;
-			let next = { ...state, ...patch };
+			let next = dockScopedFloating(state, { ...state, ...patch });
 			next = syncPrimary(next, setSelectedIds); // collapse the marquee unless the op set the set
 			if (action.commit) next = { ...next, ...commitPatch(next, action.coalesceKey, action.at) };
 			return next;
