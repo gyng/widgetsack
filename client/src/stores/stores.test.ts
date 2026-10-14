@@ -51,7 +51,7 @@ describe('mediaStore across windows', () => {
 		// The studio saves a new ignore list while this overlay is running.
 		const studio = { ...JSON.parse(localStorage.getItem(MEDIA_STORE_KEY) ?? ''), ignoreList: 'x' };
 		localStorage.setItem(MEDIA_STORE_KEY, JSON.stringify(studio));
-		handleUpdate({ sessionRecord: rec({ session_id: 3, source: 's.exe', title: 't' }) });
+		handleUpdate({ sessionRecord: rec({ session_id: 3, source: 's.exe' }) });
 		expect(JSON.parse(localStorage.getItem(MEDIA_STORE_KEY) ?? '').ignoreList).toBe('x');
 		window.dispatchEvent(new StorageEvent('storage', { key: MEDIA_STORE_KEY }));
 		expect(mediaStore.getSnapshot().ignoreList).toBe('x');

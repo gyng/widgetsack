@@ -21,26 +21,28 @@ type Props = {
 export default function HaMediaPlayerHost(props: Props) {
 	const pic =
 		((props.value as HaState | null)?.attributes?.entity_picture as string | undefined) ?? '';
-	const [decoded, setDecoded] = useState<string | undefined>(undefined);
+	// Tagged with the picture it was decoded for, so a track change never shows the previous cover.
+	const [decoded, setDecoded] = useState<{ pic: string; url?: string } | undefined>(undefined);
 
 	useEffect(() => {
 		if (!pic) return;
 		let cancelled = false;
 		haMediaArt(pic)
 			.then((url) => {
-				if (!cancelled) setDecoded(url);
+				if (!cancelled) setDecoded({ pic, url });
 			})
 			.catch(() => {
-				if (!cancelled) setDecoded(undefined);
+				if (!cancelled) setDecoded({ pic });
 			});
 		return () => {
 			cancelled = true;
 		};
 	}, [pic]);
 
-	// No picture → no art (don't linger on a previous track's cover); otherwise the async-decoded url.
-	// Deriving `art` in render replaces a synchronous `setArt(undefined)` in the effect.
-	const art = pic ? decoded : undefined;
+	// Only the url decoded for the CURRENT picture: no picture, or a new track whose art is still
+	// loading, shows no art rather than lingering on a previous cover. Derived in render (no
+	// synchronous reset in the effect).
+	const art = decoded?.pic === pic ? decoded.url : undefined;
 
 	return <HaMediaPlayer {...props} art={art} />;
 }

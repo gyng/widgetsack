@@ -5,7 +5,12 @@ import { createTelemetryHub } from '../../core/telemetry';
 const haHistory = vi.fn();
 vi.mock('./ha-commands', () => ({ haHistory: (...a: unknown[]) => haHistory(...a) }));
 
-import { haEntityForHistory, startHaBackfill } from './ha-backfill';
+import {
+	HA_BACKFILL_MAX_RETRY_MS,
+	HA_BACKFILL_RETRY_MS,
+	haEntityForHistory,
+	startHaBackfill
+} from './ha-backfill';
 
 // The mock is module-level (shared across tests); reset its call log so each test asserts
 // absolute call counts from a clean baseline.
@@ -85,32 +90,100 @@ describe('startHaBackfill', () => {
 		expect(ingest).not.toHaveBeenCalled();
 	});
 
-	it('warns and releases the claim on a failed fetch so a later tick can retry', async () => {
+	it('warns and retries a failed entity only after a growing backoff', async () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(0);
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-		// First fetch rejects (HA blip at mount); every later fetch (the retry + other entities) is
-		// an empty success so the test produces no unhandled rejections.
-		haHistory.mockResolvedValue([]).mockRejectedValueOnce(new Error('HA blip'));
+		// Every sensor.temp fetch rejects (HA unconfigured / unreachable); siblings succeed empty.
+		haHistory.mockImplementation((entity: string) =>
+			entity === 'sensor.temp' ? Promise.reject(new Error('HA down')) : Promise.resolve([])
+		);
 		const hub = createTelemetryHub();
 		startHaBackfill(hub);
+		const tempCalls = (): number =>
+			haHistory.mock.calls.filter((c) => c[0] === 'sensor.temp').length;
+		const settle = async (): Promise<void> => {
+			await Promise.resolve();
+			await Promise.resolve();
+		};
+		let n = 0;
+		const tick = (): void => {
+			hub.sensor(`ha.sensor.other${n++}.state`).subscribe(() => undefined);
+		};
 
 		hub.sensor('ha.sensor.temp.state').subscribe(() => undefined);
-		expect(haHistory).toHaveBeenCalledTimes(1);
-		// Let the rejected backfill settle so the entity's claim is released.
-		await Promise.resolve();
-		await Promise.resolve();
+		await settle();
+		expect(tempCalls()).toBe(1);
 		expect(warn).toHaveBeenCalledWith(
 			'HA history backfill failed for',
 			'sensor.temp',
 			expect.any(Error)
 		);
 
-		// A later active-change tick (another sensor mounts) retries the still-unfilled entity.
-		hub.sensor('ha.sensor.other.state').subscribe(() => undefined);
-		expect(haHistory.mock.calls.filter((c) => c[0] === 'sensor.temp')).toHaveLength(2);
-		// Let the retry + sibling fetch settle before restoring the console spy.
-		await Promise.resolve();
-		await Promise.resolve();
+		// Active-set churn inside the backoff window does not re-fetch (or re-warn).
+		tick();
+		vi.setSystemTime(HA_BACKFILL_RETRY_MS - 1);
+		tick();
+		expect(tempCalls()).toBe(1);
+
+		// Once the window passes, the next tick retries…
+		vi.setSystemTime(HA_BACKFILL_RETRY_MS);
+		tick();
+		expect(tempCalls()).toBe(2);
+		await settle();
+
+		// …and a second failure doubles the wait.
+		vi.setSystemTime(HA_BACKFILL_RETRY_MS * 2);
+		tick();
+		expect(tempCalls()).toBe(2);
+		vi.setSystemTime(HA_BACKFILL_RETRY_MS * 3);
+		tick();
+		expect(tempCalls()).toBe(3);
+		await settle();
 
 		warn.mockRestore();
+		vi.useRealTimers();
+	});
+
+	it('caps the backoff and clears it once a retry succeeds', async () => {
+		vi.useFakeTimers({ toFake: ['Date'] });
+		vi.setSystemTime(0);
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		let fail = true;
+		haHistory.mockImplementation((entity: string) =>
+			entity === 'sensor.temp' && fail ? Promise.reject(new Error('HA down')) : Promise.resolve([])
+		);
+		const hub = createTelemetryHub();
+		startHaBackfill(hub);
+		const tempCalls = (): number =>
+			haHistory.mock.calls.filter((c) => c[0] === 'sensor.temp').length;
+		let n = 0;
+		const tickAt = async (t: number): Promise<void> => {
+			vi.setSystemTime(t);
+			hub.sensor(`ha.sensor.other${n++}.state`).subscribe(() => undefined);
+			await Promise.resolve();
+			await Promise.resolve();
+		};
+
+		hub.sensor('ha.sensor.temp.state').subscribe(() => undefined);
+		await tickAt(0);
+		// Fail repeatedly, always retrying at the cap; the wait never exceeds HA_BACKFILL_MAX_RETRY_MS.
+		let now = 0;
+		for (let i = 0; i < 10; i++) {
+			now += HA_BACKFILL_MAX_RETRY_MS;
+			await tickAt(now);
+		}
+		expect(tempCalls()).toBe(11);
+
+		// A retry that succeeds marks the entity done for good.
+		fail = false;
+		now += HA_BACKFILL_MAX_RETRY_MS;
+		await tickAt(now);
+		expect(tempCalls()).toBe(12);
+		await tickAt(now * 10);
+		expect(tempCalls()).toBe(12);
+
+		warn.mockRestore();
+		vi.useRealTimers();
 	});
 });

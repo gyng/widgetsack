@@ -2,10 +2,10 @@
 // Push-to-talk: click to start the mic, click again to stop → transcribe via the provider's Whisper
 // endpoint (lib/stt.ts + llm_transcribe), optionally translate the transcript (llmComplete), optionally
 // speak the result (lib/tts.ts). Pure prompt logic lives in core/llm.ts.
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { buildTranslateMessages } from '../../core/llm';
 import { useRecording } from '../../useRecording';
-import { speakSmart } from '../plugins/llm-tts';
+import { speakOwned } from '../plugins/llm-tts';
 import { llmComplete, llmTranscribe } from '../plugins/llm-commands';
 
 export type TranscribeConfig = {
@@ -35,6 +35,10 @@ export type TranscribeState = {
 export function useTranscribe(cfg: TranscribeConfig): TranscribeState {
 	const [source, setSource] = useState('');
 	const [output, setOutput] = useState('');
+	// Stops the result this widget last spoke (a no-op once another speaker took over); a removed
+	// widget must not keep talking.
+	const stopSpeech = useRef<(() => void) | null>(null);
+	useEffect(() => () => stopSpeech.current?.(), []);
 
 	const mic = useRecording(async ({ bytes, mime }, current) => {
 		const transcript = (
@@ -50,7 +54,7 @@ export function useTranscribe(cfg: TranscribeConfig): TranscribeState {
 			if (!current()) return;
 		}
 		setOutput(result);
-		if (cfg.speak && result) void speakSmart(result);
+		if (cfg.speak && result) stopSpeech.current = speakOwned(result);
 	}, cfg.audioSource || undefined);
 	return { source, output, ...mic };
 }

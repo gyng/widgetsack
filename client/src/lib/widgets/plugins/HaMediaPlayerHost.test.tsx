@@ -55,6 +55,26 @@ describe('HaMediaPlayerHost (container wiring)', () => {
 		await waitFor(() => expect(container.querySelector('img[data-part="art"]')).toBeNull());
 	});
 
+	it("hides the previous track's art while the new track's art is still loading", async () => {
+		haMediaArt.mockResolvedValueOnce('art://first');
+		const { container, rerender } = render(
+			<HaMediaPlayerHost value={withPicture('/api/pic?t=1')} />
+		);
+		const src = (): string | null | undefined =>
+			container.querySelector('img[data-part="art"]')?.getAttribute('src');
+		await waitFor(() => expect(src()).toBe('art://first'));
+
+		let resolveArt!: (url: string) => void;
+		haMediaArt.mockReturnValueOnce(new Promise<string>((res) => (resolveArt = res)));
+		rerender(<HaMediaPlayerHost value={withPicture('/api/pic?t=2')} />);
+		// Track changed, new art pending: the old cover must not stand in for the new track.
+		expect(src()).toBeUndefined();
+		await act(async () => {
+			resolveArt('art://second');
+		});
+		expect(src()).toBe('art://second');
+	});
+
 	it('falls back to no art when the fetch rejects', async () => {
 		haMediaArt.mockRejectedValue(new Error('boom'));
 		const { container } = render(<HaMediaPlayerHost value={withPicture('/api/pic?token=x')} />);

@@ -8,33 +8,36 @@ import type { Recorder } from '../../stt';
 // (push-to-talk toggle, transcribe→translate→speak flow, the re-entrancy guard, error handling) is
 // what we assert. `buildTranslateMessages` is a pure core fn, left REAL so we verify the host calls
 // translate with the right shape.
-const { startRecording, llmTranscribe, llmComplete, speakSmart, makeRecorder } = vi.hoisted(() => {
-	const makeRecorder = (bytes = new Uint8Array([1, 2, 3]), mime = 'audio/webm') => ({
-		stop: vi.fn(() => Promise.resolve({ bytes, mime })),
-		cancel: vi.fn()
+const { startRecording, llmTranscribe, llmComplete, speakOwned, stopSpeech, makeRecorder } =
+	vi.hoisted(() => {
+		const makeRecorder = (bytes = new Uint8Array([1, 2, 3]), mime = 'audio/webm') => ({
+			stop: vi.fn(() => Promise.resolve({ bytes, mime })),
+			cancel: vi.fn()
+		});
+		const stopSpeech = vi.fn();
+		return {
+			makeRecorder,
+			startRecording: vi.fn<(deviceId?: string) => Promise<Recorder>>(),
+			llmTranscribe: vi.fn<
+				(
+					audio: Uint8Array,
+					mime: string,
+					opts?: { model?: string; language?: string }
+				) => Promise<string>
+			>(() => Promise.resolve('hello world')),
+			llmComplete: vi.fn<
+				(
+					messages: ChatMessage[],
+					opts?: { temperature?: number; maxTokens?: number }
+				) => Promise<string>
+			>(() => Promise.resolve('hola mundo')),
+			stopSpeech,
+			speakOwned: vi.fn<(text: string) => () => void>(() => stopSpeech)
+		};
 	});
-	return {
-		makeRecorder,
-		startRecording: vi.fn<(deviceId?: string) => Promise<Recorder>>(),
-		llmTranscribe: vi.fn<
-			(
-				audio: Uint8Array,
-				mime: string,
-				opts?: { model?: string; language?: string }
-			) => Promise<string>
-		>(() => Promise.resolve('hello world')),
-		llmComplete: vi.fn<
-			(
-				messages: ChatMessage[],
-				opts?: { temperature?: number; maxTokens?: number }
-			) => Promise<string>
-		>(() => Promise.resolve('hola mundo')),
-		speakSmart: vi.fn<(text: string) => Promise<void>>(() => Promise.resolve())
-	};
-});
 vi.mock('../../stt', () => ({ startRecording }));
 vi.mock('../plugins/llm-commands', () => ({ llmTranscribe, llmComplete }));
-vi.mock('../plugins/llm-tts', () => ({ speakSmart }));
+vi.mock('../plugins/llm-tts', () => ({ speakOwned }));
 
 import { useTranscribe, type TranscribeConfig } from './useTranscribe';
 
@@ -48,7 +51,8 @@ beforeEach(() => {
 	startRecording.mockResolvedValue(makeRecorder());
 	llmTranscribe.mockResolvedValue('hello world');
 	llmComplete.mockResolvedValue('hola mundo');
-	speakSmart.mockResolvedValue(undefined);
+	speakOwned.mockReturnValue(stopSpeech);
+	stopSpeech.mockClear();
 });
 afterEach(() => vi.clearAllMocks());
 
@@ -139,7 +143,7 @@ describe('useTranscribe — stop, transcribe, translate, speak', () => {
 		expect(result.current.recording).toBe(false);
 		expect(result.current.busy).toBe(false);
 		expect(llmComplete).not.toHaveBeenCalled();
-		expect(speakSmart).not.toHaveBeenCalled();
+		expect(speakOwned).not.toHaveBeenCalled();
 	});
 
 	it('forwards the model + sourceLang overrides to the transcription call', async () => {
@@ -209,7 +213,20 @@ describe('useTranscribe — stop, transcribe, translate, speak', () => {
 			result.current.toggle();
 		});
 
-		expect(speakSmart).toHaveBeenCalledWith('hello world');
+		expect(speakOwned).toHaveBeenCalledWith('hello world');
+	});
+
+	it('stops its own speech when the widget unmounts', async () => {
+		const { result, unmount } = renderHook(() => useTranscribe(cfg({ speak: true })));
+		await act(async () => {
+			result.current.toggle();
+		});
+		await act(async () => {
+			result.current.toggle();
+		});
+		expect(stopSpeech).not.toHaveBeenCalled();
+		unmount();
+		expect(stopSpeech).toHaveBeenCalledOnce();
 	});
 
 	it('does not speak when the result is empty even with speak enabled', async () => {
@@ -223,7 +240,7 @@ describe('useTranscribe — stop, transcribe, translate, speak', () => {
 			result.current.toggle();
 		});
 
-		expect(speakSmart).not.toHaveBeenCalled();
+		expect(speakOwned).not.toHaveBeenCalled();
 	});
 
 	it('a second stop in the same batch is a no-op once the recorder ref is consumed', async () => {
@@ -333,7 +350,7 @@ describe('useTranscribe — lifecycle', () => {
 		});
 		// Neither the translate step nor TTS runs for a widget that no longer exists.
 		expect(llmComplete).not.toHaveBeenCalled();
-		expect(speakSmart).not.toHaveBeenCalled();
+		expect(speakOwned).not.toHaveBeenCalled();
 	});
 
 	it('does not speak a translation that lands after unmount', async () => {
@@ -355,7 +372,7 @@ describe('useTranscribe — lifecycle', () => {
 		await act(async () => {
 			resolveComplete('hola');
 		});
-		expect(speakSmart).not.toHaveBeenCalled();
+		expect(speakOwned).not.toHaveBeenCalled();
 	});
 
 	it('swallows a transcription failure that lands after unmount', async () => {

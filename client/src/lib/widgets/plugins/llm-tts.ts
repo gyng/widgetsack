@@ -68,3 +68,15 @@ export function stopSpeaking(): void {
 	stopAudio();
 	cancelSpeech();
 }
+
+/** Speak `text` (as `speakSmart`) and return a stop that ends THIS speech only while it is still the
+ * current one — a later speaker's audio is never cut. For widgets to stop their speech on unmount. */
+export function speakOwned(text: string): () => void {
+	if (!text.trim()) return () => undefined;
+	void speakSmart(text);
+	// speakSmart bumped the generation synchronously (before its first await), so this is ours.
+	const mine = generation;
+	return () => {
+		if (mine === generation) stopSpeaking();
+	};
+}

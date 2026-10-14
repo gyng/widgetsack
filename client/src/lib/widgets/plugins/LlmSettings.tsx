@@ -187,12 +187,19 @@ export default function LlmSettings() {
 	// Agent control is INDEPENDENT of the LLM provider key (it actuates media/HA for an external MCP
 	// agent, it doesn't call the provider), so the toggle applies + persists directly — NOT gated behind
 	// the key-dependent Save button. It persists ONLY the toggle: unsaved provider edits stay unsaved.
+	// The flip is optimistic; a failed persist reverts it so the checkbox matches the saved setting.
 	const applyAgentControl = async (next: boolean) => {
 		if (saving) return;
+		const previous = agentControl;
 		setAgentControl(next);
 		await save(
 			async () => {
-				await persistAgentControl(next);
+				try {
+					await persistAgentControl(next);
+				} catch (err) {
+					setAgentControl(previous);
+					throw err;
+				}
 				await (next ? controlStart() : controlStop());
 			},
 			() => undefined

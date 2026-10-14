@@ -12,7 +12,7 @@ vi.mock('../../tts', () => ({
 	cancelSpeech: () => cancelSpeech()
 }));
 
-import { speakSmart, stopSpeaking } from './llm-tts';
+import { speakOwned, speakSmart, stopSpeaking } from './llm-tts';
 
 // A controllable fake <audio>. play() resolves/rejects per the test; we record pause + the src URL.
 let audios: FakeAudio[] = [];
@@ -131,6 +131,38 @@ describe('speakSmart', () => {
 		stale.onended!(); // fires late, after `current` no longer points at this clip → no-op
 		expect(current.paused).toBe(false);
 		expect(revoked).toEqual([]);
+	});
+});
+
+describe('speakOwned', () => {
+	it('returns a stop that ends its own speech while it is still current', async () => {
+		llmSynthesize.mockResolvedValue({ audio: [1], mime: 'audio/mpeg' });
+		const stop = speakOwned('mine');
+		await vi.waitFor(() => expect(audios).toHaveLength(1));
+		cancelSpeech.mockClear();
+		stop();
+		expect(audios[0]!.paused).toBe(true);
+		expect(cancelSpeech).toHaveBeenCalled();
+	});
+
+	it('never stops speech another caller started afterwards', async () => {
+		llmSynthesize.mockResolvedValue({ audio: [1], mime: 'audio/mpeg' });
+		const stopMine = speakOwned('mine');
+		await speakSmart('theirs');
+		cancelSpeech.mockClear();
+		stopMine();
+		expect(audios.at(-1)!.paused).toBe(false);
+		expect(cancelSpeech).not.toHaveBeenCalled();
+	});
+
+	it('speaks nothing for blank text and its stop is a no-op', async () => {
+		llmSynthesize.mockResolvedValue({ audio: [1], mime: 'audio/mpeg' });
+		await speakSmart('theirs');
+		cancelSpeech.mockClear();
+		speakOwned('  ')();
+		expect(llmSynthesize).toHaveBeenCalledTimes(1);
+		expect(audios[0]!.paused).toBe(false);
+		expect(cancelSpeech).not.toHaveBeenCalled();
 	});
 });
 

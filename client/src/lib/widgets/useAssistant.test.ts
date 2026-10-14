@@ -8,10 +8,11 @@ import { TelemetryHubContext } from './telemetryContext';
 // prompt builder (core/llm) and the schedule math (core/schedule) stay REAL so we verify the
 // snapshot→prompt→complete flow and the interval/cron scheduling.
 const llmComplete = vi.fn();
-const speakSmart = vi.fn<(text: string) => Promise<void>>(() => Promise.resolve());
+const stopSpeech = vi.fn();
+const speakOwned = vi.fn<(text: string) => () => void>(() => stopSpeech);
 const isStudioWindow = vi.fn(() => false);
 vi.mock('./plugins/llm-commands', () => ({ llmComplete: (...a: unknown[]) => llmComplete(...a) }));
-vi.mock('./plugins/llm-tts', () => ({ speakSmart: (t: string) => speakSmart(t) }));
+vi.mock('./plugins/llm-tts', () => ({ speakOwned: (t: string) => speakOwned(t) }));
 vi.mock('../overlay', () => ({ isStudioWindow: () => isStudioWindow() }));
 
 import { useAssistant, type AssistantConfig } from './useAssistant';
@@ -34,6 +35,8 @@ beforeEach(() => {
 	hub = createTelemetryHub();
 	llmComplete.mockResolvedValue('  the briefing  ');
 	isStudioWindow.mockReturnValue(false);
+	// A previous test's auto-cleanup unmount may have stopped its speech after clearAllMocks ran.
+	stopSpeech.mockClear();
 });
 afterEach(() => {
 	vi.clearAllTimers();
@@ -106,7 +109,17 @@ describe('useAssistant', () => {
 		await act(async () => {
 			await result.current.refresh();
 		});
-		expect(speakSmart).toHaveBeenCalledWith('the briefing');
+		expect(speakOwned).toHaveBeenCalledWith('the briefing');
+	});
+
+	it('stops its own speech when the widget unmounts', async () => {
+		const { result, unmount } = renderHook(() => useAssistant(cfg({ speak: true })), { wrapper });
+		await act(async () => {
+			await result.current.refresh();
+		});
+		expect(stopSpeech).not.toHaveBeenCalled();
+		unmount();
+		expect(stopSpeech).toHaveBeenCalledOnce();
 	});
 
 	it('surfaces a provider error and clears busy', async () => {
@@ -201,7 +214,7 @@ describe('useAssistant', () => {
 			resolveFirst('too late');
 			await Promise.all([first, trailing]);
 		});
-		expect(speakSmart).not.toHaveBeenCalled();
+		expect(speakOwned).not.toHaveBeenCalled();
 		expect(llmComplete).toHaveBeenCalledOnce();
 	});
 
@@ -257,5 +270,5 @@ it('ignores a provider failure after unmount', async () => {
 		reject(new Error('late'));
 		await pending;
 	});
-	expect(speakSmart).not.toHaveBeenCalled();
+	expect(speakOwned).not.toHaveBeenCalled();
 });

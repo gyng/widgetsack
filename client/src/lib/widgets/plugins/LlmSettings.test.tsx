@@ -402,6 +402,8 @@ describe('LlmSettings', () => {
 		) as HTMLInputElement;
 		fireEvent.click(toggle);
 		expect(await findByText(/Couldn.t save: locked/)).toBeTruthy();
+		// The optimistic flip is reverted: the checkbox shows the still-persisted (off) state.
+		expect(toggle.checked).toBe(false);
 		// The save rejected before the control server boot, so neither start nor stop ran.
 		expect(controlStart).not.toHaveBeenCalled();
 		expect(controlStop).not.toHaveBeenCalled();

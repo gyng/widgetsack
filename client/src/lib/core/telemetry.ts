@@ -38,22 +38,28 @@ function numericOf(value: SensorValue): number | null {
 /** Pure reducer: apply a sample to a sensor's state, capping history at `historyLen`. Keeps the
  * series ORDER-STABLE BY `ts_ms` so back-dated samples (history backfill) merge into the right place
  * instead of being appended out of order. The common live case (ts ≥ the last sample) is a plain
- * append; only an earlier ts triggers an insertion-sort, so steady-state ingest stays O(1). */
+ * append; only an earlier ts triggers an insertion-sort, so steady-state ingest stays O(1). `value`
+ * is the most recently ingested sample, except that a `historyOnly` sample (history backfill) only
+ * fills history once a live value exists — it never displaces the current value. Deliberately not
+ * ordered by ts: after a backward wall-clock jump, live samples must still update the value. */
 export function appendSample(
 	state: SensorState,
 	sample: SensorSample,
-	historyLen: number
+	historyLen: number,
+	historyOnly = false
 ): SensorState {
 	// Keep ts in lockstep with history length even for legacy states that lacked it (zero-fill = oldest).
 	const ts0 =
 		state.historyTs && state.historyTs.length === state.history.length
 			? state.historyTs
 			: state.history.map(() => 0);
+	const value = historyOnly && state.value !== null ? state.value : sample.value;
 	const n = numericOf(sample.value);
-	if (n === null) return { value: sample.value, history: state.history, historyTs: ts0 };
-	if (historyLen <= 0) return { value: sample.value, history: [], historyTs: [] };
+	if (n === null) return { value, history: state.history, historyTs: ts0 };
+	if (historyLen <= 0) return { value, history: [], historyTs: [] };
 
 	const ts = sample.ts_ms;
+
 	let history: number[];
 	let historyTs: number[];
 	if (ts0.length === 0 || ts >= ts0[ts0.length - 1]) {
@@ -70,7 +76,7 @@ export function appendSample(
 		history = history.slice(-historyLen);
 		historyTs = historyTs.slice(-historyLen);
 	}
-	return { value: sample.value, history, historyTs };
+	return { value, history, historyTs };
 }
 
 /** Base backend sampling cadence (sensors.rs INTERVAL_MS). Self-discovering meters treat an id
@@ -91,7 +97,8 @@ export interface SensorObservable {
 
 export interface TelemetryHub {
 	ingest(sample: SensorSample): void;
-	ingestBatch(batch: TelemetryBatch): void;
+	/** `historyOnly`: back-dated history (backfill) — fills history but keeps a live current value. */
+	ingestBatch(batch: TelemetryBatch, opts?: { historyOnly?: boolean }): void;
 	sensor(id: string): SensorObservable;
 	/** Ids of sensors seen so far (i.e. that have emitted at least one sample); with `freshWithinMs`,
 	 * only those still ticking (see SensorIdsOptions). */
@@ -123,8 +130,11 @@ export function createTelemetryHub(historyLen = 600): TelemetryHub {
 		activeListeners.forEach((cb) => cb());
 	};
 
-	const ingest = (sample: SensorSample): void => {
-		states.set(sample.sensor, appendSample(stateOf(sample.sensor), sample, historyLen));
+	const ingest = (sample: SensorSample, historyOnly = false): void => {
+		states.set(
+			sample.sensor,
+			appendSample(stateOf(sample.sensor), sample, historyLen, historyOnly)
+		);
 		const ts = Math.max(sample.ts_ms, lastTs.get(sample.sensor) ?? -Infinity);
 		lastTs.set(sample.sensor, ts);
 		if (ts > newestTs) newestTs = ts;
@@ -132,8 +142,8 @@ export function createTelemetryHub(historyLen = 600): TelemetryHub {
 	};
 
 	return {
-		ingest,
-		ingestBatch: (batch) => batch.forEach(ingest),
+		ingest: (sample) => ingest(sample),
+		ingestBatch: (batch, opts) => batch.forEach((sample) => ingest(sample, opts?.historyOnly)),
 		sensorIds: (opts) => {
 			const fresh = opts?.freshWithinMs;
 			if (fresh === undefined) return Array.from(states.keys());

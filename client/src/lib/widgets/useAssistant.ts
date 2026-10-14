@@ -11,7 +11,7 @@ import { buildAssistantMessages } from '../core/llm';
 import { singleFlight } from '../core/singleFlight';
 import { cronMatches, intervalMs, isCron } from '../core/schedule';
 import { isStudioWindow } from '../overlay';
-import { speakSmart } from './plugins/llm-tts';
+import { speakOwned } from './plugins/llm-tts';
 import { llmComplete } from './plugins/llm-commands';
 
 // The default sensor snapshot ("auto") — present-only; absent ids are skipped.
@@ -76,9 +76,13 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState('');
 	const mounted = useRef(true);
+	// Stops the briefing this widget last spoke (a no-op once another speaker took over).
+	const stopSpeech = useRef<(() => void) | null>(null);
 	useEffect(
 		() => () => {
 			mounted.current = false;
+			// A removed widget must not keep talking.
+			stopSpeech.current?.();
 		},
 		[]
 	);
@@ -108,7 +112,7 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 			const trimmed = out.trim();
 			if (!mounted.current) return;
 			setText(trimmed);
-			if (cfgRef.current.speak) void speakSmart(trimmed);
+			if (cfgRef.current.speak) stopSpeech.current = speakOwned(trimmed);
 		} catch (e) {
 			if (mounted.current) setError(String(e));
 		} finally {

@@ -45,6 +45,32 @@ describe('appendSample', () => {
 		expect(s.value).toEqual({ kind: 'scalar', value: 2 });
 	});
 
+	it('a historyOnly (backfill) sample fills history but never replaces a live value', () => {
+		const at = (ts: number, value: number) =>
+			({ sensor: 'x', ts_ms: ts, value: { kind: 'scalar', value } }) as const;
+		// With no live value yet, the backfill provides one.
+		let s = appendSample(emptySensorState(), at(10, 1), 10, true);
+		expect(s.value).toEqual({ kind: 'scalar', value: 1 });
+		s = appendSample(s, at(100, 5), 10);
+		s = appendSample(s, at(20, 2), 10, true);
+		expect(s.value).toEqual({ kind: 'scalar', value: 5 });
+		expect(s.history).toEqual([1, 2, 5]);
+		// A live sample after a backward clock jump still becomes the current value.
+		s = appendSample(s, at(50, 7), 10);
+		expect(s.value).toEqual({ kind: 'scalar', value: 7 });
+	});
+
+	it('hub.ingestBatch passes historyOnly through', () => {
+		const hub = createTelemetryHub(10);
+		hub.ingest({ sensor: 'x', ts_ms: 100, value: { kind: 'scalar', value: 5 } });
+		hub.ingestBatch([{ sensor: 'x', ts_ms: 10, value: { kind: 'scalar', value: 1 } }], {
+			historyOnly: true
+		});
+		expect(hub.sensor('x').getSnapshot().value).toEqual({ kind: 'scalar', value: 5 });
+		hub.ingestBatch([{ sensor: 'x', ts_ms: 20, value: { kind: 'scalar', value: 2 } }]);
+		expect(hub.sensor('x').getSnapshot().value).toEqual({ kind: 'scalar', value: 2 });
+	});
+
 	it('merges back-dated backfill ahead of existing live samples, then appends fresh ones', () => {
 		let s = emptySensorState();
 		s = appendSample(s, { sensor: 'x', ts_ms: 100, value: { kind: 'scalar', value: 5 } }, 10);
