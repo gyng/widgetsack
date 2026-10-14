@@ -71,7 +71,7 @@ fn enable_autostart(_app: &tauri::AppHandle) -> Result<(), String> {
             RUN_VALUE_NAME,
             &RegValue {
                 vtype: REG_BINARY,
-                bytes: STARTUP_APPROVED_ENABLED.to_vec(),
+                bytes: STARTUP_APPROVED_ENABLED.as_slice().into(),
             },
         );
     }

@@ -20,7 +20,7 @@ built-in visual editor (the **studio**).
 > now as one registered widget type among many. If you find a stale `np` / `nowplaying-widget`
 > reference, it predates the rename.
 
-- **Backend** — Rust crate in [widgetsack/](widgetsack/), Tauri v2, edition 2024 (Rust 1.90+).
+- **Backend** — Rust crate in [widgetsack/](widgetsack/), Tauri v2, edition 2024 (Rust 1.95+).
   Media comes from `win-gsmtc`; system sensors from `sysinfo` + `nvml-wrapper` (NVIDIA,
   best-effort); Home Assistant via `tokio-tungstenite` + `reqwest`. All Windows-only.
 - **Frontend** — React 19 + TypeScript in [client/](client/), built with Vite, tested with

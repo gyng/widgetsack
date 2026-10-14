@@ -36,7 +36,8 @@ pub struct ProcessDiag {
     pub cpu_percent: f64,
     /// Resident set size (physical memory) in bytes.
     pub mem_bytes: u64,
-    /// Virtual memory size in bytes.
+    /// sysinfo's `virtual_memory()` in bytes. On Windows (sysinfo 0.39) this is the private commit
+    /// charge (`PrivateUsage`), not the reserved address-space size it reported before.
     pub virtual_bytes: u64,
     /// Seconds this process has been running.
     pub uptime_secs: u64,

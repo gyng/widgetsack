@@ -863,7 +863,7 @@ async fn ws_request_many(
 
     // Auth phase (same handshake as the streaming client).
     expect_type(&mut ws, "auth_required").await?;
-    ws.send(Message::Text(
+    ws.send(Message::text(
         json!({ "type": "auth", "access_token": token }).to_string(),
     ))
     .await?;
@@ -872,7 +872,7 @@ async fn ws_request_many(
     // Issue every command up front; ids are 1-based and map to the request index.
     for (i, ty) in commands.iter().enumerate() {
         let id = (i + 1) as u64;
-        ws.send(Message::Text(json!({ "id": id, "type": ty }).to_string()))
+        ws.send(Message::text(json!({ "id": id, "type": ty }).to_string()))
             .await?;
     }
 
@@ -928,7 +928,7 @@ async fn connect_and_stream<R: Runtime>(
     // Auth phase: frames carry no id. auth_required → auth → auth_ok (auth_invalid is fatal).
     expect_type(&mut ws, "auth_required").await?;
     let auth = json!({ "type": "auth", "access_token": token }).to_string();
-    ws.send(Message::Text(auth)).await?;
+    ws.send(Message::text(auth)).await?;
     expect_type(&mut ws, "auth_ok").await?;
     emit_status(app, "connected");
 
@@ -936,13 +936,13 @@ async fn connect_and_stream<R: Runtime>(
     let next_id = AtomicU64::new(1);
     let snapshot_id = next_id.fetch_add(1, Ordering::SeqCst);
     let get_states = json!({ "id": snapshot_id, "type": "get_states" }).to_string();
-    ws.send(Message::Text(get_states)).await?;
+    ws.send(Message::text(get_states)).await?;
     let sub_id = next_id.fetch_add(1, Ordering::SeqCst);
     let subscribe = json!({
         "id": sub_id, "type": "subscribe_events", "event_type": "state_changed"
     })
     .to_string();
-    ws.send(Message::Text(subscribe)).await?;
+    ws.send(Message::text(subscribe)).await?;
 
     // Liveness: an idle deadline (no frame of any kind for WS_READ_TIMEOUT) plus an app-level
     // ping every WS_PING_INTERVAL whose pong must arrive within the same budget. Either failing
@@ -971,7 +971,7 @@ async fn connect_and_stream<R: Runtime>(
             _ = ping.tick() => {
                 heartbeat.on_tick(Instant::now())?;
                 let id = next_id.fetch_add(1, Ordering::SeqCst);
-                ws.send(Message::Text(ping_frame(id))).await?;
+                ws.send(Message::text(ping_frame(id))).await?;
                 continue;
             }
             _ = tokio::time::sleep_until(flush_at.unwrap_or_else(tokio::time::Instant::now)), if flush_at.is_some() => {
@@ -1202,7 +1202,7 @@ pub async fn ha_test_connection(
         .await
         .map_err(|e| e.to_string())?;
     let auth = json!({ "type": "auth", "access_token": token }).to_string();
-    ws.send(Message::Text(auth))
+    ws.send(Message::text(auth))
         .await
         .map_err(|e| e.to_string())?;
     // `ws` is dropped on return, closing the throwaway socket.
@@ -2167,8 +2167,8 @@ mod tests {
         assert!(err.contains("timed out"), "{err}");
 
         let mut ok = futures_util::stream::iter(vec![
-            Ok(Message::Text(json!({ "type": "noise" }).to_string())),
-            Ok(Message::Text(
+            Ok(Message::text(json!({ "type": "noise" }).to_string())),
+            Ok(Message::text(
                 json!({ "type": "auth_ok", "ha_version": "2026.10.0" }).to_string(),
             )),
         ]);

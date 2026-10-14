@@ -116,6 +116,13 @@ fn percent(used: u64, total: u64) -> f64 {
     }
 }
 
+/// VRAM "used" bytes as reported by NVML's v1 memory query (allocated + driver-reserved), which
+/// `gpu.vram` / `gpu.vram.used` have always shown. nvml-wrapper 0.11+ reads `nvmlDeviceGetMemoryInfo_v2`,
+/// whose `used` excludes the reserved share (and whose `free` is `total - used - reserved`, unchanged).
+fn vram_used(allocated: u64, reserved: u64) -> u64 {
+    allocated.saturating_add(reserved)
+}
+
 /// Convert a per-tick byte delta into a bytes-per-second rate.
 /// PURE SEAM: the real span a network byte delta covers. Ticks are skipped while a slow sample runs,
 /// and the machine can sleep, so the delta can cover several seconds; dividing by the nominal
@@ -978,7 +985,7 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         .map(|c| c.brand().trim().to_string())
         .filter(|s| !s.is_empty());
     let logical_cores = sys.cpus().len();
-    let physical_cores = sys.physical_core_count();
+    let physical_cores = System::physical_core_count();
 
     // GPU is best-effort: degrade gracefully on machines without NVML/NVIDIA. The library handle is
     // leaked to `'static` so the device (which borrows it) can travel with the sampler onto the
@@ -1414,13 +1421,14 @@ impl<R: Runtime> Sampler<R> {
                 Err(err) => lost = gpu_lost(&err),
             }
             if let Ok(mem) = device.memory_info() {
+                let used = vram_used(mem.used, mem.reserved);
                 batch.push(SensorSample::scalar(
                     "gpu.vram",
                     ts,
-                    percent(mem.used, mem.total),
+                    percent(used, mem.total),
                 ));
                 batch.push(SensorSample::scalar("gpu.vram.total", ts, mem.total as f64));
-                batch.push(SensorSample::scalar("gpu.vram.used", ts, mem.used as f64));
+                batch.push(SensorSample::scalar("gpu.vram.used", ts, used as f64));
                 batch.push(SensorSample::scalar("gpu.vram.free", ts, mem.free as f64));
             }
             if let Ok(temp) = device.temperature(TemperatureSensor::Gpu) {
@@ -1586,6 +1594,13 @@ mod tests {
         assert_eq!(json["sensor"], "cpu.brand");
         assert_eq!(json["value"]["kind"], "text");
         assert_eq!(json["value"]["value"], "AMD Ryzen 9 7950X");
+    }
+
+    #[test]
+    fn vram_used_counts_the_driver_reserved_share_like_nvml_v1() {
+        // 8 GiB card: 3 GiB allocated + 0.5 GiB reserved → v1 "used" was 3.5 GiB.
+        assert_eq!(vram_used(3 << 30, 512 << 20), (3 << 30) + (512 << 20));
+        assert_eq!(vram_used(u64::MAX, 1), u64::MAX);
     }
 
     #[test]
