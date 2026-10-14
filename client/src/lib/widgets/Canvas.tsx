@@ -858,6 +858,8 @@ export default function Canvas({ studio = false }: Props) {
 				out.push({ rect: measuredRef.current?.get(r.id) ?? r.rect, interactive: true });
 				continue;
 			}
+			// A widget inside an unmet conditional container keeps its layout box but is invisible.
+			if (el.closest('[data-hidden]')) continue;
 			const targets = el.querySelectorAll<HTMLElement>(INTERACTIVE_SELECTOR);
 			// A dormant status widget explicitly opts out of the whole-box fallback.
 			if (el.querySelector('[data-widget-interactive="none"]')) continue;
@@ -929,8 +931,8 @@ export default function Canvas({ studio = false }: Props) {
 	}, [syncRects]);
 	useEffect(() => {
 		if (studio) return;
-		scheduleSyncRects(); // the theme (or the initial CSS) changed
-	}, [studio, themeCss, scheduleSyncRects]);
+		scheduleSyncRects(); // the theme (or the initial CSS) changed, or a condition hid/showed a container
+	}, [studio, themeCss, hiddenIds, scheduleSyncRects]);
 	useEffect(() => {
 		if (studio) return;
 		const world = worldRef.current;
