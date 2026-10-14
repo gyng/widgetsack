@@ -68,3 +68,72 @@ export function overlayPresentation(i: PresentationInput): OverlayPresentation {
 export function isWholeWindowInteractive(i: PresentationInput): boolean {
 	return !overlayPresentation(i).clickThrough;
 }
+
+/** The minimal element shape the focus policy reads (an HTMLElement satisfies it) — keeps this
+ *  module DOM-free and testable with plain objects. */
+export type FocusTarget = {
+	tagName: string;
+	type?: string;
+	isContentEditable?: boolean;
+	readOnly?: boolean;
+	disabled?: boolean;
+};
+
+/** `<input>` types that are pressed, not typed into — a click on one needs no keyboard focus. */
+const NON_TEXT_INPUT_TYPES = new Set([
+	'button',
+	'checkbox',
+	'color',
+	'file',
+	'hidden',
+	'image',
+	'radio',
+	'range',
+	'reset',
+	'submit'
+]);
+
+/** Whether `t` is a text entry that needs the keyboard (and so the overlay window must be able to
+ *  take activation): an editable text-like `<input>`, a `<textarea>`, a `<select>` (its dropdown and
+ *  type-ahead need focus), or anything inside a contenteditable. Buttons, toggles and sliders don't —
+ *  clicking them must leave the foreground app active. Pure. */
+export function isTextEntry(t: FocusTarget | null | undefined): boolean {
+	if (!t || t.disabled) return false;
+	if (t.isContentEditable) return true;
+	switch (t.tagName.toUpperCase()) {
+		case 'TEXTAREA':
+			return !t.readOnly;
+		case 'SELECT':
+			return true;
+		case 'INPUT':
+			return !t.readOnly && !NON_TEXT_INPUT_TYPES.has((t.type ?? 'text').toLowerCase());
+		default:
+			return false;
+	}
+}
+
+export type FocusPolicyInput = {
+	/** Windowed-debug: an ordinary window, always focusable. */
+	windowed: boolean;
+	/** Overlay edit mode: the whole window is interactive (and Inspector fields take typing). */
+	editMode: boolean;
+	/** A text entry in this overlay was just pressed and still holds focus. */
+	textEntry: boolean;
+};
+
+export type FocusPolicy = {
+	/** `false` = WS_EX_NOACTIVATE: clicking the overlay doesn't steal activation. */
+	focusable: boolean;
+	/** Bring the window to the foreground now (only for a pressed text entry on an otherwise
+	 *  passive overlay — edit mode / windowed windows activate on click like any window). */
+	activate: boolean;
+};
+
+/** The overlay's activation policy (WS_EX_NOACTIVATE). A passive overlay never takes activation, so
+ *  clicking a media button or an HA toggle leaves the foreground app focused; it becomes focusable
+ *  only while a text entry needs the keyboard, in overlay edit mode, or as a windowed-debug window.
+ *  The studio never participates. Pure. */
+export function overlayFocusPolicy(i: FocusPolicyInput): FocusPolicy {
+	const focusable = i.windowed || i.editMode || i.textEntry;
+	return { focusable, activate: i.textEntry && !i.windowed && !i.editMode };
+}

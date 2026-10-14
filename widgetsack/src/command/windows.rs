@@ -149,6 +149,43 @@ pub fn quit_flushed(window: tauri::WebviewWindow, state: tauri::State<'_, QuitFl
     state.ack(window.label());
 }
 
+// --- overlay focus policy (WS_EX_NOACTIVATE) ---------------------------------------------------------
+// A passive overlay must not steal activation from the foreground app when one of its interactive
+// widgets (a media button, an HA toggle) is clicked, so overlays run non-focusable by default. The
+// client (canvas/useOverlayFocus.ts) makes the window focusable again — and activates it — only when a
+// text entry is pressed or overlay edit mode is on, restoring the policy when that ends.
+//
+// This goes through tao's FOCUSABLE window flag (`set_focusable`), which IS WS_EX_NOACTIVATE on
+// Windows, rather than a raw SetWindowLongPtrW(GWL_EXSTYLE): tao rebuilds the whole extended style
+// from its own flags on every flag change (set_ignore_cursor_events — which the click-through watcher
+// toggles as the cursor crosses widget rects — always-on-top/bottom, decorations, …), so a bit set
+// behind its back would be wiped on the next hover. tao applies it with SWP_FRAMECHANGED.
+
+/// Whether the focus policy applies to the window `label` — every overlay, never the studio (a normal
+/// decorated window you type into).
+fn focus_policy_applies(label: &str) -> bool {
+    label != "studio"
+}
+
+/// Set the CALLING overlay's focusability: `false` = WS_EX_NOACTIVATE (clicks don't activate it),
+/// `true` = a normal activatable window; with `activate`, also bring it to the foreground so a text
+/// entry the user just pressed receives the keyboard. A no-op for the studio.
+#[tauri::command]
+pub fn set_overlay_focusable(
+    window: tauri::WebviewWindow,
+    focusable: bool,
+    activate: bool,
+) -> Result<(), String> {
+    if !focus_policy_applies(window.label()) {
+        return Ok(());
+    }
+    window.set_focusable(focusable).map_err(|e| e.to_string())?;
+    if focusable && activate {
+        window.set_focus().map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Toggle whole-window click-through for the window with `label`. `interactive = true` drops
 /// click-through (and brings the window forward so you can actually click it — e.g. a crashed overlay's
 /// "Reload" page); `false` restores it. No-op if the label is unknown.
@@ -167,6 +204,9 @@ pub fn set_window_interactive(
         win.set_ignore_cursor_events(!interactive)
             .map_err(|e| e.to_string())?;
         if interactive {
+            // A rescued window must be activatable (its JS may be dead and unable to lift
+            // WS_EX_NOACTIVATE itself); a live overlay re-applies its focus policy on its own.
+            let _ = win.set_focusable(true);
             let _ = win.show();
             let _ = win.set_focus();
         } else {
@@ -189,6 +229,7 @@ pub fn rescue_all<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         // re-enables click-through as soon as the cursor crosses a rect, undoing the rescue.
         clickthrough::forget_window(&rects, &label);
         let _ = win.set_ignore_cursor_events(false);
+        let _ = win.set_focusable(true); // lift the overlay's WS_EX_NOACTIVATE (see set_overlay_focusable)
         let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
@@ -246,7 +287,14 @@ pub(crate) fn respawn_main_hidden(app: &tauri::AppHandle, reason: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{OverlayEditState, QuitFlush};
+    use super::{OverlayEditState, QuitFlush, focus_policy_applies};
+
+    #[test]
+    fn focus_policy_covers_every_overlay_but_never_the_studio() {
+        assert!(focus_policy_applies("main"));
+        assert!(focus_policy_applies("overlay-1"));
+        assert!(!focus_policy_applies("studio"));
+    }
 
     #[test]
     fn quit_settles_once_every_live_window_acked() {

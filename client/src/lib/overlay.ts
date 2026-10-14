@@ -48,8 +48,7 @@ import {
  *  always-on-bottom (below app windows), 'wallpaper' = parented to the desktop WorkerW (on the
  *  wallpaper, behind icons) via the Rust `set_overlay_wallpaper` command. Each overlay window
  *  self-applies — the wallpaper invoke targets the CALLING window, so it must run in that window.
- *  Best-effort: failures are logged, never thrown (a missing WorkerW just leaves the window where
- *  it was). */
+ *  Best-effort: failures are logged, never thrown (a missing WorkerW falls back to 'bottom'). */
 export async function applyOverlayLayer(layer: OverlayLayer): Promise<void> {
 	const win = getCurrentWindow();
 	let detail = '';
@@ -60,7 +59,17 @@ export async function applyOverlayLayer(layer: OverlayLayer): Promise<void> {
 			await win.setAlwaysOnBottom(false);
 			// The Rust command returns a human-readable status (e.g. "parented to WorkerW 0x…") so the
 			// studio can show whether the wallpaper attach actually succeeded.
-			detail = await invoke<string>(COMMANDS.setOverlayWallpaper, { enabled: true });
+			try {
+				detail = await invoke<string>(COMMANDS.setOverlayWallpaper, { enabled: true });
+			} catch (err) {
+				// No wallpaper host found (or the re-parent failed): don't leave the window neither
+				// topmost nor bottom — fall back to the plain 'bottom' layer, reported as a failure so
+				// Settings shows the wallpaper attach didn't take.
+				await win.setAlwaysOnBottom(true);
+				ok = false;
+				detail = `wallpaper attach failed (${String(err)}); fell back to below windows`;
+				console.warn('applyOverlayLayer: wallpaper attach failed, using bottom', err);
+			}
 		} else {
 			// Un-parent from any WorkerW first, then set the normal z-order. Idempotent when the
 			// window was never parented (Rust SetParent to the desktop is a no-op there).
@@ -84,6 +93,18 @@ export async function applyOverlayLayer(layer: OverlayLayer): Promise<void> {
 	// (cross-window verification — "is the wallpaper/below mode actually applied on the overlay?").
 	console.info(`[overlay] layer '${layer}' on ${win.label}: ${ok ? 'OK' : 'FAILED'} — ${detail}`);
 	emit(EVENTS.overlayLayerStatus, { layer, ok, detail, label: win.label }).catch(() => undefined);
+}
+
+/** Set THIS overlay window's focusability (Rust `set_overlay_focusable`): `false` = WS_EX_NOACTIVATE
+ *  so clicking a widget doesn't steal activation from the foreground app; `true` with `activate`
+ *  also brings the window forward so a pressed text entry receives the keyboard. The policy itself
+ *  is canvas/overlayPresentation.ts `overlayFocusPolicy`. Best-effort: failures are logged. */
+export async function setOverlayFocusable(focusable: boolean, activate: boolean): Promise<void> {
+	try {
+		await invoke(COMMANDS.setOverlayFocusable, { focusable, activate });
+	} catch (err) {
+		console.warn('set_overlay_focusable failed', err);
+	}
 }
 
 // The stable per-monitor layout key (monitorDeviceKey) and its reverse lookup (monitorByKey) live

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { overlayPresentation, isWholeWindowInteractive } from './overlayPresentation';
+import {
+	overlayPresentation,
+	isWholeWindowInteractive,
+	isTextEntry,
+	overlayFocusPolicy
+} from './overlayPresentation';
 
 describe('overlayPresentation', () => {
 	it('a passive secondary overlay (below windows) is borderless + click-through', () => {
@@ -72,5 +77,57 @@ describe('overlayPresentation', () => {
 			editMode: false
 		};
 		expect(isWholeWindowInteractive(passiveSecondary)).toBe(false);
+	});
+});
+
+describe('isTextEntry', () => {
+	it.each([
+		['a text input', { tagName: 'INPUT', type: 'text' }],
+		['an input with no type (defaults to text)', { tagName: 'input' }],
+		['a search / number / password input', { tagName: 'INPUT', type: 'search' }],
+		['a textarea (sticky note, chat box)', { tagName: 'TEXTAREA' }],
+		['a select', { tagName: 'SELECT', type: 'select-one' }],
+		['a contenteditable region (or a node inside one)', { tagName: 'DIV', isContentEditable: true }]
+	])('%s needs the keyboard', (_label, target) => {
+		expect(isTextEntry(target)).toBe(true);
+	});
+
+	it.each([
+		['nothing', null],
+		['a button (media control)', { tagName: 'BUTTON', type: 'submit' }],
+		['a checkbox (HA toggle, checklist tick)', { tagName: 'INPUT', type: 'checkbox' }],
+		['a range slider (volume, HA brightness)', { tagName: 'INPUT', type: 'range' }],
+		['a plain div', { tagName: 'DIV', isContentEditable: false }],
+		['a read-only input', { tagName: 'INPUT', type: 'text', readOnly: true }],
+		['a read-only textarea', { tagName: 'TEXTAREA', readOnly: true }],
+		['a disabled input', { tagName: 'INPUT', type: 'text', disabled: true }]
+	])('%s does not', (_label, target) => {
+		expect(isTextEntry(target)).toBe(false);
+	});
+});
+
+describe('overlayFocusPolicy', () => {
+	it('a passive overlay is non-activating, so a widget click never steals focus', () => {
+		expect(overlayFocusPolicy({ windowed: false, editMode: false, textEntry: false })).toEqual({
+			focusable: false,
+			activate: false
+		});
+	});
+
+	it('a pressed text entry makes the overlay focusable AND activates it for the keyboard', () => {
+		expect(overlayFocusPolicy({ windowed: false, editMode: false, textEntry: true })).toEqual({
+			focusable: true,
+			activate: true
+		});
+	});
+
+	it('edit mode and windowed-debug are focusable without forcing activation', () => {
+		for (const input of [
+			{ windowed: false, editMode: true, textEntry: false },
+			{ windowed: false, editMode: true, textEntry: true },
+			{ windowed: true, editMode: false, textEntry: true }
+		]) {
+			expect(overlayFocusPolicy(input)).toEqual({ focusable: true, activate: false });
+		}
 	});
 });

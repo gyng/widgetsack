@@ -148,6 +148,17 @@ fn gpu_retry_due(retry_at: Option<std::time::Instant>, now: std::time::Instant) 
     retry_at.is_none_or(|at| now >= at)
 }
 
+/// Initialize NVML and probe GPU 0. `Ok(None)` = the library loaded but there is no usable device;
+/// that handle is dropped (shut down) here rather than kept, so a failed probe holds nothing.
+fn acquire_gpu() -> Result<Option<(Nvml, Option<String>)>, NvmlError> {
+    let nvml = Nvml::init()?;
+    let name = match nvml.device_by_index(0) {
+        Ok(device) => device.name().ok().filter(|s| !s.is_empty()),
+        Err(_) => return Ok(None),
+    };
+    Ok(Some((nvml, name)))
+}
+
 fn rate_per_sec(bytes: u64, interval_ms: u64) -> f64 {
     if interval_ms == 0 {
         0.0
@@ -988,23 +999,21 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
     let physical_cores = System::physical_core_count();
 
     // GPU is best-effort: degrade gracefully on machines without NVML/NVIDIA. The library handle is
-    // leaked to `'static` so the device (which borrows it) can travel with the sampler onto the
-    // blocking pool — it lives for the process anyway (this task runs until exit).
-    let nvml: Option<&'static Nvml> = match Nvml::init() {
-        Ok(nvml) => Some(Box::leak(Box::new(nvml))),
+    // OWNED by the sampler (not leaked): losing the GPU drops it — `nvmlShutdown` + library unload —
+    // before the next re-init, so repeated driver resets can't pile up handles.
+    let (nvml, gpu_name) = match acquire_gpu() {
+        Ok(Some((nvml, name))) => (Some(nvml), name),
+        Ok(None) => (None, None),
         Err(err) => {
             log::warn("sensors", "GPU sensors disabled (NVML init failed)")
                 .field("error", err)
                 .emit();
-            None
+            (None, None)
         }
     };
-    let gpu = nvml.and_then(|nvml| nvml.device_by_index(0).ok());
-    let gpu_retry_at = gpu.is_none().then(|| std::time::Instant::now() + GPU_RETRY);
-    let gpu_name = gpu
-        .as_ref()
-        .and_then(|d| d.name().ok())
-        .filter(|s| !s.is_empty());
+    let gpu_retry_at = nvml
+        .is_none()
+        .then(|| std::time::Instant::now() + GPU_RETRY);
 
     let mut sampler = Some(Sampler {
         app,
@@ -1017,7 +1026,6 @@ pub async fn run_system_sensors<R: Runtime>(app: AppHandle<R>) {
         logical_cores,
         physical_cores,
         nvml,
-        gpu,
         gpu_name,
         gpu_retry_at,
         latest: HashMap::new(),
@@ -1091,11 +1099,14 @@ struct Sampler<R: Runtime> {
     cpu_brand: Option<String>,
     logical_cores: usize,
     physical_cores: Option<usize>,
-    /// The leaked NVML library handle; `None` until a successful init (or after the GPU was lost).
-    nvml: Option<&'static Nvml>,
-    gpu: Option<nvml_wrapper::Device<'static>>,
+    /// The owned NVML library handle, `Some` only while GPU 0 is acquired. `None` until a successful
+    /// init, and again after the GPU was lost — dropping it shuts NVML down and unloads the library,
+    /// so a recovery never stacks a second live handle on the old one. The `Device` is re-fetched
+    /// from it each pass (a cheap handle lookup) instead of being stored, which is what lets the
+    /// sampler own the library rather than leak it to `'static` for the borrow.
+    nvml: Option<Nvml>,
     gpu_name: Option<String>,
-    /// Earliest time to retry acquiring the GPU while `gpu` is `None`.
+    /// Earliest time to retry acquiring the GPU while `nvml` is `None`.
     gpu_retry_at: Option<std::time::Instant>,
     /// Latest value per sensor id, mirrored to <config>/mcp/state.json every few ticks for the MCP
     /// server's read_sensors tool (live readings for an external agent).
@@ -1118,7 +1129,6 @@ impl<R: Runtime> Sampler<R> {
             logical_cores,
             physical_cores,
             nvml,
-            gpu,
             gpu_name,
             gpu_retry_at,
             latest,
@@ -1391,23 +1401,30 @@ impl<R: Runtime> Sampler<R> {
         }
 
         let now = std::time::Instant::now();
-        if want_gpu && gpu.is_none() && gpu_retry_due(*gpu_retry_at, now) {
+        if want_gpu && nvml.is_none() && gpu_retry_due(*gpu_retry_at, now) {
             // Best-effort recovery: the driver was not ready at autostart, or was updated/reset.
+            // `nvml` is `None` here, so any previous library handle was already dropped (shut down).
             *gpu_retry_at = Some(now + GPU_RETRY);
-            if nvml.is_none() {
-                *nvml = Nvml::init().ok().map(|n| &*Box::leak(Box::new(n)));
-            }
-            *gpu = nvml.and_then(|n| n.device_by_index(0).ok());
-            *gpu_name = gpu
-                .as_ref()
-                .and_then(|d| d.name().ok())
-                .filter(|s| !s.is_empty());
-            if gpu.is_some() {
+            if let Ok(Some((lib, name))) = acquire_gpu() {
+                *nvml = Some(lib);
+                *gpu_name = name;
                 log::info("sensors", "GPU sensors available").emit();
             }
         }
         let mut lost = false;
-        if want_gpu && let Some(device) = &gpu {
+        let device = match nvml
+            .as_ref()
+            .filter(|_| want_gpu)
+            .map(|n| n.device_by_index(0))
+        {
+            Some(Ok(device)) => Some(device),
+            Some(Err(err)) => {
+                lost = gpu_lost(&err);
+                None
+            }
+            None => None,
+        };
+        if let Some(device) = &device {
             let _t = timings.start("sensors.gpu");
             match device.utilization_rates() {
                 Ok(util) => {
@@ -1494,9 +1511,9 @@ impl<R: Runtime> Sampler<R> {
             }
         }
         if lost {
-            // The driver went away under us: re-initialize NVML on the retry cadence.
+            // The driver went away under us: release this NVML handle (drop → nvmlShutdown + unload)
+            // and re-initialize on the retry cadence.
             log::warn("sensors", "GPU lost; retrying NVML").emit();
-            *gpu = None;
             *nvml = None;
             *gpu_retry_at = Some(now + GPU_RETRY);
         }

@@ -211,7 +211,8 @@ pub fn set_overlay_wallpaper(
 fn set_wallpaper_parent(window: &tauri::WebviewWindow, enabled: bool) -> Result<String, String> {
     use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, FindWindowW, GetParent, SMTO_NORMAL, SendMessageTimeoutW, SetParent,
+        EnumWindows, FindWindowExW, FindWindowW, GetParent, SMTO_NORMAL, SendMessageTimeoutW,
+        SetParent,
     };
     use windows::core::w;
 
@@ -263,55 +264,124 @@ fn set_wallpaper_parent(window: &tauri::WebviewWindow, enabled: bool) -> Result<
             Some(&mut spawn_result as *mut usize as *mut _),
         );
     }
-    // 2) Find the WorkerW that is the wallpaper surface (the one whose sibling hosts SHELLDLL_DefView,
-    //    the desktop-icon layer). EnumWindows writes the match back through the LPARAM out-pointer.
-    //    The 0x052C message spawns that WorkerW asynchronously, so it can still be missing for a few
-    //    dozen ms after SendMessageTimeoutW returns — most visibly under `tauri dev`, where an HMR
-    //    reload re-applies the layer before the shell has settled (the "WorkerW host not found"
-    //    error). Poll briefly (≤ ~270 ms) instead of giving up on the first miss.
-    let mut worker = HWND::default();
+    // 2) Find the WorkerW that is the wallpaper surface. Two shell layouts exist:
+    //    - pre-24H2: 0x052C moves the desktop icons (SHELLDLL_DefView) into a new top-level WorkerW and
+    //      spawns the wallpaper WorkerW as its NEXT top-level sibling;
+    //    - Windows 11 24H2+ (build 26100+): SHELLDLL_DefView stays inside Progman and the wallpaper
+    //      WorkerW is a CHILD of Progman, below DefView in the child z-order — so parenting to it puts
+    //      the overlay on the wallpaper but behind the icons (the Lively / Wallpaper Engine 24H2 path).
+    //    `wallpaper_host` (pure) picks between them. The 0x052C message spawns the WorkerW
+    //    asynchronously, so it can still be missing for a few dozen ms after SendMessageTimeoutW
+    //    returns — most visibly under `tauri dev`, where an HMR reload re-applies the layer before the
+    //    shell has settled. Poll briefly (≤ ~270 ms) instead of giving up on the first miss.
+    let mut host = None;
     for attempt in 0..10 {
+        let mut probe = EnumProbe::default();
         unsafe {
             let _ = EnumWindows(
                 Some(enum_find_workerw),
-                LPARAM(&mut worker as *mut HWND as isize),
+                LPARAM(&mut probe as *mut EnumProbe as isize),
             );
         }
-        if !worker.is_invalid() {
+        let progman_child = unsafe { FindWindowExW(Some(progman), None, w!("WorkerW"), None) }
+            .ok()
+            .filter(|h| !h.is_invalid());
+        host = wallpaper_host(ShellProbe {
+            defview_in_progman: probe.defview_host == Some(progman.0 as usize),
+            progman_workerw: progman_child.map(|h| h.0 as usize),
+            sibling_workerw: probe.sibling_workerw,
+        });
+        if host.is_some() {
             break;
         }
         if attempt < 9 {
             std::thread::sleep(std::time::Duration::from_millis(30));
         }
     }
-    if worker.is_invalid() {
+    let Some(host) = host else {
         return Err("WorkerW (wallpaper host) not found".to_string());
-    }
+    };
+    let (worker, kind) = match host {
+        WallpaperHost::Sibling(h) => (HWND(h as _), "WorkerW"),
+        WallpaperHost::ProgmanChild(h) => (HWND(h as _), "Progman's child WorkerW (24H2)"),
+    };
     unsafe { SetParent(hwnd, Some(worker)) }.map_err(|e| e.to_string())?;
-    Ok(format!("parented to WorkerW {:#x}", worker.0 as usize))
+    Ok(format!("parented to {kind} {:#x}", worker.0 as usize))
+}
+
+/// What the shell-window probe found (raw HWND values).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ShellProbe {
+    /// SHELLDLL_DefView (the desktop icons) is hosted by Progman itself — the 24H2+ layout (or a
+    /// pre-24H2 shell that hasn't split yet).
+    defview_in_progman: bool,
+    /// A WorkerW that is a child of Progman (24H2+: the wallpaper surface).
+    progman_workerw: Option<usize>,
+    /// The top-level WorkerW right after the DefView host (pre-24H2: the wallpaper surface).
+    sibling_workerw: Option<usize>,
+}
+
+/// The window to parent the overlay to for the wallpaper layer.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum WallpaperHost {
+    /// Pre-24H2: the top-level WorkerW sibling of the DefView host.
+    Sibling(usize),
+    /// 24H2+: Progman's child WorkerW (below SHELLDLL_DefView in Progman's child z-order).
+    ProgmanChild(usize),
+}
+
+/// PURE SEAM: pick the wallpaper host from a shell probe. When the icons still live in Progman and
+/// Progman has a WorkerW child, that child is the wallpaper (24H2) — a top-level WorkerW "after
+/// Progman" there is unrelated. Otherwise the classic sibling WorkerW; `None` = not (yet) present.
+fn wallpaper_host(probe: ShellProbe) -> Option<WallpaperHost> {
+    match probe {
+        ShellProbe {
+            defview_in_progman: true,
+            progman_workerw: Some(child),
+            ..
+        } => Some(WallpaperHost::ProgmanChild(child)),
+        ShellProbe {
+            defview_in_progman: false,
+            sibling_workerw: Some(sibling),
+            ..
+        } => Some(WallpaperHost::Sibling(sibling)),
+        _ => None,
+    }
+}
+
+/// EnumWindows out-param: the top-level window hosting SHELLDLL_DefView, and the top-level WorkerW
+/// immediately after it (if any).
+#[cfg(target_os = "windows")]
+#[derive(Default)]
+struct EnumProbe {
+    defview_host: Option<usize>,
+    sibling_workerw: Option<usize>,
 }
 
 // EnumWindows callback: a top-level window hosting a SHELLDLL_DefView child is the desktop icon host;
-// the WorkerW immediately AFTER it (its next sibling) is the wallpaper surface we want to parent to.
+// the WorkerW immediately AFTER it (its next sibling) is the pre-24H2 wallpaper surface.
 #[cfg(target_os = "windows")]
 unsafe extern "system" fn enum_find_workerw(
     top: windows::Win32::Foundation::HWND,
     lparam: windows::Win32::Foundation::LPARAM,
 ) -> windows::core::BOOL {
-    use windows::Win32::Foundation::{HWND, TRUE};
+    use windows::Win32::Foundation::TRUE;
     use windows::Win32::UI::WindowsAndMessaging::FindWindowExW;
     use windows::core::{BOOL, w};
 
     let defview =
         unsafe { FindWindowExW(Some(top), None, w!("SHELLDLL_DefView"), None) }.unwrap_or_default();
-    if !defview.is_invalid()
-        && let Ok(worker) = unsafe { FindWindowExW(None, Some(top), w!("WorkerW"), None) }
-        && !worker.is_invalid()
-    {
-        unsafe { *(lparam.0 as *mut HWND) = worker };
-        return BOOL(0); // found → stop enumerating
+    if defview.is_invalid() {
+        return TRUE; // keep going
     }
-    TRUE // keep going
+    // SAFETY: lparam is the `&mut EnumProbe` set_wallpaper_parent passes for this call's duration.
+    let probe = unsafe { &mut *(lparam.0 as *mut EnumProbe) };
+    probe.defview_host = Some(top.0 as usize);
+    probe.sibling_workerw = unsafe { FindWindowExW(None, Some(top), w!("WorkerW"), None) }
+        .ok()
+        .filter(|h| !h.is_invalid())
+        .map(|h| h.0 as usize);
+    BOOL(0) // found the icon host → stop enumerating
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -321,7 +391,55 @@ fn set_wallpaper_parent(_window: &tauri::WebviewWindow, _enabled: bool) -> Resul
 
 #[cfg(test)]
 mod tests {
-    use super::{InteractiveRects, ScreenRect, store_rects};
+    use super::{
+        InteractiveRects, ScreenRect, ShellProbe, WallpaperHost, store_rects, wallpaper_host,
+    };
+
+    #[test]
+    fn wallpaper_host_prefers_progmans_child_workerw_on_24h2() {
+        // 24H2: the icons stay in Progman and the wallpaper WorkerW is its child — even if some
+        // unrelated top-level WorkerW happens to follow Progman.
+        let probe = ShellProbe {
+            defview_in_progman: true,
+            progman_workerw: Some(0x20),
+            sibling_workerw: Some(0x30),
+        };
+        assert_eq!(
+            wallpaper_host(probe),
+            Some(WallpaperHost::ProgmanChild(0x20))
+        );
+    }
+
+    #[test]
+    fn wallpaper_host_uses_the_sibling_workerw_before_24h2() {
+        let probe = ShellProbe {
+            defview_in_progman: false,
+            progman_workerw: None,
+            sibling_workerw: Some(0x30),
+        };
+        assert_eq!(wallpaper_host(probe), Some(WallpaperHost::Sibling(0x30)));
+    }
+
+    #[test]
+    fn wallpaper_host_is_none_until_the_shell_has_spawned_a_wallpaper_workerw() {
+        for probe in [
+            ShellProbe::default(),
+            // Icons in Progman but no child WorkerW yet (0x052C still in flight / unsplit legacy
+            // shell): a top-level WorkerW after Progman is NOT the wallpaper surface.
+            ShellProbe {
+                defview_in_progman: true,
+                progman_workerw: None,
+                sibling_workerw: Some(0x30),
+            },
+            ShellProbe {
+                defview_in_progman: false,
+                progman_workerw: Some(0x20),
+                sibling_workerw: None,
+            },
+        ] {
+            assert_eq!(wallpaper_host(probe), None, "{probe:?}");
+        }
+    }
 
     #[test]
     fn rects_from_a_destroyed_window_are_not_reinserted() {
