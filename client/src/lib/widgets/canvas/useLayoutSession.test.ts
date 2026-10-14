@@ -275,3 +275,35 @@ describe('switching monitors', () => {
 		expect(alert).toHaveBeenCalled();
 	});
 });
+
+describe('layout changed on disk', () => {
+	it('writes nothing over the external change until the user keeps their edits', async () => {
+		invoke.mockImplementation(async (command: string) =>
+			command === 'load_layout' ? document('a', 'saved') : undefined
+		);
+		const { result } = renderHook(() => useSession('a'));
+		await act(async () => {
+			await result.current.reloadLayout();
+		});
+		const edit = (id: string) =>
+			act(() =>
+				result.current.commitOp(() => ({
+					monitor: { root: container(id, 'row', []), floating: [] }
+				}))
+			);
+		const saves = () => invoke.mock.calls.filter(([command]) => command === 'save_layout').length;
+		edit('first'); // its preview write is still debouncing when the external change lands
+		act(() => result.current.onForeignLayoutChangeRef.current());
+		expect(result.current.externalChange).toBe(true);
+		edit('second');
+		await act(async () => {
+			await new Promise((resolve) => setTimeout(resolve, 300));
+		});
+		expect(saves()).toBe(0);
+		act(() => result.current.keepMine());
+		await act(async () => {
+			await result.current.flushPreviewWrite();
+		});
+		expect(saves()).toBe(1);
+	});
+});

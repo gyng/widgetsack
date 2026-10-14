@@ -118,11 +118,15 @@ export function useLayoutSession({
 	// could interleave two read-merge-write passes). Cross-monitor extras are queued in the reducer's
 	// pendingExtras (set by moveNodeToMonitor before the commit), so the preview write omits them. ---
 	const firstSave = useRef(true);
+	// While the "Layout changed on disk" banner is up, edits stay in memory: a preview write would
+	// overwrite the external change before the user chose Reload or Keep mine.
+	const holdPreview = useRef(false);
 	useEffect(() => {
 		if (firstSave.current) {
 			firstSave.current = false;
 			return; // saveSeq starts at 0; don't write on mount
 		}
+		if (holdPreview.current) return;
 		schedulePreviewWrite();
 	}, [saveSeq, schedulePreviewWrite]);
 
@@ -393,9 +397,14 @@ export function useLayoutSession({
 			designing: stateRef.current.mode.kind !== 'layout'
 		});
 		if (verdict === 'reload') void reloadLayout();
-		else setExternalChange(true);
-	}, [previewPending, reloadLayout]);
+		else {
+			holdPreview.current = true;
+			clearPreviewWrite(); // a still-debouncing edit is kept in memory, not written over it
+			setExternalChange(true);
+		}
+	}, [previewPending, reloadLayout, clearPreviewWrite]);
 	const reloadExternal = useCallback(() => {
+		holdPreview.current = false;
 		setExternalChange(false);
 		clearPreviewWrite(); // don't let a debouncing edit overwrite what we're about to load
 		// Leave any open def edit / template preview first: the reload replaces `monitor` wholesale.
@@ -411,6 +420,7 @@ export function useLayoutSession({
 	}, [clearPreviewWrite, dispatch, reloadLayout]);
 	// Keep mine: the next preview write / Save reasserts this editor's state over the external edit.
 	const keepMine = useCallback(() => {
+		holdPreview.current = false;
 		setExternalChange(false);
 		schedulePreviewWrite();
 	}, [schedulePreviewWrite]);
