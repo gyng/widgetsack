@@ -700,7 +700,9 @@ fn llm_http_client(insecure: bool) -> Result<reqwest::Client, String> {
 fn llm_http_client_with(insecure: bool, idle: Duration) -> Result<reqwest::Client, String> {
     let mut builder = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(15))
-        .read_timeout(idle);
+        .read_timeout(idle)
+        // Backstop for a stalled upload or a server trickling bytes forever.
+        .timeout(Duration::from_secs(600));
     if insecure {
         builder = builder
             .danger_accept_invalid_certs(true)
@@ -729,6 +731,7 @@ async fn chat_once(cfg: &LlmConfig, messages: &[ChatMessage]) -> Result<String, 
     if needs_key(&cfg.provider) && cfg.api_key.trim().is_empty() {
         return Err("no API key configured — set one in the AI Provider settings".into());
     }
+    check_request_base_url(&cfg.provider, &cfg.base_url)?;
     let base = effective_base(cfg);
     let url = chat_endpoint(&cfg.provider, &base);
     let body = build_chat_body(
@@ -775,9 +778,32 @@ fn key_fallback_allowed(saved_base: &str, requested_base: &str, insecure: bool) 
     !insecure && saved_base.trim_end_matches('/') == requested_base.trim_end_matches('/')
 }
 
-/// PURE SEAM: an ad-hoc `base_url` must be `https://`; `http://` is accepted ONLY for loopback hosts
-/// (`localhost`, `*.localhost`, `127.0.0.0/8`, `::1` — a local Ollama / LM Studio), so an API key
-/// can never be sent in the clear across a network. Blank means "the provider default" (always fine).
+/// Whether `host` is this PC or the local network: loopback, private/link-local addresses, or a
+/// `.local` / `.lan` / `.home.arpa` name (a model server on another machine at home). Pure.
+fn local_host(host: &str) -> bool {
+    let h = host
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_ascii_lowercase(); // IPv6 literal brackets
+    if h == "localhost"
+        || [".localhost", ".local", ".lan", ".home.arpa"]
+            .iter()
+            .any(|s| h.ends_with(s))
+    {
+        return true;
+    }
+    match h.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(ip)) => ip.is_loopback() || ip.is_private() || ip.is_link_local(),
+        Ok(std::net::IpAddr::V6(ip)) => {
+            ip.is_loopback() || ip.is_unique_local() || ip.is_unicast_link_local()
+        }
+        Err(_) => false,
+    }
+}
+
+/// PURE SEAM: a `base_url` that will carry a key must be `https://`; `http://` is accepted ONLY for
+/// this PC or the local network (`local_host` — a local Ollama / LM Studio), so an API key is never
+/// sent in the clear across the internet. Blank means "the provider default" (always fine).
 fn check_base_url(base_url: &str) -> Result<(), String> {
     let b = base_url.trim();
     if b.is_empty() {
@@ -787,20 +813,10 @@ fn check_base_url(base_url: &str) -> Result<(), String> {
     match u.scheme() {
         "https" => Ok(()),
         "http" => {
-            let loopback = u.host_str().is_some_and(|h| {
-                let h = h.trim_start_matches('[').trim_end_matches(']'); // IPv6 literal brackets
-                h.eq_ignore_ascii_case("localhost")
-                    || h.to_ascii_lowercase().ends_with(".localhost")
-                    || h.parse::<std::net::IpAddr>()
-                        .is_ok_and(|ip| ip.is_loopback())
-            });
-            if loopback {
+            if u.host_str().is_some_and(local_host) {
                 Ok(())
             } else {
-                Err(
-                    "base URL must be https:// (plain http:// is only allowed for localhost)"
-                        .into(),
-                )
+                Err("base URL must be https:// (plain http:// is only allowed for this PC or the local network)".into())
             }
         }
         other => Err(format!("base URL must be https:// (got {other}://)")),
@@ -828,7 +844,8 @@ fn check_saved_key_target(
         && !key_fallback_allowed(
             &saved_base,
             &effective_base_of(provider, base_url),
-            insecure,
+            // Only a NEW switch to insecure TLS needs the key re-entered.
+            insecure && !saved.is_some_and(|s| s.insecure),
         )
     {
         return Err(
@@ -1166,6 +1183,7 @@ pub async fn llm_transcribe<R: Runtime>(
     if needs_key(&cfg.provider) && cfg.api_key.trim().is_empty() {
         return Err("no API key configured".into());
     }
+    check_request_base_url(&cfg.provider, &cfg.base_url)?;
     if audio.is_empty() {
         return Err("no audio captured".into());
     }
@@ -1239,6 +1257,7 @@ pub async fn llm_synthesize<R: Runtime>(
     if needs_key(&cfg.provider) && cfg.api_key.trim().is_empty() {
         return Err("no API key configured".into());
     }
+    check_request_base_url(&cfg.provider, &cfg.base_url)?;
     let text = text.trim();
     if text.is_empty() {
         return Err("nothing to speak".into());
@@ -1319,6 +1338,9 @@ async fn run_stream<R: Runtime>(
             Some("no API key configured".into()),
         );
         return;
+    }
+    if let Err(e) = check_request_base_url(&cfg.provider, &cfg.base_url) {
+        return emit_delta(&app, &request_id, "", true, Some(e));
     }
     let base = effective_base(&cfg);
     let url = chat_endpoint(&cfg.provider, &base);
@@ -1881,8 +1903,14 @@ mod tests {
         // A key never goes over plain http to a non-loopback host.
         for key in ["", "sk-new"] {
             assert!(
-                check_saved_key_target("openai", Some(&saved), "http://192.168.1.5/v1", false, key)
-                    .is_err()
+                check_saved_key_target(
+                    "openai",
+                    Some(&saved),
+                    "http://models.example/v1",
+                    false,
+                    key
+                )
+                .is_err()
             );
         }
         assert!(
@@ -1905,7 +1933,15 @@ mod tests {
         );
         assert!(check_saved_key_target("openai", None, "ftp://x", false, "").is_ok());
         assert!(check_request_base_url("ollama", "http://192.168.1.5:11434").is_ok());
-        assert!(check_request_base_url("openai", "http://192.168.1.5:11434").is_err());
+        assert!(check_request_base_url("openai", "http://192.168.1.5:11434").is_ok());
+        assert!(check_request_base_url("openai", "http://models.example/v1").is_err());
+        // An entry already saved insecure keeps its key; only newly switching insecure on needs it.
+        let insecure_saved = StoredProvider {
+            api_key: "sk-saved".into(),
+            insecure: true,
+            ..Default::default()
+        };
+        assert!(check_saved_key_target("openai", Some(&insecure_saved), "", true, "").is_ok());
     }
 
     #[tokio::test]
@@ -1969,7 +2005,23 @@ mod tests {
         assert!(check_base_url("http://127.0.0.1:8080/v1").is_ok());
         assert!(check_base_url("http://127.1.2.3/v1").is_ok());
         assert!(check_base_url("http://[::1]:11434").is_ok());
-        assert!(check_base_url("http://192.168.1.5:1234/v1").is_err());
+        // The local network is allowed; the public internet is not.
+        for local in [
+            "http://192.168.1.5:1234/v1",
+            "http://10.0.0.2/v1",
+            "http://172.16.4.1/v1",
+            "http://169.254.1.1/v1",
+            "http://[fd00::1]:8080/v1",
+            "http://[fe80::1]/v1",
+            "http://studio.local:1234/v1",
+            "http://gpu-box.lan/v1",
+            "http://gpu.home.arpa/v1",
+        ] {
+            assert!(check_base_url(local).is_ok(), "{local}");
+        }
+        assert!(check_base_url("http://8.8.8.8/v1").is_err());
+        assert!(check_base_url("http://172.32.0.1/v1").is_err());
+        assert!(check_base_url("http://evil.locals.example/v1").is_err());
         assert!(check_base_url("http://api.openai.com/v1").is_err());
         assert!(check_base_url("http://evil.example").is_err());
         assert!(check_base_url("ftp://x").is_err());
