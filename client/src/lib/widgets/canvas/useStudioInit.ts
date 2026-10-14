@@ -44,7 +44,7 @@ export type StudioInitDeps = {
 	setEditModeImmediate: () => void; // studio: editMode = true (no click-through round-trip)
 	setMonitorOptions: (o: MonitorOption[]) => void;
 	/** Unmount: land (don't drop) a pending preview write so the last edit survives a close. */
-	flushPreviewWrite: () => void;
+	flushPreviewWrite: () => Promise<unknown>;
 	/** Studio only: widgets.json changed under the editor by ANOTHER writer (an overlay's edit
 	 * mode, a hand edit, a sync tool). The Canvas decides: reload silently, or offer Reload/Keep. */
 	onForeignLayoutChange: () => void;
@@ -173,11 +173,16 @@ export function useStudioInit(deps: StudioInitDeps): void {
 						if (isForeignWriter(e.payload?.writer, 'studio')) d.current.onForeignLayoutChange();
 						return;
 					}
-					if (d.current.editMode() && !isForeignWriter(e.payload?.writer, dep.windowLabel)) return;
-					d.current.reloadLayout().then(() => {
-						d.current.syncRects();
-						if (!monitorParam()) d.current.syncPrimaryOverlays();
-					});
+					const editing = d.current.editMode();
+					if (editing && !isForeignWriter(e.payload?.writer, dep.windowLabel)) return;
+					// An editing overlay lands its own pending edit first, so the reload neither drops it
+					// nor reads the file before it is written.
+					(editing ? d.current.flushPreviewWrite() : Promise.resolve())
+						.then(() => d.current.reloadLayout())
+						.then(() => {
+							d.current.syncRects();
+							if (!monitorParam()) d.current.syncPrimaryOverlays();
+						});
 				})
 			);
 			if (scope.disposed) return;
@@ -235,7 +240,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 
 		return () => {
 			scope.dispose();
-			d.current.flushPreviewWrite();
+			void d.current.flushPreviewWrite();
 		};
 		// Run once on mount (non-idempotent). The body reads only the stable `d` ref, so the empty dep
 		// list is intentional and needs no exhaustive-deps suppression.

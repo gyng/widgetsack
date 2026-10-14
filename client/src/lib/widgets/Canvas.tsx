@@ -1210,7 +1210,7 @@ export default function Canvas({ studio = false }: Props) {
 			setEditMode(true);
 		},
 		setMonitorOptions,
-		flushPreviewWrite: () => void flushPreviewWrite(),
+		flushPreviewWrite: () => flushPreviewWrite(),
 		onForeignLayoutChange: () => onForeignLayoutChangeRef.current(),
 		reapplyPresentation
 	});

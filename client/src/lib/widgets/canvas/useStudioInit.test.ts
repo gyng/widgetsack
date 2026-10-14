@@ -76,7 +76,7 @@ function makeDeps(overrides: Partial<StudioInitDeps> = {}): StudioInitDeps {
 		setEdit: vi.fn(),
 		setEditModeImmediate: vi.fn(),
 		setMonitorOptions: vi.fn(),
-		flushPreviewWrite: vi.fn(),
+		flushPreviewWrite: vi.fn(() => Promise.resolve()),
 		onForeignLayoutChange: vi.fn(),
 		reapplyPresentation: vi.fn(() => Promise.resolve()),
 		...overrides
@@ -244,8 +244,17 @@ describe('useStudioInit layout_changed routing', () => {
 		editing = true;
 		fire({ writer: 'main' }); // its own edit-mode write: already reflected
 		expect(deps.reloadLayout).not.toHaveBeenCalled();
-		// The studio saved this monitor: a stale overlay tree must not be written back over it.
+		// The studio saved this monitor: a stale overlay tree must not be written back over it, and
+		// the overlay's own pending edit lands before the reload reads the file.
+		let flushed!: () => void;
+		vi.mocked(deps.flushPreviewWrite).mockImplementationOnce(
+			() => new Promise<void>((resolve) => (flushed = resolve))
+		);
 		fire({ writer: 'studio' });
+		await waitFor(() => expect(deps.flushPreviewWrite).toHaveBeenCalled());
+		await Promise.resolve();
+		expect(deps.reloadLayout).not.toHaveBeenCalled();
+		flushed();
 		await waitFor(() => expect(deps.syncPrimaryOverlays).toHaveBeenCalledTimes(1));
 		editing = false;
 		fire({ writer: 'main' });
