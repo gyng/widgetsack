@@ -225,6 +225,36 @@ fn yyyymmdd_from_days(days: i64) -> u32 {
     (year * 10_000 + month * 100 + day) as u32
 }
 
+/// `YYYYMMDD` → days since 1970-01-01 (inverse of [`yyyymmdd_from_days`]; Hinnant's
+/// days_from_civil). Pure.
+fn days_from_yyyymmdd(date: u32) -> i64 {
+    let (year, month, day) = (
+        i64::from(date / 10_000),
+        i64::from(date / 100 % 100),
+        i64::from(date % 100),
+    );
+    let year = year - i64::from(month <= 2);
+    let era = year.div_euclid(400);
+    let yoe = year.rem_euclid(400);
+    let mp = (month + 9) % 12;
+    let doy = (153 * mp + 2) / 5 + day - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// The `UNTIL` date of an RRULE line (`RRULE:FREQ=WEEKLY;UNTIL=20200101T000000Z`), or `None` for
+/// a COUNT-limited or unbounded rule. Pure.
+fn rule_until(line: &str) -> Option<u32> {
+    let rule = line.split_once(':')?.1;
+    rule.split(';').find_map(|part| {
+        let (key, value) = part.split_once('=')?;
+        if !key.trim().eq_ignore_ascii_case("UNTIL") {
+            return None;
+        }
+        value.trim().get(..8)?.parse().ok()
+    })
+}
+
 /// The first `YYYYMMDD` an event must reach to be bridged: two days before `ts_ms`, which covers
 /// any time zone's "today" without parsing zones.
 fn bridge_cutoff(ts_ms: u64) -> u32 {
@@ -241,25 +271,60 @@ fn property_date(line: &str) -> Option<u32> {
 #[derive(Default)]
 struct BridgedEvent {
     text: String,
-    repeats: bool,
     start: Option<u32>,
     end: Option<u32>,
     open_ended: bool,
+    /// RRULE lines, and the UNTIL dates of those that have one.
+    rules: usize,
+    untils: Vec<u32>,
+    rdate: bool,
+    /// An override's RECURRENCE-ID date, and whether it applies RANGE=THISANDFUTURE.
+    recurrence_id: Option<u32>,
+    this_and_future: bool,
 }
 
 impl BridgedEvent {
-    /// A one-off event that ended before `cutoff` can never be shown. Recurring series and
-    /// overrides (which can move an occurrence) are always kept, as is anything whose end is
-    /// only known from a DURATION.
+    /// Whether nothing of this VEVENT can appear on or after `cutoff`:
+    /// - a one-off event that ended before it;
+    /// - an override whose RECURRENCE-ID AND own start/end are both before it (an override of a
+    ///   later occurrence must stay, even when moved into the past — it hides that occurrence);
+    /// - a series whose every RRULE has an UNTIL before it, allowing for its occurrence length.
+    ///
+    /// Kept: RANGE=THISANDFUTURE overrides, RDATE sets, COUNT-limited or unbounded rules (their
+    /// end needs full expansion), and anything whose end is only known from a DURATION.
     fn ended_before(&self, cutoff: u32) -> bool {
-        !self.repeats && !self.open_ended && self.end.or(self.start).is_some_and(|d| d < cutoff)
+        if self.open_ended || self.rdate || self.this_and_future {
+            return false;
+        }
+        let before = |date: Option<u32>| date.is_some_and(|d| d < cutoff);
+        if self.recurrence_id.is_some() && !before(self.recurrence_id) {
+            return false;
+        }
+        if self.rules > 0 {
+            if self.untils.len() < self.rules {
+                return false;
+            }
+            let (Some(&until), Some(start)) = (self.untils.iter().max(), self.start) else {
+                return false;
+            };
+            let span = self.end.map_or(0, |end| {
+                (days_from_yyyymmdd(end) - days_from_yyyymmdd(start)).max(0)
+            });
+            return days_from_yyyymmdd(until) + span < days_from_yyyymmdd(cutoff);
+        }
+        match self.recurrence_id {
+            // A cancelled override may carry no DTSTART: its RECURRENCE-ID alone dates it.
+            Some(_) => self.end.or(self.start).is_none_or(|d| d < cutoff),
+            None => before(self.end.or(self.start)),
+        }
     }
 }
 
 // Keep only fields used by the calendar renderer. Private notes, attendee addresses,
-// attachments, calendar URLs, and alarms do not cross the bridge. One-off events that ended
-// before `cutoff` (YYYYMMDD) are dropped: a multi-year feed would otherwise exceed the
-// webview's size and event limits with history the agenda never shows.
+// attachments, calendar URLs, and alarms do not cross the bridge. Events, overrides and finite
+// series that ended before `cutoff` (YYYYMMDD) are dropped (`BridgedEvent::ended_before`): a
+// multi-year feed would otherwise exceed the webview's size and event limits with history the
+// agenda never shows.
 fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
     let mut output = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n");
     let mut event: Option<BridgedEvent> = None;
@@ -384,7 +449,19 @@ fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
         match event.as_mut() {
             Some(current) if stack.len() == 2 => {
                 match property.as_str() {
-                    "RRULE" | "RDATE" | "RECURRENCE-ID" => current.repeats = true,
+                    "RRULE" => {
+                        current.rules += 1;
+                        current.untils.extend(rule_until(&line));
+                    }
+                    "RDATE" => current.rdate = true,
+                    "RECURRENCE-ID" => {
+                        // An unreadable RECURRENCE-ID dates nothing: keep the override.
+                        current.recurrence_id = Some(property_date(&line).unwrap_or(u32::MAX));
+                        current.this_and_future =
+                            line.split_once(':').is_some_and(|(params, _)| {
+                                params.to_ascii_uppercase().contains("RANGE=THISANDFUTURE")
+                            });
+                    }
                     "DTSTART" => current.start = property_date(&line),
                     "DTEND" => current.end = property_date(&line),
                     "DURATION" => current.open_ended = true,
@@ -406,12 +483,18 @@ fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
     output
 }
 
+/// The largest bridged calendar the webview worker accepts, in UTF-8 bytes. MIRRORS
+/// `CALENDAR_BODY_LIMIT` in client/src/lib/core/calendarFeedContract.ts — change both together.
+const CALENDAR_BRIDGE_LIMIT: usize = 1_048_576;
+
 // The HTTP reader bounds the source body. The worker expands this minimal ICS snapshot,
 // preserving timezone and recurrence rules. agenda.count remains the source event count.
+// A snapshot still over the worker's limit after pruning would render as an empty agenda, so
+// it reports "error" (shown as such in Settings) rather than "connected".
 fn feed_to_samples(body: &str, ts: u64) -> Vec<SensorSample> {
     let mut samples = agenda_to_samples(&parse_ics_events(body, usize::MAX), ts);
     let calendar = calendar_for_bridge(body, bridge_cutoff(ts));
-    let status = if calendar == "invalid calendar" {
+    let status = if calendar == "invalid calendar" || calendar.len() > CALENDAR_BRIDGE_LIMIT {
         "error"
     } else {
         "connected"
@@ -793,6 +876,50 @@ mod tests {
     }
 
     #[test]
+    fn rule_until_and_day_numbers_round_trip() {
+        assert_eq!(
+            rule_until("RRULE:FREQ=WEEKLY;UNTIL=20210101T000000Z;BYDAY=MO"),
+            Some(20210101)
+        );
+        assert_eq!(
+            rule_until("RRULE:until=20210101;FREQ=DAILY"),
+            Some(20210101)
+        );
+        assert_eq!(rule_until("RRULE:FREQ=WEEKLY;COUNT=3"), None);
+        assert_eq!(rule_until("RRULE:FREQ=WEEKLY;UNTIL=bad"), None);
+        for days in [-1, 0, 19_782, 20_740, 40_000] {
+            assert_eq!(days_from_yyyymmdd(yyyymmdd_from_days(days)), days);
+        }
+    }
+
+    #[test]
+    fn a_pruned_calendar_still_over_the_worker_limit_is_not_reported_connected() {
+        let status = |body: &str| {
+            feed_to_samples(body, 1_791_979_200_000)
+                .into_iter()
+                .find(|sample| sample.sensor == "agenda.status")
+                .and_then(|sample| match sample.value {
+                    SensorValue::Text(status) => Some(status),
+                    _ => None,
+                })
+        };
+        let future = |n: usize| {
+            let mut body = String::from("BEGIN:VCALENDAR\n");
+            for i in 0..n {
+                body.push_str(&format!(
+                    "BEGIN:VEVENT\nUID:{i}\nSUMMARY:{}\nDTSTART:20301014T090000Z\nEND:VEVENT\n",
+                    "x".repeat(200)
+                ));
+            }
+            body + "END:VCALENDAR\n"
+        };
+        assert_eq!(status(&future(100)), Some("connected".into()));
+        let large = future(5_000);
+        assert!(calendar_for_bridge(&large, 20261012).len() > CALENDAR_BRIDGE_LIMIT);
+        assert_eq!(status(&large), Some("error".into()));
+    }
+
+    #[test]
     fn bridge_cutoff_is_two_days_before_the_sample_date() {
         assert_eq!(yyyymmdd_from_days(0), 19700101);
         assert_eq!(yyyymmdd_from_days(-1), 19691231);
@@ -810,7 +937,7 @@ mod tests {
     }
 
     #[test]
-    fn bridge_drops_only_one_off_events_that_ended_before_the_cutoff() {
+    fn bridge_drops_events_overrides_and_series_that_ended_before_the_cutoff() {
         let event = |uid: &str, props: &str| {
             format!("BEGIN:VEVENT\nUID:{uid}\nSUMMARY:{uid}\n{props}END:VEVENT\n")
         };
@@ -823,6 +950,42 @@ mod tests {
                 "moved",
                 "RECURRENCE-ID:20200108T090000Z\nDTSTART:20200108T120000Z\n",
             ),
+            event(
+                "moved-forward",
+                "RECURRENCE-ID:20200108T090000Z\nDTSTART:20261020T120000Z\n",
+            ),
+            event(
+                "moved-back",
+                "RECURRENCE-ID:20261020T090000Z\nDTSTART:20200108T120000Z\n",
+            ),
+            event(
+                "cancelled-old",
+                "RECURRENCE-ID:20200108T090000Z\nSTATUS:CANCELLED\n",
+            ),
+            event(
+                "this-and-future",
+                "RECURRENCE-ID;RANGE=THISANDFUTURE:20200108T090000Z\nDTSTART:20200108T120000Z\n",
+            ),
+            event(
+                "ended-series",
+                "DTSTART:20200101T090000Z\nDTEND:20200101T100000Z\nRRULE:FREQ=WEEKLY;UNTIL=20210101T000000Z\n",
+            ),
+            event(
+                "until-today",
+                "DTSTART:20200101T090000Z\nRRULE:FREQ=DAILY;UNTIL=20261014T000000Z\n",
+            ),
+            event(
+                "long-occurrence",
+                "DTSTART;VALUE=DATE:20261001\nDTEND;VALUE=DATE:20261020\nRRULE:FREQ=YEARLY;UNTIL=20261001\n",
+            ),
+            event(
+                "counted",
+                "DTSTART:20200101T090000Z\nRRULE:FREQ=WEEKLY;COUNT=3\n",
+            ),
+            event(
+                "ended-with-rdate",
+                "DTSTART:20200101T090000Z\nRRULE:FREQ=WEEKLY;UNTIL=20210101T000000Z\nRDATE:20300101T090000Z\n",
+            ),
             event("long", "DTSTART:20200101T090000Z\nDTEND:20261101T090000Z\n"),
             event("duration", "DTSTART:20200101T090000Z\nDURATION:P1D\n"),
             event("today", "DTSTART:20261014T090000Z\n"),
@@ -831,20 +994,39 @@ mod tests {
         ]
         .concat();
         let bridged = calendar_for_bridge(&body, 20261012);
-        for kept in ["weekly", "moved", "long", "duration", "today", "undated"] {
+        for kept in [
+            "weekly",
+            "moved-forward",
+            "moved-back",
+            "this-and-future",
+            "until-today",
+            "long-occurrence",
+            "counted",
+            "ended-with-rdate",
+            "long",
+            "duration",
+            "today",
+            "undated",
+        ] {
             assert!(
                 bridged.contains(&format!("UID:{kept}\r\n")),
                 "{kept} was dropped"
             );
         }
-        for dropped in ["old", "old-allday"] {
+        for dropped in [
+            "old",
+            "old-allday",
+            "moved",
+            "cancelled-old",
+            "ended-series",
+        ] {
             assert!(
                 !bridged.contains(&format!("UID:{dropped}\r\n")),
                 "{dropped} was kept"
             );
         }
-        assert_eq!(bridged.matches("BEGIN:VEVENT").count(), 6);
-        assert_eq!(bridged.matches("END:VEVENT").count(), 6);
+        assert_eq!(bridged.matches("BEGIN:VEVENT").count(), 12);
+        assert_eq!(bridged.matches("END:VEVENT").count(), 12);
         assert!(bridged.ends_with("END:VCALENDAR\r\n"));
     }
 

@@ -1,6 +1,31 @@
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from './contract';
 
+// --- WebView2 browser args ---
+// Every webview shares one WebView2 user-data folder, and WebView2 rejects a window whose environment
+// options differ from the live ones (ERROR_INVALID_STATE). So windows created here must pass exactly
+// the args the backend gave its own windows (mcp.rs browser_args) — fixed for the process lifetime.
+let browserArgs: Promise<string | undefined> | undefined;
+
+/** The backend's shared WebView2 args (undefined if unreadable — wry's defaults then apply). */
+export function webviewBrowserArgs(): Promise<string | undefined> {
+	browserArgs ??= invoke<string>(COMMANDS.webviewBrowserArgs).catch(() => {
+		browserArgs = undefined;
+		return undefined;
+	});
+	return browserArgs;
+}
+
+/** `options` plus the shared args, for `new WebviewWindow(label, options)`. Tauri's
+ * create_webview_window deserializes the options as a WindowConfig, which honours
+ * `additionalBrowserArgs` — the field is just missing from the TS option type. */
+export async function withBrowserArgs<T extends object>(options: T): Promise<T> {
+	const additionalBrowserArgs = await webviewBrowserArgs();
+	return typeof additionalBrowserArgs === 'string'
+		? { ...options, additionalBrowserArgs }
+		: options;
+}
+
 // --- app update check ---
 // Manual check (About panel): the backend (command/application.rs check_app_update) asks GitHub for the latest
 // published release and compares it to the running version — the app ships no auto-updater.

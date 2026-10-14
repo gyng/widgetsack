@@ -102,6 +102,8 @@ fn build_studio_window(app: &tauri::AppHandle) {
             .resizable(true)
             .decorations(false)
             .disable_drag_drop_handler()
+            // Same WebView2 args as every other window (shared user-data folder) — see mcp::browser_args.
+            .additional_browser_args(&mcp::app_browser_args(app))
             .build()
     {
         log::warn("studio", "failed to open studio window from backend")
@@ -438,6 +440,7 @@ async fn main() -> Result<(), ()> {
             llm::llm_transcribe,
             llm::llm_synthesize,
             mcp::mcp_status,
+            mcp::webview_browser_args,
             mcp::mcp_set_preferences,
             mcp::mcp_studio_claim,
             mcp::mcp_studio_reply,

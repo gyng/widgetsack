@@ -1,5 +1,6 @@
 import { logClient } from './bridge/logging';
 import { requestLayoutBackup } from './bridge/layouts';
+import { withBrowserArgs } from './bridge/application';
 // Outer-ring adapter: make app windows monitor-filling overlays, toggle
 // whole-window click-through, and (on the primary) spawn one overlay per other
 // monitor. Tauri window API stays at this edge.
@@ -246,7 +247,8 @@ export async function recreateMain(): Promise<void> {
 		// monitors' records doesn't block the primary.
 		if (!presence.populated.has('default')) return;
 		const layer = readOverlayPrefs().overlayLayer;
-		const w = new WebviewWindow('main', {
+		// Same WebView2 args as every other window (shared user-data folder; see mcp.rs browser_args).
+		const options = await withBrowserArgs({
 			url: '/',
 			transparent: true,
 			decorations: false,
@@ -260,6 +262,7 @@ export async function recreateMain(): Promise<void> {
 			visible: false,
 			dragDropEnabled: false
 		});
+		const w = new WebviewWindow('main', options);
 		w.once('tauri://error', (err) =>
 			logClient('error', 'overlay', `recreateMain window 'main' error: ${String(err)}`)
 		);
@@ -841,7 +844,8 @@ async function reconcileOverlaysOnce(): Promise<void> {
 		if (createRetries.get(label) !== undefined && createRetries.get(label)! >= CREATE_RETRY_MAX) {
 			continue; // gave up on this label this session (logged below)
 		}
-		const w = new WebviewWindow(label, {
+		// Same WebView2 args as every other window (shared user-data folder; see mcp.rs browser_args).
+		const options = await withBrowserArgs({
 			url: `/?monitor=${encodeURIComponent(key)}`,
 			transparent: true,
 			decorations: false,
@@ -856,6 +860,7 @@ async function reconcileOverlaysOnce(): Promise<void> {
 			// uses no OS file-drop, so Tauri's native handler is safe to disable here too.
 			dragDropEnabled: false
 		});
+		const w = new WebviewWindow(label, options);
 		// The overlay fits + reveals ITSELF (fillOwnMonitor in its own Canvas init) — there is
 		// deliberately no creator-side fit here: it lived in the CREATING window's JS context (dying
 		// with an empty-primary `main`), raced the overlay's own fit with a second setPosition/setSize

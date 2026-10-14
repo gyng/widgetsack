@@ -659,10 +659,24 @@ pub async fn stdio_bridge(path: Option<PathBuf>) -> Result<(), String> {
             base.join("mcp/server.json")
         }
     });
-    let descriptor: Value = serde_json::from_slice(
-        &std::fs::read(path).map_err(|_| "Start widgetsack and enable Settings → MCP first")?,
-    )
-    .map_err(|_| "Invalid MCP descriptor")?;
+    let endpoint = read_descriptor(&path)?;
+    let reload: DescriptorReader = Arc::new(move || read_descriptor(&path));
+    let bridge = StdioBridge::new(stdio_http_client()?, endpoint, reload);
+    let mut input = BufReader::new(tokio::io::stdin());
+    let mut output = tokio::io::stdout();
+    forward_stdio(&mut input, &mut output, bridge).await
+}
+
+/// Where the stdio bridge posts: the running app's endpoint + bearer token (`mcp/server.json`).
+#[derive(Clone, Debug, PartialEq)]
+struct StdioEndpoint {
+    url: reqwest::Url,
+    token: String,
+}
+
+/// Parse `server.json`, refusing anything but this app's local endpoint.
+fn parse_descriptor(bytes: &[u8]) -> Result<StdioEndpoint, String> {
+    let descriptor: Value = serde_json::from_slice(bytes).map_err(|_| "Invalid MCP descriptor")?;
     let endpoint = descriptor["endpoint"]
         .as_str()
         .ok_or("Missing MCP endpoint")?;
@@ -671,20 +685,150 @@ pub async fn stdio_bridge(path: Option<PathBuf>) -> Result<(), String> {
         return Err("MCP endpoint must be local".into());
     }
     let token = descriptor["token"].as_str().ok_or("Missing MCP token")?;
-    let client = stdio_http_client()?;
-    let mut input = BufReader::new(tokio::io::stdin());
-    let mut output = tokio::io::stdout();
-    forward_stdio(&mut input, &mut output, &client, url, token).await
+    Ok(StdioEndpoint {
+        url,
+        token: token.to_string(),
+    })
+}
+
+fn read_descriptor(path: &std::path::Path) -> Result<StdioEndpoint, String> {
+    parse_descriptor(
+        &std::fs::read(path).map_err(|_| "Start widgetsack and enable Settings → MCP first")?,
+    )
+}
+
+type DescriptorReader = Arc<dyn Fn() -> Result<StdioEndpoint, String> + Send + Sync>;
+
+/// Failures that mean the bridge's view of the app is out of date — the app restarted or MCP was
+/// toggled (new port → connect refused; new token → 401), or the session was evicted (404). Anything
+/// else is the request's own failure and is reported as-is.
+enum PostError {
+    Stale(String),
+    Failed(String),
+}
+impl PostError {
+    fn message(self) -> String {
+        match self {
+            PostError::Stale(error) | PostError::Failed(error) => error,
+        }
+    }
+}
+
+/// Whether an endpoint status means "re-read the descriptor and re-initialize" (see [`PostError`]).
+fn stale_status(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::NOT_FOUND
+    )
+}
+
+/// The bridge's current link to the app, shared by in-flight tool calls.
+struct StdioLink {
+    endpoint: StdioEndpoint,
+    session: Option<String>,
+    /// The client's own `initialize`, replayed to open a fresh session after a recovery.
+    initialize: Option<Value>,
+    /// Bumped per recovery so concurrent failures of the same stale link recover only once.
+    generation: u64,
+}
+
+struct StdioBridge {
+    client: reqwest::Client,
+    link: tokio::sync::Mutex<StdioLink>,
+    reload: DescriptorReader,
+}
+impl StdioBridge {
+    fn new(
+        client: reqwest::Client,
+        endpoint: StdioEndpoint,
+        reload: DescriptorReader,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            client,
+            link: tokio::sync::Mutex::new(StdioLink {
+                endpoint,
+                session: None,
+                initialize: None,
+                generation: 0,
+            }),
+            reload,
+        })
+    }
+
+    /// Post one message. A stale link is recovered once — re-read the descriptor, replay the cached
+    /// `initialize` for a new session — and the message retried; a second failure is reported.
+    async fn post(&self, value: &Value) -> Result<Option<Vec<u8>>, String> {
+        let (endpoint, session, generation) = self.snapshot().await;
+        let stale =
+            match post_stdio_request(&self.client, &endpoint, session.as_deref(), value).await {
+                Ok(reply) => return Ok(self.accept(reply, value, generation).await),
+                Err(PostError::Failed(error)) => return Err(error),
+                Err(PostError::Stale(error)) => error,
+            };
+        let (endpoint, session, generation) = self
+            .recover(generation, value)
+            .await
+            .map_err(|error| format!("{stale}; reconnect failed: {error}"))?;
+        match post_stdio_request(&self.client, &endpoint, session.as_deref(), value).await {
+            Ok(reply) => Ok(self.accept(reply, value, generation).await),
+            Err(error) => Err(error.message()),
+        }
+    }
+
+    async fn snapshot(&self) -> (StdioEndpoint, Option<String>, u64) {
+        let link = self.link.lock().await;
+        (link.endpoint.clone(), link.session.clone(), link.generation)
+    }
+
+    async fn accept(
+        &self,
+        (bytes, assigned): (Option<Vec<u8>>, Option<String>),
+        value: &Value,
+        generation: u64,
+    ) -> Option<Vec<u8>> {
+        let mut link = self.link.lock().await;
+        if link.generation == generation {
+            if let Some(id) = assigned {
+                link.session = Some(id);
+            }
+            if value["method"] == "initialize" {
+                link.initialize = Some(value.clone());
+            }
+        }
+        bytes
+    }
+
+    /// Re-read the descriptor and open a new session — unless another request already recovered
+    /// from the same stale link (`seen` is behind), in which case its result is reused.
+    async fn recover(
+        &self,
+        seen: u64,
+        value: &Value,
+    ) -> Result<(StdioEndpoint, Option<String>, u64), String> {
+        let mut link = self.link.lock().await;
+        if link.generation == seen {
+            link.endpoint = (self.reload)()?;
+            link.session = None;
+            link.generation += 1;
+            if value["method"] != "initialize"
+                && let Some(initialize) = link.initialize.clone()
+            {
+                let (_, assigned) =
+                    post_stdio_request(&self.client, &link.endpoint, None, &initialize)
+                        .await
+                        .map_err(PostError::message)?;
+                link.session = assigned;
+            }
+        }
+        Ok((link.endpoint.clone(), link.session.clone(), link.generation))
+    }
 }
 
 async fn forward_stdio<R: tokio::io::AsyncBufRead + Unpin, W: tokio::io::AsyncWrite + Unpin>(
     input: &mut R,
     output: &mut W,
-    client: &reqwest::Client,
-    url: reqwest::Url,
-    token: &str,
+    bridge: Arc<StdioBridge>,
 ) -> Result<(), String> {
-    let mut session: Option<String> = None;
     let mut requests = tokio::task::JoinSet::new();
     let mut active = std::collections::HashSet::new();
     let mut cancelled = std::collections::HashSet::new();
@@ -734,14 +878,9 @@ async fn forward_stdio<R: tokio::io::AsyncBufRead + Unpin, W: tokio::io::AsyncWr
                 continue;
             }
             active.insert(key.clone());
-            let client = client.clone();
-            let url = url.clone();
-            let token = token.to_string();
-            let session = session.clone();
+            let bridge = bridge.clone();
             requests.spawn(async move {
-                let result = post_stdio_request(&client, url, &token, session.as_deref(), &value)
-                    .await
-                    .map(|(bytes, _)| bytes);
+                let result = bridge.post(&value).await;
                 (key, value["id"].clone(), result)
             });
             continue;
@@ -755,14 +894,7 @@ async fn forward_stdio<R: tokio::io::AsyncBufRead + Unpin, W: tokio::io::AsyncWr
                 cancelled.insert(key);
             }
         }
-        let result = post_stdio_request(client, url.clone(), token, session.as_deref(), &value)
-            .await
-            .map(|(bytes, assigned)| {
-                if let Some(id) = assigned {
-                    session = Some(id);
-                }
-                bytes
-            });
+        let result = bridge.post(&value).await;
         write_stdio_result(output, &value["id"], result).await?;
     }
 }
@@ -804,25 +936,32 @@ async fn emit_stdio_reply<W: tokio::io::AsyncWrite + Unpin>(
 
 async fn post_stdio_request(
     client: &reqwest::Client,
-    url: reqwest::Url,
-    token: &str,
+    endpoint: &StdioEndpoint,
     session: Option<&str>,
     value: &Value,
-) -> Result<(Option<Vec<u8>>, Option<String>), String> {
+) -> Result<(Option<Vec<u8>>, Option<String>), PostError> {
     let mut request = client
-        .post(url)
-        .bearer_auth(token)
+        .post(endpoint.url.clone())
+        .bearer_auth(&endpoint.token)
         .header("Accept", "application/json, text/event-stream")
         .json(value);
     if let Some(session) = session {
         request = request.header("Mcp-Session-Id", session);
     }
-    let response = request
-        .send()
-        .await
-        .map_err(crate::http_response::request_error)?;
+    let response = request.send().await.map_err(|error| {
+        if error.is_connect() {
+            PostError::Stale(crate::http_response::request_error(error))
+        } else {
+            PostError::Failed(crate::http_response::request_error(error))
+        }
+    })?;
     if !response.status().is_success() {
-        return Err(format!("MCP endpoint returned {}", response.status()));
+        let error = format!("MCP endpoint returned {}", response.status());
+        return Err(if stale_status(response.status()) {
+            PostError::Stale(error)
+        } else {
+            PostError::Failed(error)
+        });
     }
     let session = response
         .headers()
@@ -832,7 +971,11 @@ async fn post_stdio_request(
     let bytes = if response.status() == reqwest::StatusCode::ACCEPTED {
         None
     } else {
-        Some(crate::http_response::read_body(response, STDIO_RESPONSE_LIMIT).await?)
+        Some(
+            crate::http_response::read_body(response, STDIO_RESPONSE_LIMIT)
+                .await
+                .map_err(PostError::Failed)?,
+        )
     };
     Ok((bytes, session))
 }
@@ -845,8 +988,52 @@ async fn write_stdio_response<W: tokio::io::AsyncWrite + Unpin>(
     output.write_all(b"\n").await.map_err(|e| e.to_string())?;
     output.flush().await.map_err(|e| e.to_string())
 }
+/// wry 0.55's default WebView2 arguments (`webview2/mod.rs`: the base `--disable-features` set, plus
+/// the autoplay flag because Tauri leaves wry's `autoplay` at its default `true`). wry applies them
+/// ONLY when a window passes no `additional_browser_args`, so once any window passes its own string
+/// it must include these itself. Re-check on a wry upgrade (`wry_version_matches_the_pinned_defaults`).
+const WRY_DEFAULT_BROWSER_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required";
+
+/// The ONE WebView2 argument string every window of this process must be created with. All webviews
+/// share one user-data folder, and WebView2 refuses a controller whose environment options differ
+/// from the live environment's (ERROR_INVALID_STATE 0x8007139F) — so the debugging flags, when
+/// browser tools are on, must reach every window, not just the ones declared in tauri.conf.json.
+pub fn browser_args(debug_port: Option<u16>) -> String {
+    match debug_port {
+        Some(port) => format!(
+            "{WRY_DEFAULT_BROWSER_ARGS} --remote-debugging-port={port} --remote-debugging-address=127.0.0.1"
+        ),
+        None => WRY_DEFAULT_BROWSER_ARGS.to_string(),
+    }
+}
+
+/// [`browser_args`] for this process — what every Rust `WebviewWindowBuilder` passes.
+pub fn app_browser_args(app: &AppHandle) -> String {
+    let port = app
+        .try_state::<McpState>()
+        .and_then(|state| state.browser_port.lock().ok().and_then(|port| *port));
+    browser_args(port)
+}
+
+/// [`browser_args`] for windows the frontend creates (overlay.ts `new WebviewWindow`).
+#[tauri::command]
+pub fn webview_browser_args(state: tauri::State<'_, McpState>) -> String {
+    browser_args(state.browser_port.lock().ok().and_then(|port| *port))
+}
+
 /// Scope optional CDP to this app's WebView2 process, without changing global environment variables.
+/// Every config-declared window gets the shared [`browser_args`]; code-built windows pass the same
+/// string via [`app_browser_args`] / [`webview_browser_args`].
 pub fn configure_browser(context: &mut tauri::Context<tauri::Wry>) -> Option<u16> {
+    let port = browser_debug_port(context);
+    let args = browser_args(port);
+    for window in &mut context.config_mut().app.windows {
+        window.additional_browser_args = Some(args.clone());
+    }
+    port
+}
+
+fn browser_debug_port(context: &tauri::Context<tauri::Wry>) -> Option<u16> {
     let mut root = PathBuf::from(std::env::var_os("APPDATA")?);
     root.push(&context.config().identifier);
     if crate::multi_instance() {
@@ -857,19 +1044,172 @@ pub fn configure_browser(context: &mut tauri::Context<tauri::Wry>) -> Option<u16
         return None;
     }
     let listener = std::net::TcpListener::bind("127.0.0.1:0").ok()?;
-    let port = listener.local_addr().ok()?.port();
-    for window in &mut context.config_mut().app.windows {
-        let previous = window.additional_browser_args.take().unwrap_or_default();
-        window.additional_browser_args = Some(format!(
-            "{previous} --remote-debugging-port={port} --remote-debugging-address=127.0.0.1"
-        ));
-    }
-    Some(port)
+    Some(listener.local_addr().ok()?.port())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A bridge whose descriptor never changes (recovery re-reads the same endpoint).
+    fn fixed_bridge(url: reqwest::Url) -> Arc<StdioBridge> {
+        let endpoint = StdioEndpoint {
+            url,
+            token: "fixture-token".into(),
+        };
+        let reload = endpoint.clone();
+        StdioBridge::new(
+            stdio_http_client().unwrap(),
+            endpoint,
+            Arc::new(move || Ok(reload.clone())),
+        )
+    }
+
+    #[test]
+    fn descriptor_accepts_only_the_local_mcp_endpoint() {
+        assert_eq!(
+            parse_descriptor(br#"{"endpoint":"http://127.0.0.1:4100/mcp","token":"t"}"#),
+            Ok(StdioEndpoint {
+                url: reqwest::Url::parse("http://127.0.0.1:4100/mcp").unwrap(),
+                token: "t".into()
+            })
+        );
+        for bad in [
+            &br#"{"endpoint":"http://example.com:4100/mcp","token":"t"}"#[..],
+            br#"{"endpoint":"http://127.0.0.1:4100/other","token":"t"}"#,
+            br#"{"endpoint":"http://127.0.0.1:4100/mcp"}"#,
+            b"not json",
+        ] {
+            assert!(parse_descriptor(bad).is_err());
+        }
+    }
+
+    #[test]
+    fn only_auth_and_session_failures_trigger_a_reconnect() {
+        assert!(stale_status(reqwest::StatusCode::UNAUTHORIZED));
+        assert!(stale_status(reqwest::StatusCode::NOT_FOUND));
+        for status in [
+            reqwest::StatusCode::BAD_REQUEST,
+            reqwest::StatusCode::METHOD_NOT_ALLOWED,
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR,
+        ] {
+            assert!(!stale_status(status));
+        }
+    }
+
+    /// The bridge outlives the app's MCP server: a dead port, a rotated token (app restart / MCP
+    /// toggle) and an evicted session each re-read the descriptor, replay `initialize` for a fresh
+    /// session, and retry — instead of failing every later call with -32603.
+    #[tokio::test]
+    async fn stdio_recovers_from_restart_token_rotation_and_session_eviction() {
+        type Live = (String, Arc<Mutex<sessions::Sessions>>);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let live_url =
+            reqwest::Url::parse(&format!("http://{}/mcp", listener.local_addr().unwrap())).unwrap();
+        let live: Arc<Mutex<Live>> = Arc::new(Mutex::new((
+            "token-a".into(),
+            Arc::new(Mutex::new(sessions::Sessions::default())),
+        )));
+        let serving = live.clone();
+        let server = tokio::spawn(async move {
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                let (token, sessions) = serving.lock().unwrap().clone();
+                tokio::spawn(async move {
+                    serve_connection(&token, sessions, stream, |_, _| async { Ok(json!({})) }).await
+                });
+            }
+        });
+        // The descriptor the bridge started with points at a server that is gone.
+        let dead = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let dead_url =
+            reqwest::Url::parse(&format!("http://{}/mcp", dead.local_addr().unwrap())).unwrap();
+        drop(dead);
+        let descriptor = live.clone();
+        let bridge = StdioBridge::new(
+            stdio_http_client().unwrap(),
+            StdioEndpoint {
+                url: dead_url,
+                token: "token-a".into(),
+            },
+            Arc::new(move || {
+                Ok(StdioEndpoint {
+                    url: live_url.clone(),
+                    token: descriptor.lock().unwrap().0.clone(),
+                })
+            }),
+        );
+        let (mut input, bridge_input) = tokio::io::duplex(4096);
+        let (bridge_output, output) = tokio::io::duplex(4096);
+        let forward = tokio::spawn(async move {
+            let mut reader = BufReader::new(bridge_input);
+            let mut writer = bridge_output;
+            forward_stdio(&mut reader, &mut writer, bridge).await
+        });
+        let mut replies = BufReader::new(output).lines();
+        let mut call = async |request: Value| -> Value {
+            input
+                .write_all(format!("{request}\n").as_bytes())
+                .await
+                .unwrap();
+            let line = tokio::time::timeout(Duration::from_secs(5), replies.next_line())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            serde_json::from_str(&line).unwrap()
+        };
+        let tool = |id: i64| json!({"jsonrpc":"2.0","id":id,"method":"tools/call","params":{"name":"studio_read","arguments":{}}});
+        let sessions_now = || live.lock().unwrap().1.clone();
+
+        // 1. Dead port at startup: recovered before the client's own initialize.
+        let init = call(json!({"jsonrpc":"2.0","id":0,"method":"initialize"})).await;
+        assert!(init["result"].is_object(), "{init}");
+        assert_eq!(call(tool(1)).await["result"]["isError"], false);
+
+        // 2. Idle eviction: the server forgot the session (404) — a new one is opened.
+        let evicted = Arc::new(Mutex::new(sessions::Sessions::default()));
+        live.lock().unwrap().1 = evicted.clone();
+        assert_eq!(call(tool(2)).await["result"]["isError"], false);
+        assert_eq!(evicted.lock().unwrap().len(), 1, "initialize was replayed");
+
+        // 3. App restart / MCP toggle: new token (401) — the descriptor is re-read.
+        *live.lock().unwrap() = (
+            "token-b".into(),
+            Arc::new(Mutex::new(sessions::Sessions::default())),
+        );
+        assert_eq!(call(tool(3)).await["result"]["isError"], false);
+        assert_eq!(sessions_now().lock().unwrap().len(), 1);
+
+        drop(input);
+        forward.await.unwrap().unwrap();
+        server.abort();
+    }
+
+    #[test]
+    fn browser_args_always_keep_wry_defaults_and_add_debugging_only_when_on() {
+        assert_eq!(browser_args(None), WRY_DEFAULT_BROWSER_ARGS);
+        let on = browser_args(Some(9333));
+        assert!(on.starts_with(WRY_DEFAULT_BROWSER_ARGS));
+        assert!(on.contains("--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection"));
+        assert!(on.ends_with(" --remote-debugging-port=9333 --remote-debugging-address=127.0.0.1"));
+    }
+
+    #[test]
+    fn wry_version_matches_the_pinned_defaults() {
+        // WRY_DEFAULT_BROWSER_ARGS mirrors wry 0.55's built-in defaults; a wry bump must re-check them.
+        let lock = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../Cargo.lock"))
+            .expect("workspace Cargo.lock");
+        let version = lock
+            .split("[[package]]")
+            .find(|pkg| pkg.lines().any(|l| l == "name = \"wry\""))
+            .and_then(|pkg| pkg.lines().find_map(|l| l.strip_prefix("version = ")))
+            .expect("wry in Cargo.lock");
+        assert!(
+            version.starts_with("\"0.55."),
+            "wry is {version}: re-check WRY_DEFAULT_BROWSER_ARGS"
+        );
+    }
 
     #[test]
     fn cancelled_guards_notify_after_removal_but_completed_requests_do_not() {
@@ -946,14 +1286,7 @@ mod tests {
         let mut bridge = tokio::spawn(async move {
             let mut reader = BufReader::new(stream);
             let mut output = Vec::new();
-            let result = forward_stdio(
-                &mut reader,
-                &mut output,
-                &stdio_http_client().unwrap(),
-                url,
-                "fixture-token",
-            )
-            .await;
+            let result = forward_stdio(&mut reader, &mut output, fixed_bridge(url)).await;
             (result, output)
         });
         let completed = tokio::time::timeout(Duration::from_secs(5), async {
@@ -1037,14 +1370,7 @@ mod tests {
         });
         let mut input = &b"not json\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":7,\"method\":\"ping\"}\n"[..];
         let mut output = Vec::new();
-        let result = forward_stdio(
-            &mut input,
-            &mut output,
-            &stdio_http_client().unwrap(),
-            url,
-            "fixture-token",
-        )
-        .await;
+        let result = forward_stdio(&mut input, &mut output, fixed_bridge(url)).await;
         if result.is_err() {
             server.abort();
         }
@@ -1089,14 +1415,7 @@ mod tests {
         });
         let mut input = &b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"studio_read\"}}\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\n"[..];
         let mut output = Vec::new();
-        let result = forward_stdio(
-            &mut input,
-            &mut output,
-            &stdio_http_client().unwrap(),
-            url,
-            "fixture-token",
-        )
-        .await;
+        let result = forward_stdio(&mut input, &mut output, fixed_bridge(url)).await;
         if result.is_err() {
             server.abort();
         }
@@ -1205,14 +1524,7 @@ mod tests {
         bytes.extend_from_slice(b"\n\xff{}\n");
         let mut output = Vec::new();
         let url = reqwest::Url::parse("http://127.0.0.1:9/mcp").unwrap();
-        let result = forward_stdio(
-            &mut bytes.as_slice(),
-            &mut output,
-            &stdio_http_client().unwrap(),
-            url,
-            "fixture-token",
-        )
-        .await;
+        let result = forward_stdio(&mut bytes.as_slice(), &mut output, fixed_bridge(url)).await;
         assert!(result.is_ok(), "{result:?}");
         let replies: Vec<Value> = String::from_utf8(output)
             .unwrap()

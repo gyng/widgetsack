@@ -97,7 +97,14 @@ pub fn get_app_prefs(app: AppHandle) -> AppPrefs {
 /// Studio: turn the background update check on/off. Enabling runs a check right away (so the
 /// toggle has a visible effect); disabling relabels the tray to say checks are off.
 #[tauri::command]
-pub async fn set_update_check(app: AppHandle, enabled: bool) -> Result<AppPrefs, String> {
+pub async fn set_update_check(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    enabled: bool,
+) -> Result<AppPrefs, String> {
+    if window.label() != "studio" {
+        return Err("set_update_check is only allowed from the studio window".into());
+    }
     let mut prefs = load_prefs(&app);
     prefs.update_check = enabled;
     save_prefs(&app, &prefs)?;

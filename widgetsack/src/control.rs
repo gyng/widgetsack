@@ -474,22 +474,30 @@ pub async fn start_if_enabled<R: Runtime>(app: AppHandle<R>, state: &ControlStat
     }));
 }
 
-/// Start (called from the settings toggle after enabling). Idempotent.
+/// Start (called from the settings toggle after enabling). Idempotent. Studio-only.
 #[tauri::command]
 pub async fn control_start<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
     app: AppHandle<R>,
     state: tauri::State<'_, ControlState>,
 ) -> Result<(), String> {
+    if window.label() != "studio" {
+        return Err("control_start is only allowed from the studio window".into());
+    }
     start_if_enabled(app, &state).await;
     Ok(())
 }
 
-/// Stop the control server (if running) and remove control.json.
+/// Stop the control server (if running) and remove control.json. Studio-only.
 #[tauri::command]
 pub async fn control_stop<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
     app: AppHandle<R>,
     state: tauri::State<'_, ControlState>,
 ) -> Result<(), String> {
+    if window.label() != "studio" {
+        return Err("control_stop is only allowed from the studio window".into());
+    }
     if let Some(handle) = state.handle.lock().await.take() {
         handle.abort();
     }

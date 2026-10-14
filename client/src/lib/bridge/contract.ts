@@ -42,6 +42,8 @@ export const COMMANDS = {
 	mcpSetPreferences: 'mcp_set_preferences',
 	mcpStudioClaim: 'mcp_studio_claim',
 	mcpStudioReply: 'mcp_studio_reply',
+	// the shared WebView2 args every window must be created with (mcp.rs browser_args)
+	webviewBrowserArgs: 'webview_browser_args',
 	studioAgentStatus: 'studio_agent_status',
 	studioAgentRun: 'studio_agent_run',
 	studioAgentReply: 'studio_agent_reply',

@@ -35,6 +35,10 @@ impl Drop for RequestGuard {
     }
 }
 impl Sessions {
+    #[cfg(test)]
+    pub(super) fn len(&self) -> usize {
+        self.clients.len()
+    }
     pub(super) fn create(&mut self) -> Result<String, String> {
         self.clients.retain(|_, client| {
             !client.requests.is_empty() || client.used.elapsed() < Duration::from_secs(3600)

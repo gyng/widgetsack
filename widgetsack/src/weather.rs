@@ -111,9 +111,13 @@ fn open_meteo_url(lat: f64, lon: f64, unit: &str) -> String {
         "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}\
          &current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,wind_speed_10m,uv_index\
          &daily=temperature_2m_max,temperature_2m_min,weather_code,sunrise,sunset&temperature_unit={temp_unit}\
-         &wind_speed_unit={wind_unit}&timezone=auto&forecast_days=7"
+         &wind_speed_unit={wind_unit}&timezone=auto&forecast_days={FORECAST_DAYS}"
     )
 }
+
+/// Days requested from Open-Meteo, and the most `weather.day.N.*` ids ever emitted — a longer
+/// (misbehaving or proxied) response must not mint unbounded sensor ids.
+const FORECAST_DAYS: usize = 7;
 
 /// The Open-Meteo AIR-QUALITY endpoint (a separate host from the forecast API, keyless too). Requests
 /// the current European + US AQI and the PM particulates.
@@ -175,11 +179,12 @@ fn weather_to_samples(body: &Value, unit_letter: &str, ts_ms: u64) -> Vec<Sensor
         body["daily"]["temperature_2m_min"][0].as_f64(),
     );
     // Multi-day forecast: weather.day.N.{high,low,code} for each day Open-Meteo returned (day 0 = today,
-    // duplicating weather.high/low which are kept for back-compat). A short array just yields fewer days.
+    // duplicating weather.high/low which are kept for back-compat). A short array just yields fewer days;
+    // a long one is capped at the FORECAST_DAYS requested.
     let highs = body["daily"]["temperature_2m_max"].as_array();
     let lows = body["daily"]["temperature_2m_min"].as_array();
     let codes = body["daily"]["weather_code"].as_array();
-    let days = highs.map_or(0, Vec::len);
+    let days = highs.map_or(0, Vec::len).min(FORECAST_DAYS);
     for i in 0..days {
         let at = |arr: Option<&Vec<Value>>| arr.and_then(|a| a.get(i)).and_then(Value::as_f64);
         scalar(&format!("weather.day.{i}.high"), at(highs));
@@ -538,6 +543,21 @@ mod tests {
         assert_eq!(v("weather.day.1.code"), 61.0);
         // Only as many days as the arrays provided (3 here) are emitted.
         assert!(find(&s, "weather.day.3.high").is_none());
+    }
+
+    #[test]
+    fn forecast_days_are_capped_at_the_seven_requested() {
+        let temps: Vec<f64> = (0..30).map(f64::from).collect();
+        let body = json!({
+            "current": { "temperature_2m": 9.0 },
+            "daily": { "temperature_2m_max": temps, "temperature_2m_min": temps, "weather_code": temps }
+        });
+        let s = weather_to_samples(&body, "C", 0);
+        assert!(find(&s, "weather.day.6.high").is_some());
+        assert!(
+            !s.iter()
+                .any(|sample| sample.sensor.starts_with("weather.day.7."))
+        );
     }
 
     #[test]

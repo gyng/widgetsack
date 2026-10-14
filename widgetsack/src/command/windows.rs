@@ -100,6 +100,8 @@ pub(crate) fn respawn_main_hidden(app: &tauri::AppHandle, reason: &str) {
         .skip_taskbar(true)
         .visible(false)
         .disable_drag_drop_handler()
+        // Same WebView2 args as every other window (shared user-data folder) — see mcp::browser_args.
+        .additional_browser_args(&crate::mcp::app_browser_args(app))
         .build()
     {
         Ok(_) => {
