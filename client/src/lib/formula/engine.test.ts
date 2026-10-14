@@ -105,18 +105,24 @@ describe('formula engine', () => {
 		expect(evalExpr('round(1.26, 1)', {})).toBe(1.3);
 	});
 
-	it('restarts a formula from a clean context after it fails', () => {
-		const counter = '(globalThis.n = (globalThis.n || 0) + 1, n > 1 ? missing : n)';
-		expect(evalExpr(counter, {})).toBe(1);
-		expect(evalExpr(counter, {})).toBeNull();
-		expect(evalExpr(counter, {})).toBe(1);
+	it('keeps a context through ordinary errors but restarts it after exhausting resources', () => {
+		// A bare reference to a sensor that has not reported throws every tick: rebuilding the
+		// context for that would cost ~45x a cached evaluation.
+		const failing = '(globalThis.n = (globalThis.n || 0) + 1, n > 1 ? missing : n)';
+		expect(evalExpr(failing, {})).toBe(1);
+		expect(evalExpr(failing, {})).toBeNull();
+		expect(evalExpr(failing, {})).toBeNull();
+		const hog = "(globalThis.k = (globalThis.k || 0) + 1, k > 1 ? 'x'.repeat(1e9) : k)";
+		expect(evalExpr(hog, {})).toBe(1);
+		expect(evalExpr(hog, {})).toBeNull();
+		expect(evalExpr(hog, {})).toBe(1);
 	});
 
 	it('bounds the retained contexts, restarting the least recently used formula', () => {
 		const counter = '(globalThis.m = (globalThis.m || 0) + 1)';
 		expect(evalExpr(counter, {})).toBe(1);
 		expect(evalExpr(counter, {})).toBe(2);
-		for (let i = 0; i < 40; i++) expect(evalExpr(`${i} + 1`, {})).toBe(i + 1);
+		for (let i = 0; i < 130; i++) expect(evalExpr(`${i} + 1`, {})).toBe(i + 1);
 		expect(evalExpr(counter, {})).toBe(1);
 	});
 

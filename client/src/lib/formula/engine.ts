@@ -33,7 +33,7 @@ globalThis.clamp = function (x, lo, hi) { return Math.min(hi, Math.max(lo, Numbe
 // Formulas come from shared sacks, so one must not be able to change the globals (JSON.parse, round,
 // Math, …) another relies on. Each distinct source gets its own context — identical copies of a formula
 // compute the same thing anyway — and a failed evaluation (including out-of-memory) discards it.
-const MAX_CONTEXTS = 32;
+const MAX_CONTEXTS = 128;
 
 let runtime: QuickJSRuntime | null = null;
 const contexts = new Map<string, QuickJSContext>();
@@ -92,6 +92,14 @@ export function initFormulaEngine(): Promise<void> {
 
 export function isFormulaEngineReady(): boolean {
 	return runtime !== null;
+}
+
+/** Whether an evaluation error means the context's resources ran out (not a plain JS error). */
+function exhausted(error: { name?: unknown; message?: unknown } | null): boolean {
+	return (
+		error?.name === 'InternalError' &&
+		/out of memory|interrupted|stack overflow/i.test(String(error.message))
+	);
 }
 
 /** The context for one formula source, most recently used last; the oldest is disposed past the cap. */
@@ -164,9 +172,14 @@ export function evalExpr(
 				`Object.assign(Object.create(null), JSON.parse(${scopeLiteral})))`
 		);
 		if (out.error) {
+			const error = ctx.dump(out.error) as { name?: unknown; message?: unknown } | null;
 			out.error.dispose();
-			contexts.delete(src);
-			ctx.dispose();
+			// Ordinary errors (an absent sensor) keep the context; one that ran out of memory, stack or
+			// time may hold the garbage that caused it, so it restarts clean.
+			if (exhausted(error)) {
+				contexts.delete(src);
+				ctx.dispose();
+			}
 			return null;
 		}
 		const v = ctx.dump(out.value);
