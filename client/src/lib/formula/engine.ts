@@ -30,8 +30,13 @@ globalThis.toDecimalPlace = globalThis.round;
 globalThis.clamp = function (x, lo, hi) { return Math.min(hi, Math.max(lo, Number(x))); };
 `;
 
+// Formulas come from shared sacks, so one must not be able to change the globals (JSON.parse, round,
+// Math, …) another relies on. Each distinct source gets its own context — identical copies of a formula
+// compute the same thing anyway — and a failed evaluation (including out-of-memory) discards it.
+const MAX_CONTEXTS = 32;
+
 let runtime: QuickJSRuntime | null = null;
-let ctx: QuickJSContext | null = null;
+const contexts = new Map<string, QuickJSContext>();
 let readyPromise: Promise<void> | null = null;
 const readyListeners = new Set<() => void>();
 
@@ -76,9 +81,6 @@ export function initFormulaEngine(): Promise<void> {
 				// vs our tiny scalar scopes (16 MiB / 512 KiB), tiny vs the 2 GiB WASM ceiling.
 				runtime.setMemoryLimit(16 * 1024 * 1024);
 				runtime.setMaxStackSize(512 * 1024);
-				ctx = runtime.newContext();
-				defineHostFns(ctx);
-				ctx.unwrapResult(ctx.evalCode(PRELUDE)).dispose();
 				readyListeners.forEach((cb) => cb());
 			})
 			.catch((err) => {
@@ -89,7 +91,34 @@ export function initFormulaEngine(): Promise<void> {
 }
 
 export function isFormulaEngineReady(): boolean {
-	return ctx !== null;
+	return runtime !== null;
+}
+
+/** The context for one formula source, most recently used last; the oldest is disposed past the cap. */
+function contextFor(rt: QuickJSRuntime, src: string): QuickJSContext {
+	const cached = contexts.get(src);
+	if (cached) {
+		contexts.delete(src);
+		contexts.set(src, cached);
+		return cached;
+	}
+	const c = rt.newContext();
+	try {
+		defineHostFns(c);
+		c.unwrapResult(c.evalCode(PRELUDE)).dispose();
+	} catch (error) {
+		/* v8 ignore start -- only an exhausted runtime heap fails the fixed prelude. */
+		c.dispose();
+		throw error;
+		/* v8 ignore stop */
+	}
+	contexts.set(src, c);
+	if (contexts.size > MAX_CONTEXTS) {
+		const [oldest, context] = contexts.entries().next().value!;
+		contexts.delete(oldest);
+		context.dispose();
+	}
+	return c;
 }
 
 /** Subscribe to the one-shot ready transition (for useSyncExternalStore). Fires when init completes. */
@@ -111,7 +140,7 @@ export function evalExpr(
 	src: string,
 	values: Record<string, number | string | null>
 ): number | string | null {
-	if (!ctx || !runtime) return null;
+	if (!runtime) return null;
 	// A null value means the sensor hasn't emitted yet — treat it as ABSENT (omit it) rather than
 	// injecting null, which JS would coerce to 0 in arithmetic (a fresh gauge would flash 0). Omitted →
 	// the reference is `undefined` → arithmetic yields NaN and a bare ref throws → we return null → `–`.
@@ -119,6 +148,14 @@ export function evalExpr(
 	for (const [k, v] of Object.entries(values)) if (v !== null) present[k] = v;
 	// Double-stringified: the inner JSON becomes a string LITERAL in the source, parsed inside the VM.
 	const scopeLiteral = JSON.stringify(JSON.stringify(buildScope(present)));
+	let ctx: QuickJSContext;
+	try {
+		// Set up before the deadline: creating a context is not the formula's time budget.
+		ctx = contextFor(runtime, src);
+	} catch {
+		/* v8 ignore next -- see contextFor: only an exhausted runtime heap fails here. */
+		return null;
+	}
 	const deadline = Date.now() + EVAL_DEADLINE_MS;
 	runtime.setInterruptHandler(() => Date.now() > deadline);
 	try {
@@ -128,6 +165,8 @@ export function evalExpr(
 		);
 		if (out.error) {
 			out.error.dispose();
+			contexts.delete(src);
+			ctx.dispose();
 			return null;
 		}
 		const v = ctx.dump(out.value);
@@ -137,8 +176,13 @@ export function evalExpr(
 		if (typeof v === 'boolean') return String(v);
 		return null;
 	} catch {
-		/* v8 ignore next -- native QuickJS reports expression faults through out.error; this is host hardening. */
+		// Host hardening (QuickJS reports expression faults through out.error). A failed host-side read
+		// can strand handles, and disposing then trips QuickJS's leak assertion: drop the context
+		// without disposing it so the formula still restarts clean.
+		/* v8 ignore start */
+		contexts.delete(src);
 		return null;
+		/* v8 ignore stop */
 	} finally {
 		/* v8 ignore next -- reset handlers are installed for later evaluations, not invoked by this call. */
 		runtime.setInterruptHandler(() => false);
@@ -147,9 +191,9 @@ export function evalExpr(
 
 // Test-only: tear the singleton down so suites don't leak the WASM runtime across files.
 export function __disposeFormulaEngine(): void {
-	ctx?.dispose();
+	for (const context of contexts.values()) context.dispose();
+	contexts.clear();
 	runtime?.dispose();
-	ctx = null;
 	runtime = null;
 	readyPromise = null;
 	readyListeners.clear();

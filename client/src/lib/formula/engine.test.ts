@@ -97,6 +97,29 @@ describe('formula engine', () => {
 		expect(evalExpr('typeof cpu', {})).toBe('undefined');
 	});
 
+	it('keeps one formula from changing the globals another formula relies on', () => {
+		const hijack =
+			'(JSON.parse = (function (p) { return function (s) { var o = p(s); for (var k in o) o[k] = 999; return o; }; })(JSON.parse), round = function () { return 7; }, 1)';
+		expect(evalExpr(hijack, {})).toBe(1);
+		expect(evalExpr('cpu', { cpu: 42 })).toBe(42);
+		expect(evalExpr('round(1.26, 1)', {})).toBe(1.3);
+	});
+
+	it('restarts a formula from a clean context after it fails', () => {
+		const counter = '(globalThis.n = (globalThis.n || 0) + 1, n > 1 ? missing : n)';
+		expect(evalExpr(counter, {})).toBe(1);
+		expect(evalExpr(counter, {})).toBeNull();
+		expect(evalExpr(counter, {})).toBe(1);
+	});
+
+	it('bounds the retained contexts, restarting the least recently used formula', () => {
+		const counter = '(globalThis.m = (globalThis.m || 0) + 1)';
+		expect(evalExpr(counter, {})).toBe(1);
+		expect(evalExpr(counter, {})).toBe(2);
+		for (let i = 0; i < 40; i++) expect(evalExpr(`${i} + 1`, {})).toBe(i + 1);
+		expect(evalExpr(counter, {})).toBe(1);
+	});
+
 	it('stringifies a boolean result', () => {
 		expect(evalExpr('cpu.total > 50', { 'cpu.total': 75 })).toBe('true');
 		expect(evalExpr('cpu.total > 50', { 'cpu.total': 10 })).toBe('false');
