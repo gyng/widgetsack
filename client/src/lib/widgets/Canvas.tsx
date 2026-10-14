@@ -1153,7 +1153,7 @@ export default function Canvas({ studio = false }: Props) {
 		const controller = createMcpStudioController(mcpStudioPorts, {
 			read: () => agentStudio.current.read(),
 			apply: (ops, expected) => agentStudio.current.apply(ops, expected),
-			verify: (expected) => agentStudio.current.verify(expected)
+			verify: (expected, signal) => agentStudio.current.verify(expected, signal)
 		});
 		void listenMcpStudio((request) => {
 			void controller.handle(request).catch((error) => console.warn('MCP reply failed', error));

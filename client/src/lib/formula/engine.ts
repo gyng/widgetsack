@@ -33,10 +33,13 @@ globalThis.clamp = function (x, lo, hi) { return Math.min(hi, Math.max(lo, Numbe
 // Formulas come from shared sacks, so one must not be able to change the globals (JSON.parse, round,
 // Math, …) another relies on. Each distinct source gets its own context — identical copies of a formula
 // compute the same thing anyway — and a failed evaluation (including out-of-memory) discards it.
+// Mounted consumers retain their sources (retainFormulas); a context is disposed when its last holder
+// leaves, so memory a formula parked on globalThis doesn't outlive the widget. The cap is a backstop.
 const MAX_CONTEXTS = 128;
 
 let runtime: QuickJSRuntime | null = null;
 const contexts = new Map<string, QuickJSContext>();
+const holders = new Map<string, number>();
 let readyPromise: Promise<void> | null = null;
 const readyListeners = new Set<() => void>();
 
@@ -127,6 +130,28 @@ function contextFor(rt: QuickJSRuntime, src: string): QuickJSContext {
 		context.dispose();
 	}
 	return c;
+}
+
+/** Hold the contexts of these formula sources for a live consumer. The returned release (idempotent)
+ *  disposes each context no other consumer still holds. */
+export function retainFormulas(sources: readonly string[]): () => void {
+	const held = [...new Set(sources)];
+	for (const src of held) holders.set(src, (holders.get(src) ?? 0) + 1);
+	let released = false;
+	return () => {
+		if (released) return;
+		released = true;
+		for (const src of held) {
+			const count = holders.get(src)! - 1;
+			if (count > 0) {
+				holders.set(src, count);
+				continue;
+			}
+			holders.delete(src);
+			contexts.get(src)?.dispose();
+			contexts.delete(src);
+		}
+	};
 }
 
 /** Subscribe to the one-shot ready transition (for useSyncExternalStore). Fires when init completes. */

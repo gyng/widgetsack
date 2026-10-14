@@ -144,11 +144,21 @@ export function expandCalendar(
 			}
 		}
 		const getTimezone = root.getTimeZoneByID.bind(root);
+		// A TZID that is neither defined in the feed nor a known IANA zone (e.g. a Windows name)
+		// reads as floating time, like an event without a TZID, instead of dropping its events.
+		const fallbackTimezone = (tzid: string) => {
+			try {
+				return browserTimezone(tzid);
+			} catch {
+				warnings.add('Some calendar times use an unknown timezone and are shown in local time.');
+				return ICAL.Timezone.localTimezone;
+			}
+		};
 		const zones = new Map<string, InstanceType<typeof ICAL.Timezone>>();
 		root.getTimeZoneByID = (tzid) => {
 			let zone = zones.get(tzid);
 			if (!zone) {
-				zone = getTimezone(tzid) ?? browserTimezone(tzid);
+				zone = getTimezone(tzid) ?? fallbackTimezone(tzid);
 				zones.set(tzid, zone);
 			}
 			return zone;

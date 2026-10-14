@@ -8,6 +8,7 @@ import type { CalendarRequest } from './processor';
 export const AGENDA_CALENDAR = 'agenda.calendar';
 export const AGENDA_LIST = 'agenda.list';
 export const AGENDA_FEEDBACK = 'agenda.parse';
+const STALE_AFTER_MS = 2 * CALENDAR_WINDOW_MS;
 type ExpansionDeps = {
 	request: (calendar: string, now: number) => CalendarRequest;
 	subscribeClock: (listener: () => void) => () => void;
@@ -53,7 +54,9 @@ export function startAgendaExpansion(hub: TelemetryHub, deps: ExpansionDeps): ()
 		}
 		const captured = revision;
 		const at = deps.now();
-		if (applied !== calendar || Math.abs(at - appliedAt) > CALENDAR_WINDOW_MS) {
+		// Minute ticks arrive a window apart plus timer jitter: keep the shown events until the new
+		// result replaces them, and only clear for a new source or a real time jump (sleep/resume).
+		if (applied !== calendar || Math.abs(at - appliedAt) > STALE_AFTER_MS) {
 			hub.ingestBatch([{ sensor: AGENDA_LIST, ts_ms: at, value: { kind: 'json', value: [] } }]);
 			feedback(true, []);
 		}

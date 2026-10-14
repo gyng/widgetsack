@@ -9,7 +9,13 @@ import type { TelemetryHub } from '../core/telemetry';
 import type { ExprField } from '../core/widget';
 import { exprRefs, parseTemplate, renderTemplate, templateRefs } from '../core/textTemplate';
 import { useSensors } from '../widgets/useSensors';
-import { evalExpr, initFormulaEngine, isFormulaEngineReady, onFormulaEngineReady } from './engine';
+import {
+	evalExpr,
+	initFormulaEngine,
+	isFormulaEngineReady,
+	onFormulaEngineReady,
+	retainFormulas
+} from './engine';
 
 /** Re-renders when the (async) WASM engine finishes initializing. Does NOT itself trigger init. */
 export function useEngineReady(): boolean {
@@ -49,6 +55,19 @@ export function useFormulaFields(
 	useEffect(() => {
 		if (active.length > 0) void initFormulaEngine();
 	}, [active.length]);
+
+	// The exact expression sources this widget evaluates, keyed by content so an unchanged formula
+	// keeps its context across config identity changes; released (and disposed) on change/unmount.
+	const sourcesKey = useMemo(() => {
+		const sources: string[] = [];
+		for (const f of active) {
+			const src = config[f.key] as string;
+			if (f.result !== 'text') sources.push(src);
+			else for (const part of parseTemplate(src)) if (part.kind === 'expr') sources.push(part.src);
+		}
+		return JSON.stringify(sources);
+	}, [active, config]);
+	useEffect(() => retainFormulas(JSON.parse(sourcesKey) as string[]), [sourcesKey]);
 
 	const overrides = useMemo(() => {
 		const out: Record<string, number | string> = {};

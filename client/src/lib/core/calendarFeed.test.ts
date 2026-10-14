@@ -165,10 +165,10 @@ DTSTART;TZID=Europe/London:20261014T093000`)
 			)[0].start
 		).toBe('2026-10-14T08:30:00.000Z');
 	});
-	it('reports unknown timezones and malformed events without hiding valid events', () => {
+	it('shows events in an unknown timezone at local (floating) time and reports it', () => {
 		const result = expandCalendar(
 			feed(
-				event(`UID:bad
+				event(`UID:windows
 SUMMARY:Unknown
 DTSTART;TZID=Not/AZone:20261014T093000`),
 				event(`UID:good
@@ -177,8 +177,13 @@ DTSTART:20261014T100000Z`)
 			),
 			now
 		);
-		expect(result.events.map((e) => e.summary)).toEqual(['Good']);
-		expect(result.warnings.length).toBeGreaterThan(0);
+		expect(result.events.find((e) => e.summary === 'Unknown')?.start).toBe(
+			new Date(2026, 9, 14, 9, 30).toISOString()
+		);
+		expect(result.events.map((e) => e.summary)).toContain('Good');
+		expect(result.warnings).toEqual([
+			'Some calendar times use an unknown timezone and are shown in local time.'
+		]);
 		expect(expandCalendar('not a calendar', now).warnings.length).toBeGreaterThan(0);
 	});
 	it('chooses the latest event revision and excludes cancelled series', () => {

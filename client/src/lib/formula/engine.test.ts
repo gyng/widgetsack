@@ -4,7 +4,8 @@ import {
 	evalExpr,
 	initFormulaEngine,
 	isFormulaEngineReady,
-	onFormulaEngineReady
+	onFormulaEngineReady,
+	retainFormulas
 } from './engine';
 import { TEMPLATE_FUNCTIONS } from '../core/templateFns';
 import * as textTemplate from '../core/textTemplate';
@@ -124,6 +125,20 @@ describe('formula engine', () => {
 		expect(evalExpr(counter, {})).toBe(2);
 		for (let i = 0; i < 130; i++) expect(evalExpr(`${i} + 1`, {})).toBe(i + 1);
 		expect(evalExpr(counter, {})).toBe(1);
+	});
+
+	it('disposes a formula context once no live consumer retains its source', () => {
+		const counter = '(globalThis.r = (globalThis.r || 0) + 1)';
+		const first = retainFormulas([counter, counter]);
+		const second = retainFormulas([counter]);
+		expect(evalExpr(counter, {})).toBe(1);
+		first();
+		first(); // idempotent: a repeated release must not drop the other consumer's hold
+		expect(evalExpr(counter, {})).toBe(2);
+		second();
+		// The last consumer left: its globals (and memory) are gone, so the formula restarts clean.
+		expect(evalExpr(counter, {})).toBe(1);
+		retainFormulas(['never evaluated'])();
 	});
 
 	it('stringifies a boolean result', () => {

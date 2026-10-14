@@ -31,6 +31,7 @@ import {
 	type StateFile
 } from '../src/mcp/tools';
 import type { AssistantOp } from '../src/lib/core/llm';
+import { readLayoutFile, writeLayoutFile } from './layoutFile';
 
 // ---- widgets.json + live-state location + I/O ----
 
@@ -53,12 +54,18 @@ function statePath(): string {
 	return process.env.WIDGETSACK_STATE ?? path.join(configDir(), 'mcp', 'state.json');
 }
 
+/** For read-only tools: a missing or unreadable layout simply describes as empty. */
 function readLayout(): LayoutFile | null {
-	try {
-		return JSON.parse(fs.readFileSync(layoutPath(), 'utf8')) as LayoutFile;
-	} catch {
-		return null; // missing / unreadable / invalid — treated as no layout yet
-	}
+	const read = readLayoutFile(layoutPath());
+	return read.ok ? read.file : null;
+}
+
+/** For edits: only a missing file starts fresh. Throws (→ tool error) rather than replacing an
+ *  unreadable or corrupt widgets.json with an empty layout. */
+function readLayoutForEdit(): LayoutFile | null {
+	const read = readLayoutFile(layoutPath());
+	if (!read.ok) throw new Error(read.error);
+	return read.file;
 }
 
 function readState(): StateFile {
@@ -130,9 +137,7 @@ function listThemeNames(): string[] {
 }
 
 function writeLayout(obj: LayoutFile): void {
-	const p = layoutPath();
-	fs.mkdirSync(path.dirname(p), { recursive: true });
-	fs.writeFileSync(p, JSON.stringify(obj, null, 2));
+	writeLayoutFile(layoutPath(), obj);
 }
 
 let idSeq = 0;
@@ -327,7 +332,7 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
 			}
 			case 'set_theme': {
 				const name = String(args.name ?? '');
-				writeLayout(setThemeInFile(readLayout(), name));
+				writeLayout(setThemeInFile(readLayoutForEdit(), name));
 				return text(
 					name.trim()
 						? `Theme set to "${name.trim()}". The overlay applies it on reload.`
@@ -339,7 +344,7 @@ async function callTool(name: string, args: Record<string, unknown>): Promise<un
 			case 'apply_layout_ops': {
 				const ops = (Array.isArray(args.ops) ? args.ops : []) as AssistantOp[];
 				const { file, monitorKey, result } = applyOpsToFile(
-					readLayout(),
+					readLayoutForEdit(),
 					ops,
 					makeId,
 					args.monitor as string | undefined

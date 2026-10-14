@@ -7,7 +7,7 @@ const result: CalendarResult = {
 	events: [{ summary: 'Call', start: '2026-10-14T09:00:00Z', allDay: false, location: '' }],
 	warnings: []
 };
-function setup() {
+function setup(clock = { now: 1000 }) {
 	const hub = createTelemetryHub();
 	let tick = () => {};
 	const requests: {
@@ -24,7 +24,7 @@ function setup() {
 	});
 	const stop = startAgendaExpansion(hub, {
 		request,
-		now: () => 1000,
+		now: () => clock.now,
 		subscribeClock: (listener) => {
 			tick = listener;
 			return offClock;
@@ -92,6 +92,30 @@ describe('calendar source expansion', () => {
 		expect(f.read(AGENDA_FEEDBACK)).toMatchObject({
 			value: { warnings: ['Calendar data could not be read.'] }
 		});
+		off();
+		f.stop();
+	});
+	it('keeps the shown events across jittered minute ticks and blanks only after a real time jump', async () => {
+		const clock = { now: 1000 };
+		const f = setup(clock);
+		f.raw({ version: 1, calendar: 'feed' });
+		const off = f.hub.sensor(AGENDA_LIST).subscribe(() => {});
+		f.requests[0].resolve(result);
+		await Promise.resolve();
+		// Minute-aligned ticks land at or a little past 60 s apart; none may flash "Loading…".
+		for (const [index, step] of [60_000, 60_017, 59_990, 60_250].entries()) {
+			clock.now += step;
+			f.tick();
+			expect(f.read(AGENDA_LIST)).toEqual({ kind: 'json', value: result.events });
+			expect(f.read(AGENDA_FEEDBACK)).toMatchObject({ value: { pending: false } });
+			f.requests[index + 1].resolve(result);
+			await Promise.resolve();
+		}
+		// A sleep/resume jump means the shown agenda is stale: clear it until the new result lands.
+		clock.now += 3_600_000;
+		f.tick();
+		expect(f.read(AGENDA_LIST)).toEqual({ kind: 'json', value: [] });
+		expect(f.read(AGENDA_FEEDBACK)).toMatchObject({ value: { pending: true } });
 		off();
 		f.stop();
 	});

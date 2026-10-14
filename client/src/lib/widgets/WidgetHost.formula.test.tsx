@@ -8,7 +8,8 @@ vi.mock('../formula/engine', () => ({
 	initFormulaEngine: () => Promise.resolve(),
 	isFormulaEngineReady: () => false,
 	onFormulaEngineReady: () => () => undefined,
-	evalExpr: () => null
+	evalExpr: () => null,
+	retainFormulas: () => () => undefined
 }));
 
 import WidgetHost from './WidgetHost';

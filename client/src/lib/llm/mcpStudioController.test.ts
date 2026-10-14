@@ -44,6 +44,9 @@ it('releases a cancelled verification so a later tool can run before rendering f
 	await reading;
 	finish({ ok: true });
 	await Promise.all([verifying, reading, cancelling]);
+	// The implementation gets the request's signal, so cancelling stops its render wait too.
+	const signal = s.studio.verify.mock.calls[0][1] as AbortSignal;
+	expect(signal.aborted).toBe(true);
 	expect(s.ports.reply).not.toHaveBeenCalledWith('verify', expect.anything());
 	expect(s.ports.reply).toHaveBeenCalledWith('next', expect.objectContaining({ revision: 'next' }));
 });
