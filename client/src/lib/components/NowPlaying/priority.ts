@@ -50,29 +50,26 @@ export const sortSessionsByPriority = (
 	});
 };
 
-// Insert/replace a session record, keeping at most MAX_SESSIONS_PER_SOURCE records that share its
-// (non-empty) `source`. A player that tears down and recreates its SMTC session (a NEW session_id for
-// the same source, with no matching `session_delete`) would otherwise leave stale records behind
-// forever — an unbounded leak that once OOMed the overlay after hours of playback. One record per
-// source was too few: a browser exposes a live session per tab under one source, and evicting a tab
-// left now-playing blank. A record with no source can't be grouped, so it's upserted as-is. Pure
-// (returns a new map). See [[priority]] sibling selectors.
-export const MAX_SESSIONS_PER_SOURCE = 4;
-
+// Insert/replace a session record, evicting any OTHER tracked session that shares its (non-empty)
+// `source`. The store is keyed by `session_id`, but the now-playing widget selects by SOURCE — so a
+// player that tears down and recreates its SMTC session (a NEW session_id for the same source, with
+// no matching `session_delete`) would otherwise leave the stale record behind forever. Each record
+// can carry an album-art thumbnail as a raw byte array, so those orphans accumulate into an unbounded
+// heap leak — the overlay OOMs after hours of playback. Dropping same-source duplicates bounds the
+// store to one live record per player. A record with no source can't be deduped, so it's upserted
+// as-is. Pure (returns a new map). See [[priority]] sibling selectors.
 export const upsertSession = (
 	sessions: Record<number, SessionRecord>,
 	record: SessionRecord
 ): Record<number, SessionRecord> => {
 	const src = record.source;
-	const next: Record<number, SessionRecord> = { ...sessions, [record.session_id]: record };
-	if (!src) return next;
-	// Several live sessions can share a source (one per browser tab), so keep the newest few per
-	// player rather than one. win-gsmtc ids increase, so the lowest ids are the oldest.
-	const sameSource = Object.values(next)
-		.filter((rec) => rec?.source === src)
-		.map((rec) => rec.session_id)
-		.sort((a, b) => b - a);
-	for (const id of sameSource.slice(MAX_SESSIONS_PER_SOURCE)) delete next[id];
+	const next: Record<number, SessionRecord> = {};
+	for (const [id, rec] of Object.entries(sessions)) {
+		if (Number(id) === record.session_id) continue; // replaced below
+		if (src && rec?.source === src) continue; // stale session for the same player → evict
+		next[Number(id)] = rec;
+	}
+	next[record.session_id] = record;
 	return next;
 };
 

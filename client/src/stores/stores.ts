@@ -227,9 +227,9 @@ export function handleUpdate(opts: HandleUpdateOpts) {
 	if (opts.sessionRecord.source === null) return;
 	mediaStore.update((cur) => {
 		// Restore the album art the backend omits on model/timeline updates (carried forward by id), then
-		// upsert keyed by session_id while bounding records per source — a player that recreates its
-		// SMTC session would otherwise leak an orphaned record per recreation, OOMing the overlay over
-		// time.
+		// upsert keyed by session_id while evicting any stale record for the SAME source — a player that
+		// recreates its SMTC session would otherwise leak an orphaned record (with its album-art bytes)
+		// per recreation, OOMing the overlay over time.
 		const record = mergeMediaForward(
 			cur.sessions[opts.sessionRecord.session_id],
 			opts.sessionRecord
