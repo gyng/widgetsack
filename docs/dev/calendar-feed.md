@@ -1,9 +1,10 @@
 # Calendar feed
 
-The Agenda backend fetches the configured ICS address with a 1 MiB response limit.
+The Agenda backend fetches the configured ICS address with a 16 MiB response limit.
 The address stays in the protected backend configuration.
 Before emitting telemetry, `calendar_for_bridge` keeps the event and timezone properties used by the renderer.
 It removes descriptions, attendee addresses, attachments, URLs, and alarms.
+It also drops one-off events that ended more than two days before the fetch. Recurring series, overrides with `RECURRENCE-ID`, and events with a `DURATION` are always kept. A multi-year feed then fits the webview limits.
 It rejects missing or mismatched component boundaries and excessive nesting.
 
 `agenda.calendar` carries this internal JSON value:

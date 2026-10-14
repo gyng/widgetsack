@@ -206,10 +206,58 @@ fn agenda_to_samples(events: &[AgendaEvent], ts: u64) -> Vec<SensorSample> {
     ]
 }
 
+/// Days since 1970-01-01 → `YYYYMMDD` (proleptic Gregorian; Hinnant's civil_from_days). Pure.
+fn yyyymmdd_from_days(days: i64) -> u32 {
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+    (year * 10_000 + month * 100 + day) as u32
+}
+
+/// The first `YYYYMMDD` an event must reach to be bridged: two days before `ts_ms`, which covers
+/// any time zone's "today" without parsing zones.
+fn bridge_cutoff(ts_ms: u64) -> u32 {
+    yyyymmdd_from_days((ts_ms / 86_400_000) as i64 - 2)
+}
+
+/// The `YYYYMMDD` date of a DTSTART/DTEND line (`DTSTART;TZID=…:20261014T093000`). Pure.
+fn property_date(line: &str) -> Option<u32> {
+    let value = line.split_once(':')?.1;
+    value.get(..8)?.parse().ok()
+}
+
+/// One buffered VEVENT and what decides whether it can still appear in the agenda.
+#[derive(Default)]
+struct BridgedEvent {
+    text: String,
+    repeats: bool,
+    start: Option<u32>,
+    end: Option<u32>,
+    open_ended: bool,
+}
+
+impl BridgedEvent {
+    /// A one-off event that ended before `cutoff` can never be shown. Recurring series and
+    /// overrides (which can move an occurrence) are always kept, as is anything whose end is
+    /// only known from a DURATION.
+    fn ended_before(&self, cutoff: u32) -> bool {
+        !self.repeats && !self.open_ended && self.end.or(self.start).is_some_and(|d| d < cutoff)
+    }
+}
+
 // Keep only fields used by the calendar renderer. Private notes, attendee addresses,
-// attachments, calendar URLs, and alarms do not cross the bridge.
-fn calendar_for_bridge(body: &str) -> String {
+// attachments, calendar URLs, and alarms do not cross the bridge. One-off events that ended
+// before `cutoff` (YYYYMMDD) are dropped: a multi-year feed would otherwise exceed the
+// webview's size and event limits with history the agenda never shows.
+fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
     let mut output = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n");
+    let mut event: Option<BridgedEvent> = None;
     let mut stack: Vec<String> = Vec::new();
     let mut started = false;
     let mut ended = false;
@@ -241,7 +289,12 @@ fn calendar_for_bridge(body: &str) -> String {
                 return "invalid calendar".into();
             }
             stack.push(name.to_ascii_uppercase());
-            if kept(&stack) {
+            if stack == ["VCALENDAR", "VEVENT"] {
+                event = Some(BridgedEvent {
+                    text: "BEGIN:VEVENT\r\n".into(),
+                    ..Default::default()
+                });
+            } else if kept(&stack) {
                 output.push_str(&format!("BEGIN:{}\r\n", stack.last().unwrap()));
             }
             continue;
@@ -251,7 +304,14 @@ fn calendar_for_bridge(body: &str) -> String {
                 .last()
                 .is_some_and(|last| last.eq_ignore_ascii_case(name))
             {
-                if kept(&stack) {
+                if stack == ["VCALENDAR", "VEVENT"] {
+                    if let Some(mut done) = event.take()
+                        && !done.ended_before(cutoff)
+                    {
+                        done.text.push_str("END:VEVENT\r\n");
+                        output.push_str(&done.text);
+                    }
+                } else if kept(&stack) {
                     output.push_str(&format!("END:{}\r\n", name.to_ascii_uppercase()));
                 }
                 if stack.len() == 1 {
@@ -310,9 +370,25 @@ fn calendar_for_bridge(body: &str) -> String {
             }
             _ => false,
         };
-        if keep {
-            output.push_str(&line);
-            output.push_str("\r\n");
+        if !keep {
+            continue;
+        }
+        match event.as_mut() {
+            Some(current) if stack.len() == 2 => {
+                match property.as_str() {
+                    "RRULE" | "RDATE" | "RECURRENCE-ID" => current.repeats = true,
+                    "DTSTART" => current.start = property_date(&line),
+                    "DTEND" => current.end = property_date(&line),
+                    "DURATION" => current.open_ended = true,
+                    _ => {}
+                }
+                current.text.push_str(&line);
+                current.text.push_str("\r\n");
+            }
+            _ => {
+                output.push_str(&line);
+                output.push_str("\r\n");
+            }
         }
     }
     if !started || !ended || !stack.is_empty() {
@@ -326,7 +402,7 @@ fn calendar_for_bridge(body: &str) -> String {
 // preserving timezone and recurrence rules. agenda.count remains the source event count.
 fn feed_to_samples(body: &str, ts: u64) -> Vec<SensorSample> {
     let mut samples = agenda_to_samples(&parse_ics_events(body, usize::MAX), ts);
-    let calendar = calendar_for_bridge(body);
+    let calendar = calendar_for_bridge(body, bridge_cutoff(ts));
     let status = if calendar == "invalid calendar" {
         "error"
     } else {
@@ -406,9 +482,12 @@ fn http_client() -> Result<reqwest::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+const CALENDAR_BODY_CAP: usize = 16 * 1024 * 1024;
+
 async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, String> {
-    // Streaming 1 MiB cap (shared with the RSS poller): a calendar is tens of KiB.
-    crate::rss::fetch_text_capped(client, url, crate::rss::FEED_BODY_CAP).await
+    // A multi-year Google/Outlook feed is several MiB; calendar_for_bridge prunes it to what can
+    // still be shown before it crosses the bridge.
+    crate::rss::fetch_text_capped(client, url, CALENDAR_BODY_CAP).await
 }
 
 pub async fn run_agenda_client<R: Runtime>(app: AppHandle<R>, cfg: AgendaConfig) {
@@ -658,6 +737,62 @@ mod tests {
     }
 
     #[test]
+    fn bridge_cutoff_is_two_days_before_the_sample_date() {
+        assert_eq!(yyyymmdd_from_days(0), 19700101);
+        assert_eq!(yyyymmdd_from_days(-1), 19691231);
+        assert_eq!(yyyymmdd_from_days(19_781), 20240228);
+        assert_eq!(yyyymmdd_from_days(19_782), 20240229); // leap day
+        assert_eq!(yyyymmdd_from_days(19_783), 20240301);
+        // 2026-10-14T12:00Z → events must reach 2026-10-12.
+        assert_eq!(bridge_cutoff(1_791_979_200_000), 20261012);
+        assert_eq!(
+            property_date("DTSTART;TZID=Europe/London:20261014T093000"),
+            Some(20261014)
+        );
+        assert_eq!(property_date("DTSTART;VALUE=DATE:20261014"), Some(20261014));
+        assert_eq!(property_date("DTSTART:bad"), None);
+    }
+
+    #[test]
+    fn bridge_drops_only_one_off_events_that_ended_before_the_cutoff() {
+        let event = |uid: &str, props: &str| {
+            format!("BEGIN:VEVENT\nUID:{uid}\nSUMMARY:{uid}\n{props}END:VEVENT\n")
+        };
+        let body = [
+            "BEGIN:VCALENDAR\n".to_string(),
+            event("old", "DTSTART:20200101T090000Z\nDTEND:20200101T100000Z\n"),
+            event("old-allday", "DTSTART;VALUE=DATE:20200101\n"),
+            event("weekly", "DTSTART:20200101T090000Z\nRRULE:FREQ=WEEKLY\n"),
+            event(
+                "moved",
+                "RECURRENCE-ID:20200108T090000Z\nDTSTART:20200108T120000Z\n",
+            ),
+            event("long", "DTSTART:20200101T090000Z\nDTEND:20261101T090000Z\n"),
+            event("duration", "DTSTART:20200101T090000Z\nDURATION:P1D\n"),
+            event("today", "DTSTART:20261014T090000Z\n"),
+            event("undated", ""),
+            "END:VCALENDAR\n".to_string(),
+        ]
+        .concat();
+        let bridged = calendar_for_bridge(&body, 20261012);
+        for kept in ["weekly", "moved", "long", "duration", "today", "undated"] {
+            assert!(
+                bridged.contains(&format!("UID:{kept}\r\n")),
+                "{kept} was dropped"
+            );
+        }
+        for dropped in ["old", "old-allday"] {
+            assert!(
+                !bridged.contains(&format!("UID:{dropped}\r\n")),
+                "{dropped} was kept"
+            );
+        }
+        assert_eq!(bridged.matches("BEGIN:VEVENT").count(), 6);
+        assert_eq!(bridged.matches("END:VEVENT").count(), 6);
+        assert!(bridged.ends_with("END:VCALENDAR\r\n"));
+    }
+
+    #[test]
     fn calendar_projection_rejects_missing_or_mismatched_frames_and_excess_depth() {
         for body in [
             "<html>Private page</html>",
@@ -666,11 +801,11 @@ mod tests {
             "BEGIN:VEVENT\nEND:VEVENT",
             "BEGIN:VCALENDAR\nEND:VCALENDAR\nBEGIN:VCALENDAR\nEND:VCALENDAR",
         ] {
-            assert_eq!(calendar_for_bridge(body), "invalid calendar");
+            assert_eq!(calendar_for_bridge(body, 0), "invalid calendar");
         }
         let body = format!("BEGIN:VCALENDAR\n{}", "BEGIN:X\n".repeat(10000));
-        assert_eq!(calendar_for_bridge(&body), "invalid calendar");
-        assert!(calendar_for_bridge("begin:vcalendar\nbegin:vevent\nsummary:Call\ndtstart:20261014T090000Z\nend:vevent\nend:vcalendar").contains("summary:Call"));
+        assert_eq!(calendar_for_bridge(&body, 0), "invalid calendar");
+        assert!(calendar_for_bridge("begin:vcalendar\nbegin:vevent\nsummary:Call\ndtstart:20261014T090000Z\nend:vevent\nend:vcalendar", 0).contains("summary:Call"));
     }
 
     #[test]
