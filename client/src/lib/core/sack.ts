@@ -135,6 +135,9 @@ export function sackConsentMessage(sack: Sack): string {
 	const lines: string[] = [];
 	const css = sack.theme?.css ? threatSummary(scanCssThreats(sack.theme.css)) : '';
 	if (css) lines.push(`This sack's theme contains ${css}.`);
+	const tokenThreats = Object.values(sack.tokens ?? {}).flatMap((value) => scanCssThreats(value));
+	const tokens = threatSummary(tokenThreats);
+	if (tokens) lines.push(`Its design tokens contain ${tokens}.`);
 	const defs = Array.isArray(sack.library?.defs) ? sack.library.defs : [];
 	const tree = defs.length ? treeThreatSummary(scanDefsThreats(defs)) : '';
 	if (tree) lines.push(`Its widgets contain ${tree}.`);

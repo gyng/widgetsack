@@ -108,9 +108,35 @@ export function swatchFromTokens(tokens: Tokens): Swatch {
 /** The swatch for "(default)" / no theme — the app's literal fallback look. */
 export const DEFAULT_SWATCH: Swatch = swatchFromTokens(DEFAULT_TOKENS);
 
-/** Emit a `selector { --k: v; … }` rule for `tokens` (default selector `:root`). Pure. */
+const TOKEN_KEY = /^--[A-Za-z0-9_-]+$/;
+
+/**
+ * Whether `key: value` stays inside one custom-property declaration. Tokens arrive from shared sacks
+ * and packages and are emitted into a <style> element, so a key or value must not end the
+ * declaration or block (`;` `{` `}` outside a string), leave a string or comment open, or contain
+ * `<` (the HTML parser ends the element at `</style` even inside a CSS string). Pure.
+ */
+export function safeTokenEntry(key: string, value: unknown): boolean {
+	if (!TOKEN_KEY.test(key) || typeof value !== 'string' || value.includes('<')) return false;
+	let quote: string | null = null;
+	for (let i = 0; i < value.length; i++) {
+		const c = value[i];
+		if (quote) {
+			if (c === '\\') i++;
+			else if (c === '\n') return false;
+			else if (c === quote) quote = null;
+		} else if (c === '"' || c === "'") quote = c;
+		else if (c === ';' || c === '{' || c === '}' || (c === '/' && value[i + 1] === '*'))
+			return false;
+	}
+	return quote === null;
+}
+
+/** Emit a `selector { --k: v; … }` rule for `tokens` (default selector `:root`), dropping any entry
+ * that is not a safe custom-property declaration (`safeTokenEntry`). Pure. */
 export function tokensToCss(tokens: Tokens, selector = ':root'): string {
 	const body = Object.entries(tokens)
+		.filter(([k, v]) => safeTokenEntry(k, v))
 		.map(([k, v]) => `\t${k}: ${v};`)
 		.join('\n');
 	return `${selector} {\n${body}\n}`;

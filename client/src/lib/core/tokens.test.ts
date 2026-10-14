@@ -5,6 +5,7 @@ import {
 	extractFontFamilies,
 	firstFontFamily,
 	parseTokens,
+	safeTokenEntry,
 	swatchFromTokens,
 	TOKEN_NAMES,
 	tokensToCss
@@ -36,6 +37,33 @@ describe('tokens', () => {
 	it('tokensToCss emits a :root rule by default', () => {
 		const css = tokensToCss({ '--np-accent': 'red' });
 		expect(css).toBe(':root {\n\t--np-accent: red;\n}');
+	});
+
+	it('tokensToCss drops entries that would escape the declaration block', () => {
+		const css = tokensToCss({
+			'--np-accent': 'red;} *{background:url(https://evil.example/p)} :root{--x:y',
+			'--a: 0;} body{--b': '1',
+			'--np-fg': 'url("data:image/png;base64,AAAA")'
+		});
+		expect(css).toBe(':root {\n\t--np-fg: url("data:image/png;base64,AAAA");\n}');
+	});
+
+	it.each([
+		['--np-accent', 'red', true],
+		['--np-font', '"Segoe UI", sans-serif', true],
+		['--np-bg', "url('a;b')", true],
+		['--np-label', String.raw`"say \"hi\"; ok"`, true],
+		['color', 'red', false],
+		['--a b', 'red', false],
+		['--np-accent', 'red; color: blue', false],
+		['--np-accent', 'red}', false],
+		['--np-accent', '{', false],
+		['--np-accent', '"unterminated', false],
+		['--np-accent', '"a\nb"', false],
+		['--np-accent', '"</style><img src=x>"', false],
+		['--np-accent', 'red /* swallow', false]
+	])('safeTokenEntry(%s, %s) is %s', (key, value, safe) => {
+		expect(safeTokenEntry(key, value)).toBe(safe);
 	});
 
 	it('tokensToCss honours a custom selector', () => {

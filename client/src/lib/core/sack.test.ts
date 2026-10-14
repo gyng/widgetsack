@@ -220,6 +220,15 @@ const iframeLeaf = (id: string, config: Record<string, unknown>): Leaf => ({
 });
 
 describe('sackConsentMessage', () => {
+	it('warns about remote resources in the global tokens of a sack', () => {
+		const message = sackConsentMessage({
+			kind: 'widgetsack/sack',
+			version: 1,
+			tokens: { '--np-bg': 'url(https://evil.example/beacon)' }
+		});
+		expect(message).toContain('tokens');
+	});
+
 	it('is empty for a clean sack (no theme threats, no capability-bearing widgets)', () => {
 		expect(sackConsentMessage({ kind: 'widgetsack/sack', version: 1 })).toBe('');
 		expect(
