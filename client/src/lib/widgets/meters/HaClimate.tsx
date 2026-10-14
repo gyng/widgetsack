@@ -4,6 +4,7 @@
 // attributes (binds: 'json'); each control emits onControl that WidgetHost bubbles to Canvas
 // (ha_call_service). Range (high/low) thermostats display the setpoint read-only. Prop-only,
 // token-themeable (AGENTS.md §6); service_data is built by the pure core/haControls helpers.
+import { useState } from 'react';
 import {
 	climateNextHvacMode,
 	climateNudge,
@@ -59,7 +60,27 @@ export default function HaClimate({
 
 	const emit = (call: { service: string; data: Record<string, unknown> }): void =>
 		onControl?.({ domain: 'climate', service: call.service, data: call.data });
-	const nudge = (dir: 1 | -1) => emit(climateNudge(attrs, dir));
+	// Rapid nudges stack on the last REQUESTED setpoint until the reported one catches up; an
+	// intermediate echo (between where we started and the request) keeps it, anything else drops it.
+	const [pending, setPending] = useState<{ from: number; to: number } | null>(null);
+	const [prevTarget, setPrevTarget] = useState(target);
+	if (target !== prevTarget) {
+		setPrevTarget(target);
+		if (
+			pending &&
+			(target === undefined ||
+				target === pending.to ||
+				target < Math.min(pending.from, pending.to) ||
+				target > Math.max(pending.from, pending.to))
+		)
+			setPending(null);
+	}
+	const nudge = (dir: 1 | -1) => {
+		const call = climateNudge(pending ? { ...attrs, temperature: pending.to } : attrs, dir);
+		const to = call.data.temperature as number;
+		setPending({ from: pending?.from ?? target ?? current ?? 20, to });
+		emit(call);
+	};
 	const cycleMode = () => emit(climateSetHvacMode(climateNextHvacMode(attrs, mode)));
 
 	// No live data (plugin unset / offline / entity unavailable / still waiting) → the shared notice.

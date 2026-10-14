@@ -11,6 +11,8 @@ export type TimerConfig = {
 	duration: number;
 	loop?: boolean;
 	storageKey?: string;
+	/** Read-only fallback when `storageKey` holds nothing (state saved under an older key). */
+	legacyStorageKey?: string;
 	/** Observe shared state without changing or publishing it. */
 	readOnly?: boolean;
 };
@@ -61,10 +63,16 @@ const validRuntime = (value: unknown): value is Runtime => {
 	);
 };
 
-const loadRuntime = (storageKey: string | undefined, config: string): Runtime => {
+const loadRuntime = (
+	storageKey: string | undefined,
+	config: string,
+	legacyKey?: string
+): Runtime => {
 	if (!storageKey) return freshRuntime();
 	try {
-		const raw = localStorage.getItem(storageKey);
+		const raw =
+			localStorage.getItem(storageKey) ??
+			(legacyKey && legacyKey !== storageKey ? localStorage.getItem(legacyKey) : null);
 		if (!raw) return freshRuntime();
 		const stored = JSON.parse(raw) as Partial<StoredTimer>;
 		return stored.version === 1 && stored.config === config && validRuntime(stored.runtime)
@@ -80,11 +88,11 @@ export function useTimer(cfg: TimerConfig): TimerState {
 	const identity = `${cfg.storageKey ?? ''}\n${config}`;
 	const [model, setModel] = useState<Model>(() => ({
 		identity,
-		runtime: loadRuntime(cfg.storageKey, config)
+		runtime: loadRuntime(cfg.storageKey, config, cfg.legacyStorageKey)
 	}));
 	// A widget definition/config change starts a fresh timer instead of inheriting incompatible state.
 	if (model.identity !== identity) {
-		setModel({ identity, runtime: loadRuntime(cfg.storageKey, config) });
+		setModel({ identity, runtime: loadRuntime(cfg.storageKey, config, cfg.legacyStorageKey) });
 	}
 
 	const runtime = model.identity === identity ? model.runtime : freshRuntime();

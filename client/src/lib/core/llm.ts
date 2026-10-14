@@ -27,6 +27,7 @@ import {
 import { findNode, insertChild, removeNode, updateNode } from './layoutEdit';
 import { normalizeMacro } from './macro';
 import { isForbiddenKey } from './safePath';
+import { scanTreeThreats, type TreeThreatKind } from './treeThreats';
 import { createWidget, getMeta, type ConfigField, type WidgetMeta } from './widget';
 
 // =====================================================================================
@@ -495,6 +496,27 @@ export function sanitizeAssistantConfig(
 
 const SENSOR_BINDS = new Set(['scalar', 'series', 'text', 'json']);
 
+// Capabilities an agent may never add or reconfigure: an embedded page, a command runner, and units
+// that fetch an outside URL automatically. The model's ops (and MCP clients) are untrusted; the user
+// adds these in the studio themselves.
+const AGENT_REFUSED = new Set<TreeThreatKind>([
+	'iframe',
+	'iframe-unsandboxed',
+	'iframe-interactive',
+	'remote-image',
+	'service-check',
+	'shell-command'
+]);
+
+/** Why an agent-added or agent-changed unit is refused (core/treeThreats rules), or null when it is
+ * safe. Local images, unconfigured service checks and ordinary widgets pass. Pure. */
+export function agentUnitRefusal(unit: WidgetInstance): string | null {
+	const threats = scanTreeThreats(leaf(unit)).filter((t) => AGENT_REFUSED.has(t.kind));
+	if (!threats.length) return null;
+	const detail = threats.map((t) => `${t.kind} (${t.detail})`).join(', ');
+	return `"${unit.id}": refused ${detail} — add it in the studio yourself`;
+}
+
 /** Apply assistant ops to a monitor, returning a NEW MonitorLayout (pure — never mutates the input).
  * `makeId` supplies fresh widget ids (the editor passes its rand-based generator; tests a counter).
  * Invalid ops (unknown type, sensor on a self-sourcing widget, missing target) are skipped and noted in
@@ -505,6 +527,7 @@ export function applyAssistantOps(
 	makeId: (type: string) => string
 ): ApplyResult {
 	let root = monitor.root;
+	let floating = monitor.floating;
 	const errors: string[] = [];
 	const addedIds: string[] = [];
 	let applied = 0;
@@ -516,11 +539,19 @@ export function applyAssistantOps(
 		errors.push(`unknown container "${id}" — added to root instead`);
 		return root.id;
 	};
+	// describeLayout lists flow AND floating widgets, so every by-id op resolves in both layers.
+	const locate = (id: string): LayoutNode | undefined =>
+		findNode(root, id) ?? floating.find((n) => n.id === id);
+	const replace = (id: string, fn: (leaf: Leaf) => Leaf): void => {
+		if (findNode(root, id)) root = updateNode(root, id, (n) => fn(n as Leaf));
+		else floating = floating.map((n) => (n.id === id ? fn(n) : n));
+	};
 
 	for (const op of ops) {
 		switch (op.op) {
 			case 'clear': {
 				root = emptyRoot();
+				floating = [];
 				applied++;
 				break;
 			}
@@ -541,6 +572,11 @@ export function applyAssistantOps(
 					errors.push(...safe.errors);
 					inst.config = { ...inst.config, ...safe.config };
 				}
+				const refusal = agentUnitRefusal(inst);
+				if (refusal) {
+					errors.push(refusal);
+					break;
+				}
 				root = insertChild(root, parentOr(op.parent), leaf(inst));
 				addedIds.push(id);
 				applied++;
@@ -554,57 +590,56 @@ export function applyAssistantOps(
 				break;
 			}
 			case 'removeWidget': {
-				if (!findNode(root, op.id)) {
+				if (findNode(root, op.id)) root = removeNode(root, op.id);
+				else if (floating.some((n) => n.id === op.id))
+					floating = floating.filter((n) => n.id !== op.id);
+				else {
 					errors.push(`cannot remove "${op.id}" — not found`);
 					break;
 				}
-				root = removeNode(root, op.id);
 				applied++;
 				break;
 			}
 			case 'setConfig': {
-				if (!patchUnitExists(root, op.id)) {
+				const node = locate(op.id);
+				if (!isWidgetLeaf(node)) {
 					errors.push(`cannot configure "${op.id}" — not a widget`);
 					break;
 				}
-				// patchUnitExists guarantees a primitive widget leaf, so its type is safe to read here.
-				const type = ((findNode(root, op.id) as Leaf).unit as WidgetInstance).type;
-				const safe = sanitizeAssistantConfig(type, op.config);
+				const unit = node.unit;
+				const safe = sanitizeAssistantConfig(unit.type, op.config);
 				errors.push(...safe.errors);
-				root = updateNode(root, op.id, (n) => {
-					// patchUnitExists above guarantees the target passed to this callback is a primitive leaf.
-					const leaf = n as Leaf;
-					const unit = leaf.unit as WidgetInstance;
-					return { ...leaf, unit: { ...unit, config: { ...unit.config, ...safe.config } } };
-				});
+				const next = { ...unit, config: { ...unit.config, ...safe.config } };
+				const refusal = agentUnitRefusal(next);
+				if (refusal) {
+					errors.push(refusal);
+					break;
+				}
+				replace(op.id, (leaf) => ({ ...leaf, unit: next }));
 				applied++;
 				break;
 			}
 			case 'setSensor': {
-				const binds = leafBinds(root, op.id);
-				if (binds === null) {
+				const node = locate(op.id);
+				if (!node || !isLeaf(node) || isGroup(node.unit)) {
 					errors.push(`cannot set sensor on "${op.id}" — not a widget`);
 					break;
 				}
 				// Same self-sourcing gate as addWidget: a clock/cpu/spectrum/button/zone (binds 'none')
 				// must not carry a sensor the meter ignores. The model is untrusted, so enforce here.
-				if (!SENSOR_BINDS.has(binds)) {
+				if (!SENSOR_BINDS.has(getMeta(node.unit.type)?.binds ?? 'scalar')) {
 					errors.push(`"${op.id}" is self-sourcing — ignored sensor "${op.sensor}"`);
 					break;
 				}
-				root = updateNode(root, op.id, (n) => {
-					// non-null leafBinds plus the bind gate guarantee a primitive leaf target.
-					const leaf = n as Leaf;
-					const unit = leaf.unit as WidgetInstance;
-					return { ...leaf, unit: { ...unit, sensor: op.sensor } };
-				});
+				const unit = node.unit;
+				replace(op.id, (leaf) => ({ ...leaf, unit: { ...unit, sensor: op.sensor } }));
 				applied++;
 				break;
 			}
 		}
 	}
 
-	return { monitor: { ...monitor, root }, applied, addedIds, errors };
+	return { monitor: { ...monitor, root, floating }, applied, addedIds, errors };
 }
 
 function newContainer(kind: 'row' | 'col' | 'grid', id: string): Container {
@@ -614,17 +649,9 @@ function newContainer(kind: 'row' | 'col' | 'grid', id: string): Container {
 	return container(id, kind, [], { basis: { fr: 1 }, align: 'stretch' });
 }
 
-/** True when `id` resolves to a primitive widget leaf (not a container, group, or missing). */
-function patchUnitExists(root: Container, id: string): boolean {
-	const node = findNode(root, id);
+/** True when `node` is a primitive widget leaf (not a container, group, or missing). */
+function isWidgetLeaf(node: LayoutNode | undefined): node is Leaf & { unit: WidgetInstance } {
 	return !!node && isLeaf(node) && !isGroup(node.unit) && isWidgetInstance(node.unit);
-}
-
-/** The `binds` kind of the widget leaf `id`, or null if `id` isn't a primitive widget leaf. */
-function leafBinds(root: Container, id: string): string | null {
-	const node = findNode(root, id);
-	if (!node || !isLeaf(node) || isGroup(node.unit)) return null;
-	return getMeta(node.unit.type)?.binds ?? 'scalar';
 }
 
 function isWidgetInstance(u: unknown): u is WidgetInstance {

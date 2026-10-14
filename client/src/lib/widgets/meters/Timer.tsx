@@ -80,6 +80,8 @@ type Props = {
 	editMode?: boolean;
 	previewMode?: boolean;
 	widgetId?: string;
+	/** Namespaced instance id: library instances sharing `widgetId` keep separate timers. */
+	widgetInstanceId?: string;
 	mode?: TimerMode;
 	duration?: number;
 	format?: string;
@@ -90,6 +92,7 @@ type Props = {
 
 export default function Timer({
 	widgetId,
+	widgetInstanceId = widgetId,
 	mode = 'countdown',
 	duration = 300,
 	format = 'auto',
@@ -105,7 +108,8 @@ export default function Timer({
 		duration:
 			style === 'dial' && mode === 'countdown' ? Math.max(0, Math.min(3600, duration)) : duration,
 		loop,
-		storageKey: widgetId ? `widgetsack.timer.${widgetId}` : undefined,
+		storageKey: widgetInstanceId ? `widgetsack.timer.${widgetInstanceId}` : undefined,
+		legacyStorageKey: widgetId ? `widgetsack.timer.${widgetId}` : undefined,
 		readOnly: editMode || previewMode
 	});
 	// A countdown shows the CEILING (4.2s left reads "00:05"); a stopwatch floors.

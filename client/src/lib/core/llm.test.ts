@@ -471,28 +471,24 @@ describe('applyAssistantOps', () => {
 			],
 			counter()
 		);
-		const unit = () =>
-			(res.monitor.root.children[0] as ReturnType<typeof leaf>).unit as {
-				config: Record<string, unknown>;
-			};
-		expect(unit().config.sandbox).toBe(true);
-		expect(unit().config.url).toBe('https://a.example');
+		// The agent may not add an embedded page at all; the sandbox refusal is still reported.
+		expect(res.monitor.root.children).toEqual([]);
 		expect(res.errors.join(' ')).toMatch(/refused sandbox: false/);
-		const id = res.addedIds[0];
+		expect(res.errors.join(' ')).toMatch(/refused iframe/);
+		// A user-placed iframe can't be reconfigured by the agent either.
+		const placed: MonitorLayout = {
+			root: container('root', 'col', [
+				leaf({ ...createWidget('iframe', 'web'), config: { url: 'https://a.example' } })
+			]),
+			floating: []
+		};
 		res = applyAssistantOps(
-			res.monitor,
-			[{ op: 'setConfig', id, config: { sandbox: false, interact: true } }],
+			placed,
+			[{ op: 'setConfig', id: 'web', config: { sandbox: false, interact: true } }],
 			counter()
 		);
-		expect(unit().config.sandbox).toBe(true);
-		expect(unit().config.interact).toBe(true); // a declared toggle with the right type lands
-		// an explicit `true` is fine (no error)
-		res = applyAssistantOps(
-			res.monitor,
-			[{ op: 'setConfig', id, config: { sandbox: true } }],
-			counter()
-		);
-		expect(res.errors).toEqual([]);
+		expect(res.applied).toBe(0);
+		expect(res.monitor.root.children[0]).toBe(placed.root.children[0]);
 	});
 });
 
@@ -625,5 +621,96 @@ describe('applyAssistantOps — misc', () => {
 		);
 		expect(res.applied).toBe(0);
 		expect(res.errors.join(' ')).toMatch(/cannot set sensor on ".*" — not a widget/);
+	});
+});
+
+describe('applyAssistantOps — floating widgets', () => {
+	const withFloating = (): MonitorLayout => ({
+		root: container('root', 'col', [leaf(createWidget('clock', 'flow'))]),
+		floating: [leaf(createWidget('gauge', 'float')), leaf(createWidget('clock', 'float-clock'))]
+	});
+
+	it('reconfigures, rebinds, and removes the floating widgets describeLayout lists', () => {
+		const original = withFloating();
+		let res = applyAssistantOps(
+			original,
+			[
+				{ op: 'setConfig', id: 'float', config: { max: 200 } },
+				{ op: 'setSensor', id: 'float', sensor: 'gpu.util' },
+				{ op: 'setSensor', id: 'float-clock', sensor: 'gpu.util' }
+			],
+			counter()
+		);
+		expect(res.applied).toBe(2);
+		expect(res.errors.join(' ')).toMatch(/"float-clock" is self-sourcing/);
+		expect(res.monitor.floating[0].unit).toMatchObject({
+			config: { max: 200 },
+			sensor: 'gpu.util'
+		});
+		expect(original.floating[0].unit).not.toHaveProperty('sensor', 'gpu.util');
+		res = applyAssistantOps(res.monitor, [{ op: 'removeWidget', id: 'float' }], counter());
+		expect(res.applied).toBe(1);
+		expect(res.monitor.floating.map((n) => n.id)).toEqual(['float-clock']);
+		expect(res.monitor.root.children).toHaveLength(1);
+	});
+
+	it('clear removes floating widgets too', () => {
+		const res = applyAssistantOps(withFloating(), [{ op: 'clear' }], counter());
+		expect(describeLayout(res.monitor)).toEqual([]);
+	});
+});
+
+describe('agent-added capability units', () => {
+	it.each([
+		['iframe', {}],
+		['iframe', { url: 'https://example.com' }],
+		['command', {}],
+		['image', { src: 'https://tracker.example/p.png' }],
+		['image', { src: '//tracker.example/p.png' }],
+		['servicehealth', { url: 'http://192.168.1.2:8123/health' }]
+	])('refuses to add a %s unit with %j', (widgetType, config) => {
+		const res = applyAssistantOps(monitor(), [{ op: 'addWidget', widgetType, config }], counter());
+		expect(res.applied).toBe(0);
+		expect(res.addedIds).toEqual([]);
+		expect(res.monitor.root.children).toEqual([]);
+		expect(res.errors.join(' ')).toMatch(/refused/);
+	});
+
+	it('still adds local images and unconfigured service checks', () => {
+		const res = applyAssistantOps(
+			monitor(),
+			[
+				{ op: 'addWidget', widgetType: 'image', config: { src: 'sunset.png' } },
+				{ op: 'addWidget', widgetType: 'image', config: { src: 'data:image/png;base64,AA' } },
+				{ op: 'addWidget', widgetType: 'servicehealth' }
+			],
+			counter()
+		);
+		expect(res.errors).toEqual([]);
+		expect(res.applied).toBe(3);
+	});
+
+	it('refuses a setConfig that points an existing unit outside the app, keeping its config', () => {
+		const original: MonitorLayout = {
+			root: container('root', 'col', [leaf(createWidget('image', 'pic'))]),
+			floating: [leaf(createWidget('servicehealth', 'svc'))]
+		};
+		const res = applyAssistantOps(
+			original,
+			[
+				{ op: 'setConfig', id: 'pic', config: { src: 'https:evil.example/x.png' } },
+				{ op: 'setConfig', id: 'svc', config: { url: 'https://example.com' } },
+				{ op: 'setConfig', id: 'pic', config: { src: 'local.png', alt: 'ok' } }
+			],
+			counter()
+		);
+		expect(res.applied).toBe(1);
+		expect(res.errors).toHaveLength(2);
+		expect(res.errors.join(' ')).toMatch(/remote-image/);
+		expect(res.errors.join(' ')).toMatch(/service-check/);
+		expect(res.monitor.root.children[0]).toMatchObject({
+			unit: { config: { src: 'local.png', alt: 'ok' } }
+		});
+		expect(res.monitor.floating[0]).toMatchObject({ unit: { config: { url: '' } } });
 	});
 });

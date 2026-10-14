@@ -215,3 +215,36 @@ it('supports container spacing and rejects invalid spacing or unsupported nested
 	expect(result.monitor.root.gap).toBe(8);
 	expect(result.monitor.root.children[0]).toEqual(source.root.children[0]);
 });
+
+it('rejects setStyle CSS that reaches outside the app however it is spelled', () => {
+	for (const css of [
+		String.raw`background: \75rl(https://x.example/p.png);`,
+		'background: image-set("https://x.example/p.png" 1x);',
+		'position: fixed; inset: 0;',
+		String.raw`@imp\6frt "https://x.example/a.css";`,
+		'background: url(//x.example/p.png);'
+	])
+		expect(() => decodeStudioOps([{ op: 'setStyle', id: 'x', css }])).toThrow();
+	const local = 'background: url(data:image/png;base64,AA); color: red; position: relative;';
+	expect(decodeStudioOps([{ op: 'setStyle', id: 'x', css: local }])).toEqual([
+		{ op: 'setStyle', id: 'x', css: local }
+	]);
+});
+
+it('refuses remote capability config on grouped widgets without detaching the instance', () => {
+	const monitor = emptyMonitor();
+	monitor.root.children = [
+		leaf(group('g', { w: 100, h: 100 }, leaf(createWidget('image', 'pic'))))
+	];
+	const result = applyStudioOps(
+		monitor,
+		[{ op: 'setConfig', id: 'g/pic', config: { src: 'https://x.example/p.png' } }],
+		() => 'unused'
+	);
+	expect(result.applied).toBe(0);
+	expect(result.errors).toHaveLength(1);
+	expect(result.errors[0]).toMatch(/remote-image/);
+	expect(result.monitor.root.children[0]).toMatchObject({
+		unit: { child: { unit: { config: { src: '' } } } }
+	});
+});

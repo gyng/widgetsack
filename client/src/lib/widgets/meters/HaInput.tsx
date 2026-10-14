@@ -3,7 +3,7 @@
 // control: input_boolean → toggle, input_button → press, input_select → dropdown, input_number →
 // slider, input_text → text field. Each emits onControl with the right {domain, service, data}, which
 // Canvas turns into ha_call_service. service_data is built by the pure core/haControls helpers.
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import {
 	entityDomain,
 	inputNumberSetValue,
@@ -36,17 +36,24 @@ function HaTextInput({
 	onCommit: (value: string) => void;
 }) {
 	const [draft, setDraft] = useState(value);
-	const submitted = useRef(value);
+	// The last value known to match the entity (its state, or what we last sent).
+	const [submitted, setSubmitted] = useState(value);
+	const [focused, setFocused] = useState(false);
+	// Follow server changes only while the field is idle: a focused or dirty field keeps the user's text.
+	const [prevValue, setPrevValue] = useState(value);
+	if (value !== prevValue) {
+		setPrevValue(value);
+		if (!focused && draft === submitted) {
+			setDraft(value);
+			setSubmitted(value);
+		}
+	}
 
-	useEffect(() => {
-		setDraft(value);
-		submitted.current = value;
-	}, [value]);
-
-	const commit = (): void => {
-		if (draft === submitted.current) return;
-		submitted.current = draft;
+	const commit = (): boolean => {
+		if (draft === submitted) return false;
+		setSubmitted(draft);
 		onCommit(draft);
+		return true;
 	};
 
 	return (
@@ -57,12 +64,71 @@ function HaTextInput({
 			value={draft}
 			aria-label={`${name} value`}
 			onChange={(event) => setDraft(event.currentTarget.value)}
+			onFocus={() => setFocused(true)}
 			onKeyDown={(event) => {
 				if (event.key !== 'Enter') return;
 				commit();
 			}}
-			onBlur={commit}
+			onBlur={() => {
+				setFocused(false);
+				// Nothing to send → catch up with whatever the entity reported while focused.
+				if (!commit()) {
+					setDraft(value);
+					setSubmitted(value);
+				}
+			}}
 		/>
+	);
+}
+
+/** An input_number slider that drags a LOCAL draft and sends one set_value on release (pointer up,
+ * key up, blur), then shows the sent value until the entity state changes. */
+function HaNumberInput({
+	name,
+	state,
+	attrs,
+	onCommit
+}: {
+	name: string;
+	state: string;
+	attrs: InputNumberAttrs;
+	onCommit: (value: number) => void;
+}) {
+	const num = Number(state);
+	const current = Number.isFinite(num) ? num : (attrs.min ?? 0);
+	const [local, setLocal] = useState<{ value: number; sent: boolean } | null>(null);
+	// A sent value is held until the entity reports a new state; an unsent drag survives any echo.
+	const [prevState, setPrevState] = useState(state);
+	if (state !== prevState) {
+		setPrevState(state);
+		if (local?.sent) setLocal(null);
+	}
+	const shown = local?.value ?? current;
+	const commit = (): void => {
+		if (!local || local.sent) return;
+		setLocal({ value: local.value, sent: true });
+		if (local.value !== current) onCommit(local.value);
+	};
+	return (
+		<>
+			<span className="hi-num" data-part="value">
+				{local ? String(local.value) : state}
+			</span>
+			<input
+				type="range"
+				className="hi-range"
+				data-part="number"
+				min={attrs.min ?? 0}
+				max={attrs.max ?? 100}
+				step={attrs.step ?? 1}
+				value={shown}
+				aria-label={`${name} value`}
+				onChange={(e) => setLocal({ value: Number(e.currentTarget.value), sent: false })}
+				onPointerUp={commit}
+				onKeyUp={commit}
+				onBlur={commit}
+			/>
+		</>
 	);
 }
 
@@ -119,19 +185,13 @@ export default function HaInput({ value = null, haStatus, label, onControl }: Pr
 		);
 	} else if (domain === 'input_number') {
 		const a = attrs as InputNumberAttrs;
-		const num = Number(state);
 		control = (
-			<input
-				type="range"
-				className="hi-range"
-				data-part="number"
-				min={a.min ?? 0}
-				max={a.max ?? 100}
-				step={a.step ?? 1}
-				value={Number.isFinite(num) ? num : (a.min ?? 0)}
-				aria-label={`${name} value`}
-				onChange={(e) => {
-					const c = inputNumberSetValue(Number(e.currentTarget.value), a);
+			<HaNumberInput
+				name={name}
+				state={state}
+				attrs={a}
+				onCommit={(value) => {
+					const c = inputNumberSetValue(value, a);
 					emit(c.service, c.data);
 				}}
 			/>
@@ -165,11 +225,6 @@ export default function HaInput({ value = null, haStatus, label, onControl }: Pr
 			<span className="label" data-part="label">
 				{name}
 			</span>
-			{domain === 'input_number' ? (
-				<span className="hi-num" data-part="value">
-					{state}
-				</span>
-			) : null}
 			{control}
 		</div>
 	);

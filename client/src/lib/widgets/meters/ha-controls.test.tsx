@@ -210,6 +210,7 @@ describe('HaInput', () => {
 			/>
 		);
 		fireEvent.change(getByRole('slider'), { target: { value: '8' } });
+		fireEvent.pointerUp(getByRole('slider'));
 		expect(detail).toEqual({ domain: 'input_number', service: 'set_value', data: { value: 8 } });
 	});
 });

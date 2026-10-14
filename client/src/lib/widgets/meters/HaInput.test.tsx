@@ -101,6 +101,8 @@ describe('HaInput infers the control from the entity domain', () => {
 		// The current numeric state is also shown as text.
 		expect(container.querySelector('.hi-num')?.textContent).toBe('21');
 		fireEvent.change(range, { target: { value: '25' } });
+		expect(onControl).not.toHaveBeenCalled();
+		fireEvent.pointerUp(range);
 		expect(onControl).toHaveBeenCalledWith({
 			domain: 'input_number',
 			service: 'set_value',
@@ -185,5 +187,95 @@ describe('HaInput infers the control from the entity domain', () => {
 		expect(() =>
 			fireEvent.click(container.querySelector('[data-part="press"]') as HTMLButtonElement)
 		).not.toThrow();
+	});
+
+	it('input_number keeps a local draft while dragging and sends one call on release', () => {
+		const onControl = vi.fn();
+		const value = (state: string) => ({
+			entity_id: 'input_number.temp',
+			state,
+			attributes: { min: 0, max: 100, step: 1 }
+		});
+		const { container, rerender } = render(<HaInput value={value('20')} onControl={onControl} />);
+		const range = container.querySelector('[data-part="number"]') as HTMLInputElement;
+		const shown = () => container.querySelector('.hi-num')?.textContent;
+		fireEvent.pointerDown(range);
+		for (const v of ['30', '40', '50']) fireEvent.change(range, { target: { value: v } });
+		// An unrelated server echo mid-drag doesn't snap the slider back.
+		rerender(<HaInput value={value('21')} onControl={onControl} />);
+		expect(range.value).toBe('50');
+		expect(shown()).toBe('50');
+		expect(onControl).not.toHaveBeenCalled();
+		fireEvent.pointerUp(range);
+		fireEvent.blur(range);
+		expect(onControl).toHaveBeenCalledTimes(1);
+		expect(onControl).toHaveBeenLastCalledWith({
+			domain: 'input_number',
+			service: 'set_value',
+			data: { value: 50 }
+		});
+		// Still showing the sent value until the state catches up…
+		expect(range.value).toBe('50');
+		rerender(<HaInput value={value('50')} onControl={onControl} />);
+		expect(range.value).toBe('50');
+		// …then later server changes are followed again.
+		rerender(<HaInput value={value('7')} onControl={onControl} />);
+		expect(range.value).toBe('7');
+	});
+
+	it('input_number commits keyboard steps on key release and skips unchanged values', () => {
+		const onControl = vi.fn();
+		const { container } = render(
+			<HaInput
+				value={{ entity_id: 'input_number.temp', state: '20', attributes: {} }}
+				onControl={onControl}
+			/>
+		);
+		const range = container.querySelector('[data-part="number"]') as HTMLInputElement;
+		fireEvent.keyUp(range, { key: 'Tab' });
+		fireEvent.change(range, { target: { value: '21' } });
+		fireEvent.keyUp(range, { key: 'ArrowRight' });
+		expect(onControl).toHaveBeenCalledTimes(1);
+		expect(onControl).toHaveBeenLastCalledWith(expect.objectContaining({ data: { value: 21 } }));
+		// Dragging back to the current state sends nothing.
+		fireEvent.change(range, { target: { value: '20' } });
+		fireEvent.pointerUp(range);
+		expect(onControl).toHaveBeenCalledTimes(1);
+	});
+
+	it('input_text keeps what the user is typing when the entity state changes mid-edit', () => {
+		const onControl = vi.fn();
+		const { container, rerender } = render(
+			<HaInput value={{ entity_id: 'input_text.note', state: 'first' }} onControl={onControl} />
+		);
+		const text = container.querySelector('[data-part="text"]') as HTMLInputElement;
+		fireEvent.focus(text);
+		fireEvent.change(text, { target: { value: 'my draft' } });
+		rerender(
+			<HaInput value={{ entity_id: 'input_text.note', state: 'server' }} onControl={onControl} />
+		);
+		expect(text.value).toBe('my draft');
+		fireEvent.blur(text);
+		expect(onControl).toHaveBeenCalledWith({
+			domain: 'input_text',
+			service: 'set_value',
+			data: { value: 'my draft' }
+		});
+	});
+
+	it('input_text holds a focused field, then catches up with the server on blur', () => {
+		const onControl = vi.fn();
+		const { container, rerender } = render(
+			<HaInput value={{ entity_id: 'input_text.note', state: 'first' }} onControl={onControl} />
+		);
+		const text = container.querySelector('[data-part="text"]') as HTMLInputElement;
+		fireEvent.focus(text);
+		rerender(
+			<HaInput value={{ entity_id: 'input_text.note', state: 'server' }} onControl={onControl} />
+		);
+		expect(text.value).toBe('first');
+		fireEvent.blur(text);
+		expect(text.value).toBe('server');
+		expect(onControl).not.toHaveBeenCalled();
 	});
 });

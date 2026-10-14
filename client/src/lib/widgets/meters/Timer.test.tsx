@@ -153,4 +153,25 @@ describe('Timer (default, self-sourcing) wires useTimer to TimerView', () => {
 		expect(val(second.container)).toBe('00:03');
 		localStorage.clear();
 	});
+
+	it('keeps library instances apart and continues an older def-local timer', () => {
+		localStorage.clear();
+		const a = render(<Timer mode="stopwatch" widgetId="t" widgetInstanceId="lib-a/t" />);
+		act(() => fireEvent.click(a.getByLabelText('Start')));
+		act(() => vi.advanceTimersByTime(2000));
+		const b = render(<Timer mode="stopwatch" widgetId="t" widgetInstanceId="lib-b/t" />);
+		expect(val(b.container)).toBe('00:00');
+		expect(localStorage.getItem('widgetsack.timer.t')).toBeNull();
+		a.unmount();
+		b.unmount();
+		// A timer saved before instance keys existed is picked up through the legacy key.
+		localStorage.setItem(
+			'widgetsack.timer.old',
+			localStorage.getItem('widgetsack.timer.lib-a/t') as string
+		);
+		const legacy = render(<Timer mode="stopwatch" widgetId="old" widgetInstanceId="lib-c/old" />);
+		expect(val(legacy.container)).toBe('00:02');
+		expect(localStorage.getItem('widgetsack.timer.lib-c/old')).not.toBeNull();
+		localStorage.clear();
+	});
 });

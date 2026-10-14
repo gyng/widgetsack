@@ -104,6 +104,49 @@ describe('HaClimate', () => {
 		});
 	});
 
+	it('stacks rapid nudges on a pending target until the thermostat catches up', () => {
+		const state = (temperature: number) => ({
+			state: 'heat',
+			attributes: { friendly_name: 'Bedroom', temperature, target_temp_step: 0.5 }
+		});
+		const calls: unknown[] = [];
+		const onControl = (e: { data?: Record<string, unknown> }) => calls.push(e.data?.temperature);
+		const { getByLabelText, rerender } = render(
+			<HaClimate value={state(21)} onControl={onControl} />
+		);
+		const raise = getByLabelText('Raise Bedroom setpoint');
+		fireEvent.click(raise);
+		fireEvent.click(raise);
+		// The first echo is an intermediate step — the second request is still pending.
+		rerender(<HaClimate value={state(21.5)} onControl={onControl} />);
+		fireEvent.click(raise);
+		expect(calls).toEqual([21.5, 22, 22.5]);
+		// Caught up: nudges continue from the reported setpoint.
+		rerender(<HaClimate value={state(22.5)} onControl={onControl} />);
+		fireEvent.click(getByLabelText('Lower Bedroom setpoint'));
+		expect(calls.at(-1)).toBe(22);
+		// Someone else changes the setpoint: the pending request is dropped.
+		rerender(<HaClimate value={state(18)} onControl={onControl} />);
+		fireEvent.click(raise);
+		expect(calls.at(-1)).toBe(18.5);
+	});
+
+	it.each([
+		[{ current_temperature: 19 }, [19.5, 20]],
+		[{}, [20.5, 21]]
+	])('stacks nudges without a reported setpoint (%j)', (temps, expected) => {
+		const calls: unknown[] = [];
+		const { getByLabelText } = render(
+			<HaClimate
+				value={{ state: 'heat', attributes: { friendly_name: 'Den', ...temps } }}
+				onControl={(e) => calls.push(e.data?.temperature)}
+			/>
+		);
+		fireEvent.click(getByLabelText('Raise Den setpoint'));
+		fireEvent.click(getByLabelText('Raise Den setpoint'));
+		expect(calls).toEqual(expected);
+	});
+
 	it('hides setpoint controls for a range thermostat', () => {
 		const range = {
 			state: 'heat_cool',

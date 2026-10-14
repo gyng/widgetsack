@@ -140,4 +140,52 @@ describe('StickyNote', () => {
 		const root = container.querySelector('.np-stickynote') as HTMLElement;
 		expect(root.style.getPropertyValue('--note-accent')).toBe('rgb(4, 5, 6)');
 	});
+
+	it('keeps separate notes for two instances of the same library widget', () => {
+		const a = render(<StickyNote widgetId="note" widgetInstanceId="lib-a/note" />);
+		const b = render(<StickyNote widgetId="note" widgetInstanceId="lib-b/note" />);
+		const [ta, tb] = [a, b].map(
+			(r) => r.container.querySelector('textarea') as HTMLTextAreaElement
+		);
+		fireEvent.change(ta, { target: { value: 'first' } });
+		fireEvent.change(tb, { target: { value: 'second' } });
+		expect(localStorage.getItem('scratch:lib-a/note')).toBe('first');
+		expect(localStorage.getItem('scratch:lib-b/note')).toBe('second');
+		expect(ta.value).toBe('first');
+		expect(localStorage.getItem('scratch:note')).toBeNull();
+	});
+
+	it('reads an older def-local note as a fallback and saves under the instance key', () => {
+		localStorage.setItem('scratch:note', 'legacy');
+		const { container } = render(<StickyNote widgetId="note" widgetInstanceId="lib-a/note" />);
+		const ta = container.querySelector('textarea') as HTMLTextAreaElement;
+		expect(ta.value).toBe('legacy');
+		fireEvent.change(ta, { target: { value: 'legacy + more' } });
+		expect(localStorage.getItem('scratch:lib-a/note')).toBe('legacy + more');
+		expect(localStorage.getItem('scratch:note')).toBe('legacy');
+	});
+
+	it('follows storage events for its own instance key only', () => {
+		const { container } = render(<StickyNote widgetId="note" widgetInstanceId="lib-a/note" />);
+		const ta = container.querySelector('textarea') as HTMLTextAreaElement;
+		act(() => {
+			window.dispatchEvent(new StorageEvent('storage', { key: 'scratch:note', newValue: 'no' }));
+		});
+		expect(ta.value).toBe('');
+		act(() => {
+			window.dispatchEvent(
+				new StorageEvent('storage', { key: 'scratch:lib-a/note', newValue: 'yes' })
+			);
+		});
+		expect(ta.value).toBe('yes');
+	});
+
+	it('is read-only and never writes in preview mode', () => {
+		localStorage.setItem('scratch:w12', 'note');
+		const { container } = render(<StickyNote widgetId="w12" previewMode />);
+		const ta = container.querySelector('textarea') as HTMLTextAreaElement;
+		expect(ta.readOnly).toBe(true);
+		fireEvent.change(ta, { target: { value: 'changed' } });
+		expect(localStorage.getItem('scratch:w12')).toBe('note');
+	});
 });
