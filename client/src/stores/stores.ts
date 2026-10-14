@@ -196,7 +196,9 @@ function serializeMediaStore(value: State): SerializedState {
 export const mediaStore = createPersistedStore<State>(
 	MEDIA_STORE_KEY,
 	parseMediaStore,
-	serializeMediaStore
+	serializeMediaStore,
+	// Another window changed the preferences: adopt them, keeping this window's live sessions.
+	(cur, incoming) => ({ ...incoming, sessions: cur.sessions })
 );
 
 export type HandleInitializeOpts = { sessions: Record<number, SessionRecord> };

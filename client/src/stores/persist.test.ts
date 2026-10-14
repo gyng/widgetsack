@@ -103,4 +103,44 @@ describe('createPersistedStore', () => {
 		store.set({ n: 9, runtime: 'live' });
 		expect(JSON.parse(localStorage.getItem('t.store') ?? '')).toEqual({ n: 9 });
 	});
+
+	it("a runtime-only change never rewrites storage over another window's newer value", () => {
+		const store = createPersistedStore(
+			't.store',
+			(raw) => ({ ...parse(raw), runtime: 0 }),
+			(v) => ({ n: v.n })
+		);
+		localStorage.setItem('t.store', JSON.stringify({ n: 5 })); // another window wrote
+		store.update((cur) => ({ ...cur, runtime: cur.runtime + 1 }));
+		expect(JSON.parse(localStorage.getItem('t.store') ?? '')).toEqual({ n: 5 });
+	});
+
+	it("adopts another window's write through merge, keeping runtime-only fields", () => {
+		const store = createPersistedStore(
+			't.store',
+			(raw) => ({ ...parse(raw), runtime: 'boot' }),
+			(v) => ({ n: v.n }),
+			(cur, incoming) => ({ ...incoming, runtime: cur.runtime })
+		);
+		store.update((cur) => ({ ...cur, runtime: 'live' }));
+		const listener = vi.fn();
+		store.subscribe(listener);
+		localStorage.setItem('t.store', JSON.stringify({ n: 8 }));
+		window.dispatchEvent(
+			new StorageEvent('storage', { key: 't.store', newValue: JSON.stringify({ n: 8 }) })
+		);
+		expect(store.getSnapshot()).toEqual({ n: 8, runtime: 'live' });
+		window.dispatchEvent(new StorageEvent('storage', { key: 'other', newValue: '{}' }));
+		expect(listener).toHaveBeenCalledTimes(1);
+		// Our next change carries the adopted value forward.
+		store.update((cur) => ({ ...cur, n: cur.n + 1 }));
+		expect(JSON.parse(localStorage.getItem('t.store') ?? '')).toEqual({ n: 9 });
+	});
+
+	it('replaces the whole value from another window by default', () => {
+		const store = createPersistedStore('t.store', parse);
+		localStorage.setItem('t.store', '{"n":4}');
+		window.dispatchEvent(new StorageEvent('storage', { key: 't.store', newValue: '{"n":4}' }));
+		expect(store.getSnapshot()).toEqual({ n: 4 });
+	});
 });

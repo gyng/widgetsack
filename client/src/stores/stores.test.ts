@@ -44,6 +44,21 @@ describe('defaultState', () => {
 	});
 });
 
+describe('mediaStore across windows', () => {
+	it("a session tick never overwrites another window's preferences, and adopts them live", async () => {
+		const { mediaStore, handleUpdate } = await load();
+		handleUpdate({ sessionRecord: rec({ session_id: 3, source: 's.exe' }) });
+		// The studio saves a new ignore list while this overlay is running.
+		const studio = { ...JSON.parse(localStorage.getItem(MEDIA_STORE_KEY) ?? ''), ignoreList: 'x' };
+		localStorage.setItem(MEDIA_STORE_KEY, JSON.stringify(studio));
+		handleUpdate({ sessionRecord: rec({ session_id: 3, source: 's.exe', title: 't' }) });
+		expect(JSON.parse(localStorage.getItem(MEDIA_STORE_KEY) ?? '').ignoreList).toBe('x');
+		window.dispatchEvent(new StorageEvent('storage', { key: MEDIA_STORE_KEY }));
+		expect(mediaStore.getSnapshot().ignoreList).toBe('x');
+		expect(Object.keys(mediaStore.getSnapshot().sessions)).toEqual(['3']);
+	});
+});
+
 describe('mediaStore creation (parseMediaStore seam)', () => {
 	it('falls back to defaults when storage is empty', async () => {
 		const { mediaStore, defaultState } = await load();
