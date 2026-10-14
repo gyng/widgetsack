@@ -115,7 +115,7 @@ test.describe('calendar feed worker', () => {
 					};
 				}
 			).__TAURI_INTERNALS__;
-			const calendar = `BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:bad\nSUMMARY:Unknown zone\nDTSTART;TZID=Not/AZone:20261014T093000\nEND:VEVENT\nBEGIN:VEVENT\nUID:good\nSUMMARY:Visible event\nDTSTART:20261014T230000Z\nEND:VEVENT\nEND:VCALENDAR`;
+			const calendar = `BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:bad\nSUMMARY:Broken\nDTSTART:garbage\nEND:VEVENT\nBEGIN:VEVENT\nUID:good\nSUMMARY:Visible event\nDTSTART:20261014T230000Z\nEND:VEVENT\nEND:VCALENDAR`;
 			await bridge.invoke('plugin:event|emit', {
 				event: 'telemetry',
 				payload: [
