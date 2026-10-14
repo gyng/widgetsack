@@ -66,14 +66,14 @@ win-gsmtc = { version = "0.1.0", features = ["serde"] }
 winreg = "0.55"
 # The #[interface] macro (audio.rs IPolicyConfig: set the default audio endpoint) expands to
 # ::windows_core paths, so the crate must be a direct dependency. Pinned to windows 0.61's core.
-windows-core = "0.61"
+windows-core = "0.62"
 # Already used by Tauri; captures only this app's Studio webview.
-webview2-com = "0.38.2"
+webview2-com = "0.39"
 # WASAPI loopback capture for the audio spectrum widget. Safe-ish bindings over windows-rs that
 # encapsulate GetMixFormat / SampleType (float vs int) / the loopback init flags. Kept at the
 # audio.rs edge (anti-corruption layer, like win-gsmtc for media). Windows-only.
 wasapi = "0.23"
-windows = { version = "0.61", features = [
+windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     # Friendly monitor names (display.rs): the Connecting-and-Configuring-Displays API —

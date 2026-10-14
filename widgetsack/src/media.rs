@@ -92,7 +92,7 @@ fn control_blocking(action: &str, source: Option<&str>, value: Option<f64>) -> R
 
     // The Try* op resolves to a bool (false = the session declined the request); a decline is
     // not an error to surface — treat it as best-effort.
-    op.get().map_err(|e| e.to_string())?;
+    op.join().map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -140,7 +140,7 @@ fn resolve_session(
 
     let manager = Manager::RequestAsync()
         .map_err(|e| e.to_string())?
-        .get()
+        .join()
         .map_err(|e| e.to_string())?;
 
     Ok(source

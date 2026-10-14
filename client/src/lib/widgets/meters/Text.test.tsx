@@ -13,10 +13,9 @@ describe('Text', () => {
 		const { container } = render(<Text value={42.7} />);
 		const value = part(container, 'value');
 		expect(value.textContent).toBe('43'); // integer → rounded
-		// happy-dom does not serialise a `var(...)` colour into the inline style attribute, so the
-		// token-driven default leaves `style.color` empty (the look lives in CSS).
+		// The default colour is the --np-fg token (with a literal fallback).
 		const root = container.querySelector('.text') as HTMLElement;
-		expect(root.style.color).toBe('');
+		expect(root.style.color).toMatch(/^var\(--np-fg,/);
 		// No label by default.
 		expect(container.querySelector('[data-part="label"]')).toBeNull();
 	});

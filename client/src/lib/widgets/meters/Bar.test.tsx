@@ -17,10 +17,9 @@ describe('Bar', () => {
 		// fraction(42, 0, 100) * 100 → '42.0%' on width
 		expect(fill.style.width).toBe('42.0%');
 		expect(fill.style.height).toBe('');
-		// happy-dom does not serialise a `var(...)` background into the inline style attribute,
-		// so the token-driven defaults leave `style.background` empty (look lives in CSS).
-		expect(track.style.background).toBe('');
-		expect(fill.style.background).toBe('');
+		// The defaults are the theme tokens (with literal fallbacks), not concrete colours.
+		expect(track.style.background).toMatch(/^var\(--np-track,/);
+		expect(fill.style.background).toMatch(/^var\(--np-accent,/);
 		// No label by default.
 		expect(container.querySelector('[data-part="label"]')).toBeNull();
 	});

@@ -59,10 +59,11 @@ describe('TimerView', () => {
 			'rgb(1, 2, 3)'
 		);
 		a.unmount();
-		// Default branch sets color to the var() token fallback; happy-dom's CSSOM can't store a
-		// var() color, so the observable effect is simply no concrete rgb() override.
+		// Default branch sets color to the var() token fallback, not a concrete rgb() override.
 		const b = render(<TimerView time="00:00" />);
-		expect((b.container.querySelector('[data-part="root"]') as HTMLElement).style.color).toBe('');
+		expect((b.container.querySelector('[data-part="root"]') as HTMLElement).style.color).toMatch(
+			/^var\(--np-fg,/
+		);
 	});
 });
 

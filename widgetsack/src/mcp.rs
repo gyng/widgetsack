@@ -1004,7 +1004,7 @@ async fn write_stdio_response<W: tokio::io::AsyncWrite + Unpin>(
     output.write_all(b"\n").await.map_err(|e| e.to_string())?;
     output.flush().await.map_err(|e| e.to_string())
 }
-/// wry 0.55's default WebView2 arguments (`webview2/mod.rs`: the base `--disable-features` set, plus
+/// wry 0.57's default WebView2 arguments (`webview2/mod.rs`: the base `--disable-features` set, plus
 /// the autoplay flag because Tauri leaves wry's `autoplay` at its default `true`). wry applies them
 /// ONLY when a window passes no `additional_browser_args`, so once any window passes its own string
 /// it must include these itself. Re-check on a wry upgrade (`wry_version_matches_the_pinned_defaults`).
@@ -1298,7 +1298,7 @@ mod tests {
 
     #[test]
     fn wry_version_matches_the_pinned_defaults() {
-        // WRY_DEFAULT_BROWSER_ARGS mirrors wry 0.55's built-in defaults; a wry bump must re-check them.
+        // WRY_DEFAULT_BROWSER_ARGS mirrors wry 0.57's built-in defaults; a wry bump must re-check them.
         let lock = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../Cargo.lock"))
             .expect("workspace Cargo.lock");
         let version = lock
@@ -1307,7 +1307,7 @@ mod tests {
             .and_then(|pkg| pkg.lines().find_map(|l| l.strip_prefix("version = ")))
             .expect("wry in Cargo.lock");
         assert!(
-            version.starts_with("\"0.55."),
+            version.starts_with("\"0.57."),
             "wry is {version}: re-check WRY_DEFAULT_BROWSER_ARGS"
         );
     }
