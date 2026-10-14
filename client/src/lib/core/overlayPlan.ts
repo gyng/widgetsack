@@ -24,7 +24,7 @@ export function planOverlays(input: {
 	monitors: readonly PlanMonitor[];
 	populated: ReadonlySet<string>;
 	/** Keys whose saved record could not be parsed: whether they hold widgets is unknown, so an
-	 * existing window for one is kept (never closed, never created). */
+	 * existing window for one is kept while its monitor is connected (never created). */
 	unknown?: ReadonlySet<string>;
 	existingLabels: readonly string[];
 }): OverlayPlan {
@@ -37,12 +37,12 @@ export function planOverlays(input: {
 	for (const label of wanted) {
 		if (!existing.has(label)) create.push(label.slice(OVERLAY_LABEL_PREFIX.length));
 	}
-	const close = input.existingLabels.filter(
-		(label) =>
-			label.startsWith(OVERLAY_LABEL_PREFIX) &&
-			!wanted.has(label) &&
-			!input.unknown?.has(label.slice(OVERLAY_LABEL_PREFIX.length))
-	);
+	const connected = new Set(input.monitors.filter((m) => !m.primary).map((m) => m.key));
+	const close = input.existingLabels.filter((label) => {
+		if (!label.startsWith(OVERLAY_LABEL_PREFIX) || wanted.has(label)) return false;
+		const key = label.slice(OVERLAY_LABEL_PREFIX.length);
+		return !(input.unknown?.has(key) && connected.has(key));
+	});
 	return { create, close };
 }
 

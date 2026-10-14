@@ -239,6 +239,15 @@ async fn main() -> Result<(), ()> {
                 .with_denylist(&["main"])
                 .build(),
         )
+        // A `main` page that starts (re)loading is a fresh main — built by Rust's respawn OR by the
+        // studio's JS recreateMain — so its predecessor's "layout empty" report is stale.
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main"
+                && matches!(payload.event(), tauri::webview::PageLoadEvent::Started)
+            {
+                keepalive::main_respawned();
+            }
+        })
         // The window-state plugin only flushes geometry to disk on a clean RunEvent::Exit. An app
         // UPGRADE that force-kills the process (installer / taskkill) would otherwise lose the studio's
         // latest size + position, so flush to disk the moment the studio window closes — its live

@@ -978,7 +978,6 @@ export { ensureFont } from './bridge/fonts';
 export {
 	isStudioWindow,
 	onStudioCloseRequested,
-	openStudio,
 	minimizeWindow,
 	toggleMaximizeWindow,
 	closeWindow

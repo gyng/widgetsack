@@ -1,5 +1,4 @@
 import { getCurrentWindow } from '@tauri-apps/api/window';
-import { getAllWebviewWindows, WebviewWindow } from '@tauri-apps/api/webviewWindow';
 
 /** This window's label ('' outside Tauri). Layout writes are attributed to it. */
 export function currentWindowLabel(): string {
@@ -58,33 +57,6 @@ export async function onStudioCloseRequested(
 		console.warn('onStudioCloseRequested registration failed', err);
 		return () => undefined;
 	}
-}
-
-/** Open (or focus) the studio window — a borderless, taskbar-present app window that edits the same
- * layout the overlays render (synced via widgets.json + live reload). `decorations:false` removes the
- * OS title bar; the studio draws its OWN themed title bar (drag region + window controls) so the chrome
- * matches the active theme instead of the platform's grey frame. */
-export async function openStudio(): Promise<void> {
-	const existing = (await getAllWebviewWindows()).find((w) => w.label === 'studio');
-	if (existing) {
-		await existing.setFocus();
-		return;
-	}
-	const w = new WebviewWindow('studio', {
-		url: '/',
-		title: 'widgetsack studio',
-		width: 980,
-		height: 680,
-		resizable: true,
-		// No OS title bar — the in-app `.studio-bar` is the (themed) title bar (data-tauri-drag-region
-		// moves the window; the min/max/close cluster calls the window-control adapters below).
-		decorations: false,
-		// Disable Tauri's OS-level drag-drop handler so the webview's own HTML5 drag-and-drop fires —
-		// the studio needs it for the Inspector palette → canvas drop and Outline row reparenting.
-		// (The app uses no OS file-drop, so nothing is lost by turning it off.)
-		dragDropEnabled: false
-	});
-	w.once('tauri://error', (err) => console.warn('studio window error', err));
 }
 
 // --- custom title-bar window controls (the studio's borderless window) -----------------------------

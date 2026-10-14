@@ -132,6 +132,7 @@ function HaNumberInput({
 				aria-label={`${name} value`}
 				onChange={(e) => setLocal({ value: Number(e.currentTarget.value), sent: false })}
 				onPointerUp={commit}
+				onLostPointerCapture={commit}
 				onKeyUp={commit}
 				onBlur={commit}
 			/>

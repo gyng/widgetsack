@@ -36,8 +36,8 @@ Both roles render the **same** [Canvas.tsx](client/src/lib/widgets/Canvas.tsx) c
   primary is the `main` window, secondaries spawn on demand ([overlay.ts](client/src/lib/overlay.ts)
   `reconcileOverlays`). Renders the saved layout passively.
 - **Studio** — a normal decorated window (`label === 'studio'`) for the layout designer,
-  widget designer, theme editor, and sack import/export. Opened from the tray (the backend builds/focuses it)
-  or `openStudio()`.
+  widget designer, theme editor, and sack import/export. Opened from the tray, a second launch or
+  `--studio`; the backend builds/focuses it (main.rs `build_studio_window`).
 
 ### Data flow — media (now playing)
 

@@ -110,6 +110,20 @@ describe('HaInput infers the control from the entity domain', () => {
 		});
 	});
 
+	it('input_number sends when the drag ends outside the slider (lost pointer capture)', () => {
+		const onControl = vi.fn();
+		const { container } = render(
+			<HaInput
+				value={{ entity_id: 'input_number.temp', state: '21', attributes: {} }}
+				onControl={onControl}
+			/>
+		);
+		const range = container.querySelector('[data-part="number"]') as HTMLInputElement;
+		fireEvent.change(range, { target: { value: '30' } });
+		fireEvent.lostPointerCapture(range);
+		expect(onControl).toHaveBeenCalledTimes(1);
+	});
+
 	it('input_number snaps back when a sent value never lands', () => {
 		vi.useFakeTimers();
 		try {

@@ -88,6 +88,16 @@ describe('planOverlays', () => {
 		expect(plan).toEqual({ create: [ABOVE], close: ['overlay-2'] });
 	});
 
+	it('closes the window of an unknown key once its monitor is disconnected', () => {
+		const plan = planOverlays({
+			monitors: [mon(FOURK, true)],
+			populated: new Set(),
+			unknown: new Set([STRIP]),
+			existingLabels: ['main', `overlay-${STRIP}`]
+		});
+		expect(plan).toEqual({ create: [], close: [`overlay-${STRIP}`] });
+	});
+
 	it('never creates a window for an unknown key', () => {
 		const plan = planOverlays({
 			monitors: [mon(FOURK, true), mon(STRIP)],

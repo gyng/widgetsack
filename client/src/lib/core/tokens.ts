@@ -118,14 +118,14 @@ const TOKEN_KEY = /^--[A-Za-z0-9_-]+$/;
  */
 export function safeTokenEntry(key: string, value: unknown): boolean {
 	if (!TOKEN_KEY.test(key) || typeof value !== 'string' || value.includes('<')) return false;
-	// CSS preprocessing turns CR and FF into newlines, which end a string: treat them as newlines.
-	if (/[\r\f]/.test(value)) return false;
+	// CSS preprocessing turns CR, CRLF and FF into newlines (which end a string): scan it that way.
+	const css = value.replace(/\r\n?|\f/g, '\n');
 	let quote: string | null = null;
 	// Open `(` / `[` outside strings: an unclosed one makes the browser swallow the rest of the sheet
 	// into this declaration, and a stray closer / crossed pair (`([)]`) is invalid too.
 	const open: string[] = [];
-	for (let i = 0; i < value.length; i++) {
-		const c = value[i];
+	for (let i = 0; i < css.length; i++) {
+		const c = css[i];
 		if (quote) {
 			if (c === '\\') i++;
 			else if (c === '\n') return false;
@@ -134,13 +134,13 @@ export function safeTokenEntry(key: string, value: unknown): boolean {
 			// An escape outside a string makes the next character literal (`\'` is not a quote, `\;`
 			// not an end). A trailing `\` would escape the `;` this emitter appends; `\` + newline is
 			// invalid CSS.
-			if (i + 1 >= value.length || value[i + 1] === '\n') return false;
+			if (i + 1 >= css.length || css[i + 1] === '\n') return false;
 			i++;
 		} else if (c === '"' || c === "'") quote = c;
 		else if (c === '(' || c === '[') open.push(c === '(' ? ')' : ']');
 		else if (c === ')' || c === ']') {
 			if (open.pop() !== c) return false;
-		} else if (c === ';' || c === '{' || c === '}' || (c === '/' && value[i + 1] === '*'))
+		} else if (c === ';' || c === '{' || c === '}' || (c === '/' && css[i + 1] === '*'))
 			return false;
 	}
 	return quote === null && open.length === 0;

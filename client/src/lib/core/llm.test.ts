@@ -744,4 +744,21 @@ describe('agent-added capability units', () => {
 			unit: { config: { src: 'https://cdn.example/p.png', alt: 'sunset' } }
 		});
 	});
+
+	it('refuses an edit past the truncated part of a long user-placed URL', () => {
+		const long = `https://a.example/${'x'.repeat(100)}`;
+		const placed: MonitorLayout = {
+			root: container('root', 'col', [
+				leaf({ ...createWidget('iframe', 'web'), config: { url: long } })
+			]),
+			floating: []
+		};
+		const res = applyAssistantOps(
+			placed,
+			[{ op: 'setConfig', id: 'web', config: { url: `${long}?steal=1` } }],
+			counter()
+		);
+		expect(res.applied).toBe(0);
+		expect(res.errors).toHaveLength(1);
+	});
 });
