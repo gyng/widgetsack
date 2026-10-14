@@ -12,8 +12,9 @@ export default defineConfig({
 	forbidOnly: !!process.env.CI,
 	retries: process.env.CI ? 1 : 0,
 	// Cap parallelism: spawning one headless Chromium per core at once is flaky on Windows
-	// ("browserType.launch: spawn UNKNOWN" under the launch storm). A modest pool is plenty for ~16 tests.
-	workers: process.env.CI ? 2 : 4,
+	// ("browserType.launch: spawn UNKNOWN" under the launch storm). CI runs E2E in its own job on a
+	// 4-vCPU Linux runner, leaving one core for the Vite server.
+	workers: process.env.CI ? 3 : 4,
 	reporter: 'list',
 	use: {
 		baseURL: `http://127.0.0.1:${PORT}`,

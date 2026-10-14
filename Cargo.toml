@@ -6,6 +6,16 @@ members = [
     "widgetsack",
 ]
 
+# Build scripts and proc macros run at compile time; optimise them even in dev. Tauri's
+# generate_context! brotli-compresses every embedded frontend asset inside a proc macro, which
+# unoptimised took ~2.5 min on each rebuild after a frontend change.
+[profile.dev.build-override]
+opt-level = 3
+
+# Same for release builds: build-override defaults to opt-level 0 in every profile.
+[profile.release.build-override]
+opt-level = 3
+
 # Release tuning for the shipped overlay binary (idle RAM/disk matter for an always-resident app).
 # panic stays at the default `unwind` ON PURPOSE — a panic in a spawned loop (sensors/HA/gsmtc/
 # clickthrough) should not abort the whole resident overlay; the panic hook logs it instead.

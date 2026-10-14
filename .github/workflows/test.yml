@@ -9,6 +9,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  # No debug info in CI builds: nothing debugs them, and it roughly halves link time and the
+  # size of the Rust caches (1.25 GB → restore/save time on every run).
+  CARGO_PROFILE_DEV_DEBUG: "0"
+  CARGO_PROFILE_TEST_DEBUG: "0"
 
 jobs:
   version_check:
@@ -44,36 +48,28 @@ jobs:
           - stable
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24.x"
-      - name: Build frontend
-        run: |
-          cd client
-          npm ci
-          npm run build
+      # Tauri embeds client/build at compile time but no Rust test reads it, so a placeholder page
+      # stands in for the real frontend build (the client job builds and tests that). Saves the Node
+      # setup, npm ci and Vite build here, and keeps frontend changes from invalidating this cache.
+      - name: Placeholder frontend
+        shell: bash
+        run: mkdir -p client/build && echo '<!doctype html>' > client/build/index.html
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build --verbose
-      - run: cargo test --verbose
+      # `cargo test` compiles the crate itself; a separate `cargo build` compiled it a second time.
+      - run: cargo test
 
   clippy_check:
     name: Linting for Rust backend
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Use Node.js
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24.x"
-      - name: Build frontend
-        run: |
-          cd client
-          npm ci
-          npm run build
+      - name: Placeholder frontend
+        shell: bash
+        run: mkdir -p client/build && echo '<!doctype html>' > client/build/index.html
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy
+      # Same gate as locally (AGENTS.md): tests included, warnings fail the job.
+      - run: cargo clippy --all-targets -- -D warnings
     permissions:
       checks: write
 
@@ -98,6 +94,8 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "24.x"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
       - run: npm ci
       - run: npm run check
       - run: npm run build
@@ -108,8 +106,37 @@ jobs:
       - run: npm run lint
       # Fail if docs/widgets.md drifted from the widget registry (run `npm run gen:docs` to refresh).
       - run: npm run check:docs
-      # E2E (Playwright): drives the studio in a real browser via the dev Tauri mock. The config's
-      # webServer auto-starts `vite` (dev → devMock is active; it's stripped from prod builds), so no
-      # separate server step is needed. Browsers must be installed first.
-      - run: npx playwright install --with-deps chromium
+
+  # E2E (Playwright) in its own job so it runs alongside the coverage run instead of after it.
+  # It drives the studio in a real browser via the dev Tauri mock. The config's webServer
+  # auto-starts `vite` (dev → devMock is active; it's stripped from prod builds), so no separate
+  # server step is needed. Browsers must be installed first.
+  client_e2e:
+    name: E2E tests for React client
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./client
+    steps:
+      - uses: actions/checkout@v6
+      - name: Use Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          cache: npm
+          cache-dependency-path: client/package-lock.json
+      - run: npm ci
+      # Cache the Playwright browser per Playwright version; on a hit only the OS packages install.
+      - name: Playwright version
+        id: playwright
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+      - if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
       - run: npm run test:e2e
