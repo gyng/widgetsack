@@ -57,6 +57,24 @@ pub fn forget_window(state: &InteractiveRects, label: &str) {
     map.remove(label);
 }
 
+/// The cursor in physical screen pixels. On Windows this reads it on the calling thread:
+/// `AppHandle::cursor_position` is a round trip through the main thread, which at 60 Hz kept the UI
+/// thread busy and stalled this watcher whenever the UI thread hung.
+#[cfg(target_os = "windows")]
+fn cursor_position<R: Runtime>(_app: &AppHandle<R>) -> Option<(f64, f64)> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+    let mut point = POINT::default();
+    // SAFETY: GetCursorPos writes only to the POINT we own for the duration of the call.
+    unsafe { GetCursorPos(&mut point) }.ok()?;
+    Some((f64::from(point.x), f64::from(point.y)))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cursor_position<R: Runtime>(app: &AppHandle<R>) -> Option<(f64, f64)> {
+    app.cursor_position().ok().map(|pos| (pos.x, pos.y))
+}
+
 /// Spawn the cursor watcher. Idles cheaply when no window has interactive rects;
 /// otherwise polls ~60 Hz and toggles each window's ignore-cursor-events only on
 /// transitions (entering/leaving that window's interactive rects).
@@ -82,12 +100,11 @@ pub fn run_clickthrough_watcher<R: Runtime>(app: AppHandle<R>) {
             ignoring.retain(|label, _| map.contains_key(label));
             std::thread::sleep(Duration::from_millis(16));
 
-            let cursor = match app.cursor_position() {
-                Ok(pos) => pos,
-                Err(_) => continue,
+            let Some((x, y)) = cursor_position(&app) else {
+                continue;
             };
             for (label, rects) in &map {
-                let over = rects.iter().any(|r| r.contains(cursor.x, cursor.y));
+                let over = rects.iter().any(|r| r.contains(x, y));
                 let want_ignore = !over;
                 if ignoring.get(label).copied() != Some(want_ignore) {
                     if let Some(win) = app.get_webview_window(label) {
