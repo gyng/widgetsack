@@ -40,6 +40,10 @@ export const setAgentControl = (enabled: boolean): Promise<void> =>
 export const saveLlmConfig = (cfg: LlmConfigInput): Promise<void> =>
 	invoke(COMMANDS.saveLlmConfig, { ...cfg });
 
+/** Forget one provider's saved API key (its other settings stay). Studio-only. */
+export const llmClearKey = (provider: string): Promise<void> =>
+	invoke(COMMANDS.llmClearKey, { provider });
+
 /** Validate an UNSAVED provider/url/key/model by sending a tiny prompt. Studio-only. */
 export const llmTestConnection = (
 	provider: string,

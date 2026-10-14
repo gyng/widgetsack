@@ -1,4 +1,5 @@
 use super::http::{fetch_text_capped, install_http_client, read_body_capped};
+use super::public_addr::{pinned_client, resolve_public};
 use crate::file_io::{atomic_write, config_root, valid_name};
 use serde::Serialize;
 use std::{
@@ -567,7 +568,8 @@ fn remove_package_directory(root: &Path, id: &str) -> Result<(), String> {
 // command to perform each fetch between the sandbox's two pure calls. The hosts allowlist is
 // re-read from the manifest ON DISK per request (server-side enforcement — a compromised webview
 // can't widen it), https only, GET only, redirects DISABLED (so the response host can never drift
-// off-allowlist), 10s timeout, 256 KiB body cap.
+// off-allowlist), the host resolved once + pinned to a vetted public address (public_addr.rs, no DNS
+// rebinding), 10s timeout, 256 KiB body cap.
 
 /// PURE SEAM: is `url` an https URL whose host is a DOMAIN matching one of `hosts` exactly?
 /// Subdomains must be listed explicitly; IP literals, explicit ports, embedded credentials, and
@@ -722,7 +724,14 @@ pub async fn package_fetch(
         return Err("package declares no source hosts".to_string());
     }
     validate_package_url(&url, &hosts)?;
-    fetch_package_response(install_http_client()?, url).await
+    // DNS rebinding: resolve ONCE, refuse internal answers, and pin the connection to the vetted
+    // address so a second lookup can't swap in a LAN/loopback/metadata IP after the check.
+    let host = reqwest::Url::parse(&url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .ok_or_else(|| "request URL has no host".to_string())?;
+    let addr = resolve_public(&host).await?;
+    fetch_package_response(&pinned_client(&host, addr)?, url).await
 }
 
 #[cfg(test)]

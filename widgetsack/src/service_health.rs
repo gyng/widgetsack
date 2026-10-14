@@ -91,8 +91,22 @@ fn certificate_days_at(_der: &[u8], _now: u64) -> Option<i64> {
     None
 }
 
+/// Not studio-gated (overlay Service Health widgets poll it), so a non-studio caller may only check
+/// a URL configured in the SAVED layout (`layout_grants`); the studio checks unsaved edits.
 #[tauri::command]
-pub async fn check_service_health(url: String) -> Result<ServiceHealth, String> {
+pub async fn check_service_health(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    url: String,
+) -> Result<ServiceHealth, String> {
+    crate::layout_grants::authorize_saved(&app, window.label(), "service check", |grants| {
+        grants.allows_health_url(&url)
+    })
+    .await?;
+    check(url).await
+}
+
+async fn check(url: String) -> Result<ServiceHealth, String> {
     let url = endpoint(&url)?;
     let client = health_client()?;
     let start = Instant::now();
@@ -171,9 +185,7 @@ mod tests {
             .await
             .unwrap();
         });
-        let result = check_service_health(format!("http://{address}/health"))
-            .await
-            .unwrap();
+        let result = check(format!("http://{address}/health")).await.unwrap();
         assert_eq!(result.status, Some(200));
         assert_eq!(result.error, None);
         server.await.unwrap();
@@ -189,9 +201,7 @@ mod tests {
             assert_eq!(request_line(&mut stream).await, "HEAD /health HTTP/1.1");
             stream.write_all(b"HTTP/1.1 302 Found\r\nLocation: /login\r\nContent-Length: 999999\r\nConnection: close\r\n\r\n").await.unwrap();
         });
-        let result = check_service_health(format!("http://{address}/health"))
-            .await
-            .unwrap();
+        let result = check(format!("http://{address}/health")).await.unwrap();
         assert_eq!(result.status, Some(302));
         assert_eq!(result.certificate_days, None);
         assert_eq!(result.error, None);

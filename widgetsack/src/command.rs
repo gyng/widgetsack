@@ -7,6 +7,7 @@ mod http;
 pub mod layouts;
 pub mod logging;
 pub mod packages;
+mod public_addr;
 pub mod sacks;
 pub mod sessions;
 pub mod themes;

@@ -72,8 +72,18 @@ async fn execute(command: &str, deadline: Duration) -> Result<CommandResult, Str
         .map_err(|_| "Command timed out after 30 seconds".to_string())?
         .map_err(|e| format!("Could not read command output: {e}"))
 }
+/// Not studio-gated (overlay Command widgets call it), so a non-studio caller may only run a
+/// command string configured in the SAVED layout (`layout_grants`); the studio runs unsaved edits.
 #[tauri::command]
-pub async fn run_widget_command(command: String) -> Result<CommandResult, String> {
+pub async fn run_widget_command(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    command: String,
+) -> Result<CommandResult, String> {
+    crate::layout_grants::authorize_saved(&app, window.label(), "command", |grants| {
+        grants.allows_command(&command)
+    })
+    .await?;
     execute(&command, Duration::from_secs(30)).await
 }
 #[cfg(test)]

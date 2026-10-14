@@ -30,6 +30,7 @@ vi.mock('./llm-commands', () => ({
 	saveLlmConfig: vi.fn(() => Promise.resolve()),
 	setAgentControl: vi.fn(() => Promise.resolve()),
 	llmTestConnection: vi.fn(() => Promise.resolve({ model: 'gpt-4o', reply: 'pong' })),
+	llmClearKey: vi.fn(() => Promise.resolve()),
 	llmComplete: vi.fn(() => Promise.resolve('{"ops":[],"summary":"ok"}')),
 	llmListModels: vi.fn(() =>
 		Promise.resolve([
@@ -62,6 +63,7 @@ import LlmSettings from './LlmSettings';
 import {
 	controlStart,
 	controlStop,
+	llmClearKey,
 	llmComplete,
 	llmConfigStatus,
 	llmListModels,
@@ -212,6 +214,41 @@ describe('LlmSettings', () => {
 		// The key field is cleared back to write-only and the toast appears.
 		await waitFor(() => expect(apiKeyInput(container).value).toBe(''));
 		expect(await findByText('Saved ✓')).toBeTruthy();
+	});
+
+	it('clears the saved key after confirming and refreshes the status', async () => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+		const { container } = renderPanel();
+		await waitFor(() => expect(button(container, 'Clear saved key')).toBeTruthy());
+		const cleared = configuredStatus({
+			configured: false,
+			providers: {
+				openai: { ...configuredStatus().providers.openai, hasKey: false }
+			}
+		});
+		vi.mocked(llmConfigStatus).mockResolvedValueOnce(cleared);
+		fireEvent.click(button(container, 'Clear saved key'));
+		await waitFor(() => expect(llmClearKey).toHaveBeenCalledWith('openai'));
+		// The refreshed status hides the button and drops the badge + saved-key placeholder.
+		await waitFor(() => expect(button(container, 'Clear saved key')).toBeUndefined());
+		expect(container.querySelector('.has-badge')?.textContent).toMatch(/not configured/);
+		expect(apiKeyInput(container).placeholder).toBe('API key');
+		expect(saveLlmConfig).not.toHaveBeenCalled();
+		confirm.mockRestore();
+	});
+
+	it('keeps the saved key when the clear is cancelled, and reports a failed clear', async () => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		const { container, findByText } = renderPanel();
+		await waitFor(() => expect(button(container, 'Clear saved key')).toBeTruthy());
+		fireEvent.click(button(container, 'Clear saved key'));
+		expect(llmClearKey).not.toHaveBeenCalled();
+		confirm.mockReturnValue(true);
+		vi.mocked(llmClearKey).mockRejectedValueOnce('disk full');
+		fireEvent.click(button(container, 'Clear saved key'));
+		expect(await findByText(/Couldn’t save: disk full/)).toBeTruthy();
+		expect(button(container, 'Clear saved key')).toBeTruthy();
+		confirm.mockRestore();
 	});
 
 	it('surfaces a save failure in the test line', async () => {

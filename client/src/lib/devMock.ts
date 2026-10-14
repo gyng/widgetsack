@@ -291,6 +291,7 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 			case COMMANDS.setAgentControl:
 			case COMMANDS.controlStart:
 			case COMMANDS.controlStop:
+			case COMMANDS.llmClearKey:
 				return undefined;
 			case COMMANDS.llmTestConnection:
 				return { model: 'mock', reply: 'OK' };

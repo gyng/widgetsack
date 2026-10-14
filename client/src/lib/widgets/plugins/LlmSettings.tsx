@@ -28,6 +28,7 @@ import Select from '../Select';
 import {
 	controlStart,
 	controlStop,
+	llmClearKey,
 	llmComplete,
 	llmConfigStatus,
 	llmListModels,
@@ -78,7 +79,8 @@ export default function LlmSettings() {
 
 	const meta = providerMeta(provider);
 	const needsKey = meta.needsKey;
-	const hasKey = !needsKey || !!status?.providers[provider]?.hasKey;
+	const savedKey = !!status?.providers[provider]?.hasKey;
+	const hasKey = !needsKey || savedKey;
 
 	// Populate the form from a provider's SAVED entry (or the catalog defaults when it has none yet) —
 	// this is what makes the Base URL / model / audio fields follow the provider on switch. The api key
@@ -181,6 +183,28 @@ export default function LlmSettings() {
 				setApiKey('');
 				setStatus(next);
 				setDirty(false);
+			}
+		);
+	};
+	// Forget the saved key for the provider shown (destructive → confirm). Unsaved form edits stay.
+	const onClearKey = async () => {
+		if (
+			!window.confirm(
+				`Remove the saved ${meta.label} API key? AI features that use it stop working until you save a new key.`
+			)
+		)
+			return;
+		const id = provider;
+		await save(
+			async () => {
+				await llmClearKey(id);
+				const next = await llmConfigStatus();
+				ingestLlmStatus(hub, next);
+				return next;
+			},
+			(next) => {
+				setApiKey('');
+				setStatus(next);
 			}
 		);
 	};
@@ -326,6 +350,13 @@ export default function LlmSettings() {
 						}}
 					/>
 				</label>
+			)}
+			{needsKey && savedKey && (
+				<div className="has-actions">
+					<button type="button" onClick={onClearKey} disabled={saving}>
+						Clear saved key
+					</button>
+				</div>
 			)}
 
 			<div className="has-browser-bar">

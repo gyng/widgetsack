@@ -1033,6 +1033,39 @@ pub async fn save_llm_config(
     crate::secure_config::write(&path, &txt)
 }
 
+/// Forget `provider`'s saved API key, keeping the rest of its entry (URL / model / audio) and every
+/// other provider untouched. Returns whether a key was actually removed. Pure — unit-tested.
+fn clear_provider_key(file: &mut LlmFile, provider: &str) -> bool {
+    match file.providers.get_mut(provider) {
+        Some(entry) if !entry.api_key.is_empty() => {
+            entry.api_key.clear();
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Remove one provider's saved API key from `plugins/llm.json` (the settings form's "Clear saved
+/// key"). A no-op when nothing is saved. Studio-only, like every other settings write.
+#[tauri::command]
+pub async fn llm_clear_key(
+    window: tauri::WebviewWindow,
+    app: AppHandle,
+    provider: String,
+) -> Result<(), String> {
+    if window.label() != "studio" {
+        return Err("llm_clear_key is only allowed from the studio window".into());
+    }
+    let Some(mut file) = load_llm_file(&app)? else {
+        return Ok(());
+    };
+    if !clear_provider_key(&mut file, &provider) {
+        return Ok(());
+    }
+    let txt = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
+    crate::secure_config::write(&llm_config_path(&app)?, &txt)
+}
+
 /// The (non-secret) config for EVERY configured provider + the active selection — never any api_key,
 /// only per-provider `has_key`. The UI uses the map to switch the active provider without a round-trip.
 #[tauri::command]
@@ -2146,6 +2179,27 @@ mod tests {
             "https://api.openai.com/v1"
         );
         assert_eq!(v["maxTokens"], 1024);
+    }
+
+    #[test]
+    fn clearing_a_key_keeps_the_entry_and_other_providers() {
+        let mut file = parse_config_json(
+            r#"{ "active": "openai", "providers": { "openai": { "api_key": "sk-a", "model": "gpt-x", "base_url": "https://api.example/v1" }, "anthropic": { "api_key": "sk-b" } } }"#,
+        )
+        .unwrap();
+        assert!(clear_provider_key(&mut file, "openai"));
+        let openai = &file.providers["openai"];
+        assert!(openai.api_key.is_empty());
+        assert_eq!(openai.model, "gpt-x");
+        assert_eq!(openai.base_url, "https://api.example/v1");
+        assert_eq!(file.providers["anthropic"].api_key, "sk-b");
+        assert_eq!(file.active, "openai");
+        // Nothing (left) to clear: reported so the command skips the write.
+        assert!(!clear_provider_key(&mut file, "openai"));
+        assert!(!clear_provider_key(&mut file, "ollama"));
+        // The written file no longer carries the secret.
+        let txt = serde_json::to_string(&file).unwrap();
+        assert!(!txt.contains("sk-a") && txt.contains("sk-b"));
     }
 
     #[test]
