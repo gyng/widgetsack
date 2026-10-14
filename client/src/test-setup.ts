@@ -29,12 +29,23 @@ globalThis.sessionStorage ??= window.sessionStorage ?? memoryStorage();
 
 // Iframes are DOM attributes in unit tests, not network integrations. Disable happy-dom child-frame
 // navigation globally so every iframe test stays offline and teardown has no aborted-fetch noise.
+// happy-dom 21 also gates iframe page loading behind `enableIframePageLoading` and logs a
+// NotSupportedError for every blocked `src`; opt in so the (disabled) navigation guard is what keeps
+// iframes offline, silently, as before.
 const happy = (
 	window as unknown as {
-		happyDOM?: { settings?: { navigation?: { disableChildFrameNavigation?: boolean } } };
+		happyDOM?: {
+			settings?: {
+				enableIframePageLoading?: boolean;
+				navigation?: { disableChildFrameNavigation?: boolean };
+			};
+		};
 	}
 ).happyDOM;
-if (happy?.settings?.navigation) happy.settings.navigation.disableChildFrameNavigation = true;
+if (happy?.settings?.navigation) {
+	happy.settings.navigation.disableChildFrameNavigation = true;
+	happy.settings.enableIframePageLoading = true;
+}
 
 // Unmount React trees + reset jsdom between tests (RTL doesn't auto-cleanup with globals).
 afterEach(() => cleanup());

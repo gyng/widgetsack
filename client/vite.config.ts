@@ -41,12 +41,14 @@ export default defineConfig({
 	},
 	test: {
 		environment: 'happy-dom',
+		// Worker threads instead of the default child processes: same per-file isolation, about half
+		// the wall time (most of each file's cost is setting up the happy-dom environment).
+		pool: 'threads',
 		globals: true,
 		setupFiles: ['./src/test-setup.ts'],
 		include: ['src/**/*.{test,spec}.{js,ts,jsx,tsx}'],
 		coverage: {
 			provider: 'v8',
-			all: true,
 			reporter: ['text', 'json-summary', 'text-summary'],
 			include: ['src/**/*.{ts,tsx}'],
 			// Principled exclusions: code that unit tests can't cover usefully. Bootstrap + dev-only

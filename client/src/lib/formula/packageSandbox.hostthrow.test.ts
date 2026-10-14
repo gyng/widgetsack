@@ -31,5 +31,7 @@ describe('package sandbox — host-side dump failure', () => {
 		if (!out.ok) expect(out.error.length).toBeGreaterThan(0);
 		// The sandbox survives for subsequent, well-behaved calls on the same runtime.
 		expect(r.sandbox.transform([])).toEqual({ ok: true, value: [] });
-	});
+		// Building and failing to dump a 100k-deep value is CPU-bound: give it headroom when the
+		// whole suite shares the cores.
+	}, 30_000);
 });

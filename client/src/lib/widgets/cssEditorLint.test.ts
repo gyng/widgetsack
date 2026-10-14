@@ -3,11 +3,9 @@ import { cssDiagnostics } from './cssEditorLint';
 
 const ok = () => true;
 
-// Snapshot + restore the global CSS so the runtimeSupports tests can drive each branch.
-const realCss = globalThis.CSS;
+// The runtimeSupports tests stub the global CSS to drive each branch; restore it after each test.
 afterEach(() => {
-	if (realCss === undefined) delete (globalThis as { CSS?: unknown }).CSS;
-	else (globalThis as { CSS?: unknown }).CSS = realCss;
+	vi.unstubAllGlobals();
 	vi.restoreAllMocks();
 });
 
@@ -74,25 +72,23 @@ describe('cssDiagnostics', () => {
 	// The default supports path (runtimeSupports) — exercised by NOT passing `supports`.
 	describe('runtimeSupports (default supports)', () => {
 		it('assumes valid (no warnings) when CSS is unavailable', () => {
-			delete (globalThis as { CSS?: unknown }).CSS;
+			vi.stubGlobal('CSS', undefined);
 			expect(cssDiagnostics('font-sze: 52px')).toEqual([]);
 		});
 
 		it('flags via the runtime CSS.supports when present', () => {
-			(globalThis as { CSS?: unknown }).CSS = {
-				supports: (p: string) => p !== 'font-sze'
-			};
+			vi.stubGlobal('CSS', { supports: (p: string) => p !== 'font-sze' });
 			const d = cssDiagnostics('font-sze: 52px');
 			expect(d).toHaveLength(1);
 			expect(d[0].severity).toBe('warning');
 		});
 
 		it('treats a value as valid when CSS.supports throws', () => {
-			(globalThis as { CSS?: unknown }).CSS = {
+			vi.stubGlobal('CSS', {
 				supports: () => {
 					throw new Error('malformed');
 				}
-			};
+			});
 			expect(cssDiagnostics('color: red')).toEqual([]);
 		});
 	});

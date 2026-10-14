@@ -1,11 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isValidColor, TOKEN_FIELDS } from './themeTokens';
 
-// A handle to swap the global `CSS` object (happy-dom provides one with a working `supports`).
-const g = globalThis as unknown as { CSS?: typeof CSS };
-const originalCSS = g.CSS;
+// Tests stub the global `CSS` object (happy-dom provides one with a working `supports`); restore it.
 afterEach(() => {
-	g.CSS = originalCSS;
+	vi.unstubAllGlobals();
 });
 
 describe('isValidColor', () => {
@@ -20,13 +18,13 @@ describe('isValidColor', () => {
 	});
 
 	it('is lenient (returns true) when CSS is unavailable', () => {
-		g.CSS = undefined;
+		vi.stubGlobal('CSS', undefined);
 		// With no CSS API at all it can't validate, so it never false-flags a typo as invalid.
 		expect(isValidColor('definitely-not-a-real-colour')).toBe(true);
 	});
 
 	it('is lenient when CSS.supports is not a function', () => {
-		g.CSS = {} as typeof CSS;
+		vi.stubGlobal('CSS', {});
 		expect(isValidColor('whatever')).toBe(true);
 	});
 });
