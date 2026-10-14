@@ -67,6 +67,7 @@ import { useConditionHidden } from './canvas/useConditionHidden';
 import GroupFrame from './GroupFrame';
 import { useMeasuredRects } from './canvas/useMeasuredRects';
 import { useOverlayPrefs } from './canvas/overlayPrefs';
+import { useOverlayFocus } from './canvas/useOverlayFocus';
 import {
 	overlayPresentation,
 	isWholeWindowInteractive,
@@ -107,7 +108,8 @@ import {
 	reconcileOverlays,
 	setMainWindowVisible,
 	syncInteractiveRects,
-	applyOverlayPresentation
+	applyOverlayPresentation,
+	setOverlayFocusable
 } from '../overlay';
 import { useEditExitKeys } from '../appUpdate';
 import { TelemetryHubContext } from './telemetryContext';
@@ -1277,6 +1279,14 @@ export default function Canvas({ studio = false }: Props) {
 		void applyOverlayPresentation(overlayPresentation(input), overlayPrefs.overlayLayer);
 		syncRects();
 	}, [studio, editMode, overlayPrefs.debugWindowed, overlayPrefs.overlayLayer, syncRects]);
+	// Overlay activation (WS_EX_NOACTIVATE): clicking a widget never steals focus from the foreground
+	// app, except a pressed text entry / edit mode / windowed-debug (useOverlayFocus).
+	useOverlayFocus({
+		enabled: !studio,
+		editMode,
+		windowed: overlayPrefs.debugWindowed,
+		apply: setOverlayFocusable
+	});
 
 	// --- selection helpers ---
 	const setSelection = useCallback(
@@ -2024,6 +2034,7 @@ export default function Canvas({ studio = false }: Props) {
 	// after the commit, so the rect lookup retries over a few frames before giving up. Declared AFTER
 	// the S3 mirror so solvedRef/panRef are fresh on the first attempt.
 	const flashTimer = useRef<number | null>(null);
+	const flashedEl = useRef<HTMLElement | null>(null);
 	useEffect(() => {
 		if (!justAdded) return;
 		const { id, pan } = justAdded;
@@ -2039,9 +2050,15 @@ export default function Canvas({ studio = false }: Props) {
 				return;
 			}
 			if (el) {
-				el.setAttribute('data-just-added', '');
+				// A second add within the flash ends the previous widget's flash rather than stranding it.
 				if (flashTimer.current) clearTimeout(flashTimer.current);
-				flashTimer.current = window.setTimeout(() => el.removeAttribute('data-just-added'), 1000);
+				flashedEl.current?.removeAttribute('data-just-added');
+				el.setAttribute('data-just-added', '');
+				flashedEl.current = el;
+				flashTimer.current = window.setTimeout(() => {
+					el.removeAttribute('data-just-added');
+					flashedEl.current = null;
+				}, 1000);
 			}
 			if (r && studio && pan) {
 				const p = panRef.current;
@@ -2175,9 +2192,19 @@ export default function Canvas({ studio = false }: Props) {
 	// + focusing the filter is a DOM nudge, not state, so it stays independent of the Inspector's own
 	// open/closed bookkeeping.
 	const focusAddPalette = useCallback(() => {
-		const panel = document.querySelector<HTMLDetailsElement>('.inspector .add-panel');
-		if (panel) panel.open = true;
-		document.querySelector<HTMLInputElement>('.inspector .palette-filter')?.focus();
+		// The Inspector is lazy-loaded: a click before it arrives waits for the palette (≈3 s max)
+		// instead of doing nothing.
+		let frames = 0;
+		const open = (): void => {
+			const panel = document.querySelector<HTMLDetailsElement>('.inspector .add-panel');
+			if (!panel) {
+				if (frames++ < 180) requestAnimationFrame(open);
+				return;
+			}
+			panel.open = true;
+			document.querySelector<HTMLInputElement>('.inspector .palette-filter')?.focus();
+		};
+		open();
 	}, []);
 
 	// =========================================================================================

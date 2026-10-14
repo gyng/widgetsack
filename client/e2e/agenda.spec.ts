@@ -100,7 +100,9 @@ test.describe('calendar feed worker', () => {
 				]
 			});
 		}, calendar);
-		await expect(page.locator('.agenda .ag-summary')).toHaveCount(3);
+		// The first job spins up a module worker from the dev server (cold under load). The app bounds it
+		// with its own 5 s CALENDAR_TIMEOUT_MS; don't let the 5 s default expect timeout race that bound.
+		await expect(page.locator('.agenda .ag-summary')).toHaveCount(3, { timeout: 10_000 });
 		await expect(page.locator('.agenda .ag-when')).toHaveText(['08:30', '09:30', '09:30']);
 		await expect(page.getByText('Standup in 5 minutes', { exact: true })).toBeVisible();
 		await expect(

@@ -37,6 +37,7 @@ pub mod hotkey;
 mod http_response;
 mod integration_task;
 pub mod keepalive;
+mod layout_grants;
 pub mod listener;
 pub mod llm;
 pub mod log;
@@ -363,6 +364,7 @@ async fn main() -> Result<(), ()> {
             command::windows::list_window_labels,
             command::windows::open_devtools_for,
             command::windows::set_window_interactive,
+            command::windows::set_overlay_focusable,
             command::windows::rescue_windows,
             command::windows::toggle_overlay_edit,
             command::windows::get_overlay_edit,
@@ -439,6 +441,7 @@ async fn main() -> Result<(), ()> {
             timings::set_subsystem_profiling,
             timings::subsystem_timings,
             llm::save_llm_config,
+            llm::llm_clear_key,
             llm::set_agent_control,
             llm::llm_config_status,
             llm::llm_test_connection,

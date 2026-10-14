@@ -56,17 +56,42 @@ test('new floating widgets take the first free spot (never stacked) and flash in
 	page
 }) => {
 	await gotoStudioWithLayout(page, EMPTY_LAYOUT);
+	// The flash is a 1s attribute: record every host it is ever set on, so a busy machine that stalls
+	// past the 1s window between polls can't make a real flash look missing.
+	await page.evaluate(() => {
+		const w = window as unknown as { flashed: string[] };
+		w.flashed = [];
+		new MutationObserver((records) => {
+			for (const r of records) {
+				const el = r.target as HTMLElement;
+				if (el.hasAttribute('data-just-added')) w.flashed.push(el.getAttribute('data-w') ?? '');
+			}
+		}).observe(document.body, {
+			subtree: true,
+			attributes: true,
+			attributeFilter: ['data-just-added']
+		});
+	});
+	const flashed = () => page.evaluate(() => (window as unknown as { flashed: string[] }).flashed);
 	const a = await addWidget(page, 'Gauge');
-	await expect(a).toHaveAttribute('data-just-added', '');
-	const ra = await a.boundingBox();
 	const b = await addWidget(page, 'Gauge');
-	const rb = await b.boundingBox();
-	expect(ra && rb).toBeTruthy();
-	// Same row, side by side — the second never lands on top of the first.
-	expect(Math.abs(rb!.y - ra!.y)).toBeLessThan(2);
-	expect(rb!.x).toBeGreaterThanOrEqual(ra!.x + ra!.width - 1);
-	// The flash attribute is transient (1s).
-	await expect(a).not.toHaveAttribute('data-just-added', '', { timeout: 3000 });
+	const [idA, idB] = [await a.getAttribute('data-w'), await b.getAttribute('data-w')];
+	await expect.poll(flashed).toEqual(expect.arrayContaining([idA, idB]));
+	// Same row, side by side — the second never lands on top of the first. Both boxes are read in the
+	// same poll (an add can pan the stage, which moves BOTH hosts) and re-read until the layout settles.
+	await expect
+		.poll(async () => {
+			const [ra, rb] = [await a.boundingBox(), await b.boundingBox()];
+			if (!ra || !rb) return 'not laid out';
+			if (Math.abs(rb.y - ra.y) >= 2) return `rows differ: a.y=${ra.y} b.y=${rb.y}`;
+			if (rb.x < ra.x + ra.width - 1) return `overlap: b.x=${rb.x} < a.right=${ra.x + ra.width}`;
+			return 'side by side';
+		})
+		.toBe('side by side');
+	// The flash attribute is transient (1s) on both widgets, even when the second add lands within
+	// the first one's flash.
+	await expect(b).not.toHaveAttribute('data-just-added', '', { timeout: 3000 });
+	await expect(a).not.toHaveAttribute('data-just-added', '');
 });
 
 test('empty stage shows the "Nothing on this monitor yet" card; monitor hint is dismissible once', async ({
@@ -91,7 +116,11 @@ test('empty stage shows the "Nothing on this monitor yet" card; monitor hint is 
 	await page.reload();
 	await expect(page.locator('.canvas.studio.edit')).toBeVisible();
 	await expect(page.locator('.monitor-onboarding')).toHaveCount(0);
-	// The card's button opens the Add palette; adding a widget clears the card.
+	// The card's button opens the Add palette; adding a widget clears the card. The card renders
+	// eagerly but the Inspector it targets is a lazy chunk: on a busy machine a click right after the
+	// reload lands before the chunk mounts and is a silent no-op (an app race, reported separately),
+	// so wait for the palette to exist before exercising the button.
+	await expect(page.locator('.inspector .palette-filter')).toBeAttached();
 	await card.getByRole('button', { name: /Add a widget/ }).click();
 	await expect(page.locator('.inspector .palette-filter')).toBeFocused();
 	await addWidget(page, 'Clock');

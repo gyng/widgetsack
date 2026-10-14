@@ -65,13 +65,22 @@ export async function addWidget(page: Page, type: string): Promise<Locator> {
 	await expect(summary).toBeVisible();
 	if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
 	const label = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape regex metachars in the label
+	// The add selects the new widget. When a widget is ALREADY selected (a second add), waiting for
+	// `.widget.selected` to be visible passes at once — before the click has even committed — and the
+	// caller then measures / edits the PREVIOUS widget. So wait for the selection to move to a new id.
+	const selected = page.locator('.widget.selected');
+	const before = (await selected.count()) ? await selected.first().getAttribute('data-w') : null;
 	await page
 		.locator('.inspector .palette')
 		.getByRole('button', { name: new RegExp(`^${label}( — |$)`) })
 		.click();
-	const selected = page.locator('.widget.selected');
-	await expect(selected).toBeVisible();
-	return selected;
+	await expect(selected.first()).toBeVisible();
+	await expect(selected.first()).not.toHaveAttribute('data-w', before ?? '');
+	const id = await selected.first().getAttribute('data-w');
+	expect(id, 'the added widget host carries its id').toBeTruthy();
+	// A stable handle on THIS widget, not on "whatever is selected now", so a later add or a deselect
+	// can't silently retarget the caller's locator.
+	return page.locator(`.widget[data-w="${id}"]`);
 }
 
 /**

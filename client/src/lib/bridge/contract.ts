@@ -105,6 +105,7 @@ export const COMMANDS = {
 	setInteractiveRects: 'set_interactive_rects',
 	currentWorkArea: 'current_work_area',
 	setOverlayWallpaper: 'set_overlay_wallpaper',
+	setOverlayFocusable: 'set_overlay_focusable',
 	listDisplayNames: 'list_display_names',
 	// monitor input-source switcher — DDC/CI VCP 0x60 (ddc.rs, the Monitor Switch widget)
 	listMonitorInputs: 'list_monitor_inputs',
@@ -195,6 +196,7 @@ export const COMMANDS = {
 	agendaDisconnect: 'agenda_disconnect',
 	// AI provider + agent control (llm.rs, control.rs)
 	saveLlmConfig: 'save_llm_config',
+	llmClearKey: 'llm_clear_key',
 	setAgentControl: 'set_agent_control',
 	llmConfigStatus: 'llm_config_status',
 	llmTestConnection: 'llm_test_connection',
