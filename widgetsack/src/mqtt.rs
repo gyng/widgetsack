@@ -245,10 +245,13 @@ struct Discovered {
 /// `state_topic`/`stat_t`, `name`, `unit_of_measurement`/`unit_of_meas`. `None` without a state topic.
 fn parse_discovery(payload: &str) -> Option<Discovered> {
     let v: Value = serde_json::from_str(payload).ok()?;
-    let state_topic = v["state_topic"]
-        .as_str()
-        .or_else(|| v["stat_t"].as_str())?
-        .to_string();
+    let raw = v["state_topic"].as_str().or_else(|| v["stat_t"].as_str())?;
+    // HA's `~` abbreviation: a `~` at the start or end of a topic stands for the base topic.
+    let state_topic = match v["~"].as_str() {
+        Some(base) if raw.starts_with('~') => format!("{base}{}", &raw[1..]),
+        Some(base) if raw.ends_with('~') => format!("{}{base}", &raw[..raw.len() - 1]),
+        _ => raw.to_string(),
+    };
     let name = v["name"].as_str().map(String::from);
     let unit = v["unit_of_measurement"]
         .as_str()
@@ -632,8 +635,13 @@ pub async fn mqtt_connect<R: Runtime>(
 
 /// Stop the MQTT client (if any).
 #[tauri::command]
-pub async fn mqtt_disconnect(state: State<'_, MqttState>) -> Result<(), String> {
-    state.task.stop().await;
+pub async fn mqtt_disconnect<R: Runtime>(
+    app: AppHandle<R>,
+    state: State<'_, MqttState>,
+) -> Result<(), String> {
+    if state.task.stop().await {
+        emit_status(&app, "disconnected");
+    }
     Ok(())
 }
 
@@ -716,6 +724,16 @@ mod tests {
         assert!(is_discovery_config("homeassistant/sensor/x/config"));
         assert!(!is_discovery_config("homeassistant/sensor/x/state"));
         assert!(!is_discovery_config("zigbee2mqtt/x/config")); // wrong prefix
+    }
+
+    #[test]
+    fn parse_discovery_expands_the_base_topic_abbreviation() {
+        let start = parse_discovery(r#"{"~":"tasmota/plug","stat_t":"~/state"}"#).unwrap();
+        assert_eq!(start.state_topic, "tasmota/plug/state");
+        let end = parse_discovery(r#"{"~":"plug","stat_t":"stat/~"}"#).unwrap();
+        assert_eq!(end.state_topic, "stat/plug");
+        let none = parse_discovery(r#"{"stat_t":"~/state"}"#).unwrap();
+        assert_eq!(none.state_topic, "~/state");
     }
 
     #[test]
