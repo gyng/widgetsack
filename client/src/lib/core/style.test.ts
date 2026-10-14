@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { WidgetInstance } from './layout';
 import { container, emptyRoot, group, leaf, type Library, type MonitorLayout } from './layoutTree';
-import { assembleStyles, cssBraceImbalance, scopeCss } from './style';
+import { assembleStyles, cssAttrValue, cssBraceImbalance, scopeCss } from './style';
 
 const prim = (id: string, css?: string): WidgetInstance => ({
 	id,
@@ -203,5 +203,49 @@ describe('assembleStyles', () => {
 			css.indexOf('--np-accent: gold')
 		);
 		expect(css.startsWith(':root {')).toBe(true);
+	});
+});
+
+describe('selector escaping', () => {
+	const evil = 'x"],body{background:url(https://evil.example/p.png)}[y="';
+
+	it('cssAttrValue escapes quotes, backslashes, control chars and < so a value stays inside its attribute selector', () => {
+		expect(cssAttrValue('plain-id_1/x')).toBe('plain-id_1/x');
+		expect(cssAttrValue('a"b')).toBe(String.raw`a\"b`);
+		expect(cssAttrValue(String.raw`a\b`)).toBe(String.raw`a\\b`);
+		expect(cssAttrValue('a\nb\u0000c\u007f')).toBe(String.raw`a\a b\fffd c\7f `);
+		expect(cssAttrValue('</style>')).toBe(String.raw`\3c /style>`);
+	});
+
+	it('an adversarial def / widget / group id cannot escape its scope into a top-level rule', () => {
+		const mon: MonitorLayout = {
+			root: container('r', 'row', [
+				leaf(prim(evil, 'color: red')),
+				leaf(
+					group(evil + 'g', { w: 1, h: 1 }, emptyRoot(), {
+						css: 'color: blue',
+						tokens: { '--np-fg': 'red' }
+					})
+				)
+			]),
+			floating: []
+		};
+		const library: Library = {
+			version: 1,
+			defs: [{ id: evil, name: 'd', size: { w: 1, h: 1 }, child: emptyRoot(), css: 'color: green' }]
+		};
+		const css = assembleStyles({ library, monitor: mon });
+		expect(css).not.toMatch(/[^\\]"\],body/);
+		expect(css).toContain(`[data-def="${cssAttrValue(evil)}"]`);
+		// every rule must start with one of our scoped attribute selectors — no bare `body{` rule
+		for (const line of css.split('\n').filter((l) => l.endsWith('{'))) {
+			expect(line).toMatch(/^\[data-(def|w|group)/);
+		}
+		expect(
+			assembleStyles({
+				library: { version: 1, defs: [{ ...library.defs[0], id: '</style><b>' }] },
+				monitor: { root: emptyRoot(), floating: [] }
+			})
+		).not.toContain('<');
 	});
 });

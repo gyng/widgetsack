@@ -119,6 +119,9 @@ const TOKEN_KEY = /^--[A-Za-z0-9_-]+$/;
 export function safeTokenEntry(key: string, value: unknown): boolean {
 	if (!TOKEN_KEY.test(key) || typeof value !== 'string' || value.includes('<')) return false;
 	let quote: string | null = null;
+	// Open `(` / `[` outside strings: an unclosed one makes the browser swallow the rest of the sheet
+	// into this declaration, and a stray closer / crossed pair (`([)]`) is invalid too.
+	const open: string[] = [];
 	for (let i = 0; i < value.length; i++) {
 		const c = value[i];
 		if (quote) {
@@ -126,10 +129,13 @@ export function safeTokenEntry(key: string, value: unknown): boolean {
 			else if (c === '\n') return false;
 			else if (c === quote) quote = null;
 		} else if (c === '"' || c === "'") quote = c;
-		else if (c === ';' || c === '{' || c === '}' || (c === '/' && value[i + 1] === '*'))
+		else if (c === '(' || c === '[') open.push(c === '(' ? ')' : ']');
+		else if (c === ')' || c === ']') {
+			if (open.pop() !== c) return false;
+		} else if (c === ';' || c === '{' || c === '}' || (c === '/' && value[i + 1] === '*'))
 			return false;
 	}
-	return quote === null;
+	return quote === null && open.length === 0;
 }
 
 /** Emit a `selector { --k: v; … }` rule for `tokens` (default selector `:root`), dropping any entry

@@ -362,3 +362,50 @@ describe('sanitizeImportedTree', () => {
 		expect(r.value).toBe(tree);
 	});
 });
+
+describe('remote URL classification (non-canonical forms the webview still resolves remotely)', () => {
+	it.each([
+		['https:evil.example/p', true],
+		['https:/evil.example', true],
+		[String.raw`https:\evil.example`, true],
+		[String.raw`\\evil.example\share\p.png`, true],
+		[String.raw`/\evil.example`, true],
+		[String.raw`\/evil.example`, true],
+		['ftp://evil.example', true],
+		['file://server/share/p.png', true],
+		['h\ttps://evil.example', true],
+		['\u0000https://evil.example', true],
+		['https://asset.localhost/C%3A/x.png', false],
+		['http://tauri.localhost/a.png', false],
+		['http://art.localhost/abc', false],
+		['https://asset.localhost.evil.example/x', true],
+		['https://asset.localhost@evil.example/x', true],
+		['https://asset.localhost:443@evil.example/x', true],
+		['asset://localhost/x.png', false],
+		['blob:http://tauri.localhost/1', false],
+		['/local/x.png', false],
+		[String.raw`\local.png`, false],
+		['./x.png', false],
+		[String.raw`C:\walls\x.png`, false]
+	])('isRemoteUrl(%j) is %s', (v, remote) => {
+		expect(isRemoteUrl(v)).toBe(remote);
+	});
+
+	it('flags a remote image whose src uses a scheme-relative / backslash form', () => {
+		expect(
+			scanTreeThreats(leaf(unit('i', 'image', { src: String.raw`\\evil.example\p.png` }))).map(
+				(t) => t.kind
+			)
+		).toEqual(['remote-image']);
+	});
+
+	it('flags string group params that point at a remote address', () => {
+		const grp = group('g', { w: 1, h: 1 }, leaf(unit('img', 'image')), {
+			def: 'photo',
+			params: { src: 'https:evil.example/b.png', label: 'hello', n: 3 }
+		});
+		expect(scanTreeThreats(container('r', 'row', [leaf(grp)]))).toEqual([
+			{ kind: 'parameter-controls', id: 'g', detail: 'src: https:evil.example/b.png' }
+		]);
+	});
+});

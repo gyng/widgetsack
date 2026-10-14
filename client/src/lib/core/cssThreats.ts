@@ -14,11 +14,44 @@ export type CssThreat = {
 	detail: string;
 };
 
-// A remote resource reference: `url(` / `image(` / `image-set(` / `-webkit-image-set(` / `src(`
-// whose (first) target is an absolute http(s) URL or a protocol-relative `//host`. Local references
-// — convertFileSrc/asset:, data:, blob:, and relative paths — are NOT flagged.
-const REMOTE_URL =
-	/(?:url|image|(?:-webkit-)?image-set|src)\(\s*(['"]?)\s*(https?:\/\/|\/\/)[^)'"]+/gi;
+// A resource reference: `url(` / `image(` / `image-set(` / `-webkit-image-set(` / `src(` and its
+// (first) target; `isRemoteTarget` decides whether that target leaves the app. The target is a
+// lookahead so a nested `image-set(url(…))` is still scanned from the inner `url(`.
+const RESOURCE_REF = /(?:url|image|(?:-webkit-)?image-set|src)\(\s*(?=(['"]?)([^()'"]*))/gi;
+
+// Schemes that stay inside the webview, and the app's own custom-protocol hosts (convertFileSrc →
+// asset.localhost, the app origin tauri.localhost, album art art.localhost — see art.rs). The host
+// must END at a port / path / query / fragment, so `asset.localhost.evil.example` and
+// `asset.localhost@evil.example` (userinfo) are still remote.
+const LOCAL_SCHEME = /^(?:data|blob|asset):/i;
+const LOCAL_HOST = /^https?:\/\/(?:asset|tauri|art)\.localhost(?::\d*)?(?:[/?#]|$)/i;
+const SCHEME = /^[a-z][a-z0-9+.-]+:/i;
+
+/**
+ * Whether a URL reference (a CSS `url()` target after escape decoding, an image `src`, …) resolves to
+ * something OUTSIDE the app when loaded against the app origin (http://tauri.localhost). Mirrors the
+ * WHATWG URL parser's leniency rather than matching only canonical `https://`: leading C0/space and
+ * embedded tab/newline are stripped, `\` counts as `/`, so a leading `//` (or `\\`, `/\`) is
+ * scheme-relative, and ANY scheme other than data:/blob:/asset: or an app host — `https:evil.example`,
+ * `https:/evil`, `ftp:`, `file:` — is treated as remote. A bare relative / root-relative path is
+ * local; a one-letter "scheme" is a Windows drive path (`C:\…`), which the URL parser cannot fetch.
+ * Pure.
+ */
+export function isRemoteTarget(raw: string): boolean {
+	let start = 0;
+	while (start < raw.length && raw.charCodeAt(start) <= 0x20) start++;
+	const v = raw
+		.slice(start)
+		.replace(/[\t\n\r]/g, '')
+		.replace(/\\/g, '/');
+	if (v.startsWith('//')) return true;
+	if (!SCHEME.test(v)) return false;
+	return !LOCAL_SCHEME.test(v) && !LOCAL_HOST.test(v);
+}
+
+// Every quoted candidate of an `image-set(…)` list (RESOURCE_REF only sees the first target).
+const IMAGE_SET = /(?:-webkit-)?image-set\(([^)]*)\)/gi;
+const QUOTED = /(['"])(.*?)\1/g;
 const IMPORT = /@import\b[^;]*/gi;
 const OVERLAY = /position\s*:\s*(?:fixed|sticky)/gi;
 
@@ -65,7 +98,16 @@ export function scanCssThreats(css: string | undefined): CssThreat[] {
 	};
 
 	let m: RegExpExecArray | null;
-	while ((m = REMOTE_URL.exec(text)) !== null) add('remote-url', snippet(m[0]));
+	while ((m = RESOURCE_REF.exec(text)) !== null) {
+		// normalizeCss turned tabs/newlines into spaces; the URL parser would have dropped them, so a
+		// space-split scheme (`ht tps:`) is judged without its spaces.
+		if (isRemoteTarget(m[2].replace(/ /g, ''))) add('remote-url', snippet(m[0] + m[1] + m[2]));
+	}
+	while ((m = IMAGE_SET.exec(text)) !== null) {
+		for (const q of m[1].matchAll(QUOTED)) {
+			if (isRemoteTarget(q[2].replace(/ /g, ''))) add('remote-url', snippet(m[0]));
+		}
+	}
 	while ((m = IMPORT.exec(text)) !== null) add('import', snippet(m[0]));
 	while ((m = OVERLAY.exec(text)) !== null) add('overlay', snippet(m[0]));
 	return out;

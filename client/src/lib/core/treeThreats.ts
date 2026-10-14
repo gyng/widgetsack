@@ -21,7 +21,7 @@ import {
 	isGroup,
 	isLeaf
 } from './layoutTree';
-import { scanCssThreats, type CssThreat } from './cssThreats';
+import { isRemoteTarget, scanCssThreats, type CssThreat } from './cssThreats';
 import { normalizeMacro } from './macro';
 
 export type TreeThreatKind =
@@ -47,11 +47,11 @@ export type TreeThreat = {
 /** What `scanTreeThreats` accepts: a bare layout node, a library def, or a whole monitor layout. */
 export type ScannableTree = LayoutNode | WidgetDef | MonitorLayout;
 
-const REMOTE = /^\s*(https?:\/\/|\/\/)/i;
-
-/** True for an absolute http(s) or protocol-relative URL (a local file / data: / asset: is not). */
+/** True for a URL that leaves the app (any non-local scheme, or scheme-relative `//` / `\\host`) —
+ * a wallpapers/ filename, relative path, data:, blob:, asset: or app-host URL is not. See
+ * `isRemoteTarget` (cssThreats.ts) for the exact rules. */
 export function isRemoteUrl(v: unknown): v is string {
-	return typeof v === 'string' && REMOTE.test(v);
+	return typeof v === 'string' && isRemoteTarget(v);
 }
 
 /** First ~80 chars, whitespace-collapsed, for a readable dialog line. */
@@ -96,6 +96,14 @@ export function scanTreeThreats(input: ScannableTree): TreeThreat[] {
 	const scanUnit = (unit: WidgetInstance | Group): void => {
 		scanStyle(unit.id, unit.css, unit.tokens);
 		if (isGroup(unit)) {
+			// Instance param overrides are written into the def's tree at render time (params.ts), so a
+			// string value can become an image src / iframe url / service endpoint the tree itself
+			// never showed — flag the ones that point outside the app.
+			if (unit.params && typeof unit.params === 'object') {
+				for (const [key, v] of Object.entries(unit.params)) {
+					if (isRemoteUrl(v)) add('parameter-controls', unit.id, snippet(`${key}: ${v}`));
+				}
+			}
 			if (unit.child) walk(unit.child);
 			return;
 		}

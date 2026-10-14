@@ -103,8 +103,10 @@ export function migrateMonitorKeys<T>(
 	// Any non-default key the mapping names is legacy: a pre-device-key enumeration index ('1')
 	// or a GDI device tag ('DISPLAY3') from before stable identity keys — Windows re-numbers those.
 	const target = (key: string): string | undefined => {
-		const next = key !== 'default' ? mapping[key] : undefined;
-		return next && next !== key ? next : undefined;
+		const next = key !== 'default' && Object.hasOwn(mapping, key) ? mapping[key] : undefined;
+		return typeof next === 'string' && next && next !== key && next !== '__proto__'
+			? next
+			: undefined;
 	};
 	// Decide the winner per stable key up front (preferred keys first, then file order) so the
 	// output can still be built in file order. An existing (already-migrated) entry is never
@@ -113,11 +115,13 @@ export function migrateMonitorKeys<T>(
 	const legacyKeys = Object.keys(monitors).filter((k) => target(k) !== undefined);
 	for (const key of [...legacyKeys.filter((k) => preferred.has(k)), ...legacyKeys]) {
 		const next = target(key)!;
-		if (!(next in monitors) && !winner.has(next)) winner.set(next, key);
+		if (!Object.hasOwn(monitors, next) && !winner.has(next)) winner.set(next, key);
 	}
 	let changed = false;
 	const out: Record<string, T> = {};
 	for (const [key, mon] of Object.entries(monitors)) {
+		// JSON.parse keeps "__proto__" as an own key; assigning it would rewrite the map's prototype.
+		if (key === '__proto__') continue;
 		const next = target(key);
 		if (next !== undefined && winner.get(next) === key) {
 			out[next] = mon;
@@ -142,7 +146,8 @@ function parseLayoutV2(obj: Record<string, unknown>): LayoutV2 | null {
 	const monitors: Record<string, MonitorLayout> = {};
 	for (const [id, mon] of Object.entries(obj.monitors as Record<string, unknown>)) {
 		const parsed = parseMonitor(mon);
-		if (parsed === null) {
+		// JSON.parse keeps "__proto__" as an own key; assigning it would rewrite the map's prototype.
+		if (parsed === null || id === '__proto__') {
 			continue;
 		}
 		monitors[id] = parsed;

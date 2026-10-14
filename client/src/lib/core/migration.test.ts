@@ -624,3 +624,29 @@ describe('group child validation', () => {
 		expect(() => parseLayoutNode(raw)).not.toThrow();
 	});
 });
+
+describe('"__proto__" monitor keys', () => {
+	const mon = { root: { id: 'r', kind: 'row', children: [] }, floating: [] };
+
+	it('parseLayoutAny drops a "__proto__" monitor instead of rewriting the map prototype', () => {
+		const raw = JSON.parse(
+			JSON.stringify({ version: 2, monitors: { default: mon } }).replace(
+				'"default"',
+				'"__proto__":' + JSON.stringify(mon) + ',"default"'
+			)
+		);
+		const parsed = parseLayoutAny(raw)!;
+		expect(Object.getPrototypeOf(parsed.monitors)).toBe(Object.prototype);
+		expect(Object.keys(parsed.monitors)).toEqual(['default']);
+		expect('root' in parsed.monitors).toBe(false);
+	});
+
+	it('migrateMonitorKeys drops a "__proto__" key (and never maps onto one)', () => {
+		const raw = JSON.parse(
+			`{"__proto__":${JSON.stringify(mon)},"1":${JSON.stringify(mon)},"2":${JSON.stringify(mon)}}`
+		) as Record<string, MonitorLayout>;
+		const out = migrateMonitorKeys(raw, { '1': 'DISPLAY1', '2': '__proto__' })!;
+		expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+		expect(Object.keys(out).sort()).toEqual(['2', 'DISPLAY1']);
+	});
+});

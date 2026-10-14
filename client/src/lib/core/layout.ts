@@ -60,6 +60,8 @@ export function parseLayout(raw: unknown): Layout | null {
 
 	const monitors: Record<string, MonitorLayout> = {};
 	for (const [key, mon] of Object.entries(obj.monitors as Record<string, unknown>)) {
+		// JSON.parse keeps "__proto__" as an own key; assigning it would rewrite the map's prototype.
+		if (key === '__proto__') continue;
 		if (typeof mon !== 'object' || mon === null) return null;
 		const widgets = (mon as Record<string, unknown>).widgets;
 		if (!Array.isArray(widgets)) return null;

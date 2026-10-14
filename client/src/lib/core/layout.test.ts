@@ -50,3 +50,15 @@ describe('parseLayout', () => {
 });
 
 // createWidget moved to ./widget.ts (the standard widget API, 8a) — see widget.test.ts.
+
+describe('parseLayout "__proto__" monitor key', () => {
+	it('drops it instead of rewriting the monitors prototype', () => {
+		const raw = JSON.parse(
+			'{"version":1,"monitors":{"__proto__":{"widgets":[]},"default":{"widgets":[]}}}'
+		);
+		const parsed = parseLayout(raw)!;
+		expect(Object.getPrototypeOf(parsed.monitors)).toBe(Object.prototype);
+		expect(Object.keys(parsed.monitors)).toEqual(['default']);
+		expect('widgets' in parsed.monitors).toBe(false);
+	});
+});

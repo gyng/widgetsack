@@ -72,7 +72,18 @@ describe('scanCssThreats', () => {
 			.d { background: image-set("local.png" 1x) }`;
 		const t = scanCssThreats(css);
 		expect(t.every((x) => x.kind === 'remote-url')).toBe(true);
-		expect(t).toHaveLength(4);
+		expect(t.some((x) => x.detail.includes('local.png'))).toBe(false);
+		expect(t.some((x) => x.detail.includes('cdn.example'))).toBe(true);
+		expect(t.some((x) => x.detail.includes('i.png'))).toBe(true);
+		expect(t.some((x) => x.detail.includes('f.woff2'))).toBe(true);
+	});
+
+	it('flags a remote image-set() candidate that is not the first', () => {
+		const t = scanCssThreats(
+			`.a { background: image-set("local.png" 1x, 'https:evil/2x.png' 2x) }`
+		);
+		expect(t.map((x) => x.kind)).toEqual(['remote-url']);
+		expect(scanCssThreats(`.a { background: image-set("a.png" 1x, "b.png" 2x) }`)).toEqual([]);
 	});
 
 	it('normalizeCss decodes escapes safely (NUL / out-of-range → U+FFFD, other chars stand for themselves)', () => {
@@ -114,5 +125,24 @@ describe('threatSummary', () => {
 			{ kind: 'overlay', detail: 'position: sticky' }
 		]);
 		expect(s).toBe('2 full-screen overlay rules');
+	});
+});
+
+describe('scanCssThreats remote classification', () => {
+	it.each([
+		['url(https:evil.example/p.png)', true],
+		['url("https:/evil.example/p.png")', true],
+		[String.raw`url("https:\\evil.example/p.png")`, true],
+		[String.raw`url("\\\\evil.example/p.png")`, true],
+		['url(ftp://evil.example/p.png)', true],
+		['url("https://asset.localhost/x.png")', false],
+		['url(http://art.localhost/abc)', false],
+		['url("https://art.localhost.evil.example/x")', true],
+		['url("blob:http://tauri.localhost/1")', false],
+		[String.raw`url(\\evil.example/p.png)`, false],
+		['url(/root.png)', false]
+	])('%s → remote %s', (target, remote) => {
+		const kinds = scanCssThreats(`.a { background: ${target} }`).map((t) => t.kind);
+		expect(kinds.includes('remote-url')).toBe(remote);
 	});
 });

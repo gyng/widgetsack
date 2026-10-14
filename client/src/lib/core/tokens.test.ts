@@ -61,7 +61,16 @@ describe('tokens', () => {
 		['--np-accent', '"unterminated', false],
 		['--np-accent', '"a\nb"', false],
 		['--np-accent', '"</style><img src=x>"', false],
-		['--np-accent', 'red /* swallow', false]
+		['--np-accent', 'red /* swallow', false],
+		['--np-accent', 'calc((1px + 2px) * 2)', true],
+		['--np-accent', 'url("a(b")', true],
+		['--np-accent', '[a] b', true],
+		['--np-accent', 'foo(', false],
+		['--np-accent', 'a [b', false],
+		['--np-accent', 'a)', false],
+		['--np-accent', 'a]', false],
+		['--np-accent', '(a]', false],
+		['--np-accent', '([)]', false]
 	])('safeTokenEntry(%s, %s) is %s', (key, value, safe) => {
 		expect(safeTokenEntry(key, value)).toBe(safe);
 	});

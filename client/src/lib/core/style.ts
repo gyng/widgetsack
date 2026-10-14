@@ -57,6 +57,25 @@ export function cssBraceImbalance(css: string): string | null {
 }
 
 /**
+ * Escape `value` for use inside a DOUBLE-QUOTED CSS attribute selector (`[data-w="<value>"]`). Ids
+ * come from shared sacks / packages, so a raw `"` would close the string and let the rest of the id
+ * write top-level rules. A backslash and `"` are backslash-escaped; control chars (incl. newline,
+ * which would end the string) and `<` (the HTML parser ends a <style> at `</style` even inside a CSS
+ * string) become hex escapes — NUL as U+FFFD, like `CSS.escape`. Pure (core has no DOM `CSS.escape`).
+ */
+export function cssAttrValue(value: string): string {
+	let out = '';
+	for (const c of value) {
+		const code = c.charCodeAt(0);
+		if (c === '\\' || c === '"') out += `\\${c}`;
+		else if (c === '<' || code < 0x20 || code === 0x7f)
+			out += `\\${(code === 0 ? 0xfffd : code).toString(16)} `;
+		else out += c;
+	}
+	return out;
+}
+
+/**
  * Scope a user CSS block to `selector` via native CSS nesting: `selector { <css> }`. Both
  * bare declarations (`color: red`) and nested selectors (`.value { … }`) work inside the
  * wrapper in a WebView2/Chromium runtime. Returns '' for empty/whitespace css. Pure.
@@ -112,13 +131,13 @@ export function assembleStyles(opts: {
 	if (theme) parts.push(theme);
 
 	for (const def of opts.library?.defs ?? []) {
-		const defSel = `[data-def="${def.id}"]`;
+		const defSel = `[data-def="${cssAttrValue(def.id)}"]`;
 		const s = scopeCss(def.css, defSel, (r) => opts.onRejectCss?.(defSel, r));
 		if (s) parts.push(s);
 	}
 
 	const leafCss = (lf: Leaf, prefix: string): void => {
-		const fullId = prefix + lf.id;
+		const fullId = cssAttrValue(prefix + lf.id);
 		const sel = isGroup(lf.unit) ? `[data-group][data-id="${fullId}"]` : `[data-w="${fullId}"]`;
 		const tk = lf.unit.tokens;
 		if (tk && Object.keys(tk).length) parts.push(tokensToCss(tk, sel));
