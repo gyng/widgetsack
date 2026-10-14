@@ -55,6 +55,20 @@ pub fn main_reclaimed(populated_elsewhere: bool) {
     LAYOUT_EMPTY.store(!populated_elsewhere, Ordering::SeqCst);
 }
 
+/// A fresh `main` was created (command/windows.rs `respawn_main_hidden`). Whatever it previously
+/// reported is stale: the layout may have been repopulated since (that's usually WHY it was
+/// respawned), and if it is still empty everywhere the new `main` reports so again via
+/// `main_reclaimed` before it goes away. Without this reset a later zero-window recovery — say a
+/// renderer crash of the now-populated overlay — would wait the 10-minute steady-state pace.
+pub fn main_respawned() {
+    LAYOUT_EMPTY.store(false, Ordering::SeqCst);
+}
+
+/// The pause before the next respawn attempt, from the last layout report.
+fn current_respawn_delay() -> Duration {
+    respawn_delay(LAYOUT_EMPTY.load(Ordering::SeqCst))
+}
+
 /// Pure seam: whether an `ExitRequested` should be prevented. `code` is `None` when the request
 /// came from the last window closing (the state a tray app must survive) and `Some(_)` for an
 /// explicit `app.exit(..)` — tray Quit — which must still exit.
@@ -72,7 +86,7 @@ pub fn on_zero_windows(app: &tauri::AppHandle) {
     if RESPAWN_PENDING.swap(true, Ordering::SeqCst) {
         return;
     }
-    let delay = respawn_delay(LAYOUT_EMPTY.load(Ordering::SeqCst));
+    let delay = current_respawn_delay();
     crate::log::info(
         "keepalive",
         "all windows closed; app kept alive, main respawn scheduled",
@@ -117,7 +131,23 @@ pub fn on_zero_windows(app: &tauri::AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{RESPAWN_DELAY, RESPAWN_DELAY_EMPTY, respawn_delay, should_prevent_exit};
+    use super::{
+        RESPAWN_DELAY, RESPAWN_DELAY_EMPTY, current_respawn_delay, main_reclaimed, main_respawned,
+        respawn_delay, should_prevent_exit,
+    };
+
+    #[test]
+    fn a_respawned_main_clears_the_stale_empty_layout_report() {
+        // main reported "empty everywhere" and went away; a later respawn (layout repopulated)
+        // must restore the prompt 30 s recovery pace, not keep the 10-minute steady-state one.
+        main_reclaimed(false);
+        assert_eq!(current_respawn_delay(), RESPAWN_DELAY_EMPTY);
+        main_respawned();
+        assert_eq!(current_respawn_delay(), RESPAWN_DELAY);
+        // A populated secondary keeps the app alive: recovery pace too.
+        main_reclaimed(true);
+        assert_eq!(current_respawn_delay(), RESPAWN_DELAY);
+    }
 
     #[test]
     fn empty_layout_stretches_the_respawn_pace_instead_of_looping() {

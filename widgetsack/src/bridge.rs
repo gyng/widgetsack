@@ -27,10 +27,10 @@ pub const LAYOUT_CHANGED_EVENT: &str = "layout_changed";
 pub const THEMES_CHANGED_EVENT: &str = "themes_changed";
 pub const CONTROLS_CHANGED_EVENT: &str = "controls_changed";
 
-/// Tray / global-hotkey / single-instance broadcasts (main.rs). `toggle_edit` is also emitted by
-/// the client's own Ctrl+E handler.
+/// Tray / global-hotkey broadcasts (main.rs). `toggle_edit` is also emitted by the client's own
+/// Ctrl+E handler. (There is no `open_studio` event any more: main.rs `open_or_focus_studio` builds
+/// the studio window itself rather than relying on main's JS listener.)
 pub const TOGGLE_EDIT_EVENT: &str = "toggle_edit";
-pub const OPEN_STUDIO_EVENT: &str = "open_studio";
 pub const ARRANGE_ZONES_EVENT: &str = "arrange_zones";
 /// Re-fit every overlay to the CURRENT display layout (tray "Re-fit overlays" + the manual trigger).
 /// Each overlay/studio listens and re-runs its fit/reconcile — used when monitors are

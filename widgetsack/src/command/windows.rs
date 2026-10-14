@@ -102,9 +102,12 @@ pub(crate) fn respawn_main_hidden(app: &tauri::AppHandle, reason: &str) {
         .disable_drag_drop_handler()
         .build()
     {
-        Ok(_) => log::info("reclaim", "respawned primary overlay (main)")
-            .field("reason", reason)
-            .emit(),
+        Ok(_) => {
+            crate::keepalive::main_respawned();
+            log::info("reclaim", "respawned primary overlay (main)")
+                .field("reason", reason)
+                .emit()
+        }
         Err(err) => log::warn("reclaim", "failed to respawn main")
             .field("error", err)
             .emit(),

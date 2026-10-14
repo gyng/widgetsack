@@ -773,6 +773,27 @@ pub(crate) fn remove_active_window(state: &ActiveSensors, label: &str) {
         .remove(label);
 }
 
+/// Store window `label`'s demand report and return the ids it newly wants — unless `alive()` says
+/// the window is gone. `alive` runs UNDER the demand lock: Tauri drops a window from its registry
+/// before the `Destroyed` handler's cleanup (`remove_active_window`) takes this lock, so a report
+/// still in flight from a dying webview either lands before that cleanup (and is cleared by it) or
+/// sees the window gone here and is dropped — it can never re-insert demand after the cleanup.
+fn record_window_demand(
+    state: &ActiveSensors,
+    label: &str,
+    ids: HashSet<String>,
+    alive: impl FnOnce() -> bool,
+) -> Option<Vec<String>> {
+    let mut map = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    if !alive() {
+        return None;
+    }
+    let added = newly_added(map.get(label), &ids);
+    map.insert(label.to_string(), ids);
+    state.1.store(true, Ordering::Release);
+    Some(added)
+}
+
 /// Discover dynamic identifiers without refreshing disk capacity, I/O, clocks, or GPU values.
 #[tauri::command]
 pub fn get_system_sensor_catalog() -> Vec<String> {
@@ -821,11 +842,13 @@ pub async fn set_active_sensors<R: Runtime>(
     ids: Vec<String>,
 ) -> Result<(), ()> {
     let ids: HashSet<String> = ids.into_iter().collect();
-    let added = {
-        let mut map = state.0.lock().unwrap_or_else(|e| e.into_inner());
-        let previous = map.insert(window.label().to_string(), ids.clone());
-        state.1.store(true, Ordering::Release);
-        newly_added(previous.as_ref(), &ids)
+    let Some(added) = record_window_demand(&state, window.label(), ids, || {
+        window
+            .app_handle()
+            .get_webview_window(window.label())
+            .is_some()
+    }) else {
+        return Ok(());
     };
     // Demand-gated peer sources only stream what some window wants, and the pollers emit once per
     // fetch; a window that just started wanting an HA entity, MQTT topic or polled value is primed
@@ -1779,6 +1802,29 @@ mod tests {
         let map = state.0.lock().unwrap();
         assert!(!map.contains_key("studio"));
         assert_eq!(map["overlay-1"], HashSet::from(["gpu.util".to_string()]));
+    }
+
+    #[test]
+    fn a_report_from_a_destroyed_window_cannot_reinsert_its_demand() {
+        let state = ActiveSensors(Mutex::new(HashMap::new()), AtomicBool::new(false));
+        let ids = HashSet::from(["gpu.util".to_string()]);
+        // The window is already gone (its cleanup ran): the late report is dropped.
+        assert_eq!(
+            record_window_demand(&state, "overlay-1", ids.clone(), || false),
+            None
+        );
+        assert!(state.0.lock().unwrap().is_empty());
+        assert!(!state.has_reported());
+        // A live window's report is recorded and diffed as before.
+        assert_eq!(
+            record_window_demand(&state, "overlay-1", ids.clone(), || true),
+            Some(vec!["gpu.util".to_string()])
+        );
+        assert_eq!(state.0.lock().unwrap()["overlay-1"], ids);
+        assert_eq!(
+            record_window_demand(&state, "overlay-1", ids, || true),
+            Some(vec![])
+        );
     }
 
     #[test]

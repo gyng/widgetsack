@@ -62,6 +62,9 @@ fn request_valid(
         || system.len() > 128_000
         || prompt.len() + system.len() > 512_000
         || model.len() > 256
+        // The model is passed as its own argv entry after `--model`; a leading '-' could be read by
+        // the CLI as another flag instead of the model name.
+        || model.starts_with('-')
     {
         return Err("Invalid studio agent request".into());
     }
@@ -586,5 +589,13 @@ mod tests {
         assert!(request_valid("id", "pi-bundled", "hi", "", "").is_err());
         assert!(request_valid("id", "pi", "", "", "").is_err());
         assert!(request_valid("id", "pi", &"x".repeat(512_001), "", "").is_err());
+    }
+    #[test]
+    fn rejects_a_model_that_would_read_as_a_cli_flag() {
+        for model in ["-x", "--dangerously-skip-permissions", "-"] {
+            assert!(request_valid("id", "claude", "hi", "", model).is_err());
+        }
+        assert!(request_valid("id", "claude", "hi", "", "claude-sonnet-4-5").is_ok());
+        assert!(request_valid("id", "pi", "hi", "", "openai/gpt-5-mini").is_ok());
     }
 }

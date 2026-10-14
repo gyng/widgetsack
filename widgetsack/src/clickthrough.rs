@@ -35,13 +35,31 @@ pub struct InteractiveRects(pub Mutex<HashMap<String, Vec<ScreenRect>>>);
 /// list clears them (e.g. in edit mode, where the whole window is interactive).
 #[tauri::command]
 pub fn set_interactive_rects(
+    app: AppHandle,
     state: tauri::State<'_, InteractiveRects>,
     label: String,
     rects: Vec<ScreenRect>,
 ) {
+    let alive = || app.get_webview_window(&label).is_some();
+    store_rects(&state, label.clone(), rects, alive);
+}
+
+/// Store (or, for an empty list, clear) `label`'s rects — unless `alive()` says the window is gone.
+/// `alive` runs UNDER the rects lock: Tauri drops a window from its registry before the `Destroyed`
+/// handler's `forget_window` takes this lock, so a call still in flight from a dying webview can't
+/// re-insert rects after that cleanup (which would keep the cursor watcher from ever idling).
+fn store_rects(
+    state: &InteractiveRects,
+    label: String,
+    rects: Vec<ScreenRect>,
+    alive: impl FnOnce() -> bool,
+) {
     // Recover from a poisoned lock (a prior panic while holding it) instead of panicking again —
     // the stored rects are plain data, so a poisoned guard is still safe to use.
     let mut map = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    if !alive() {
+        return;
+    }
     if rects.is_empty() {
         map.remove(&label);
     } else {
@@ -291,7 +309,24 @@ fn set_wallpaper_parent(_window: &tauri::WebviewWindow, _enabled: bool) -> Resul
 
 #[cfg(test)]
 mod tests {
-    use super::ScreenRect;
+    use super::{InteractiveRects, ScreenRect, store_rects};
+
+    #[test]
+    fn rects_from_a_destroyed_window_are_not_reinserted() {
+        let state = InteractiveRects::default();
+        let rect = ScreenRect {
+            x: 0.0,
+            y: 0.0,
+            w: 10.0,
+            h: 10.0,
+        };
+        store_rects(&state, "overlay-1".into(), vec![rect], || false);
+        assert!(state.0.lock().unwrap().is_empty());
+        store_rects(&state, "overlay-1".into(), vec![rect], || true);
+        assert_eq!(state.0.lock().unwrap()["overlay-1"], vec![rect]);
+        store_rects(&state, "overlay-1".into(), vec![], || true);
+        assert!(state.0.lock().unwrap().is_empty());
+    }
 
     #[test]
     fn contains_includes_origin_excludes_far_edge() {

@@ -228,8 +228,10 @@ pub async fn save_layout(
 
 /// Filename prefix for layout backups taken on parse failure (`widgets.json.bad-<epoch-ms>`).
 const LAYOUT_BACKUP_PREFIX: &str = "widgets.json.bad-";
-/// How many parse-failure backups to keep (oldest pruned).
-const LAYOUT_BACKUPS_KEPT: usize = 3;
+/// How many parse-failure backups to keep (oldest pruned). Every window backs up once per session
+/// when the layout fails to parse, so this must comfortably exceed one session's window count (on
+/// top of the content dedupe in `reusable_backup`) or one bad session pushes out the last one's.
+const LAYOUT_BACKUPS_KEPT: usize = 10;
 
 /// Pure seam: which backup FILENAMES to delete so only the newest `keep` remain. The epoch-ms
 /// suffix is fixed-width for any realistic date, so a plain descending lexicographic sort is
@@ -237,6 +239,19 @@ const LAYOUT_BACKUPS_KEPT: usize = 3;
 fn stale_backups(mut names: Vec<String>, keep: usize) -> Vec<String> {
     names.sort_by(|a, b| b.cmp(a));
     names.split_off(keep.min(names.len()))
+}
+
+/// Pure seam: the newest existing backup (by `names`), if its bytes — fetched via `read` — are
+/// identical to the `current` layout. Several windows hitting the same unparseable widgets.json
+/// each request a backup; they then share one file instead of each adding a copy (and pruning
+/// older, DIFFERENT backups). Tested below.
+fn reusable_backup(
+    names: &[String],
+    current: &[u8],
+    read: impl FnOnce(&str) -> Option<Vec<u8>>,
+) -> Option<String> {
+    let newest = names.iter().max()?;
+    (read(newest)? == current).then(|| newest.clone())
 }
 
 /// The last-known physical size of each app window, from the window-state plugin's
@@ -311,23 +326,38 @@ pub async fn backup_layout(
     let dir = path
         .parent()
         .ok_or_else(|| "layout path has no parent".to_string())?;
+    let backup_names = || -> Vec<String> {
+        fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter_map(|e| e.file_name().into_string().ok())
+                    .filter(|n| n.starts_with(LAYOUT_BACKUP_PREFIX))
+                    .collect()
+            })
+            .unwrap_or_default()
+    };
+    let current = fs::read(&path).map_err(|e| e.to_string())?;
+    // Another window already backed up these exact bytes: reuse that file (it still authorizes
+    // recovery — save_layout re-reads it and compares contents) instead of adding a duplicate.
+    if let Some(existing) = reusable_backup(&backup_names(), &current, |name| {
+        fs::read(dir.join(name)).ok()
+    }) {
+        let existing = dir.join(existing);
+        *backup_path = Some(existing.clone());
+        return Ok(Some(existing.display().to_string()));
+    }
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_millis();
     let backup = dir.join(format!("{LAYOUT_BACKUP_PREFIX}{ts}"));
-    fs::copy(&path, &backup).map_err(|e| e.to_string())?;
+    // Write the bytes just compared (not a fresh copy), so the dedupe check saw what was saved.
+    fs::write(&backup, &current).map_err(|e| e.to_string())?;
     *backup_path = Some(backup.clone());
     // Prune older backups (best-effort — a leftover extra backup is harmless).
-    if let Ok(entries) = fs::read_dir(dir) {
-        let names: Vec<String> = entries
-            .filter_map(|e| e.ok())
-            .filter_map(|e| e.file_name().into_string().ok())
-            .filter(|n| n.starts_with(LAYOUT_BACKUP_PREFIX))
-            .collect();
-        for stale in stale_backups(names, LAYOUT_BACKUPS_KEPT) {
-            let _ = fs::remove_file(dir.join(stale));
-        }
+    for stale in stale_backups(backup_names(), LAYOUT_BACKUPS_KEPT) {
+        let _ = fs::remove_file(dir.join(stale));
     }
     log::warn(
         "layout",
@@ -621,6 +651,33 @@ mod tests {
         );
         // Fewer than `keep` → nothing to prune.
         assert_eq!(stale_backups(names[..2].to_vec(), 3), Vec::<String>::new());
+    }
+
+    #[test]
+    fn identical_layout_reuses_the_newest_backup_instead_of_adding_one() {
+        let names = vec![
+            "widgets.json.bad-1783600000000".to_string(),
+            "widgets.json.bad-1783700000000".to_string(),
+        ];
+        let read = |bytes: &'static [u8]| {
+            move |name: &str| {
+                // Only the NEWEST backup may be consulted.
+                assert_eq!(name, "widgets.json.bad-1783700000000");
+                Some(bytes.to_vec())
+            }
+        };
+        assert_eq!(
+            reusable_backup(&names, b"{bad", read(b"{bad")),
+            Some("widgets.json.bad-1783700000000".to_string())
+        );
+        // Different bytes (a new corruption) need their own backup.
+        assert_eq!(reusable_backup(&names, b"{worse", read(b"{bad")), None);
+        // An unreadable newest backup or no backups at all can't be reused.
+        assert_eq!(reusable_backup(&names, b"{bad", |_| None), None);
+        assert_eq!(
+            reusable_backup(&[], b"{bad", |_| Some(b"{bad".to_vec())),
+            None
+        );
     }
 
     #[test]

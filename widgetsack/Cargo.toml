@@ -53,7 +53,7 @@ fontdb = "0.23.0"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = { git = "https://github.com/tauri-apps/plugins-workspace", branch = "v2" }
-# Second-launch focuses the running app instead of spawning a duplicate overlay (emits open_studio).
+# Second-launch focuses the running app instead of spawning a duplicate overlay (opens/focuses the studio).
 tauri-plugin-single-instance = "2"
 # "Launch at login" toggle (wired to the Settings UI separately); LaunchAgent on macOS, registry on Windows.
 tauri-plugin-autostart = "2"

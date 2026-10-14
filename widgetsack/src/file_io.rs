@@ -71,13 +71,23 @@ fn atomic_write_mode(path: &Path, contents: &str, overwrite: bool) -> Result<(),
     let mut tmp = path.to_path_buf();
     let seq = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
     tmp.set_file_name(format!("{file_name}.tmp-{}-{seq}", std::process::id()));
-    if let Err(err) = fs::write(&tmp, contents) {
+    if let Err(err) = write_durably(&tmp, contents) {
         let _ = fs::remove_file(&tmp);
         return Err(err.to_string());
     }
     replace_file(&tmp, path, overwrite).inspect_err(|_| {
         let _ = fs::remove_file(&tmp);
     })
+}
+
+/// Write the temp file and flush it to disk BEFORE it is renamed over the target. Without the
+/// flush, a power loss after the (write-through) rename could leave the rename durable but the data
+/// not — i.e. a zero-length widgets.json in place of the previous good copy.
+fn write_durably(path: &Path, contents: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = fs::File::create(path)?;
+    file.write_all(contents.as_bytes())?;
+    file.sync_all()
 }
 
 #[cfg(not(windows))]

@@ -68,13 +68,13 @@ pub struct AppState {
     pub sessions: Mutex<HashMap<usize, SessionRecord>>,
 }
 
-/// Open the studio window, or focus it if already open. Normally the primary `main` overlay's JS owns
-/// studio construction (it listens for `open_studio`) — but `main` is DESTROYED to reclaim its renderer
-/// when the primary monitor is empty (overlay.ts `setMainWindowVisible` / command.rs `watch_layout`),
-/// and a dead window can't host that listener. So when `main` is absent we build the studio directly
-/// here, mirroring overlay.ts `openStudio`, keeping the tray "Open studio", the tray left-click, and
-/// the single-instance second-launch working even with no primary overlay present. Runs on the main
-/// thread (its callers are tray/single-instance handlers on the event loop).
+/// Open the studio window, or focus it if already open. Always built HERE, never delegated to the
+/// primary `main` overlay's JS: that `open_studio` listener is registered only at the very end of
+/// main's init (after sources that can wait seconds on an unreachable integration), never if init
+/// throws, and not at all while `main` is destroyed (renderer reclaim) or its renderer has crashed —
+/// any of which used to leave the tray "Open studio", the tray left-click and the single-instance
+/// second launch doing nothing. Runs on the main thread (its callers are tray/single-instance
+/// handlers on the event loop).
 fn open_or_focus_studio(app: &tauri::AppHandle) {
     overlay_diag::log_snapshot(app, "before studio open");
     overlay_diag::log_after(app, "after studio open");
@@ -85,18 +85,12 @@ fn open_or_focus_studio(app: &tauri::AppHandle) {
         let _ = w.set_focus();
         return;
     }
-    if app.get_webview_window("main").is_some() {
-        // `main` is alive — keep a single source of truth for the studio window config: let its JS
-        // build the studio (unchanged path) by emitting the event it listens for.
-        let _ = app.emit(bridge::OPEN_STUDIO_EVENT, ());
-        return;
-    }
     build_studio_window(app);
 }
 
-/// Build the studio webview window directly (mirrors overlay.ts `openStudio`). Split out of
-/// `open_or_focus_studio` so the `--studio` startup launch can build it WITHOUT going through the
-/// main overlay's JS — at boot that webview hasn't registered the `open_studio` listener yet.
+/// Build the studio webview window (mirrors studioWindow.ts `openStudio`). Split out of
+/// `open_or_focus_studio` so the `--studio` startup launch can build it without the focus/restore
+/// handling or the overlay diagnostics.
 fn build_studio_window(app: &tauri::AppHandle) {
     if app.get_webview_window("studio").is_some() {
         return;
@@ -197,8 +191,8 @@ async fn main() -> Result<(), ()> {
     let (tx_gsmtc, mut rx_gsmtc) = mpsc::channel(16);
 
     // Single-instance MUST be the first plugin (its callback fires synchronously on a second
-    // launch, before windows exist). A second launch focuses the running app by emitting
-    // open_studio (the primary overlay opens the studio), then that process exits. SKIPPED for an
+    // launch, before windows exist). A second launch opens/focuses the running app's studio
+    // (`open_or_focus_studio`), then that process exits. SKIPPED for an
     // extra dev instance (`--multi` / WIDGETSACK_MULTI), so it can run alongside the installed
     // release instead of just focusing it — see `multi_instance`.
     let builder = tauri::Builder::default();
@@ -454,8 +448,7 @@ async fn main() -> Result<(), ()> {
             autostart::reconcile(app.handle());
 
             // `--studio` (shortcuts + installer "Run") opens the designer on a manual launch, so the
-            // app shows a window instead of just the silent overlay. Built directly here because the
-            // overlay webview isn't ready to receive `open_studio` yet at boot.
+            // app shows a window instead of just the silent overlay.
             if launched_with_studio_flag() {
                 build_studio_window(app.handle());
             }
@@ -607,8 +600,7 @@ async fn main() -> Result<(), ()> {
                 .show_menu_on_left_click(false)
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "designer" => {
-                        // Opens (or focuses) the studio. Falls back to building it directly when the
-                        // primary overlay (`main`) was reclaimed and can't host the open_studio listener.
+                        // Opens (or focuses) the studio.
                         open_or_focus_studio(app);
                     }
                     "arrange" => {
