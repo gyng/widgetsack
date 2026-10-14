@@ -19,6 +19,7 @@ let onDisplayChange: (() => void) | null = null;
 /** The drift probe handed alongside it (overlays only). */
 let driftProbe: (() => Promise<string | null>) | null = null;
 let onStableDisplayTick: (() => Promise<void>) | null = null;
+let mainAlive = false;
 /** The scale-change callback the hook registered via onOwnScaleChanged (overlays only). */
 let onScaleChange: (() => void) | null = null;
 
@@ -29,6 +30,7 @@ vi.mock('../../overlay', () => ({
 	monitorParam: () => monitorParamValue,
 	listThemes: vi.fn(async () => []),
 	logClient: vi.fn(),
+	mainWindowExists: vi.fn(async () => mainAlive),
 	onOwnScaleChanged: vi.fn(async (cb: () => void) => {
 		onScaleChange = cb;
 		return () => undefined;
@@ -88,6 +90,7 @@ beforeEach(() => {
 	onDisplayChange = null;
 	driftProbe = null;
 	onStableDisplayTick = null;
+	mainAlive = false;
 	onScaleChange = null;
 });
 
@@ -134,9 +137,14 @@ describe('useStudioInit display-change refit', () => {
 		expect(onScaleChange).toBeNull();
 	});
 
-	it('Studio reconciles missing overlays on a stable display tick after monitor wake', async () => {
+	it('Studio reconciles missing overlays on a stable display tick only while main is gone', async () => {
 		renderHook(() => useStudioInit(makeDeps({ studio: true })));
 		await waitFor(() => expect(onStableDisplayTick).not.toBeNull());
+		// main owns reconciliation; a second webview creating the same overlay races it.
+		mainAlive = true;
+		await onStableDisplayTick!();
+		expect(reconcileOverlays).not.toHaveBeenCalled();
+		mainAlive = false;
 		await onStableDisplayTick!();
 		expect(reconcileOverlays).toHaveBeenCalledTimes(1);
 	});

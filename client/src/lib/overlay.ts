@@ -817,6 +817,9 @@ async function reconcileOverlaysOnce(): Promise<void> {
 		const w = byLabel.get(label);
 		if (w) await destroyOverlayWindow(w);
 	}
+	// A live overlay was created successfully, possibly by another webview that won the race: its
+	// earlier failures must not keep counting, or a later display switch could find it given up.
+	for (const label of byLabel.keys()) if (!plan.close.includes(label)) createRetries.delete(label);
 	for (const key of plan.create) {
 		const label = OVERLAY_LABEL_PREFIX + key;
 		if (createRetries.get(label) !== undefined && createRetries.get(label)! >= CREATE_RETRY_MAX) {

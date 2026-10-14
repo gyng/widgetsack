@@ -15,6 +15,7 @@ import {
 	fillPrimaryMonitor,
 	listThemes,
 	logClient,
+	mainWindowExists,
 	monitorParam,
 	onOwnScaleChanged,
 	openStudio,
@@ -133,7 +134,13 @@ export function useStudioInit(deps: StudioInitDeps): void {
 				watchDisplayChanges(
 					triggerRefit,
 					dep.studio ? undefined : () => overlayDrift(ownKey),
-					dep.studio ? () => reconcileOverlays() : undefined
+					// Only while main is gone: main owns reconciliation, and two webviews creating the
+					// same overlay race (the loser burns that overlay's create-retry budget).
+					dep.studio
+						? async () => {
+								if (!(await mainWindowExists())) await reconcileOverlays();
+							}
+						: undefined
 				)
 			);
 			if (scope.disposed) return;
