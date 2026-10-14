@@ -597,23 +597,44 @@ pub async fn capture_studio(app: &AppHandle) -> Result<Value, String> {
 const STDIO_REQUEST_LIMIT: usize = 256_000;
 const STDIO_RESPONSE_LIMIT: usize = 32 * 1024 * 1024;
 
+#[derive(Debug, PartialEq)]
+enum StdioLine {
+    Line(Vec<u8>),
+    TooLarge,
+}
+
 async fn read_stdio_line<R: tokio::io::AsyncBufRead + Unpin>(
     input: &mut R,
-) -> Result<Option<String>, String> {
-    let mut line = String::new();
+) -> Result<Option<StdioLine>, String> {
+    let mut line = Vec::new();
     if (&mut *input)
         .take((STDIO_REQUEST_LIMIT + 1) as u64)
-        .read_line(&mut line)
+        .read_until(b'\n', &mut line)
         .await
         .map_err(|error| error.to_string())?
         == 0
     {
         return Ok(None);
     }
-    if line.len() > STDIO_REQUEST_LIMIT {
-        return Err("MCP request is too large".into());
+    if line.len() <= STDIO_REQUEST_LIMIT {
+        return Ok(Some(StdioLine::Line(line)));
     }
-    Ok(Some(line))
+    // Discard the rest of the oversized line without buffering it.
+    while !line.ends_with(b"\n") {
+        let buffer = input.fill_buf().await.map_err(|error| error.to_string())?;
+        if buffer.is_empty() {
+            break;
+        }
+        let (used, done) = match buffer.iter().position(|&byte| byte == b'\n') {
+            Some(end) => (end + 1, true),
+            None => (buffer.len(), false),
+        };
+        input.consume(used);
+        if done {
+            break;
+        }
+    }
+    Ok(Some(StdioLine::TooLarge))
 }
 
 fn stdio_http_client() -> Result<reqwest::Client, String> {
@@ -685,7 +706,15 @@ async fn forward_stdio<R: tokio::io::AsyncBufRead + Unpin, W: tokio::io::AsyncWr
             }
             return Ok(());
         };
-        let value: Value = match serde_json::from_str(&line) {
+        let line = match line {
+            StdioLine::Line(line) => line,
+            StdioLine::TooLarge => {
+                let error = rpc_error(&Value::Null, -32600, "MCP request is too large").to_string();
+                write_stdio_response(output, error.as_bytes()).await?;
+                continue;
+            }
+        };
+        let value: Value = match serde_json::from_slice(&line) {
             Ok(value) => value,
             Err(_) => {
                 let error = rpc_error(&Value::Null, -32700, "Invalid JSON").to_string();
@@ -713,7 +742,7 @@ async fn forward_stdio<R: tokio::io::AsyncBufRead + Unpin, W: tokio::io::AsyncWr
                 let result = post_stdio_request(&client, url, &token, session.as_deref(), &value)
                     .await
                     .map(|(bytes, _)| bytes);
-                (key, result)
+                (key, value["id"].clone(), result)
             });
             continue;
         }
@@ -726,32 +755,51 @@ async fn forward_stdio<R: tokio::io::AsyncBufRead + Unpin, W: tokio::io::AsyncWr
                 cancelled.insert(key);
             }
         }
-        let (bytes, assigned) =
-            post_stdio_request(client, url.clone(), token, session.as_deref(), &value).await?;
-        if let Some(id) = assigned {
-            session = Some(id);
+        let result = post_stdio_request(client, url.clone(), token, session.as_deref(), &value)
+            .await
+            .map(|(bytes, assigned)| {
+                if let Some(id) = assigned {
+                    session = Some(id);
+                }
+                bytes
+            });
+        write_stdio_result(output, &value["id"], result).await?;
+    }
+}
+
+/// Endpoint failures answer that request; the bridge stays up for the client's other requests.
+async fn write_stdio_result<W: tokio::io::AsyncWrite + Unpin>(
+    output: &mut W,
+    id: &Value,
+    result: Result<Option<Vec<u8>>, String>,
+) -> Result<(), String> {
+    match result {
+        Ok(Some(bytes)) => write_stdio_response(output, &bytes).await,
+        Ok(None) => Ok(()),
+        Err(error) if sessions::valid_id(id) => {
+            let error = rpc_error(id, -32603, &error).to_string();
+            write_stdio_response(output, error.as_bytes()).await
         }
-        if let Some(bytes) = bytes {
-            write_stdio_response(output, &bytes).await?;
+        Err(error) => {
+            eprintln!("MCP notification failed: {error}");
+            Ok(())
         }
     }
 }
 
-type StdioReply = (String, Result<Option<Vec<u8>>, String>);
+type StdioReply = (String, Value, Result<Option<Vec<u8>>, String>);
 async fn emit_stdio_reply<W: tokio::io::AsyncWrite + Unpin>(
     output: &mut W,
     reply: Result<StdioReply, tokio::task::JoinError>,
     active: &mut std::collections::HashSet<String>,
     cancelled: &mut std::collections::HashSet<String>,
 ) -> Result<(), String> {
-    let (id, result) = reply.map_err(|error| error.to_string())?;
-    active.remove(&id);
-    if !cancelled.remove(&id)
-        && let Some(bytes) = result?
-    {
-        write_stdio_response(output, &bytes).await?;
+    let (key, id, result) = reply.map_err(|error| error.to_string())?;
+    active.remove(&key);
+    if cancelled.remove(&key) {
+        return Ok(());
     }
-    Ok(())
+    write_stdio_result(output, &id, result).await
 }
 
 async fn post_stdio_request(
@@ -1012,6 +1060,66 @@ mod tests {
         assert_eq!(replies[0], rpc_error(&Value::Null, -32700, "Invalid JSON"));
         assert_eq!(replies[1], rpc_result(&json!(7), json!({})));
     }
+    #[tokio::test]
+    async fn stdio_reports_endpoint_failures_per_request_and_keeps_running() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url =
+            reqwest::Url::parse(&format!("http://{}/mcp", listener.local_addr().unwrap())).unwrap();
+        let server = tokio::spawn(async move {
+            tokio::time::timeout(Duration::from_secs(3), async {
+                for _ in 0..3 {
+                    let (mut stream, _) = listener.accept().await.unwrap();
+                    let (_, bytes) = crate::control::read_request(&mut stream).await.unwrap();
+                    let request: Value = serde_json::from_slice(&bytes).unwrap();
+                    let status = if request["method"] == "ping" {
+                        "200 OK"
+                    } else {
+                        "500 Internal Server Error"
+                    };
+                    crate::control::write_resp(
+                        &mut stream,
+                        status,
+                        &rpc_result(&request["id"], json!({})),
+                    )
+                    .await;
+                }
+            })
+            .await
+            .unwrap();
+        });
+        let mut input = &b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"studio_read\"}}\n{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"ping\"}\n"[..];
+        let mut output = Vec::new();
+        let result = forward_stdio(
+            &mut input,
+            &mut output,
+            &stdio_http_client().unwrap(),
+            url,
+            "fixture-token",
+        )
+        .await;
+        if result.is_err() {
+            server.abort();
+        }
+        let joined = server.await;
+        assert!(result.is_ok(), "{result:?}");
+        joined.unwrap();
+        let mut replies: Vec<Value> = String::from_utf8(output)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        replies.sort_by_key(|reply| reply["id"].as_i64());
+        assert_eq!(replies.len(), 2);
+        assert_eq!(replies[0]["id"], 1);
+        assert_eq!(replies[0]["error"]["code"], -32603);
+        assert!(
+            replies[0]["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("500")
+        );
+        assert_eq!(replies[1], rpc_result(&json!(2), json!({})));
+    }
 
     #[tokio::test]
     async fn aborted_tool_tasks_release_their_pending_request() {
@@ -1064,13 +1172,59 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn oversized_stdio_input_is_rejected_before_consuming_the_entire_line() {
+    async fn oversized_stdio_lines_are_skipped_and_the_next_line_is_intact() {
+        for oversized in [
+            STDIO_REQUEST_LIMIT,
+            STDIO_REQUEST_LIMIT + 1,
+            STDIO_REQUEST_LIMIT * 8,
+        ] {
+            let mut bytes = vec![b'x'; oversized];
+            bytes.extend_from_slice(b"\nnext\n");
+            let mut input = bytes.as_slice();
+            assert_eq!(
+                read_stdio_line(&mut input).await.unwrap(),
+                Some(StdioLine::TooLarge)
+            );
+            assert_eq!(
+                read_stdio_line(&mut input).await.unwrap(),
+                Some(StdioLine::Line(b"next\n".to_vec()))
+            );
+        }
         let bytes = vec![b'x'; STDIO_REQUEST_LIMIT * 8];
         let mut input = bytes.as_slice();
-        assert!(read_stdio_line(&mut input).await.is_err());
-        assert!(
-            bytes.len() - input.len() <= STDIO_REQUEST_LIMIT + 1,
-            "read the entire oversized request before rejecting it"
+        assert_eq!(
+            read_stdio_line(&mut input).await.unwrap(),
+            Some(StdioLine::TooLarge)
+        );
+        assert!(read_stdio_line(&mut input).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn stdio_answers_an_oversized_request_and_keeps_reading() {
+        let mut bytes = vec![b'x'; STDIO_REQUEST_LIMIT * 2];
+        bytes.extend_from_slice(b"\n\xff{}\n");
+        let mut output = Vec::new();
+        let url = reqwest::Url::parse("http://127.0.0.1:9/mcp").unwrap();
+        let result = forward_stdio(
+            &mut bytes.as_slice(),
+            &mut output,
+            &stdio_http_client().unwrap(),
+            url,
+            "fixture-token",
+        )
+        .await;
+        assert!(result.is_ok(), "{result:?}");
+        let replies: Vec<Value> = String::from_utf8(output)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(
+            replies,
+            [
+                rpc_error(&Value::Null, -32600, "MCP request is too large"),
+                rpc_error(&Value::Null, -32700, "Invalid JSON")
+            ]
         );
     }
 
@@ -1078,21 +1232,19 @@ mod tests {
     async fn stdio_requests_keep_lines_and_final_unterminated_input_separate() {
         let mut input = b"first\nlast".as_slice();
         assert_eq!(
-            read_stdio_line(&mut input).await.unwrap().as_deref(),
-            Some("first\n")
+            read_stdio_line(&mut input).await.unwrap(),
+            Some(StdioLine::Line(b"first\n".to_vec()))
         );
         assert_eq!(
-            read_stdio_line(&mut input).await.unwrap().as_deref(),
-            Some("last")
+            read_stdio_line(&mut input).await.unwrap(),
+            Some(StdioLine::Line(b"last".to_vec()))
         );
         assert!(read_stdio_line(&mut input).await.unwrap().is_none());
         let bytes = vec![b'x'; STDIO_REQUEST_LIMIT];
-        assert!(
-            read_stdio_line(&mut bytes.as_slice())
-                .await
-                .unwrap()
-                .is_some()
-        );
+        assert!(matches!(
+            read_stdio_line(&mut bytes.as_slice()).await.unwrap(),
+            Some(StdioLine::Line(_))
+        ));
     }
 
     #[tokio::test]

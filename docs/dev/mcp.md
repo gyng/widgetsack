@@ -30,6 +30,8 @@ Screenshots contain Studio only.
 The HTTP server binds to `127.0.0.1`.
 The stdio bridge does not follow HTTP redirects.
 It limits each request line to 256,000 bytes and each response to 32 MiB.
+An oversized or malformed line gets a JSON-RPC error, and the bridge reads the next line.
+If the app endpoint fails a request, the bridge answers that request ID with error `-32603` and stays running.
 The response limit includes PNG screenshot data and JSON metadata.
 It checks a per-launch bearer token and rejects browser Origin headers.
 Disabling MCP cancels pending requests.
