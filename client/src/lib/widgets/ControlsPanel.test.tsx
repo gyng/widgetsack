@@ -3,13 +3,22 @@ import { act, fireEvent, render, within } from '@testing-library/react';
 import '../core/controls.defaults'; // register the built-in inventory
 import ControlsPanel from './ControlsPanel';
 import { listControls } from '../core/controls';
+import type { EditHotkeyStatus } from '../core/editHotkey';
+
+const { getEditHotkey } = vi.hoisted(() => ({
+	getEditHotkey: vi.fn(async (): Promise<EditHotkeyStatus | null> => null)
+}));
+vi.mock('../appUpdate', () => ({ getEditHotkey }));
 
 const noop = () => undefined;
 // The save control's label as registered (the wording is owned by controls.defaults; the tests care
 // about the row, not the word).
 const SAVE_LABEL = listControls().find((c) => c.id === 'studio.save')!.label;
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+	vi.restoreAllMocks();
+	getEditHotkey.mockReset().mockResolvedValue(null);
+});
 
 describe('ControlsPanel', () => {
 	it('lists controls with their formatted bindings + the read-only built-in global shortcuts', () => {
@@ -27,6 +36,29 @@ describe('ControlsPanel', () => {
 		expect(within(edit).queryByText('Rebind')).toBeNull();
 		expect(within(rescue).queryByText('Rebind')).toBeNull();
 		expect(queryByText('set in app')).toBeNull();
+	});
+
+	it.each([
+		['the configured chord', { hotkey: 'Win+Alt+E', active: true, error: null }, 'Win+Alt+E'],
+		['Off', { hotkey: 'Off', active: false, error: null }, 'Off']
+	] as const)('lists the global edit shortcut as %s', async (_name, status, keys) => {
+		getEditHotkey.mockResolvedValueOnce(status);
+		const { findByText, queryByText } = render(
+			<ControlsPanel overrides={{}} onRebind={noop} onReset={noop} onResetAll={noop} />
+		);
+		const row = (await findByText(keys)).closest('.cp-row') as HTMLElement;
+		expect(row.textContent).toContain('Toggle desktop edit mode (global)');
+		expect(queryByText('Ctrl+Alt+E')).toBeNull();
+	});
+
+	it('ignores a hotkey read that lands after unmount', async () => {
+		let resolve!: (s: EditHotkeyStatus | null) => void;
+		getEditHotkey.mockImplementationOnce(() => new Promise((r) => (resolve = r)));
+		const { unmount } = render(
+			<ControlsPanel overrides={{}} onRebind={noop} onReset={noop} onResetAll={noop} />
+		);
+		unmount();
+		await act(async () => resolve({ hotkey: 'Off', active: false, error: null }));
 	});
 
 	it('captures the next chord on Rebind and reports the new key trigger', () => {

@@ -169,6 +169,10 @@ pub fn set_window_interactive(
         if interactive {
             let _ = win.show();
             let _ = win.set_focus();
+        } else {
+            // Click-through again, but its rects were forgotten when it went interactive (or by a
+            // rescue): ask the window to re-send them, or its widgets stay unclickable.
+            let _ = app.emit(bridge::RESYNC_INTERACTIVE_RECTS_EVENT, &label);
         }
     }
     Ok(())

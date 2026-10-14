@@ -198,12 +198,17 @@ function EditHotkeySetting() {
 			alive = false;
 		};
 	}, []);
+	// One change at a time: a second pick before the first lands could finish out of order.
+	const [busy, setBusy] = useState(false);
 	const onPick = async (hotkey: string) => {
 		setError(null);
+		setBusy(true);
 		try {
 			setStatus(await setEditHotkey(hotkey));
 		} catch (err) {
 			setError(err instanceof Error ? err.message : String(err));
+		} finally {
+			setBusy(false);
 		}
 	};
 	const failed = status?.error ?? null;
@@ -216,6 +221,7 @@ function EditHotkeySetting() {
 						value={status.hotkey}
 						options={editHotkeyOptions(status.hotkey)}
 						onChange={(v) => void onPick(v)}
+						disabled={busy}
 						searchable={false}
 						aria-label="Edit mode shortcut"
 					/>

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { WidgetInstance } from './layout';
 import { container, emptyRoot, group, leaf, type Library, type MonitorLayout } from './layoutTree';
+import { BUILTIN_THEMES } from './builtinThemes';
+import { safeTokenEntry, tokensToCss } from './tokens';
 import { assembleStyles, cssAttrValue, cssBraceImbalance, scopeCss } from './style';
 
 const prim = (id: string, css?: string): WidgetInstance => ({
@@ -45,12 +47,60 @@ describe('scopeCss', () => {
 		expect(scopeCss('.value { fill: red }', '[data-w="x"]')).toContain('fill: red');
 	});
 
-	it('flags an unclosed comment or string even when the braces balance (it would swallow what follows)', () => {
+	it('flags an unclosed comment even when the braces balance (it would swallow what follows)', () => {
 		expect(cssBraceImbalance('.a { color: red } /* open')).toBe('an unclosed "/*" comment');
-		expect(cssBraceImbalance('.a { color: red } "open')).toBe('an unterminated string');
-		// a bare newline ends the string as a BAD string — the browser drops the following rule
-		expect(cssBraceImbalance('"open\n.a { color: red }')).toBe('an unterminated string');
 		expect(cssBraceImbalance('.a { color: red } /* ok */')).toBeNull();
+	});
+
+	// CSS the browser accepts must not be refused: a refused theme is dropped WHOLE.
+	it.each([
+		[
+			'a quote in a // pseudo-comment line',
+			".a { color: red; }\n// don't do this\n.b { color: blue }"
+		],
+		['an escaped quote outside a string', ".it\\'s { color: red }"],
+		['an escaped brace outside a string', '.a\\{b { color: red }'],
+		['an unquoted url() with /* in it', '.a { background: url(https://x/a/*b.png) }'],
+		['an unquoted url() with a quote and braces in it', ".a { background: url(a'b}{.png) }"],
+		['an unquoted url() with an escaped paren', '.a { background: url(a\\)}.png) }'],
+		['a quoted url() whose string holds a brace', '.a { background: url( "a}.png" ) }'],
+		['an upper-case URL()', '.a { background: URL(x/*y) }'],
+		['a url() at the very start', 'url(a/*b{.png) .a { color: red }'],
+		['a string left open at the end (the joining newline ends it)', '.a { color: red } "open'],
+		['a bad string ended by a newline', '"open\n.a { color: red }']
+	])('accepts %s', (_, css) => {
+		expect(cssBraceImbalance(css)).toBeNull();
+	});
+
+	it.each([
+		['a missing "}"', '.a { color: red', '1 unclosed "{"'],
+		['an extra "}"', '.a { color: red } }', 'a "}" closes more blocks than were opened'],
+		['an unclosed comment', '.a { color: red } /* open', 'an unclosed "/*" comment'],
+		[
+			'a function named like url (not a url token)',
+			'.a { x: 1 } myurl(/*)',
+			'an unclosed "/*" comment'
+		],
+		['an unclosed comment inside an open block', '.a { /* open', '1 unclosed "{"'],
+		['an unterminated url() swallowing a brace', '.a { background: url(x }', '1 unclosed "{"'],
+		[
+			'an unterminated url() swallowing what follows',
+			'.a { color: red } url(x',
+			'an unclosed "url("'
+		],
+		['an empty url( at the very end', '.a { color: red } url(  ', 'an unclosed "url("']
+	])('rejects %s', (_, css, reason) => {
+		expect(cssBraceImbalance(css)).toBe(reason);
+	});
+
+	it('accepts every token block tokensToCss emits, including escapes outside strings', () => {
+		const tokens = { '--a': "\\'x", '--b': '\\{', '--d': '"}"' };
+		for (const v of Object.values(tokens)) expect(safeTokenEntry('--k', v), v).toBe(true);
+		expect(cssBraceImbalance(tokensToCss(tokens))).toBeNull();
+	});
+
+	it('accepts every built-in theme', () => {
+		for (const t of BUILTIN_THEMES) expect(cssBraceImbalance(t.css), t.id).toBeNull();
 	});
 });
 
@@ -201,8 +251,7 @@ describe('assembleStyles', () => {
 
 	it.each([
 		['an unclosed block', ':root { --np-accent: gold', '1 unclosed "{"'],
-		['an unclosed comment', ':root { --np-accent: gold } /* note', 'an unclosed "/*" comment'],
-		['an unterminated string', ':root { --np-accent: gold } "x', 'an unterminated string']
+		['an unclosed comment', ':root { --np-accent: gold } /* note', 'an unclosed "/*" comment']
 	])(
 		'drops a theme with %s (reported) so it cannot swallow the tokens and widget css after it',
 		(_, theme, reason) => {

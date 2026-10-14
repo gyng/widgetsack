@@ -127,6 +127,28 @@ describe('useStudioInit overlay edit mode', () => {
 	});
 });
 
+describe('useStudioInit interactive-rect resync', () => {
+	it('re-sends the rects when the backend sets THIS window passive again', async () => {
+		const deps = makeDeps({ windowLabel: 'overlay-2' });
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(listeners.has('resync_interactive_rects')).toBe(true));
+		await waitFor(() => expect(deps.syncRects).toHaveBeenCalled()); // init finished
+		vi.mocked(deps.syncRects).mockClear();
+
+		listeners.get('resync_interactive_rects')!({ payload: 'main' }); // another window
+		expect(deps.syncRects).not.toHaveBeenCalled();
+		listeners.get('resync_interactive_rects')!({ payload: 'overlay-2' });
+		expect(deps.syncRects).toHaveBeenCalledTimes(1);
+	});
+
+	it('the studio does not listen (it never sends rects)', async () => {
+		const deps = makeDeps({ studio: true });
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(deps.setMonitorOptions).toHaveBeenCalled());
+		expect(listeners.has('resync_interactive_rects')).toBe(false);
+	});
+});
+
 describe('useStudioInit display-change refit', () => {
 	it('a topology change re-fits a secondary AND refreshes its work area', async () => {
 		monitorParamValue = 'DISPLAY3';
@@ -151,6 +173,19 @@ describe('useStudioInit display-change refit', () => {
 		// And the presentation (click-through / z-order for the CURRENT edit state) is re-applied:
 		// the fit is geometry only, and forcing click-through there broke edit mode on a refit.
 		await waitFor(() => expect(deps.reapplyPresentation).toHaveBeenCalledTimes(1));
+	});
+
+	it('a refit that only moves the main overlay re-syncs its interactive rects after the presentation', async () => {
+		const deps = makeDeps();
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(deps.syncRects).toHaveBeenCalled()); // init finished
+		const order: string[] = [];
+		vi.mocked(deps.reapplyPresentation).mockImplementation(async () => void order.push('present'));
+		vi.mocked(deps.syncRects).mockImplementation(() => void order.push('rects'));
+
+		onDisplayChange!();
+		// The rects are screen coordinates: a moved window's old ones are stale.
+		await waitFor(() => expect(order).toEqual(['present', 'rects']));
 	});
 
 	it('a DPI/scale change of this window goes through the same single-flight refit', async () => {

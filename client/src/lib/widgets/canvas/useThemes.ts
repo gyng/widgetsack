@@ -52,7 +52,7 @@ export type Themes = {
 	themeNameRef: React.RefObject<HTMLInputElement | null>;
 	/** The draft (name or CSS) differs from what the editor opened with — the close paths confirm. */
 	themeEditorDirty: boolean;
-	/** Why the open draft can't be saved (unclosed `{` / comment / string), or null when it can. */
+	/** Why the open draft can't be saved (unclosed `{` / comment), or null when it can. */
 	themeDraftError: string | null;
 	openThemeEditor: (name?: string) => Promise<void>;
 	saveThemeEditor: () => Promise<void>;
@@ -210,7 +210,7 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 		const name = themeDraftName.trim();
 		if (!name) return;
 		// The theme shares one <style> with every token override and widget style: a draft with an
-		// unclosed `{`, comment or string would be dropped at render anyway, so don't save it.
+		// unclosed `{` or comment would be dropped at render anyway, so don't save it.
 		const problem = cssBraceImbalance(themeDraft);
 		if (problem) {
 			window.alert(`Fix the theme CSS before saving: ${problem}.`);

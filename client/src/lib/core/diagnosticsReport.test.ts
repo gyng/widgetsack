@@ -7,6 +7,7 @@ import {
 	formatLogLine,
 	isTraceLine,
 	matchesChip,
+	redactUserProfile,
 	selectReportLogs
 } from './diagnosticsReport';
 
@@ -102,6 +103,31 @@ describe('formatLogLine', () => {
 		expect(formatLogLine(rec({ level: 'error' }))).toBe(
 			'2023-11-14T22:13:20.000Z ERROR sensors: tick'
 		);
+	});
+});
+
+describe('redactUserProfile', () => {
+	it.each([
+		['a path', String.raw`C:\Users\bob\x.css`, String.raw`%USERPROFILE%\x.css`],
+		['forward slashes', 'c:/users/bob/x.css', '%USERPROFILE%/x.css'],
+		[
+			'a bare profile dir mid-line, keeping the rest of the line',
+			String.raw`home is C:\Users\bob and the log is fine`,
+			'home is %USERPROFILE% and the log is fine'
+		],
+		['a quoted profile dir', String.raw`dir="C:\Users\bob" ok`, 'dir="%USERPROFILE%" ok'],
+		[
+			'a debug-escaped path',
+			String.raw`path: "C:\\Users\\bob\\AppData" failed`,
+			String.raw`path: "%USERPROFILE%\\AppData" failed`
+		],
+		[
+			'a name with a space when a path follows',
+			String.raw`open C:\Users\Jane Doe\x.css failed`,
+			String.raw`open %USERPROFILE%\x.css failed`
+		]
+	])('redacts %s', (_name, input, output) => {
+		expect(redactUserProfile(input)).toBe(output);
 	});
 });
 

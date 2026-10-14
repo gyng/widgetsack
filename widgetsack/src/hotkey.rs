@@ -195,10 +195,12 @@ pub fn set_edit_hotkey(
         return Err("set_edit_hotkey is only allowed from the studio window".into());
     }
     let canonical = canonical_edit_hotkey(&hotkey)?;
-    let mut prefs = update::load_prefs(&app);
-    prefs.edit_hotkey = canonical.clone();
-    update::save_prefs(&app, &prefs)?;
-    apply_edit_hotkey(&app, &canonical)
+    // Persist and register under one lock: two quick changes must not leave prefs.json naming one
+    // hotkey while the other is registered (or revert a concurrent update-check toggle).
+    update::with_prefs_lock(|| {
+        update::modify_prefs(&app, |p| p.edit_hotkey = canonical.clone())?;
+        apply_edit_hotkey(&app, &canonical)
+    })
 }
 
 #[cfg(test)]

@@ -40,6 +40,9 @@ pub const APP_QUITTING_EVENT: &str = "app_quitting";
 /// Each overlay/studio listens and re-runs its fit/reconcile — used when monitors are
 /// added/removed/moved/resized at runtime, which fires no per-window scale-change event.
 pub const REFIT_OVERLAYS_EVENT: &str = "refit_overlays";
+/// A window was set passive again (`set_window_interactive(false)`, Diagnostics). Making it
+/// interactive dropped its per-widget rects, so the window (payload = its label) re-sends them.
+pub const RESYNC_INTERACTIVE_RECTS_EVENT: &str = "resync_interactive_rects";
 
 /// Foreign-window drag watcher (windowmgr.rs → DragSnapLayer.tsx).
 pub const WIN_DRAG_START_EVENT: &str = "win_drag_start";

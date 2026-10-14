@@ -26,6 +26,8 @@ export const EVENTS = {
 	appQuitting: 'app_quitting',
 	// re-fit overlays to the current display layout (tray "Re-fit overlays" + auto on display change)
 	refitOverlays: 'refit_overlays',
+	// a window was set passive again (set_window_interactive(false)); payload = its label → re-send rects
+	resyncInteractiveRects: 'resync_interactive_rects',
 	// foreign-window drag watcher (windowmgr.rs)
 	winDragStart: 'win_drag_start',
 	winDragEnd: 'win_drag_end',

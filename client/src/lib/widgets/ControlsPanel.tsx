@@ -11,6 +11,8 @@ import Icon from './Icon';
 // user on this tab). Its inner `.rp-*`/button styles still resolve via the outer `.settings-panel`,
 // which is itself a `.rail-panel`.
 import { useEffect, useMemo, useState } from 'react';
+import { getEditHotkey } from '../appUpdate';
+import { DEFAULT_EDIT_HOTKEY, editHotkeyLabel, type EditHotkeyStatus } from '../core/editHotkey';
 import {
 	detectConflicts,
 	formatTrigger,
@@ -43,14 +45,13 @@ const GROUP_ORDER: ControlGroup[] = ['edit', 'selection', 'view', 'file', 'navig
 
 // The OS-level hotkeys the backend registers (main.rs / hotkey.rs). They work while any app is focused
 // and can't be remapped from here, so they're listed read-only as "built-in" — the rescue chord in
-// particular must be discoverable from the same page as every other shortcut. The edit chord shown is
-// the default; Settings → Startup changes it or turns it off.
+// particular must be discoverable from the same page as every other shortcut. The edit chord is the
+// CONFIGURED one (Settings → Startup changes it or turns it off), read from the backend.
+const EDIT_SHORTCUT = {
+	label: 'Toggle desktop edit mode (global)',
+	help: 'Arrange widgets right on the desktop. Ctrl+E does the same inside a widgetsack window. Change it or turn it off in Settings → Startup.'
+} as const;
 export const BUILTIN_SHORTCUTS = [
-	{
-		label: 'Toggle desktop edit mode (global)',
-		keys: 'Ctrl+Alt+E',
-		help: 'Arrange widgets right on the desktop. Ctrl+E does the same inside a widgetsack window. This is the default; change it or turn it off in Settings → Startup.'
-	},
 	{
 		label: 'Rescue all windows (global)',
 		keys: 'Ctrl+Alt+Shift+E',
@@ -83,6 +84,21 @@ function keyEventToTrigger(e: KeyboardEvent): Trigger {
 
 export default function ControlsPanel({ overrides, onRebind, onReset, onResetAll }: Props) {
 	const [capturing, setCapturing] = useState<string | null>(null);
+	// The configured global edit hotkey (null until read / outside the app → the default chord).
+	const [editHotkey, setEditHotkey] = useState<EditHotkeyStatus | null>(null);
+	useEffect(() => {
+		let alive = true;
+		void getEditHotkey().then((s) => {
+			if (alive) setEditHotkey(s);
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
+	const globalShortcuts = [
+		{ ...EDIT_SHORTCUT, keys: editHotkey ? editHotkeyLabel(editHotkey) : DEFAULT_EDIT_HOTKEY },
+		...BUILTIN_SHORTCUTS
+	];
 	const all = listControls();
 	const conflictIds = useMemo(() => {
 		const set = new Set<string>();
@@ -174,7 +190,7 @@ export default function ControlsPanel({ overrides, onRebind, onReset, onResetAll
 			<div className="cp-group">
 				<div className="cp-grouphd">Global (work from any app)</div>
 				<div className="rp-list">
-					{BUILTIN_SHORTCUTS.map((b) => (
+					{globalShortcuts.map((b) => (
 						<div className="cp-row" key={b.label}>
 							<span className="cp-label" title={b.help}>
 								{b.label}

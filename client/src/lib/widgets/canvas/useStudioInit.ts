@@ -116,9 +116,12 @@ export function useStudioInit(deps: StudioInitDeps): void {
 				// whichever monitor the window sat on at its last resize. Then re-apply presentation:
 				// the fit is geometry only, and a DPI hop / topology change can reset decorations or
 				// the z-order — but click-through etc. must follow the CURRENT edit/windowed state.
+				// The per-widget interactive rects are SCREEN coordinates, so a window that moved (even
+				// without resizing, which re-measures nothing) must re-send them too.
 				if (!dep.studio) {
 					await d.current.updateWorkArea();
 					await d.current.reapplyPresentation();
+					d.current.syncRects();
 				}
 				logClient('info', 'overlay', 'refit done', {
 					role,
@@ -258,6 +261,14 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			// main overlay starts interactive and a secondary starts click-through); here we only seed the
 			// per-widget interactive rects for a passive overlay.
 			d.current.syncRects();
+			// Diagnostics set this window passive again (set_window_interactive(false)): making it
+			// interactive dropped its rects in the backend, so re-send them or its widgets stay dead.
+			scope.add(
+				await listen<string>(EVENTS.resyncInteractiveRects, (e) => {
+					if (e.payload === dep.windowLabel) d.current.syncRects();
+				})
+			);
+			if (scope.disposed) return;
 			// Edit mode is app-wide and backend-owned: SET the broadcast state (never flip locally), and
 			// adopt the current one now so a window created/reloaded mid-edit joins in the same mode.
 			scope.add(

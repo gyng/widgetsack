@@ -127,8 +127,14 @@ export function composeDiagnosticsReport(input: DiagnosticsReportInput): string 
 	return redactUserProfile(lines.join('\n'));
 }
 
-/** Replace a Windows user-profile prefix (`C:\Users\<name>`, either slash) with `%USERPROFILE%` so
- * a pasted bug report doesn't carry the account name. Pure. */
+// `C:\Users\<name>` with either slash, or debug-escaped (`C:\\Users\\<name>`). The name is one token
+// (it stops at whitespace or a quote, so a bare profile dir mid-line keeps the rest of the line) — or
+// up to three space-separated words when a path separator follows (`C:\Users\Jane Doe\x.css`).
+const USER_PROFILE =
+	/\b[A-Za-z]:(?:\\\\|[\\/])Users(?:\\\\|[\\/])(?:[^\\/\s"':]+(?: [^\\/\s"':]+){0,2}(?=[\\/])|[^\\/\s"':]+)/gi;
+
+/** Replace a Windows user-profile prefix (`C:\Users\<name>`) with `%USERPROFILE%` so a pasted bug
+ * report doesn't carry the account name. Pure. */
 export function redactUserProfile(text: string): string {
-	return text.replace(/\b[A-Za-z]:[\\/]Users[\\/][^\\/\r\n]+/gi, '%USERPROFILE%');
+	return text.replace(USER_PROFILE, '%USERPROFILE%');
 }

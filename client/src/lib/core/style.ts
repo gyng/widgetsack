@@ -15,54 +15,64 @@ import {
 } from './layoutTree';
 import { DEFAULT_TOKENS, tokensToCss } from './tokens';
 
+/** A CSS name character: `url(` only starts a url token when `url` is a whole identifier. */
+const NAME_CHAR = /[\w\u0080-\uffff-]/;
+
+/** Whether an UNQUOTED url token (`url(` + optional whitespace + not a quote) starts at `i`. */
+function unquotedUrlAt(css: string, i: number): boolean {
+	if (css.slice(i, i + 4).toLowerCase() !== 'url(' || NAME_CHAR.test(css[i - 1] ?? ''))
+		return false;
+	let j = i + 4;
+	while (/\s/.test(css[j] ?? '')) j++;
+	return css[j] !== '"' && css[j] !== "'";
+}
+
 /**
  * Whether a CSS fragment's `{`/`}` are balanced the way the BROWSER's tokenizer will see them:
- * braces inside `/* … *\/` comments are ignored, braces inside quoted strings are ignored — but a
- * string ends at an unescaped NEWLINE too (a "bad string" in CSS), so `content: "` + newline can't
- * hide a closing brace from us that the browser would honour. An unclosed comment, or a string that
- * is never closed (or only ended by a newline), is flagged too: concatenated with the CSS after it
- * in the same <style>, it swallows or invalidates the next rule. Returns the reason the fragment is
- * NOT self-contained, or null when it is. Pure.
+ * braces inside `/* … *\/` comments, quoted strings, escapes (`\{`) and an unquoted `url( … )` body
+ * are ignored — but a string ends at an unescaped NEWLINE too (a "bad string" in CSS), so
+ * `content: "` + newline can't hide a closing brace from us that the browser would honour. An
+ * unclosed comment or unquoted `url(` is flagged too: concatenated with the CSS after it in the same
+ * <style>, it would swallow the next rule. An open string needs no check — every fragment is joined
+ * to what follows by a newline, which ends it. Returns the reason the fragment is NOT
+ * self-contained, or null when it is. Pure.
  */
 export function cssBraceImbalance(css: string): string | null {
 	let depth = 0;
 	let quote: string | null = null;
-	let badString = false;
-	let openComment = false;
+	let open: string | null = null;
 	const n = css.length;
 	let i = 0;
 	while (i < n) {
 		const c = css[i];
 		if (quote) {
-			if (c === '\\') {
-				i += 2; // an escaped char (incl. an escaped newline, a legal string continuation)
-				continue;
-			}
-			if (c === '\n') badString = true; // a bare newline terminates a (bad) string
-			if (c === quote || c === '\n') quote = null;
+			// An escaped char (incl. an escaped newline, a legal string continuation) is skipped; a
+			// bare newline terminates a (bad) string.
+			if (c === '\\') i++;
+			else if (c === quote || c === '\n') quote = null;
 			i++;
-			continue;
-		}
-		if (c === '/' && css[i + 1] === '*') {
+		} else if (c === '\\') {
+			i += 2; // an escape outside a string makes the next character literal (`\{`, `\'`)
+		} else if (c === '/' && css[i + 1] === '*') {
 			const end = css.indexOf('*/', i + 2);
-			if (end === -1) openComment = true;
+			if (end === -1) open = 'an unclosed "/*" comment';
 			i = end === -1 ? n : end + 2;
-			continue;
+		} else if (unquotedUrlAt(css, i)) {
+			// An unquoted url body is ONE token up to `)` (escapes honoured): `/*`, quotes and braces
+			// inside it are not comments, strings or blocks. (`url("…")` is an ordinary function.)
+			let j = i + 4;
+			while (j < n && css[j] !== ')') j += css[j] === '\\' ? 2 : 1;
+			if (j >= n) open = 'an unclosed "url("';
+			i = j + 1;
+		} else {
+			if (c === '"' || c === "'") quote = c;
+			else if (c === '{') depth++;
+			else if (c === '}' && --depth < 0) return 'a "}" closes more blocks than were opened';
+			i++;
 		}
-		if (c === '"' || c === "'") {
-			quote = c;
-		} else if (c === '{') {
-			depth++;
-		} else if (c === '}') {
-			depth--;
-			if (depth < 0) return 'a "}" closes more blocks than were opened';
-		}
-		i++;
 	}
 	if (depth > 0) return `${depth} unclosed "{"`;
-	if (openComment) return 'an unclosed "/*" comment';
-	if (quote || badString) return 'an unterminated string';
-	return null;
+	return open;
 }
 
 /**
@@ -130,7 +140,7 @@ export function assembleStyles(opts: {
 	/** Generated global token overrides, emitted right after the theme (so they win) but checked
 	 * separately, so a broken theme is dropped without taking the overrides with it. */
 	tokenCss?: string;
-	/** Called for each css block REFUSED (unbalanced braces / unclosed comment or string), with the
+	/** Called for each css block REFUSED (unbalanced braces / unclosed comment), with the
 	 * selector it would have been scoped to (`theme` / `tokens` for the global blocks) — so the host
 	 * can surface it instead of silently dropping the styles. */
 	onRejectCss?: (selector: string, reason: string) => void;
@@ -140,7 +150,7 @@ export function assembleStyles(opts: {
 	if (opts.includeDefaults) parts.push(tokensToCss(DEFAULT_TOKENS));
 
 	// The theme is user/sack-authored and shares ONE <style> with everything below: an unclosed
-	// `{`, `/*` or string would swallow every token override and widget style after it, on every
+	// `{` or `/*` would swallow every token override and widget style after it, on every
 	// monitor. Drop it (reported) instead; the defaults and scoped css still apply.
 	const globals = [
 		['theme', opts.themeCss],

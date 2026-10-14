@@ -91,13 +91,41 @@ pub fn load_prefs(app: &AppHandle) -> AppPrefs {
         .unwrap_or_default()
 }
 
-pub(crate) fn save_prefs(app: &AppHandle, prefs: &AppPrefs) -> Result<(), String> {
-    let path = prefs_path(app).ok_or("no config dir")?;
+/// Serializes every `prefs.json` read-modify-write: two settings saved at once (the update check
+/// and the edit hotkey) each loaded the file, changed one field and wrote it back, so the later
+/// write silently reverted the other change.
+static PREFS_LOCK: Mutex<()> = Mutex::new(());
+
+/// Run `f` holding the prefs lock. The edit hotkey also re-registers inside it, so the persisted
+/// and the registered hotkey can't end up from two different requests.
+pub(crate) fn with_prefs_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = PREFS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    f()
+}
+
+/// Load the prefs at `path`, apply `change`, and write them back. Call under [`with_prefs_lock`].
+fn modify_prefs_at(
+    path: &std::path::Path,
+    change: impl FnOnce(&mut AppPrefs),
+) -> Result<AppPrefs, String> {
+    let mut prefs = std::fs::read_to_string(path)
+        .map(|s| parse_prefs(&s))
+        .unwrap_or_default();
+    change(&mut prefs);
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
-    let json = serde_json::to_string_pretty(prefs).map_err(|e| e.to_string())?;
-    crate::file_io::atomic_write(&path, &json)
+    let json = serde_json::to_string_pretty(&prefs).map_err(|e| e.to_string())?;
+    crate::file_io::atomic_write(path, &json)?;
+    Ok(prefs)
+}
+
+/// Load-modify-save `prefs.json`; returns the saved prefs. Call under [`with_prefs_lock`].
+pub(crate) fn modify_prefs(
+    app: &AppHandle,
+    change: impl FnOnce(&mut AppPrefs),
+) -> Result<AppPrefs, String> {
+    modify_prefs_at(&prefs_path(app).ok_or("no config dir")?, change)
 }
 
 /// Studio: the current preferences.
@@ -117,9 +145,8 @@ pub async fn set_update_check(
     if window.label() != "studio" {
         return Err("set_update_check is only allowed from the studio window".into());
     }
-    let mut prefs = load_prefs(&app);
-    prefs.update_check = enabled;
-    save_prefs(&app, &prefs)?;
+    // The guard is dropped before the check below awaits.
+    let prefs = with_prefs_lock(|| modify_prefs(&app, |p| p.update_check = enabled))?;
     if enabled {
         run_check(&app).await;
     } else {
@@ -306,8 +333,49 @@ fn shell_open(_url: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        AppPrefs, AppUpdate, TrayLabel, parse_prefs, tray_label, tray_label_off, url_allowed,
+        AppPrefs, AppUpdate, TrayLabel, modify_prefs_at, parse_prefs, tray_label, tray_label_off,
+        url_allowed, with_prefs_lock,
     };
+
+    #[test]
+    fn concurrent_prefs_changes_each_keep_the_others_field() {
+        let dir = std::env::temp_dir().join(format!(
+            "widgetsack-prefs-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = dir.join("prefs.json");
+        // A missing file loads as the defaults (and the directory is created on save).
+        for round in 0..20 {
+            let hotkey = format!("Ctrl+Alt+F{}", round % 12 + 1);
+            let check = round % 2 == 0;
+            let barrier = std::sync::Barrier::new(2);
+            std::thread::scope(|scope| {
+                scope.spawn(|| {
+                    barrier.wait();
+                    with_prefs_lock(|| modify_prefs_at(&path, |p| p.update_check = check)).unwrap();
+                });
+                scope.spawn(|| {
+                    barrier.wait();
+                    with_prefs_lock(|| modify_prefs_at(&path, |p| p.edit_hotkey = hotkey.clone()))
+                        .unwrap();
+                });
+            });
+            let saved = parse_prefs(&std::fs::read_to_string(&path).unwrap());
+            assert_eq!(
+                saved,
+                AppPrefs {
+                    update_check: check,
+                    edit_hotkey: hotkey
+                },
+                "round {round}"
+            );
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn update(available: bool) -> AppUpdate {
         AppUpdate {

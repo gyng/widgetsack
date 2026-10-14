@@ -4,6 +4,7 @@ import {
 	EDIT_HOTKEY_OFF,
 	EDIT_HOTKEY_PRESETS,
 	editExitKeys,
+	editHotkeyLabel,
 	editHotkeyOptions
 } from './editHotkey';
 
@@ -37,5 +38,19 @@ describe('editExitKeys', () => {
 		]
 	] as const)('%s', (_name, status, keys) => {
 		expect(editExitKeys(status)).toBe(keys);
+	});
+});
+
+describe('editHotkeyLabel', () => {
+	it.each([
+		['registered chord', { hotkey: 'Win+Alt+E', active: true, error: null }, 'Win+Alt+E'],
+		['turned off', { hotkey: 'Off', active: false, error: null }, 'Off'],
+		[
+			'registration failed',
+			{ hotkey: 'Ctrl+Alt+E', active: false, error: 'taken' },
+			'Ctrl+Alt+E (not registered)'
+		]
+	] as const)('%s', (_name, status, label) => {
+		expect(editHotkeyLabel(status)).toBe(label);
 	});
 });

@@ -343,6 +343,19 @@ describe('StudioSettingsPanel — Startup section', () => {
 			expect(queryByRole('alert')).toBeNull();
 		});
 
+		it('disables the picker while a change is in flight, so two changes cannot race', async () => {
+			let resolve!: (s: HotkeyStatus) => void;
+			setEditHotkey.mockImplementationOnce(() => new Promise((r) => (resolve = r)));
+			const { findByLabelText, getByText } = renderStartup();
+			const picker = await findByLabelText('Edit mode shortcut');
+			fireEvent.click(picker);
+			fireEvent.click(getByText('Win+Alt+E'));
+			await waitFor(() => expect((picker as HTMLButtonElement).disabled).toBe(true));
+			await act(async () => resolve({ hotkey: 'Win+Alt+E', active: true, error: null }));
+			expect((picker as HTMLButtonElement).disabled).toBe(false);
+			expect(picker.textContent).toContain('Win+Alt+E');
+		});
+
 		it('can turn the shortcut off', async () => {
 			const { findByLabelText, getByText } = renderStartup();
 			fireEvent.click(await findByLabelText('Edit mode shortcut'));

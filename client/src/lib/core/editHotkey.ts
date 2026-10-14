@@ -42,3 +42,10 @@ export function editExitKeys(status: EditHotkeyStatus | null): string {
 	if (!status) return DEFAULT_EDIT_HOTKEY;
 	return status.active ? status.hotkey : 'Ctrl+E';
 }
+
+/** How the Controls tab lists the configured global edit chord: the accelerator, `Off`, or the
+ *  accelerator marked as not registered (another app owns it). */
+export function editHotkeyLabel(status: EditHotkeyStatus): string {
+	if (status.hotkey === EDIT_HOTKEY_OFF || status.active) return status.hotkey;
+	return `${status.hotkey} (not registered)`;
+}
