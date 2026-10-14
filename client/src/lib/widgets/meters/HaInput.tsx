@@ -3,9 +3,10 @@
 // control: input_boolean → toggle, input_button → press, input_select → dropdown, input_number →
 // slider, input_text → text field. Each emits onControl with the right {domain, service, data}, which
 // Canvas turns into ha_call_service. service_data is built by the pure core/haControls helpers.
-import { useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import {
 	entityDomain,
+	HA_HELD_MS,
 	inputNumberSetValue,
 	inputSelectOption,
 	inputTextSetValue,
@@ -103,6 +104,12 @@ function HaNumberInput({
 		setPrevState(state);
 		if (local?.sent) setLocal(null);
 	}
+	// A call that failed (or that HA ignored) never changes the state: let the slider snap back.
+	useEffect(() => {
+		if (!local?.sent) return;
+		const t = setTimeout(() => setLocal(null), HA_HELD_MS);
+		return () => clearTimeout(t);
+	}, [local]);
 	const shown = local?.value ?? current;
 	const commit = (): void => {
 		if (!local || local.sent) return;

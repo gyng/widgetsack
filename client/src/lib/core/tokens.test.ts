@@ -64,6 +64,8 @@ describe('tokens', () => {
 		['--np-accent', 'red /* swallow', false],
 		['--np-accent', String.raw`red\'; } body { display: none } .x { --y: '`, false],
 		['--np-accent', 'red\\', false],
+		['--np-accent', '"a\r} *{background:red} "', false],
+		['--np-accent', '"a\f} *{background:red} "', false],
 		['--np-accent', 'red\\\n', false],
 		['--np-font', String.raw`"A" \2c sans-serif`, true],
 		['--np-accent', String.raw`a\;b`, true],

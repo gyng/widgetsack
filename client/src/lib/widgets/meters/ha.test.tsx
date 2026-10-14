@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { fireEvent, render } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render } from '@testing-library/react';
 import HaSensor from './HaSensor';
 import HaLight from './HaLight';
 import HaClimate from './HaClimate';
@@ -129,6 +129,26 @@ describe('HaClimate', () => {
 		rerender(<HaClimate value={state(18)} onControl={onControl} />);
 		fireEvent.click(raise);
 		expect(calls.at(-1)).toBe(18.5);
+	});
+
+	it('drops a pending target that never lands (failed or ignored call)', () => {
+		vi.useFakeTimers();
+		try {
+			const value = {
+				state: 'heat',
+				attributes: { friendly_name: 'Bedroom', temperature: 21, target_temp_step: 0.5 }
+			};
+			const calls: unknown[] = [];
+			const onControl = (e: { data?: Record<string, unknown> }) => calls.push(e.data?.temperature);
+			const { getByLabelText } = render(<HaClimate value={value} onControl={onControl} />);
+			const raise = getByLabelText('Raise Bedroom setpoint');
+			fireEvent.click(raise);
+			act(() => vi.advanceTimersByTime(10_000));
+			fireEvent.click(raise);
+			expect(calls).toEqual([21.5, 21.5]);
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it.each([

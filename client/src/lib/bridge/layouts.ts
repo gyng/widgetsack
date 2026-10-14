@@ -21,11 +21,13 @@ export function requestLayoutBackup(): void {
 }
 
 /** Read the saved layout (`widgets.json`) raw JSON, or null if none/failed. The overlay's
- * DragSnapLayer parses it (core/migration.ts) to find `zone` widgets. Same file the layout uses. */
-export async function loadLayoutRaw(): Promise<string | null> {
+ * DragSnapLayer parses it (core/migration.ts) to find `zone` widgets. Same file the layout uses.
+ * `requireReadable` rethrows a read failure instead of reporting "no file". */
+export async function loadLayoutRaw(requireReadable = false): Promise<string | null> {
 	try {
 		return await invoke<string | null>(COMMANDS.loadLayout);
 	} catch (err) {
+		if (requireReadable) throw err;
 		console.warn('load_layout failed', err);
 		return null;
 	}

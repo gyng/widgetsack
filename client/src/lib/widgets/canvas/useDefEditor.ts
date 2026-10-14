@@ -15,7 +15,9 @@ import { loadLayoutRaw } from '../../bridge/layouts';
 // the delete guard reads their saved records. The current monitor's record is skipped: the live
 // editor state supersedes it. An unreadable/absent file has no other monitors to protect.
 async function savedMonitorsBesides(myMonitor: string): Promise<MonitorLayout[]> {
-	const decoded = decodeLayoutDocument(await loadLayoutRaw());
+	const decoded = decodeLayoutDocument(await loadLayoutRaw(true));
+	// No file yet: nothing else can use the def. An unreadable/corrupt one can't vouch for that.
+	if (decoded.kind === 'corrupt') throw new Error('saved layout is unreadable');
 	if (decoded.kind !== 'valid') return [];
 	return Object.entries(decoded.layout.monitors)
 		.filter(([key]) => key !== myMonitor)

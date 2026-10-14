@@ -118,6 +118,8 @@ const TOKEN_KEY = /^--[A-Za-z0-9_-]+$/;
  */
 export function safeTokenEntry(key: string, value: unknown): boolean {
 	if (!TOKEN_KEY.test(key) || typeof value !== 'string' || value.includes('<')) return false;
+	// CSS preprocessing turns CR and FF into newlines, which end a string: treat them as newlines.
+	if (/[\r\f]/.test(value)) return false;
 	let quote: string | null = null;
 	// Open `(` / `[` outside strings: an unclosed one makes the browser swallow the rest of the sheet
 	// into this declaration, and a stray closer / crossed pair (`([)]`) is invalid too.

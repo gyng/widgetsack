@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render } from '@testing-library/react';
+import { act, cleanup, fireEvent, render } from '@testing-library/react';
 import HaInput from './HaInput';
 
 afterEach(cleanup);
@@ -108,6 +108,26 @@ describe('HaInput infers the control from the entity domain', () => {
 			service: 'set_value',
 			data: { value: 25 }
 		});
+	});
+
+	it('input_number snaps back when a sent value never lands', () => {
+		vi.useFakeTimers();
+		try {
+			const { container } = render(
+				<HaInput
+					value={{ entity_id: 'input_number.temp', state: '21', attributes: {} }}
+					onControl={vi.fn()}
+				/>
+			);
+			const range = container.querySelector('[data-part="number"]') as HTMLInputElement;
+			fireEvent.change(range, { target: { value: '25' } });
+			fireEvent.pointerUp(range);
+			expect(range.value).toBe('25');
+			act(() => vi.advanceTimersByTime(10_000));
+			expect(range.value).toBe('21');
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it('input_number with a non-finite state falls back to the min for the slider value', () => {

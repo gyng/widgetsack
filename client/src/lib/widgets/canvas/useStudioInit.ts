@@ -30,6 +30,15 @@ import { isForeignWriter } from './externalChange';
 
 // Backoff for re-reading widgets.json after a failed initial load (see retryInitialLoad).
 const INITIAL_LOAD_RETRY_MS = [1000, 3000];
+// Main's stable-tick reconcile runs every Nth display poll (~4 s each): it only catches a monitor
+// that woke without a topology change, so a minute's latency is fine and the pass isn't free.
+const MAIN_RECONCILE_EVERY_TICKS = 15;
+const throttledReconcile = (): (() => Promise<void>) => {
+	let ticks = 0;
+	return async () => {
+		if (++ticks % MAIN_RECONCILE_EVERY_TICKS === 0) await reconcileOverlays();
+	};
+};
 
 export type StudioInitDeps = {
 	studio: boolean;
@@ -161,7 +170,7 @@ export function useStudioInit(deps: StudioInitDeps): void {
 								if (!(await mainWindowExists())) await reconcileOverlays();
 							}
 						: ownKey === null
-							? reconcileOverlays
+							? throttledReconcile()
 							: undefined
 				)
 			);

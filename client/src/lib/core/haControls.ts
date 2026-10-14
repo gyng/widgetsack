@@ -160,3 +160,7 @@ export function inputTextSetValue(value: string): ServiceCall {
 export function mediaVolumeSet(pct: number): ServiceCall {
 	return { service: 'volume_set', data: { volume_level: Math.round(clamp(pct, 0, 100)) / 100 } };
 }
+
+/** How long a meter shows a sent control value (slider, setpoint) before falling back to the
+ * reported state — a failed or ignored call never changes the entity. */
+export const HA_HELD_MS = 10_000;

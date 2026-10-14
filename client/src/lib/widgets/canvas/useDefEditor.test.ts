@@ -273,6 +273,16 @@ describe('deleteWidget (layout read failure)', () => {
 		await act(async () => result.current.deleteWidget('free', 'Spare'));
 		expect(alert.mock.calls[0][0]).toContain('Spare');
 		expect(handleOp).not.toHaveBeenCalled();
+		expect(loadLayoutRaw).toHaveBeenCalledWith(true);
+	});
+
+	it('refuses to delete when the saved layout is corrupt', async () => {
+		confirm.mockReturnValue(true);
+		vi.mocked(loadLayoutRaw).mockResolvedValue('{not json');
+		const { result, handleOp } = setup({ myMonitor: 'mine' });
+		await act(async () => result.current.deleteWidget('free', 'Spare'));
+		expect(alert).toHaveBeenCalledTimes(1);
+		expect(handleOp).not.toHaveBeenCalled();
 	});
 });
 

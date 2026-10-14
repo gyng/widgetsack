@@ -4,13 +4,14 @@
 // attributes (binds: 'json'); each control emits onControl that WidgetHost bubbles to Canvas
 // (ha_call_service). Range (high/low) thermostats display the setpoint read-only. Prop-only,
 // token-themeable (AGENTS.md §6); service_data is built by the pure core/haControls helpers.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
 	climateNextHvacMode,
 	climateNudge,
 	climateSetFanMode,
 	climateSetHvacMode,
 	climateUsesRange,
+	HA_HELD_MS,
 	type ClimateAttrs
 } from '../../core/haControls';
 import type { ControlEvent } from '../meterProps';
@@ -75,6 +76,12 @@ export default function HaClimate({
 		)
 			setPending(null);
 	}
+	// A failed or ignored call never moves the setpoint: stop stacking on it after a while.
+	useEffect(() => {
+		if (!pending) return;
+		const t = setTimeout(() => setPending(null), HA_HELD_MS);
+		return () => clearTimeout(t);
+	}, [pending]);
 	const nudge = (dir: 1 | -1) => {
 		const call = climateNudge(pending ? { ...attrs, temperature: pending.to } : attrs, dir);
 		const to = call.data.temperature as number;
