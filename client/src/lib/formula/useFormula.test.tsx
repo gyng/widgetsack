@@ -69,6 +69,8 @@ describe('useFormulaFields', () => {
 		rerender({ config: { value: counter, label: `#{${tally}}` } });
 		expect(result.current.overrides).toEqual({ value: 2, label: '#2' });
 		rerender({ config: { value: '1', label: `#{${tally}}` } });
+		// Editing one formula keeps the unchanged one's state.
+		expect(result.current.overrides.label).toBe('#3');
 		expect(evalExpr(counter, {})).toBe(1);
 		unmount();
 		expect(evalExpr(tally, {})).toBe(1);

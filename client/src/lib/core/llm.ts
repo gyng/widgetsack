@@ -507,24 +507,31 @@ const AGENT_REFUSED = new Set<TreeThreatKind>([
 	'service-check',
 	'shell-command'
 ]);
-// The config values those threats are derived from (treeThreats scanUnit).
-const RISK_CONFIG_KEYS = ['url', 'src', 'sandbox', 'interact', 'command'] as const;
+// The config value each refused threat is derived from (treeThreats scanUnit).
+const RISK_KEY: Partial<Record<TreeThreatKind, string>> = {
+	iframe: 'url',
+	'iframe-unsandboxed': 'sandbox',
+	'iframe-interactive': 'interact',
+	'remote-image': 'src',
+	'service-check': 'url',
+	'shell-command': 'command'
+};
 
 /** Why an agent-added or agent-changed unit is refused (core/treeThreats rules), or null when it is
  * safe. Local images, unconfigured service checks and ordinary widgets pass. For a change, pass the
- * unit as it was (`previous`): capabilities the USER already gave it (same kind + detail) stay, so a
- * harmless key (title, fit) can still be edited — only a new or different one is refused. Pure. */
+ * unit as it was (`previous`): capabilities the USER already gave it stay, so a harmless key (title,
+ * fit) can still be edited — only a new or different one is refused. Pure. */
 export function agentUnitRefusal(unit: WidgetInstance, previous?: WidgetInstance): string | null {
-	// A threat the user already has is kept only while the raw values behind it are unchanged: the
+	// A threat the user already has is kept only while the raw value behind it is unchanged: the
 	// scan's `detail` is a truncated snippet, so comparing it alone would let a long URL be edited.
-	const sameRisk =
-		previous !== undefined &&
-		previous.type === unit.type &&
-		RISK_CONFIG_KEYS.every(
-			(k) => JSON.stringify(previous.config[k]) === JSON.stringify(unit.config[k])
-		);
+	const same = (key: string | undefined): boolean =>
+		JSON.stringify(previous?.config[key as string]) === JSON.stringify(unit.config[key as string]);
 	const allowed = new Set(
-		sameRisk ? scanTreeThreats(leaf(previous)).map((t) => `${t.kind}|${t.detail}`) : []
+		previous && previous.type === unit.type
+			? scanTreeThreats(leaf(previous))
+					.filter((t) => same(RISK_KEY[t.kind]))
+					.map((t) => `${t.kind}|${t.detail}`)
+			: []
 	);
 	const threats = scanTreeThreats(leaf(unit)).filter(
 		(t) => AGENT_REFUSED.has(t.kind) && !allowed.has(`${t.kind}|${t.detail}`)

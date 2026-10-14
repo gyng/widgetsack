@@ -4,7 +4,7 @@
 // meter-prop overrides. WidgetHost spreads these over the meter's props (AGENTS.md §6: the container
 // owns the wiring; meters stay presentational). The WASM engine is loaded lazily — only when a widget
 // actually has a non-empty formula — so a layout of plain gauges/clocks never pays for it.
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useSyncExternalStore } from 'react';
 import type { TelemetryHub } from '../core/telemetry';
 import type { ExprField } from '../core/widget';
 import { exprRefs, parseTemplate, renderTemplate, templateRefs } from '../core/textTemplate';
@@ -67,7 +67,21 @@ export function useFormulaFields(
 		}
 		return JSON.stringify(sources);
 	}, [active, config]);
-	useEffect(() => retainFormulas(JSON.parse(sourcesKey) as string[]), [sourcesKey]);
+	// Retain the new set BEFORE releasing the old one, so a source in both never hits zero (which
+	// would dispose its context and reset its globalThis state).
+	const release = useRef<(() => void) | null>(null);
+	useEffect(() => {
+		const next = retainFormulas(JSON.parse(sourcesKey) as string[]);
+		release.current?.();
+		release.current = next;
+	}, [sourcesKey]);
+	useEffect(
+		() => () => {
+			release.current?.();
+			release.current = null;
+		},
+		[]
+	);
 
 	const overrides = useMemo(() => {
 		const out: Record<string, number | string> = {};

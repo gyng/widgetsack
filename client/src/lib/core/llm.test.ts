@@ -745,6 +745,25 @@ describe('agent-added capability units', () => {
 		});
 	});
 
+	it('accepts an edit that makes a user-placed iframe safer', () => {
+		const placed: MonitorLayout = {
+			root: container('root', 'col', [
+				leaf({
+					...createWidget('iframe', 'web'),
+					config: { url: 'https://a.example', interact: true }
+				})
+			]),
+			floating: []
+		};
+		const res = applyAssistantOps(
+			placed,
+			[{ op: 'setConfig', id: 'web', config: { interact: false } }],
+			counter()
+		);
+		expect(res.errors).toEqual([]);
+		expect(res.applied).toBe(1);
+	});
+
 	it('refuses an edit past the truncated part of a long user-placed URL', () => {
 		const long = `https://a.example/${'x'.repeat(100)}`;
 		const placed: MonitorLayout = {
