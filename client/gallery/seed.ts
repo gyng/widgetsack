@@ -280,12 +280,14 @@ function spectrumFrame(): SpectrumFrame {
 
 /** A SpectrumSource serving one fixed frame — drives both the onFrame draw path and latestFrame. */
 export const fakeSpectrum: SpectrumSource = {
-	acquire: () => () => undefined,
-	onFrame: (cb) => {
-		cb(spectrumFrame());
-		return () => undefined;
-	},
-	latestFrame: () => spectrumFrame()
+	acquire: () => ({
+		onFrame: (cb) => {
+			cb(spectrumFrame());
+			return () => undefined;
+		},
+		latestFrame: () => spectrumFrame(),
+		release: () => undefined
+	})
 };
 
 /** Composite the branding icon onto a deterministic gradient and return a PNG data: URL — the

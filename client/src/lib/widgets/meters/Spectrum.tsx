@@ -47,7 +47,7 @@ export default function Spectrum({
 	const source = useContext(SpectrumContext);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	// Live config read by the draw without re-subscribing the stream. `device`/`scale` are NOT here —
-	// they're effect deps, so changing them re-acquires (the backend re-bins / re-inits accordingly).
+	// they're effect deps, so changing them re-acquires the stream for the new config.
 	// Written in a commit effect (not during render) so the draw callbacks read the latest values.
 	const cfg = useRef({ mode, bars, gap, color, pips });
 	useEffect(() => {
@@ -57,7 +57,9 @@ export default function Spectrum({
 	useEffect(() => {
 		const canvas = canvasRef.current;
 		if (!source || !canvas) return;
-		const release = source.acquire(device, scale);
+		// One subscription per meter to the stream for ITS device + scale: meters configured differently
+		// each get their own stream instead of the last-started config winning.
+		const stream = source.acquire(device, scale);
 		const ctx = canvas.getContext('2d');
 		const linear = scale === 'linear';
 		// Pip fractions are constant for this scale; recompute only when the effect re-runs.
@@ -155,14 +157,14 @@ export default function Spectrum({
 		};
 
 		// Push: paint on every frame the source delivers (immune to overlay rAF throttling).
-		const offFrame = source.onFrame(render);
-		const initial = source.latestFrame();
+		const offFrame = stream.onFrame(render);
+		const initial = stream.latestFrame();
 		if (initial) render(initial);
 		// Repaint on resize (the canvas is wiped when its backing store changes; redraw the latest).
 		const ro =
 			typeof ResizeObserver !== 'undefined'
 				? new ResizeObserver(() => {
-						const f = source.latestFrame();
+						const f = stream.latestFrame();
 						if (f) render(f);
 					})
 				: null;
@@ -171,7 +173,7 @@ export default function Spectrum({
 		return () => {
 			offFrame();
 			ro?.disconnect();
-			release();
+			stream.release();
 		};
 		// Re-subscribe when the source / device / scale changes; other config is read live (cfg).
 	}, [source, device, scale]);

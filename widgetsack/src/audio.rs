@@ -6,7 +6,8 @@
 //! whereas telemetry is scalar samples at 1 Hz and the hub collapses a series to its last value
 //! (`appendSample` in `core/telemetry.ts`). Tauri's event system is documented as "not designed
 //! for low latency or high throughput"; `Channel<T>` is the streaming transport. One channel per
-//! subscribing window; capture runs once and fans each frame out to all of them.
+//! (window, device + scale) stream; one capture runs per distinct output device (bounded by
+//! `MAX_CAPTURES`) and fans each frame out to its subscribers, binned to each one's scale.
 //!
 //! Ring layout (concentric architecture, AGENTS.md §5):
 //! - DSP is **pure seams** (`hann_window`, `downmix_mono`, `magnitudes`, `to_bands`, `smooth`,
@@ -299,15 +300,21 @@ fn smooth(prev: &[f32], next: &[f32], attack: f32, release: f32) -> Vec<f32> {
         .collect()
 }
 
+/// How a subscriber wants its bands binned: `(band_count, linear)`. Binning + smoothing are cheap
+/// per-frame steps on top of ONE shared FFT, so subscribers of the same capture that differ only in
+/// scale / band count share the capture and each get their own variant.
+type FrameVariant = (usize, bool);
+
 /// Stateful analyser: owns the reusable FFT plan, the window, scratch buffers and the smoothed
-/// band state. `compute_frame` is the hot path — windows the samples, runs one real FFT, bins to
-/// log bands and applies the envelope. Pure given its inputs (testable without audio hardware).
+/// band state (one envelope per requested variant). `compute_frames` is the hot path — windows the
+/// samples, runs ONE real FFT, then bins + smooths it once per variant. Pure given its inputs
+/// (testable without audio hardware).
 struct SpectrumProcessor {
     fft: Arc<dyn RealToComplex<f32>>,
     window: Vec<f32>,
     input: Vec<f32>,
     spectrum: Vec<Complex<f32>>,
-    smoothed: Vec<f32>,
+    smoothed: HashMap<FrameVariant, Vec<f32>>,
     sample_rate: u32,
     fft_size: usize,
 }
@@ -323,68 +330,198 @@ impl SpectrumProcessor {
             window: hann_window(fft_size),
             input,
             spectrum,
-            smoothed: Vec::new(),
+            smoothed: HashMap::new(),
             sample_rate,
             fft_size,
         }
     }
 
-    /// Analyse the most recent `fft_size` samples into a `SpectrumFrame`. `samples` must be at least
-    /// `fft_size` long; only the trailing window is used. `level` is the precomputed RMS; `linear`
-    /// picks linear vs log frequency band spacing.
-    fn compute_frame(
+    /// Analyse the most recent `fft_size` samples into one `SpectrumFrame` per entry of `variants`
+    /// (same order). `samples` may be shorter than `fft_size` (zero-padded); only the trailing window
+    /// is used. `level` is the precomputed RMS. Envelope state for variants no longer requested is
+    /// dropped, so a scale switch starts that variant from silence rather than a stale shape.
+    fn compute_frames(
         &mut self,
         samples: &[f32],
-        band_count: usize,
-        linear: bool,
+        variants: &[FrameVariant],
         level: f32,
         ts_ms: u64,
-    ) -> SpectrumFrame {
+    ) -> Vec<SpectrumFrame> {
         let start = samples.len().saturating_sub(self.fft_size);
         let window = &samples[start..];
         for (i, slot) in self.input.iter_mut().enumerate() {
             *slot = window.get(i).copied().unwrap_or(0.0) * self.window[i];
         }
+        self.smoothed.retain(|v, _| variants.contains(v));
         // realfft uses `input` as scratch and writes N/2+1 complex bins into `spectrum`.
-        if self
+        let mags = self
             .fft
             .process(&mut self.input, &mut self.spectrum)
             .is_ok()
-        {
-            let mags = magnitudes(&self.spectrum);
-            let bands = to_bands(&mags, self.sample_rate, self.fft_size, band_count, linear);
-            if self.smoothed.len() != band_count {
-                self.smoothed = vec![0.0; band_count];
-            }
-            self.smoothed = smooth(&self.smoothed, &bands, ATTACK, RELEASE);
-        } else if self.smoothed.len() != band_count {
-            self.smoothed = vec![0.0; band_count];
-        }
-        SpectrumFrame {
-            bands: self.smoothed.clone(),
-            rms: level,
-            ts_ms,
-        }
+            .then(|| magnitudes(&self.spectrum));
+        variants
+            .iter()
+            .map(|&(band_count, linear)| {
+                let state = self
+                    .smoothed
+                    .entry((band_count, linear))
+                    .or_insert_with(|| vec![0.0; band_count]);
+                if let Some(mags) = &mags {
+                    let bands = to_bands(mags, self.sample_rate, self.fft_size, band_count, linear);
+                    *state = smooth(state, &bands, ATTACK, RELEASE);
+                }
+                SpectrumFrame {
+                    bands: state.clone(),
+                    rms: level,
+                    ts_ms,
+                }
+            })
+            .collect()
     }
 }
 
 // --- Shared state + lifecycle ------------------------------------------------------------------
+// Captures are keyed by OUTPUT DEVICE (the WASAPI endpoint id; "" = follow the system default): one
+// loopback thread per distinct device actually requested, each with its own subscriber set. Scale and
+// band count are per SUBSCRIBER — they're cheap per-frame binning over the capture's one FFT — so two
+// widgets on the same device with different scales share a capture. A subscriber is one
+// (window label, frontend stream key) pair with its own `Channel`, so a window hosting two Spectrum
+// widgets with different settings gets two independent streams.
 
-/// Subscribed channels (one per window label) plus the capture-thread liveness flag and the current
-/// band count. A plain `std::sync::Mutex` — locks are brief and never held across the FFT or I/O.
-#[derive(Default)]
-struct SpectrumInner {
-    channels: HashMap<String, Channel<SpectrumFrame>>,
-    running: bool,
+/// Upper bound on concurrent loopback captures (threads + WASAPI clients + FFTs). A request for a
+/// further device shares an existing capture instead (see `choose_capture`), with a logged warning.
+const MAX_CAPTURES: usize = 4;
+
+/// One stream consumer: its channel plus how it wants the bands binned.
+struct Subscriber {
+    channel: Channel<SpectrumFrame>,
     band_count: usize,
-    /// The chosen output device id (WASAPI endpoint id), or `None` for the system default. The
-    /// running session re-initialises when this changes so a device switch takes effect live.
-    device: Option<String>,
-    /// Linear (vs the default log) frequency band spacing. Read live each frame.
     linear: bool,
 }
 
-/// Managed Tauri state shared with the capture thread via the inner `Arc`.
+/// `(window label, frontend stream key)` — identifies one subscription across all captures.
+type SubKey = (String, String);
+
+/// One device's capture: its subscribers and the capture-thread liveness flag.
+#[derive(Default)]
+struct Capture {
+    subscribers: HashMap<SubKey, Subscriber>,
+    running: bool,
+}
+
+/// All captures, keyed by device id ("" = system default). A plain `std::sync::Mutex` guards it —
+/// locks are brief and never held across the FFT or I/O.
+#[derive(Default)]
+struct SpectrumInner {
+    captures: HashMap<String, Capture>,
+}
+
+/// Where `subscribe` placed a subscriber.
+#[derive(Debug, PartialEq, Eq)]
+struct Placement {
+    /// The capture (device key) the subscriber joined.
+    capture: String,
+    /// The capture thread isn't running yet — the caller must spawn it (outside the lock).
+    spawn: bool,
+    /// The bound was hit and the subscriber shares another device's capture instead of its own.
+    fell_back: bool,
+}
+
+/// Pick the capture for a subscriber wanting device `wanted`, given the devices that currently have
+/// subscribers (`live`). Join the matching capture, else open a new one while under `max`; at the
+/// bound, share the closest live capture — the system default if one is live (a missing chosen
+/// device falls back to the default anyway), else the first by id for determinism. Returns
+/// `(capture key, fell_back)`. Pure.
+fn choose_capture(live: &[&str], wanted: &str, max: usize) -> (String, bool) {
+    if live.contains(&wanted) || live.len() < max {
+        return (wanted.to_string(), false);
+    }
+    let shared = if live.contains(&"") {
+        ""
+    } else {
+        live.iter().min().copied().unwrap_or(wanted)
+    };
+    (shared.to_string(), shared != wanted)
+}
+
+/// The distinct binning variants a capture's subscribers need this frame (sorted, deduplicated).
+fn frame_variants<'a>(subscribers: impl Iterator<Item = &'a Subscriber>) -> Vec<FrameVariant> {
+    let mut variants: Vec<FrameVariant> = subscribers
+        .map(|s| (s.band_count.clamp(MIN_BANDS, MAX_BANDS), s.linear))
+        .collect();
+    variants.sort_unstable();
+    variants.dedup();
+    variants
+}
+
+impl SpectrumInner {
+    /// Register (or replace) subscription `sub_key` on the capture for `device` ("" = default),
+    /// honouring `MAX_CAPTURES`. Marks a non-running capture as running and reports `spawn`, so the
+    /// caller starts exactly one thread for it.
+    fn subscribe(&mut self, sub_key: SubKey, device: &str, sub: Subscriber) -> Placement {
+        // A re-subscribe (watchdog restart / reload) replaces the old placement wherever it was.
+        self.unsubscribe(&sub_key.0, Some(&sub_key.1));
+        let live: Vec<&str> = self
+            .captures
+            .iter()
+            .filter(|(_, c)| !c.subscribers.is_empty())
+            .map(|(k, _)| k.as_str())
+            .collect();
+        let (key, fell_back) = choose_capture(&live, device, MAX_CAPTURES);
+        let capture = self.captures.entry(key.clone()).or_default();
+        capture.subscribers.insert(sub_key, sub);
+        let spawn = !capture.running;
+        capture.running = true;
+        Placement {
+            capture: key,
+            spawn,
+            fell_back,
+        }
+    }
+
+    /// Drop window `label`'s subscription `key` (or ALL its subscriptions when `key` is `None`) from
+    /// every capture. A running capture left empty exits on its own (its thread checks every frame);
+    /// a stopped one is pruned here. Returns whether anything was removed.
+    fn unsubscribe(&mut self, label: &str, key: Option<&str>) -> bool {
+        let mut removed = false;
+        for capture in self.captures.values_mut() {
+            let before = capture.subscribers.len();
+            capture
+                .subscribers
+                .retain(|(l, k), _| l != label || key.is_some_and(|key| key != k));
+            removed |= capture.subscribers.len() != before;
+        }
+        self.captures
+            .retain(|_, c| c.running || !c.subscribers.is_empty());
+        removed
+    }
+
+    /// Capture-thread exit check for `device`, done atomically under the lock: when it has no
+    /// subscribers, remove the entry (so a racing `subscribe` either joined before this — and the
+    /// thread keeps going — or lands after and spawns a fresh thread) and return `true`.
+    fn retire_if_idle(&mut self, device: &str) -> bool {
+        match self.captures.get(device) {
+            Some(c) if !c.subscribers.is_empty() => false,
+            _ => {
+                self.captures.remove(device);
+                true
+            }
+        }
+    }
+
+    /// A capture thread is gone without retiring (spawn failure / gave up): clear its flag so a later
+    /// `subscribe` respawns it, and prune the entry if nobody is waiting on it.
+    fn mark_stopped(&mut self, device: &str) {
+        if let Some(c) = self.captures.get_mut(device) {
+            c.running = false;
+            if c.subscribers.is_empty() {
+                self.captures.remove(device);
+            }
+        }
+    }
+}
+
+/// Managed Tauri state shared with the capture threads via the inner `Arc`.
 #[derive(Default, Clone)]
 pub struct SpectrumState(Arc<Mutex<SpectrumInner>>);
 
@@ -394,9 +531,11 @@ impl SpectrumState {
     }
 }
 
-/// Start (or join) the spectrum stream for the calling window: register its channel and, if the
-/// capture thread isn't already running, spawn it. Idempotent per window — a second call replaces
-/// that window's channel (e.g. after a reload). `bands` picks the display band count.
+/// Start (or join) a spectrum stream for the calling window. `key` names this stream within the
+/// window (the frontend keys it by device + scale, one `Channel` per key); a repeat call with the same
+/// key replaces its channel (e.g. after a reload / watchdog restart). `device` picks the output
+/// endpoint ("" / omitted = system default), `scale` is "log" | "linear", `bands` the band count.
+/// Joins the capture already running for that device, or spawns one (bounded by `MAX_CAPTURES`).
 #[tauri::command]
 pub fn start_spectrum<R: Runtime>(
     window: tauri::WebviewWindow<R>,
@@ -405,41 +544,51 @@ pub fn start_spectrum<R: Runtime>(
     bands: Option<usize>,
     device: Option<String>,
     scale: Option<String>,
+    key: Option<String>,
 ) -> Result<(), String> {
-    let mut inner = state.lock();
-    inner.band_count = bands.unwrap_or(DEFAULT_BANDS).clamp(MIN_BANDS, MAX_BANDS);
-    inner.device = device.filter(|d| !d.is_empty());
-    inner.linear = matches!(scale.as_deref(), Some("linear"));
-    inner.channels.insert(window.label().to_string(), channel);
-    let need_spawn = !inner.running;
-    if need_spawn {
-        inner.running = true;
+    let device = device.unwrap_or_default();
+    let sub = Subscriber {
+        channel,
+        band_count: bands.unwrap_or(DEFAULT_BANDS).clamp(MIN_BANDS, MAX_BANDS),
+        linear: matches!(scale.as_deref(), Some("linear")),
+    };
+    let sub_key = (window.label().to_string(), key.unwrap_or_default());
+    let placement = state.lock().subscribe(sub_key, &device, sub);
+    if placement.fell_back {
+        log::warn(
+            "audio",
+            "spectrum: capture limit reached; sharing another device's capture",
+        )
+        .field("wanted", &device)
+        .field("using", &placement.capture)
+        .field("max", MAX_CAPTURES)
+        .emit();
     }
-    drop(inner);
-    if need_spawn {
-        spawn_capture((*state).clone());
+    if placement.spawn {
+        spawn_capture((*state).clone(), placement.capture);
     }
     Ok(())
 }
 
-/// Stop the spectrum stream for the calling window: drop its channel. When the last window
-/// unsubscribes the capture thread sees an empty channel set and exits on its own.
+/// Stop the calling window's spectrum stream `key` (every stream of the window when omitted — the
+/// unload path). A capture whose last subscriber left exits on its own.
 #[tauri::command]
 pub fn stop_spectrum<R: Runtime>(
     window: tauri::WebviewWindow<R>,
     state: tauri::State<'_, SpectrumState>,
+    key: Option<String>,
 ) -> Result<(), String> {
-    state.lock().channels.remove(window.label());
+    state.lock().unsubscribe(window.label(), key.as_deref());
     Ok(())
 }
 
-/// Drop a destroyed window's channel (called from the `WindowEvent::Destroyed` handler). A window
-/// that goes away never calls `stop_spectrum`, and its `Channel` doesn't error on `send` promptly
-/// enough to rely on — so the capture thread would keep the WASAPI loopback + FFT running for a
-/// consumer that no longer exists. Removing it lets the thread exit on its own once no window is
-/// left (`run_capture` checks the channel set every frame). Unknown labels are a no-op.
+/// Drop a destroyed window's subscriptions (called from the `WindowEvent::Destroyed` handler). A
+/// window that goes away never calls `stop_spectrum`, and its `Channel` doesn't error on `send`
+/// promptly enough to rely on — so a capture thread would keep the WASAPI loopback + FFT running for
+/// a consumer that no longer exists. Removing them lets each thread exit once no window is left
+/// (`run_capture` checks its subscriber set every frame). Unknown labels are a no-op.
 pub fn forget_window(state: &SpectrumState, label: &str) {
-    if state.lock().channels.remove(label).is_some() {
+    if state.lock().unsubscribe(label, None) {
         log::debug("audio", "spectrum: forgot destroyed window")
             .field("window", label)
             .emit();
@@ -771,17 +920,18 @@ pub async fn set_audio_mute(_muted: bool) -> Result<(), String> {
     Err("muting is only supported on Windows".into())
 }
 
-/// Spawn the dedicated capture thread (Windows only; elsewhere there is no loopback backend, so
-/// clear the flag immediately so the state doesn't claim to be running).
+/// Spawn the dedicated capture thread for `device` (Windows only; elsewhere there is no loopback
+/// backend, so clear the flag immediately so the state doesn't claim to be running).
 #[cfg(target_os = "windows")]
-fn spawn_capture(state: SpectrumState) {
+fn spawn_capture(state: SpectrumState, device: String) {
     let thread_state = state.clone();
+    let thread_device = device.clone();
     if let Err(err) = std::thread::Builder::new()
         .name("spectrum-capture".to_string())
-        .spawn(move || run_capture(&thread_state))
+        .spawn(move || run_capture(&thread_state, &thread_device))
     {
         // No thread will ever clear `running`: do it here so a later `start_spectrum` retries.
-        state.lock().running = false;
+        state.lock().mark_stopped(&device);
         log::warn("audio", "spectrum: capture thread spawn failed")
             .field("error", err)
             .emit();
@@ -789,8 +939,8 @@ fn spawn_capture(state: SpectrumState) {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn spawn_capture(state: SpectrumState) {
-    state.lock().running = false;
+fn spawn_capture(state: SpectrumState, device: String) {
+    state.lock().mark_stopped(&device);
 }
 
 // --- WASAPI loopback capture (Windows adapter) -------------------------------------------------
@@ -821,7 +971,7 @@ mod capture {
     /// for loopback "opens but never delivers" apartment collisions), then runs stream sessions
     /// until no window is subscribed, re-initialising across device changes so a set-and-forget
     /// overlay's spectrum survives the user switching outputs. Clears `running` on the way out.
-    pub(super) fn run_capture(state: &SpectrumState) {
+    pub(super) fn run_capture(state: &SpectrumState, device: &str) {
         // MTA init can legitimately fail with RPC_E_CHANGED_MODE if COM was already initialised on
         // this thread in another mode; treat only a hard failure as fatal.
         if let Err(err) = initialize_mta().ok() {
@@ -836,15 +986,11 @@ mod capture {
             // so a `start_spectrum` racing in either keeps this thread alive (it observes a non-empty
             // set) or — if it lands after the flag is cleared — spawns a fresh thread. This closes the
             // window where a thread could exit just as a new window registered, orphaning its channel.
-            {
-                let mut inner = state.lock();
-                if inner.channels.is_empty() {
-                    inner.running = false;
-                    return;
-                }
+            if state.lock().retire_if_idle(device) {
+                return;
             }
 
-            match run_session(state) {
+            match run_session(state, device) {
                 // Re-checked atomically at the loop top (a window may have unsubscribed, or raced in).
                 Ok(SessionEnd::NoSubscribers) => failures = 0,
                 Ok(SessionEnd::DeviceLost { emitted }) => {
@@ -862,8 +1008,9 @@ mod capture {
                     "audio",
                     "spectrum: giving up after repeated capture failures",
                 )
+                .field("device", device)
                 .emit();
-                state.lock().running = false;
+                state.lock().mark_stopped(device);
                 return;
             }
             if failures > 0 {
@@ -895,15 +1042,19 @@ mod capture {
         Ok(enumerator.get_default_device(&Direction::Render)?)
     }
 
-    /// One capture session against the chosen (or default) render device. Returns when subscribers
-    /// drop (NoSubscribers) or a recoverable device error / device switch occurs (DeviceLost).
-    fn run_session(state: &SpectrumState) -> Result<SessionEnd, Box<dyn std::error::Error>> {
+    /// One capture session against `capture_device` (a WASAPI endpoint id, or "" for the system
+    /// default) — the key of this thread's capture, fixed for the thread's life. Returns when its
+    /// subscribers drop (NoSubscribers) or a recoverable device error / default switch occurs
+    /// (DeviceLost).
+    fn run_session(
+        state: &SpectrumState,
+        capture_device: &str,
+    ) -> Result<SessionEnd, Box<dyn std::error::Error>> {
         let enumerator = wasapi::DeviceEnumerator::new()?;
-        // The chosen output device id at session start; the session re-inits if it changes (below).
-        let session_device = state.lock().device.clone();
+        let session_device = Some(capture_device).filter(|d| !d.is_empty());
         // Loopback = the RENDER endpoint (speakers) opened as a CAPTURE client (wasapi sets
         // AUDCLNT_STREAMFLAGS_LOOPBACK for the Render-device + Capture-direction + Shared combo).
-        let device = open_render_device(&enumerator, session_device.as_deref())?;
+        let device = open_render_device(&enumerator, session_device)?;
         let device_name = device
             .get_friendlyname()
             .unwrap_or_else(|_| "unknown".to_string());
@@ -911,7 +1062,7 @@ mod capture {
         // switch the default to a headset while the old endpoint stays alive but silent, so the
         // session must notice and re-open on the new default.
         let opened_id = device.get_id().unwrap_or_default();
-        let follows_default = follows_default_device(session_device.as_deref(), &opened_id);
+        let follows_default = follows_default_device(session_device, &opened_id);
         let mut default_checked = Instant::now();
         let mut audio_client = device.get_iaudioclient()?;
 
@@ -941,7 +1092,7 @@ mod capture {
 
         let mut processor = SpectrumProcessor::new(SAMPLE_RATE, FFT_SIZE);
         let mut byte_queue: VecDeque<u8> = VecDeque::new();
-        // Keep a little more than one window so `compute_frame` always has a full FFT_SIZE.
+        // Keep a little more than one window so `compute_frames` always has a full FFT_SIZE.
         let mut mono: Vec<f32> = Vec::with_capacity(FFT_SIZE * 2);
         let cap = FFT_SIZE * 2;
 
@@ -983,7 +1134,7 @@ mod capture {
 
             // Emit on the cadence REGARDLESS of how full `mono` is: WASAPI loopback delivers no data
             // while the render device is idle, so gating on a full FFT window would mean NO frames at
-            // all — a frozen/blank widget. compute_frame zero-pads a short buffer, so an idle stream
+            // all — a frozen/blank widget. compute_frames zero-pads a short buffer, so an idle stream
             // just emits flat frames (throttled to SILENT_INTERVAL_MS), and the bars come alive the
             // instant audio plays.
             let elapsed = last_emit.elapsed().as_millis();
@@ -994,45 +1145,47 @@ mod capture {
                 if first || !silent || elapsed >= SILENT_INTERVAL_MS {
                     first = false;
                     last_emit = Instant::now();
-                    let (band_count, linear) = {
-                        let inner = state.lock();
-                        if inner.channels.is_empty() {
+                    // Each subscriber's band count + scale are read live (per frame), so an inspector
+                    // change — or a new subscriber with another scale — applies without a re-init.
+                    let variants = match state.lock().captures.get(capture_device) {
+                        Some(c) if !c.subscribers.is_empty() => {
+                            frame_variants(c.subscribers.values())
+                        }
+                        _ => {
                             let _ = audio_client.stop_stream();
                             return Ok(SessionEnd::NoSubscribers);
                         }
-                        // The user picked a different output device — re-init the session on it.
-                        if inner.device != session_device {
+                    };
+                    // Outside the lock: a COM call that can stall during a device switch.
+                    if follows_default && default_checked.elapsed() >= DEFAULT_DEVICE_CHECK {
+                        default_checked = Instant::now();
+                        let current = enumerator
+                            .get_default_device(&Direction::Render)
+                            .and_then(|d| d.get_id())
+                            .unwrap_or_default();
+                        if !current.is_empty() && current != opened_id {
+                            log::info("audio", "spectrum: default output changed").emit();
                             let _ = audio_client.stop_stream();
                             return Ok(SessionEnd::DeviceLost { emitted });
                         }
-                        if follows_default && default_checked.elapsed() >= DEFAULT_DEVICE_CHECK {
-                            default_checked = Instant::now();
-                            let current = enumerator
-                                .get_default_device(&Direction::Render)
-                                .and_then(|d| d.get_id())
-                                .unwrap_or_default();
-                            if !current.is_empty() && current != opened_id {
-                                log::info("audio", "spectrum: default output changed").emit();
-                                let _ = audio_client.stop_stream();
-                                return Ok(SessionEnd::DeviceLost { emitted });
-                            }
-                        }
-                        // band count + scale are read live so inspector changes apply without a re-init.
-                        (inner.band_count.clamp(MIN_BANDS, MAX_BANDS), inner.linear)
-                    };
-                    let frame = processor.compute_frame(&mono, band_count, linear, level, now_ms());
+                    }
+                    let frames = processor.compute_frames(&mono, &variants, level, now_ms());
 
                     let mut inner = state.lock();
-                    let mut dead: Vec<String> = Vec::new();
-                    for (label, channel) in inner.channels.iter() {
-                        if channel.send(frame.clone()).is_err() {
-                            dead.push(label.clone());
+                    let Some(capture) = inner.captures.get_mut(capture_device) else {
+                        drop(inner);
+                        let _ = audio_client.stop_stream();
+                        return Ok(SessionEnd::NoSubscribers);
+                    };
+                    // A subscriber whose variant appeared since `variants` was read waits a frame.
+                    capture.subscribers.retain(|_, sub| {
+                        let variant = (sub.band_count.clamp(MIN_BANDS, MAX_BANDS), sub.linear);
+                        match variants.iter().position(|v| *v == variant) {
+                            Some(i) => sub.channel.send(frames[i].clone()).is_ok(),
+                            None => true,
                         }
-                    }
-                    for label in dead {
-                        inner.channels.remove(&label);
-                    }
-                    if inner.channels.is_empty() {
+                    });
+                    if capture.subscribers.is_empty() {
                         drop(inner);
                         let _ = audio_client.stop_stream();
                         return Ok(SessionEnd::NoSubscribers);
@@ -1173,9 +1326,13 @@ mod tests {
             .collect();
         let level = rms(&samples);
         // Run a few frames so the envelope settles toward the steady-state magnitude.
-        let mut frame = proc.compute_frame(&samples, band_count, false, level, 0);
+        let mut frame = proc
+            .compute_frames(&samples, &[(band_count, false)], level, 0)
+            .remove(0);
         for _ in 0..12 {
-            frame = proc.compute_frame(&samples, band_count, false, level, 0);
+            frame = proc
+                .compute_frames(&samples, &[(band_count, false)], level, 0)
+                .remove(0);
         }
         assert_eq!(frame.bands.len(), band_count);
         assert!(frame.bands.iter().all(|&b| (0.0..=1.0).contains(&b)));
@@ -1202,26 +1359,211 @@ mod tests {
         );
     }
 
-    /// A destroyed window's channel is dropped from the capture set so the loopback thread can
-    /// stop once no consumer remains; unknown labels are ignored.
+    /// Two subscribers of one capture asking for different scales get their own binning off the
+    /// SAME FFT — each identical to what a dedicated single-variant processor produces (independent
+    /// envelopes, no cross-talk) — and log vs linear really differ.
     #[test]
-    fn forget_window_removes_that_windows_channel_only() {
+    fn processor_bins_each_variant_independently_from_one_fft() {
+        let tone: Vec<f32> = (0..FFT_SIZE)
+            .map(|i| (std::f32::consts::TAU * 1000.0 * i as f32 / SAMPLE_RATE as f32).sin())
+            .collect();
+        let level = rms(&tone);
+        let both = [(48, false), (32, true)];
+        let mut shared = SpectrumProcessor::new(SAMPLE_RATE, FFT_SIZE);
+        let mut log_only = SpectrumProcessor::new(SAMPLE_RATE, FFT_SIZE);
+        let mut linear_only = SpectrumProcessor::new(SAMPLE_RATE, FFT_SIZE);
+        for _ in 0..5 {
+            let frames = shared.compute_frames(&tone, &both, level, 7);
+            let log = log_only.compute_frames(&tone, &[(48, false)], level, 7);
+            let lin = linear_only.compute_frames(&tone, &[(32, true)], level, 7);
+            assert_eq!(frames.len(), 2);
+            assert_eq!(frames[0].bands, log[0].bands);
+            assert_eq!(frames[1].bands, lin[0].bands);
+            assert_eq!(frames[1].ts_ms, 7);
+        }
+        let frames = shared.compute_frames(&tone, &both, level, 0);
+        assert_eq!(frames[0].bands.len(), 48);
+        assert_eq!(frames[1].bands.len(), 32);
+        // A variant no longer requested drops its envelope: re-adding it starts from silence.
+        shared.compute_frames(&[], &[(48, false)], 0.0, 0);
+        let restarted = shared.compute_frames(&tone, &[(32, true)], level, 0);
+        let fresh = SpectrumProcessor::new(SAMPLE_RATE, FFT_SIZE).compute_frames(
+            &tone,
+            &[(32, true)],
+            level,
+            0,
+        );
+        assert_eq!(restarted[0].bands, fresh[0].bands);
+    }
+
+    #[test]
+    fn choose_capture_joins_opens_or_shares_the_closest_at_the_bound() {
+        // Joins a live capture for the same device, even at the bound.
+        assert_eq!(
+            choose_capture(&["a", "b"], "a", 2),
+            ("a".to_string(), false)
+        );
+        // Opens its own while under the bound (incl. the very first).
+        assert_eq!(choose_capture(&[], "", 4), (String::new(), false));
+        assert_eq!(choose_capture(&["a"], "b", 2), ("b".to_string(), false));
+        // At the bound: share the system-default capture when one is live…
+        assert_eq!(
+            choose_capture(&["b", "", "a"], "c", 3),
+            (String::new(), true)
+        );
+        // …else the first device by id (deterministic, independent of map order).
+        assert_eq!(
+            choose_capture(&["c", "a", "b"], "d", 3),
+            ("a".to_string(), true)
+        );
+    }
+
+    fn sub(band_count: usize, linear: bool) -> Subscriber {
+        Subscriber {
+            channel: Channel::new(|_| Ok(())),
+            band_count,
+            linear,
+        }
+    }
+
+    fn key(label: &str, k: &str) -> SubKey {
+        (label.to_string(), k.to_string())
+    }
+
+    fn subscriber_count(inner: &SpectrumInner, device: &str) -> usize {
+        inner
+            .captures
+            .get(device)
+            .map_or(0, |c| c.subscribers.len())
+    }
+
+    /// The reported bug: two widgets with different devices each get their own capture (one spawn
+    /// per device) instead of the last start winning; same device + different scale shares one.
+    #[test]
+    fn subscribe_runs_one_capture_per_device_and_shares_across_scales() {
+        let mut inner = SpectrumInner::default();
+        let p = inner.subscribe(key("main", "log|"), "", sub(128, false));
+        assert_eq!(
+            p,
+            Placement {
+                capture: String::new(),
+                spawn: true,
+                fell_back: false
+            }
+        );
+        let p = inner.subscribe(key("main", "log|hdmi"), "hdmi", sub(128, false));
+        assert_eq!((p.capture.as_str(), p.spawn), ("hdmi", true));
+        // Another window, same device, linear scale: joins the running capture — no new thread.
+        let p = inner.subscribe(key("overlay-1", "linear|hdmi"), "hdmi", sub(128, true));
+        assert_eq!(
+            (p.capture.as_str(), p.spawn, p.fell_back),
+            ("hdmi", false, false)
+        );
+        assert_eq!(subscriber_count(&inner, ""), 1);
+        assert_eq!(subscriber_count(&inner, "hdmi"), 2);
+        // Both scales are binned for the shared capture.
+        let variants = frame_variants(inner.captures["hdmi"].subscribers.values());
+        assert_eq!(variants, vec![(128, false), (128, true)]);
+    }
+
+    /// Re-subscribing the same (window, key) replaces the old subscription rather than duplicating
+    /// it — the watchdog restart / reload path.
+    #[test]
+    fn resubscribing_a_key_replaces_it() {
+        let mut inner = SpectrumInner::default();
+        inner.subscribe(key("main", "k"), "a", sub(128, false));
+        let p = inner.subscribe(key("main", "k"), "a", sub(128, false));
+        assert!(!p.spawn, "the capture is still running");
+        assert_eq!(subscriber_count(&inner, "a"), 1);
+    }
+
+    /// Past `MAX_CAPTURES` distinct devices, a new device shares an existing capture (flagged so the
+    /// command logs a warning); a slot freed by a departed device is reusable.
+    #[test]
+    fn capture_count_is_bounded() {
+        let mut inner = SpectrumInner::default();
+        for (i, device) in ["d0", "d1", "d2", "d3"].iter().enumerate() {
+            let p = inner.subscribe(key("main", &i.to_string()), device, sub(128, false));
+            assert!(p.spawn && !p.fell_back);
+        }
+        let p = inner.subscribe(key("main", "x"), "d4", sub(128, false));
+        assert_eq!(
+            p,
+            Placement {
+                capture: "d0".to_string(),
+                spawn: false,
+                fell_back: true
+            }
+        );
+        assert_eq!(subscriber_count(&inner, "d0"), 2);
+        assert!(!inner.captures.contains_key("d4"));
+        // d3's only widget leaves → its capture no longer counts, so d5 gets its own.
+        inner.unsubscribe("main", Some("3"));
+        let p = inner.subscribe(key("main", "y"), "d5", sub(128, false));
+        assert_eq!((p.capture.as_str(), p.fell_back), ("d5", false));
+    }
+
+    /// `stop_spectrum` with a key drops just that stream; without one (unload) and `forget_window`
+    /// drop every stream of the window across captures. A running capture left empty is kept for its
+    /// thread to retire atomically; unknown labels are ignored.
+    #[test]
+    fn unsubscribe_by_key_or_whole_window() {
         let state = SpectrumState::default();
         {
             let mut inner = state.lock();
-            inner
-                .channels
-                .insert("overlay-1".to_string(), Channel::new(|_| Ok(())));
-            inner
-                .channels
-                .insert("studio".to_string(), Channel::new(|_| Ok(())));
+            inner.subscribe(key("overlay-1", "a"), "", sub(128, false));
+            inner.subscribe(key("overlay-1", "b"), "hdmi", sub(128, true));
+            inner.subscribe(key("studio", "a"), "", sub(128, false));
+            assert!(inner.unsubscribe("studio", Some("a")));
+            assert!(!inner.unsubscribe("studio", Some("a")));
         }
         forget_window(&state, "nope");
-        assert_eq!(state.lock().channels.len(), 2);
+        assert_eq!(subscriber_count(&state.lock(), ""), 1);
         forget_window(&state, "overlay-1");
-        let inner = state.lock();
-        assert_eq!(inner.channels.len(), 1);
-        assert!(inner.channels.contains_key("studio"));
+        let mut inner = state.lock();
+        assert_eq!(subscriber_count(&inner, ""), 0);
+        assert_eq!(subscriber_count(&inner, "hdmi"), 0);
+        // Still flagged running: the threads see the empty sets and retire themselves.
+        assert!(inner.captures["hdmi"].running);
+        assert!(inner.retire_if_idle("hdmi"));
+        assert!(!inner.captures.contains_key("hdmi"));
+    }
+
+    /// The thread-exit check is atomic with `subscribe`: a subscriber that joined first keeps the
+    /// thread alive; once retired, the next subscriber is told to spawn a fresh thread.
+    #[test]
+    fn retire_and_respawn_never_orphan_a_subscriber() {
+        let mut inner = SpectrumInner::default();
+        inner.subscribe(key("main", "a"), "", sub(128, false));
+        assert!(!inner.retire_if_idle(""), "busy capture keeps running");
+        inner.unsubscribe("main", Some("a"));
+        assert!(inner.retire_if_idle(""));
+        assert!(inner.retire_if_idle(""), "a missing capture is idle");
+        assert!(inner.subscribe(key("main", "a"), "", sub(128, false)).spawn);
+
+        // A thread that gave up with subscribers left: the next start for it respawns.
+        inner.mark_stopped("");
+        assert!(!inner.captures[""].running);
+        assert!(inner.subscribe(key("main", "a"), "", sub(128, false)).spawn);
+        // Giving up with nobody left prunes the entry so it doesn't hold a capture slot.
+        inner.unsubscribe("main", None);
+        inner.mark_stopped("");
+        assert!(inner.captures.is_empty());
+        inner.mark_stopped("unknown");
+    }
+
+    #[test]
+    fn frame_variants_are_clamped_sorted_and_deduplicated() {
+        let subs = [
+            sub(4, true),
+            sub(128, false),
+            sub(128, false),
+            sub(999, false),
+        ];
+        assert_eq!(
+            frame_variants(subs.iter()),
+            vec![(MIN_BANDS, true), (128, false), (MAX_BANDS, false)]
+        );
     }
 
     #[test]

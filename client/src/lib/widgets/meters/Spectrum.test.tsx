@@ -8,12 +8,12 @@ afterEach(cleanup);
 
 function fakeSource() {
 	const release = vi.fn();
-	const acquire = vi.fn(() => release);
-	const src: SpectrumSource = {
-		acquire,
+	const acquire = vi.fn((_device?: string, _scale?: string) => ({
 		onFrame: () => () => undefined,
-		latestFrame: () => null
-	};
+		latestFrame: () => null,
+		release
+	}));
+	const src: SpectrumSource = { acquire };
 	return { src, acquire, release };
 }
 
@@ -32,6 +32,30 @@ describe('Spectrum', () => {
 
 		unmount();
 		expect(release).toHaveBeenCalledTimes(1);
+	});
+
+	it('subscribes each meter to the stream for its own device and scale', () => {
+		const { src, acquire, release } = fakeSource();
+		const { rerender } = render(
+			<SpectrumContext.Provider value={src}>
+				<Spectrum device="hdmi" scale="linear" />
+				<Spectrum />
+			</SpectrumContext.Provider>
+		);
+		expect(acquire.mock.calls).toEqual([
+			['hdmi', 'linear'],
+			['', 'log']
+		]);
+
+		// Changing one meter's scale re-subscribes just that meter, to the new config.
+		rerender(
+			<SpectrumContext.Provider value={src}>
+				<Spectrum device="hdmi" scale="log" />
+				<Spectrum />
+			</SpectrumContext.Provider>
+		);
+		expect(release).toHaveBeenCalledTimes(1);
+		expect(acquire).toHaveBeenLastCalledWith('hdmi', 'log');
 	});
 
 	it('still renders a canvas (and does not crash) when no source is provided', () => {
