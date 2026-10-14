@@ -109,6 +109,7 @@ import {
 	syncInteractiveRects,
 	applyOverlayPresentation
 } from '../overlay';
+import { useEditExitKeys } from '../appUpdate';
 import { TelemetryHubContext } from './telemetryContext';
 import { listMicrophones } from '../stt';
 import {
@@ -311,6 +312,9 @@ export default function Canvas({ studio = false }: Props) {
 
 	// Edit mode (tray "Edit layout" / Ctrl+E). Entering disables click-through.
 	const [editMode, setEditMode] = useState(false);
+	// The overlay edit badge's "exit" keys: the configured global edit hotkey (hotkey.rs), re-read
+	// each time this overlay enters edit mode so a change made in the studio shows up.
+	const editExitKeys = useEditExitKeys(!studio && editMode);
 
 	// Cross-highlight (studio): the id currently hovered in EITHER the Outline tree or on the stage.
 	// Hovering a tree row glows the matching widget/container; hovering a widget glows its tree row.
@@ -584,10 +588,6 @@ export default function Canvas({ studio = false }: Props) {
 	// Freshest prefs for the stable syncRects callback (which reads them without re-subscribing).
 	// Mirrored in the commit effect S1 below (not during render).
 	const overlayPrefsRef = useRef(overlayPrefs);
-	// This window's role: the primary `main` overlay carries no ?monitor= param; secondary overlays do.
-	// The main overlay is ALWAYS interactive (see overlayPresentation) so its webview can never get stuck
-	// behind a click-through surface (e.g. an un-clickable crash page).
-	const isMain = !studio && monitorParam() === null;
 	// Windowed-debug mode paints an opaque background (styles.css) so the otherwise see-through overlay
 	// surface reads as a normal window. The actual window flags are applied by the presentation effect
 	// (below, once editMode/syncRects are in scope). The studio never participates.
@@ -896,21 +896,20 @@ export default function Canvas({ studio = false }: Props) {
 
 	const syncRects = useCallback(() => {
 		const p = overlayPrefsRef.current;
-		// Send the per-widget interactive rects only when the window is a passive overlay; when the WHOLE
-		// window is interactive (edit mode, the main overlay, or windowed-debug) clear them. The studio is
-		// always whole-window interactive too.
+		// Send the per-widget interactive rects only when the window is a passive overlay (the primary
+		// `main` one included); when the WHOLE window is interactive (edit mode or windowed-debug) clear
+		// them. The studio is always whole-window interactive too.
 		const whole =
 			studio ||
 			isWholeWindowInteractive({
 				windowed: p.debugWindowed,
 				layer: p.overlayLayer,
-				isMain,
 				editMode: editModeRef.current
 			});
 		syncInteractiveRects(interactiveItemsRef.current(), whole).catch((err) =>
 			console.warn('set_interactive_rects failed', err)
 		);
-	}, [studio, isMain]);
+	}, [studio]);
 
 	// Overlay (CSS layout): the interactive rects come from the measured DOM, so re-sync whenever the
 	// measured map changes (not just on save). Gated on a non-empty map so the first paint doesn't
@@ -1265,20 +1264,19 @@ export default function Canvas({ studio = false }: Props) {
 	// Overlay presentation: decorations / taskbar / z-order / whole-window click-through, derived in ONE
 	// place (overlayPresentation) from the chosen layer, the windowed-debug pref, and the edit state, and
 	// re-applied whenever any of them change (incl. on mount, which establishes passive vs. interactive —
-	// so the main overlay starts interactive and a secondary starts click-through). The studio never
+	// so every overlay, `main` included, starts click-through). The studio never
 	// participates. This supersedes the old per-window setClickThrough(true) at init.
 	useEffect(() => {
 		if (studio) return;
 		const input: PresentationInput = {
 			windowed: overlayPrefs.debugWindowed,
 			layer: overlayPrefs.overlayLayer,
-			isMain,
 			editMode
 		};
 		presentationRef.current = input;
 		void applyOverlayPresentation(overlayPresentation(input), overlayPrefs.overlayLayer);
 		syncRects();
-	}, [studio, isMain, editMode, overlayPrefs.debugWindowed, overlayPrefs.overlayLayer, syncRects]);
+	}, [studio, editMode, overlayPrefs.debugWindowed, overlayPrefs.overlayLayer, syncRects]);
 
 	// --- selection helpers ---
 	const setSelection = useCallback(
@@ -2999,7 +2997,7 @@ export default function Canvas({ studio = false }: Props) {
 								{/* Overlay edit mode parity with the studio: which monitor this is, the three keys
 								    that matter, and a way back to the last saved layout. */}
 								<div className="monitor-badge">▦ {monName || myMonitor}</div>
-								<div className="edit-badge">EDIT — Ctrl+Alt+E to exit</div>
+								<div className="edit-badge">EDIT — {editExitKeys} to exit</div>
 								<div className="powerbar overlay-powerbar" aria-label="Edit mode shortcuts">
 									<span className="seg">
 										<kbd>Ctrl+Z</kbd>
@@ -3010,7 +3008,7 @@ export default function Canvas({ studio = false }: Props) {
 										<span className="lbl">remove</span>
 									</span>
 									<span className="seg">
-										<kbd>Ctrl+Alt+E</kbd>
+										<kbd>{editExitKeys}</kbd>
 										<span className="lbl">exit</span>
 									</span>
 									{overlayDirty && (

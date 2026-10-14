@@ -111,6 +111,8 @@ To connect an external agent, open **Settings → MCP** and follow the [setup in
 
 Press **Ctrl+Alt+E** to turn desktop edit mode on or off.
 Use **Ctrl+E** inside a Widgetsack window.
+You can change this shortcut or turn it off in **Settings → Startup**. On some keyboard layouts
+AltGr is the same as Ctrl+Alt, so the default can block typing characters such as ę or €.
 
 If you cannot click a widget window, press **Ctrl+Alt+Shift+E** to bring it forward and enable clicks.
 Open **Settings → Diagnostics** to view logs or copy diagnostics for a bug report.

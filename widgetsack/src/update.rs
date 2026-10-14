@@ -50,12 +50,24 @@ pub struct UpdateState {
 /// App-level preferences persisted in `<config>/prefs.json`. Mirrors `AppPrefs` in
 /// client/src/lib/core/updateNotice.ts. Unknown fields are ignored; missing ones take the defaults,
 /// so an older/partial file never fails to load.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct AppPrefs {
     /// Poll GitHub for a newer release in the background (opt-in — `false` by default; the manual
     /// check is unaffected).
     pub update_check: bool,
+    /// The global edit-mode accelerator (`"Ctrl+Alt+E"` by default, `"Off"` for none) — see
+    /// hotkey.rs, which validates and registers it.
+    pub edit_hotkey: String,
+}
+
+impl Default for AppPrefs {
+    fn default() -> Self {
+        Self {
+            update_check: false,
+            edit_hotkey: crate::hotkey::DEFAULT_EDIT_HOTKEY.to_string(),
+        }
+    }
 }
 
 const PREFS_FILE: &str = "prefs.json";
@@ -79,7 +91,7 @@ pub fn load_prefs(app: &AppHandle) -> AppPrefs {
         .unwrap_or_default()
 }
 
-fn save_prefs(app: &AppHandle, prefs: &AppPrefs) -> Result<(), String> {
+pub(crate) fn save_prefs(app: &AppHandle, prefs: &AppPrefs) -> Result<(), String> {
     let path = prefs_path(app).ok_or("no config dir")?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
@@ -316,6 +328,12 @@ mod tests {
         assert!(parse_prefs(r#"{"update_check":true}"#).update_check);
         // Unknown fields (a newer build's prefs) are ignored, not fatal.
         assert!(parse_prefs(r#"{"update_check":true,"future":1}"#).update_check);
+        // A prefs file from before the edit-hotkey setting keeps the Ctrl+Alt+E default.
+        assert_eq!(
+            parse_prefs(r#"{"update_check":true}"#).edit_hotkey,
+            "Ctrl+Alt+E"
+        );
+        assert_eq!(parse_prefs(r#"{"edit_hotkey":"Off"}"#).edit_hotkey, "Off");
         assert!(!tray_label_off().enabled);
     }
 

@@ -175,7 +175,13 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 				return null;
 			case COMMANDS.getAppPrefs:
 			case COMMANDS.setUpdateCheck:
-				return { update_check: false };
+				return { update_check: false, edit_hotkey: 'Ctrl+Alt+E' };
+			case COMMANDS.getEditHotkey:
+				return { hotkey: 'Ctrl+Alt+E', active: true, error: null };
+			case COMMANDS.setEditHotkey: {
+				const hotkey = String((args as { hotkey?: unknown } | undefined)?.hotkey ?? 'Off');
+				return { hotkey, active: hotkey !== 'Off', error: null };
+			}
 			case COMMANDS.openUrl:
 			case COMMANDS.revealLogDir:
 				return undefined;

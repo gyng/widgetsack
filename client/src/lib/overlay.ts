@@ -919,9 +919,9 @@ export const reconcileOverlays = singleFlight(reconcileOverlaysOnce);
 /**
  * Tell the backend which of this window's widgets should catch clicks in passive mode,
  * as physical screen rects. Each item carries its SOLVED logical rect (flow widgets are
- * not at their unit.rect). When the WHOLE window is already interactive — edit mode, the
- * always-interactive `main` window, or windowed-debug mode — send none (no per-widget
- * cursor watching is needed).
+ * not at their unit.rect). When the WHOLE window is already interactive — edit mode or
+ * windowed-debug mode — send none (no per-widget cursor watching is needed). The primary
+ * `main` overlay is treated like every secondary one.
  */
 // Latest syncInteractiveRects call: a passive call still awaiting the window's scale/position
 // must not land after a newer call (e.g. the whole-window `[]`) and resurrect stale rects.

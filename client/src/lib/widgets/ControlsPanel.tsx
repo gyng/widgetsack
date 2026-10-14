@@ -41,14 +41,15 @@ const GROUP_LABEL: Record<ControlGroup, string> = {
 };
 const GROUP_ORDER: ControlGroup[] = ['edit', 'selection', 'view', 'file', 'navigation', 'widget'];
 
-// The OS-level hotkeys the backend registers (main.rs). They work while any app is focused and can't
-// be remapped from here, so they're listed read-only as "built-in" — the rescue chord in particular
-// must be discoverable from the same page as every other shortcut.
+// The OS-level hotkeys the backend registers (main.rs / hotkey.rs). They work while any app is focused
+// and can't be remapped from here, so they're listed read-only as "built-in" — the rescue chord in
+// particular must be discoverable from the same page as every other shortcut. The edit chord shown is
+// the default; Settings → Startup changes it or turns it off.
 export const BUILTIN_SHORTCUTS = [
 	{
 		label: 'Toggle desktop edit mode (global)',
 		keys: 'Ctrl+Alt+E',
-		help: 'Arrange widgets right on the desktop. Ctrl+E does the same inside a widgetsack window.'
+		help: 'Arrange widgets right on the desktop. Ctrl+E does the same inside a widgetsack window. This is the default; change it or turn it off in Settings → Startup.'
 	},
 	{
 		label: 'Rescue all windows (global)',

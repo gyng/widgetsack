@@ -133,6 +133,9 @@ export const COMMANDS = {
 	// app prefs (update.rs prefs.json): the opt-in background update check
 	getAppPrefs: 'get_app_prefs',
 	setUpdateCheck: 'set_update_check',
+	// global edit-mode hotkey (hotkey.rs): status for any window; studio-only change ("Off" = none)
+	getEditHotkey: 'get_edit_hotkey',
+	setEditHotkey: 'set_edit_hotkey',
 	// log file location / reveal (diag.rs) for the Diagnostics tab
 	logFilePath: 'log_file_path',
 	revealLogDir: 'reveal_log_dir',

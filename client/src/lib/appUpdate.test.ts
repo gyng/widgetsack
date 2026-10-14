@@ -120,9 +120,9 @@ describe('app prefs (background update check opt-in)', () => {
 		expect(await mod.getAppPrefs()).toEqual({ update_check: true });
 		expect(invoke).toHaveBeenLastCalledWith('get_app_prefs');
 		invoke.mockResolvedValueOnce(null); // an older backend with no prefs command payload
-		expect(await mod.getAppPrefs()).toEqual({ update_check: false });
+		expect(await mod.getAppPrefs()).toEqual({ update_check: false, edit_hotkey: 'Ctrl+Alt+E' });
 		invoke.mockRejectedValueOnce(new Error('no tauri'));
-		expect(await mod.getAppPrefs()).toEqual({ update_check: false });
+		expect(await mod.getAppPrefs()).toEqual({ update_check: false, edit_hotkey: 'Ctrl+Alt+E' });
 	});
 
 	it('setUpdateCheck writes through and returns the saved prefs (defaults on a null reply)', async () => {
@@ -131,6 +131,75 @@ describe('app prefs (background update check opt-in)', () => {
 		expect(await mod.setUpdateCheck(true)).toEqual({ update_check: true });
 		expect(invoke).toHaveBeenLastCalledWith('set_update_check', { enabled: true });
 		invoke.mockResolvedValueOnce(null);
-		expect(await mod.setUpdateCheck(false)).toEqual({ update_check: false });
+		expect(await mod.setUpdateCheck(false)).toEqual({
+			update_check: false,
+			edit_hotkey: 'Ctrl+Alt+E'
+		});
+	});
+});
+
+describe('edit hotkey', () => {
+	const status = (hotkey: string, active = true, error: string | null = null) => ({
+		hotkey,
+		active,
+		error
+	});
+
+	it('reads the status, or null outside Tauri / on a null reply', async () => {
+		const mod = await load();
+		invoke.mockResolvedValueOnce(status('Win+Alt+E'));
+		expect(await mod.getEditHotkey()).toEqual(status('Win+Alt+E'));
+		expect(invoke).toHaveBeenLastCalledWith('get_edit_hotkey');
+		invoke.mockResolvedValueOnce(null);
+		expect(await mod.getEditHotkey()).toBeNull();
+		invoke.mockRejectedValueOnce(new Error('no tauri'));
+		expect(await mod.getEditHotkey()).toBeNull();
+	});
+
+	it('setEditHotkey sends the accelerator and surfaces a rejection', async () => {
+		const mod = await load();
+		invoke.mockResolvedValueOnce(status('Off', false));
+		expect(await mod.setEditHotkey('Off')).toEqual(status('Off', false));
+		expect(invoke).toHaveBeenLastCalledWith('set_edit_hotkey', { hotkey: 'Off' });
+		invoke.mockRejectedValueOnce('unrecognised shortcut');
+		await expect(mod.setEditHotkey('Ctrl+Alt+Nope')).rejects.toBe('unrecognised shortcut');
+	});
+
+	it('useEditExitKeys names the registered chord, Ctrl+E when none is active', async () => {
+		const mod = await load();
+		invoke.mockResolvedValueOnce(status('Win+Alt+E'));
+		const on = renderHook(() => mod.useEditExitKeys());
+		expect(on.result.current).toBe('Ctrl+Alt+E'); // before the read lands
+		await act(async () => undefined);
+		expect(on.result.current).toBe('Win+Alt+E');
+
+		invoke.mockResolvedValueOnce(status('Ctrl+Alt+E', false, 'taken'));
+		const failed = renderHook(() => mod.useEditExitKeys());
+		await act(async () => undefined);
+		expect(failed.result.current).toBe('Ctrl+E');
+	});
+
+	it('useEditExitKeys reads nothing while disabled, then re-reads when enabled', async () => {
+		const mod = await load();
+		const view = renderHook(({ on }) => mod.useEditExitKeys(on), {
+			initialProps: { on: false }
+		});
+		await act(async () => undefined);
+		expect(invoke).not.toHaveBeenCalled();
+		invoke.mockResolvedValueOnce(status('Off', false));
+		view.rerender({ on: true });
+		await act(async () => undefined);
+		expect(invoke).toHaveBeenCalledWith('get_edit_hotkey');
+		expect(view.result.current).toBe('Ctrl+E');
+	});
+
+	it('useEditExitKeys ignores a read that lands after unmount', async () => {
+		const mod = await load();
+		let resolve!: (s: unknown) => void;
+		invoke.mockImplementationOnce(() => new Promise((r) => (resolve = r)));
+		const view = renderHook(() => mod.useEditExitKeys());
+		view.unmount();
+		await act(async () => resolve(status('Win+Alt+E')));
+		expect(view.result.current).toBe('Ctrl+Alt+E');
 	});
 });

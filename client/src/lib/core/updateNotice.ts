@@ -2,6 +2,7 @@
 // background checker (widgetsack/src/update.rs) publishes an `AppUpdate` — this module owns the
 // wire → domain mapping and the little bits of presentation logic the About tab + nav badge share,
 // so they can't drift from each other and are unit-tested without a window.
+import { DEFAULT_EDIT_HOTKEY } from './editHotkey';
 
 /** Result of a release check. Mirrors `AppUpdate` in widgetsack/src/command/application.rs (camelCased). */
 export type AppUpdate = {
@@ -13,10 +14,13 @@ export type AppUpdate = {
 
 /** The serde shape on the wire (`check_app_update` / `get_app_update` / the `app_update` event). */
 /** App-level preferences. Mirrors `AppPrefs` in widgetsack/src/update.rs (prefs.json). */
-export type AppPrefs = { update_check: boolean };
+export type AppPrefs = { update_check: boolean; edit_hotkey: string };
 
 /** Defaults when the backend can't be reached (outside Tauri): the background check is OPT-IN. */
-export const DEFAULT_APP_PREFS: AppPrefs = { update_check: false };
+export const DEFAULT_APP_PREFS: AppPrefs = {
+	update_check: false,
+	edit_hotkey: DEFAULT_EDIT_HOTKEY
+};
 
 export type AppUpdateWire = {
 	current: string;

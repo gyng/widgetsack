@@ -6,7 +6,6 @@ describe('overlayPresentation', () => {
 		const p = overlayPresentation({
 			windowed: false,
 			layer: 'bottom',
-			isMain: false,
 			editMode: false
 		});
 		expect(p).toEqual({
@@ -20,32 +19,30 @@ describe('overlayPresentation', () => {
 	});
 
 	it("'top' layer floats above windows; 'wallpaper' is neither top nor bottom", () => {
+		expect(overlayPresentation({ windowed: false, layer: 'top', editMode: false })).toMatchObject({
+			alwaysOnTop: true,
+			alwaysOnBottom: false
+		});
 		expect(
-			overlayPresentation({ windowed: false, layer: 'top', isMain: false, editMode: false })
-		).toMatchObject({ alwaysOnTop: true, alwaysOnBottom: false });
-		expect(
-			overlayPresentation({ windowed: false, layer: 'wallpaper', isMain: false, editMode: false })
+			overlayPresentation({ windowed: false, layer: 'wallpaper', editMode: false })
 		).toMatchObject({ alwaysOnTop: false, alwaysOnBottom: false });
 	});
 
-	it('the main overlay is ALWAYS interactive, even when passive', () => {
-		const p = overlayPresentation({
-			windowed: false,
-			layer: 'bottom',
-			isMain: true,
-			editMode: false
-		});
-		expect(p.clickThrough).toBe(false);
-		expect(
-			isWholeWindowInteractive({ windowed: false, layer: 'bottom', isMain: true, editMode: false })
-		).toBe(true);
+	it('a passive overlay is click-through on every layer — main and secondaries alike', () => {
+		// The window's role is not an input any more: `main` used to be always interactive, which made
+		// the whole primary monitor swallow clicks. Recovery from a stuck window is the backend rescue.
+		for (const layer of ['bottom', 'top', 'wallpaper'] as const) {
+			expect(overlayPresentation({ windowed: false, layer, editMode: false }).clickThrough).toBe(
+				true
+			);
+			expect(isWholeWindowInteractive({ windowed: false, layer, editMode: false })).toBe(false);
+		}
 	});
 
 	it('edit mode makes any overlay whole-window interactive', () => {
 		const p = overlayPresentation({
 			windowed: false,
 			layer: 'bottom',
-			isMain: false,
 			editMode: true
 		});
 		expect(p.clickThrough).toBe(false);
@@ -56,7 +53,6 @@ describe('overlayPresentation', () => {
 		const p = overlayPresentation({
 			windowed: true,
 			layer: 'top',
-			isMain: false,
 			editMode: false
 		});
 		expect(p).toEqual({
@@ -73,7 +69,6 @@ describe('overlayPresentation', () => {
 		const passiveSecondary = {
 			windowed: false,
 			layer: 'bottom' as const,
-			isMain: false,
 			editMode: false
 		};
 		expect(isWholeWindowInteractive(passiveSecondary)).toBe(false);

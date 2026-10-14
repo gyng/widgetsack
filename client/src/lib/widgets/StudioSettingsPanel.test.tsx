@@ -36,8 +36,19 @@ vi.mock('../overlay', () => ({
 
 // The background update-check mirror (lib/appUpdate.ts): a REAL external store (so the About tab
 // re-renders when a result lands) with the Tauri watch + browser open stubbed out.
-const { openReleasePage } = vi.hoisted(() => ({
-	openReleasePage: vi.fn(() => Promise.resolve(true))
+type HotkeyStatus = import('../core/editHotkey').EditHotkeyStatus;
+const { openReleasePage, getEditHotkey, setEditHotkey } = vi.hoisted(() => ({
+	openReleasePage: vi.fn(() => Promise.resolve(true)),
+	getEditHotkey: vi.fn(async (): Promise<HotkeyStatus | null> => ({
+		hotkey: 'Ctrl+Alt+E',
+		active: true,
+		error: null
+	})),
+	setEditHotkey: vi.fn(async (hotkey: string): Promise<HotkeyStatus> => ({
+		hotkey,
+		active: hotkey !== 'Off',
+		error: null
+	}))
 }));
 vi.mock('../appUpdate', async () => {
 	const { createStore, useStore } = await import('../../stores/createStore');
@@ -47,7 +58,9 @@ vi.mock('../appUpdate', async () => {
 		useAppUpdate: () => useStore(appUpdateStore),
 		openReleasePage,
 		getAppPrefs,
-		setUpdateCheck
+		setUpdateCheck,
+		getEditHotkey,
+		setEditHotkey
 	};
 });
 
@@ -114,6 +127,12 @@ beforeEach(() => {
 	openDevtools.mockReset().mockResolvedValue(undefined);
 	rescueWindows.mockReset().mockResolvedValue(undefined);
 	openReleasePage.mockReset().mockResolvedValue(true);
+	getEditHotkey.mockReset().mockResolvedValue({ hotkey: 'Ctrl+Alt+E', active: true, error: null });
+	setEditHotkey.mockReset().mockImplementation(async (hotkey: string) => ({
+		hotkey,
+		active: hotkey !== 'Off',
+		error: null
+	}));
 	isAutostartEnabled.mockReset().mockResolvedValue({ enabled: false, error: null });
 	setAutostart.mockReset().mockImplementation(async (enabled: boolean) => ({
 		enabled,
@@ -302,12 +321,80 @@ describe('StudioSettingsPanel — Startup section', () => {
 		expect((await findByRole('alert')).textContent).toContain('plugin unavailable');
 	});
 
-	it('explains the desktop edit and rescue chords', async () => {
+	it('explains the desktop edit and rescue chords, and the AltGr clash', async () => {
 		const { container } = render(<StudioSettingsPanel {...baseProps({ tab: 'startup' })} />);
-		expect(container.textContent).toContain('Ctrl+Alt+E');
 		expect(container.textContent).toContain('Ctrl+Alt+Shift+E');
 		expect(container.textContent).toContain('Bring all widget windows forward');
+		expect(container.textContent).toMatch(/AltGr is the same as Ctrl\+Alt/);
 		await flush();
+	});
+
+	describe('edit mode shortcut', () => {
+		const renderStartup = () => render(<StudioSettingsPanel {...baseProps({ tab: 'startup' })} />);
+
+		it('shows the configured shortcut and switches to a preset through the backend', async () => {
+			const { findByLabelText, getByText, queryByRole } = renderStartup();
+			const picker = await findByLabelText('Edit mode shortcut');
+			expect(picker.textContent).toContain('Ctrl+Alt+E');
+			fireEvent.click(picker);
+			fireEvent.click(getByText('Win+Alt+E'));
+			await waitFor(() => expect(setEditHotkey).toHaveBeenCalledWith('Win+Alt+E'));
+			await waitFor(() => expect(picker.textContent).toContain('Win+Alt+E'));
+			expect(queryByRole('alert')).toBeNull();
+		});
+
+		it('can turn the shortcut off', async () => {
+			const { findByLabelText, getByText } = renderStartup();
+			fireEvent.click(await findByLabelText('Edit mode shortcut'));
+			fireEvent.click(getByText('Off (no global shortcut)'));
+			await waitFor(() => expect(setEditHotkey).toHaveBeenCalledWith('Off'));
+		});
+
+		it('reports a chord another app already owns (no edit shortcut active)', async () => {
+			setEditHotkey.mockResolvedValueOnce({
+				hotkey: 'Win+Alt+E',
+				active: false,
+				error: 'HotKey already registered'
+			});
+			const { findByLabelText, getByText, findByRole } = renderStartup();
+			fireEvent.click(await findByLabelText('Edit mode shortcut'));
+			fireEvent.click(getByText('Win+Alt+E'));
+			expect((await findByRole('alert')).textContent).toBe(
+				'Couldn’t register Win+Alt+E: HotKey already registered. No edit shortcut is active.'
+			);
+		});
+
+		it('shows the reason when the backend rejects the change (Error or string)', async () => {
+			setEditHotkey.mockRejectedValueOnce(new Error('disk full'));
+			const { findByLabelText, getByText, findByRole } = renderStartup();
+			const picker = await findByLabelText('Edit mode shortcut');
+			fireEvent.click(picker);
+			fireEvent.click(getByText('Win+Alt+E'));
+			expect((await findByRole('alert')).textContent).toBe(
+				'Couldn’t change the edit shortcut: disk full'
+			);
+			expect(picker.textContent).toContain('Ctrl+Alt+E'); // unchanged
+
+			setEditHotkey.mockRejectedValueOnce('unrecognised shortcut');
+			fireEvent.click(picker);
+			fireEvent.click(getByText('Ctrl+Shift+F9'));
+			await waitFor(() =>
+				expect(getByText(/Couldn’t change the edit shortcut: unrecognised shortcut/)).toBeTruthy()
+			);
+		});
+
+		it('says unavailable outside the app, and ignores a read that lands after unmount', async () => {
+			let resolve!: (s: HotkeyStatus | null) => void;
+			getEditHotkey.mockImplementationOnce(() => new Promise((r) => (resolve = r)));
+			const first = renderStartup();
+			first.unmount();
+			await act(async () => resolve({ hotkey: 'Off', active: false, error: null }));
+
+			getEditHotkey.mockResolvedValueOnce(null);
+			const { findByText, queryByLabelText } = renderStartup();
+			expect(await findByText('unavailable')).toBeTruthy();
+			expect(queryByLabelText('Edit mode shortcut')).toBeNull();
+		});
 	});
 });
 

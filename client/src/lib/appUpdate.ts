@@ -4,6 +4,7 @@
 // first subscriber starts the watch (idempotent): read the persisted result via `get_app_update`,
 // then listen for later checks. Tauri stays at this edge; the shapes + labels are pure
 // (core/updateNotice.ts).
+import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { createStore, useStore } from '../stores/createStore';
@@ -15,6 +16,7 @@ import {
 	type AppUpdate,
 	type AppUpdateWire
 } from './core/updateNotice';
+import { editExitKeys, type EditHotkeyStatus } from './core/editHotkey';
 import { COMMANDS, EVENTS } from './bridge/contract';
 
 /** The last known check result (`null` until one completes). */
@@ -63,6 +65,40 @@ export async function getAppPrefs(): Promise<AppPrefs> {
  * once, whose result arrives through the `app_update` event). Returns the saved prefs. */
 export async function setUpdateCheck(enabled: boolean): Promise<AppPrefs> {
 	return (await invoke<AppPrefs>(COMMANDS.setUpdateCheck, { enabled })) ?? DEFAULT_APP_PREFS;
+}
+
+/** The global edit hotkey's status (hotkey.rs), or `null` outside Tauri / on failure. */
+export async function getEditHotkey(): Promise<EditHotkeyStatus | null> {
+	try {
+		return (await invoke<EditHotkeyStatus | null>(COMMANDS.getEditHotkey)) ?? null;
+	} catch {
+		return null;
+	}
+}
+
+/** Studio: change the global edit hotkey (`'Off'` for none). Rejects with the backend's reason
+ * for an invalid accelerator (nothing changes); a chord another app already owns resolves with
+ * `active: false` + `error` (persisted, but no edit hotkey is registered). */
+export async function setEditHotkey(hotkey: string): Promise<EditHotkeyStatus> {
+	return invoke<EditHotkeyStatus>(COMMANDS.setEditHotkey, { hotkey });
+}
+
+/** The keys the overlay's edit badge names as the way out of edit mode. Re-read each time
+ * `enabled` turns on (an overlay entering edit mode), so a hotkey changed in the studio shows up
+ * the next time; nothing is read while disabled. */
+export function useEditExitKeys(enabled = true): string {
+	const [status, setStatus] = useState<EditHotkeyStatus | null>(null);
+	useEffect(() => {
+		if (!enabled) return;
+		let alive = true;
+		void getEditHotkey().then((s) => {
+			if (alive) setStatus(s);
+		});
+		return () => {
+			alive = false;
+		};
+	}, [enabled]);
+	return editExitKeys(status);
 }
 
 /** Open a project release page in the default browser (backend `open_url`, ShellExecuteW). The

@@ -1,5 +1,6 @@
-// When an OVERLAY toggles edit mode (Ctrl+Alt+E), should the editor re-anchor its saved baseline +
-// undo history to the current layout? Yes on the RISING edge only, and never in the studio.
+// When an OVERLAY toggles edit mode (the global edit hotkey, Ctrl+Alt+E by default), should the
+// editor re-anchor its saved baseline + undo history to the current layout? Yes on the RISING edge
+// only, and never in the studio.
 //
 // Why: an overlay's edits auto-save, and while it is editing it ignores the layout_changed events
 // its own writes raise — so nothing re-baselines between sessions. Without this, "Revert" in a later

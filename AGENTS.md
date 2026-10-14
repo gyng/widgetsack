@@ -97,7 +97,9 @@ Themes (`themes/*.css`) follow the same write → watch → `themes_changed` →
 ```
 widgetsack/                 Rust / Tauri backend (the workspace member)
   src/
-    main.rs                 Entry point, AppState, wires channels + Tauri builder + tray + hotkey
+    main.rs                 Entry point, AppState, wires channels + Tauri builder + tray + hotkeys
+    hotkey.rs               Configurable global edit hotkey (prefs.json `edit_hotkey`, default Ctrl+Alt+E,
+                            "Off" = none): parse/validate seam + runtime re-registration
     listener.rs             GSMTC adapter: listens, wraps external types (From impls)
     event.rs                NpSessionEvent model + emit_to_bridge (Tauri adapter)
     state.rs                SessionRecord + updater() — the pure session reducer

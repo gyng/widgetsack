@@ -10,7 +10,7 @@ use tauri::async_runtime::Mutex;
 use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Manager, State};
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tokio::sync::mpsc;
 
 use crate::command::sessions::get_initial_sessions;
@@ -33,6 +33,7 @@ pub mod displaywatch;
 pub mod event;
 mod file_io;
 pub mod ha;
+pub mod hotkey;
 mod http_response;
 mod integration_task;
 pub mod keepalive;
@@ -299,6 +300,7 @@ async fn main() -> Result<(), ()> {
         .manage(art::ArtState::default())
         .manage(clickthrough::InteractiveRects::default())
         .manage(command::windows::OverlayEditState::default())
+        .manage(hotkey::EditHotkeyState::default())
         .manage(command::windows::QuitFlush::default())
         .manage(control::ControlState::default())
         .manage(mcp::McpState::new(browser_port))
@@ -372,6 +374,8 @@ async fn main() -> Result<(), ()> {
             update::get_app_update,
             update::get_app_prefs,
             update::set_update_check,
+            hotkey::get_edit_hotkey,
+            hotkey::set_edit_hotkey,
             update::open_url,
             diag::log_file_path,
             diag::reveal_log_dir,
@@ -668,30 +672,17 @@ async fn main() -> Result<(), ()> {
 
             // Global hotkey: toggle edit mode from anywhere (a passive click-through
             // overlay receives no in-app keys). Flips the backend-owned edit state and broadcasts
-            // it (same path as Ctrl+E), so every monitor's overlay lands in the same mode.
-            let toggle_edit_shortcut =
-                Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::KeyE);
-            if let Err(err) =
-                app.global_shortcut()
-                    .on_shortcut(toggle_edit_shortcut, |app, _shortcut, event| {
-                        if event.state() == ShortcutState::Pressed {
-                            command::windows::toggle_overlay_edit_and_broadcast(app);
-                        }
-                    })
-            {
-                log::error("startup", "failed to register global shortcut")
-                    .field("error", err)
-                    .emit();
-            }
+            // it (same path as Ctrl+E), so every monitor's overlay lands in the same mode. The chord
+            // is the user's `edit_hotkey` pref (default Ctrl+Alt+E, or "Off" — AltGr is Ctrl+Alt on
+            // Windows, so the default eats AltGr+E on some layouts); a registration failure is
+            // logged and leaves no edit hotkey rather than failing startup. See hotkey.rs.
+            hotkey::init_edit_hotkey(app.handle(), &update::load_prefs(app.handle()).edit_hotkey);
 
             // Rescue hotkey (Ctrl+Alt+Shift+E): make EVERY window interactive again and bring it
             // forward. The backend "panic button" for an overlay you can't reach — a click-through
             // window, or one whose webview crashed so its own JS can no longer drop click-through.
             // Handled entirely in Rust, so it works even when the target window's JS is dead.
-            let rescue_shortcut = Shortcut::new(
-                Some(Modifiers::CONTROL | Modifiers::ALT | Modifiers::SHIFT),
-                Code::KeyE,
-            );
+            let rescue_shortcut = hotkey::rescue_shortcut();
             if let Err(err) =
                 app.global_shortcut()
                     .on_shortcut(rescue_shortcut, |app, _shortcut, event| {

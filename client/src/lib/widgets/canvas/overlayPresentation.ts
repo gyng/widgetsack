@@ -25,9 +25,6 @@ export type PresentationInput = {
 	windowed: boolean;
 	/** The chosen z-order when NOT windowed. */
 	layer: OverlayLayer;
-	/** The primary `main` overlay. It is ALWAYS interactive (never click-through) so its webview can
-	 *  never get stuck behind a click-through surface — e.g. an un-clickable crash page. */
-	isMain: boolean;
 	/** Editing the layout: the whole window is interactive so widgets can be selected/dragged. */
 	editMode: boolean;
 };
@@ -38,9 +35,12 @@ export type PresentationInput = {
  * - Windowed-debug wins over everything: a normal decorated, interactive, taskbar-present, non-topmost
  *   window with an opaque background.
  * - Otherwise it's a borderless, taskbar-skipping overlay whose z-order follows `layer`, and it is
- *   click-through ONLY when passive — edit mode and the `main` window are always interactive. (A passive
- *   secondary overlay is whole-window click-through; the Rust cursor watcher re-enables it over widget
- *   rects, so per-widget interactivity still works.)
+ *   click-through whenever it is passive (not in edit mode). Every overlay — the primary `main` one
+ *   included — follows the same rule: a passive overlay is whole-window click-through and the Rust
+ *   cursor watcher re-enables it over interactive widget rects, so per-widget interactivity still
+ *   works. A window stuck un-clickable (e.g. a crash page) is recovered from the backend: the rescue
+ *   hotkey / "Rescue all windows" (rescue_all) and Diagnostics → Reload, which work even when the
+ *   window's own JS is dead.
  */
 export function overlayPresentation(i: PresentationInput): OverlayPresentation {
 	if (i.windowed) {
@@ -53,13 +53,12 @@ export function overlayPresentation(i: PresentationInput): OverlayPresentation {
 			opaque: true
 		};
 	}
-	const wholeWindowInteractive = i.editMode || i.isMain;
 	return {
 		decorations: false,
 		taskbar: false,
 		alwaysOnTop: i.layer === 'top',
 		alwaysOnBottom: i.layer === 'bottom',
-		clickThrough: !wholeWindowInteractive,
+		clickThrough: !i.editMode,
 		opaque: false
 	};
 }

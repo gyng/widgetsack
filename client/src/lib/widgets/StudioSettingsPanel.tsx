@@ -20,11 +20,14 @@ import {
 import {
 	appUpdateStore,
 	getAppPrefs,
+	getEditHotkey,
 	openReleasePage,
+	setEditHotkey,
 	setUpdateCheck,
 	useAppUpdate
 } from '../appUpdate';
 import { updateStatusLine } from '../core/updateNotice';
+import { editHotkeyOptions, type EditHotkeyStatus } from '../core/editHotkey';
 import ControlsPanel from './ControlsPanel';
 import DiagnosticsPanel from './DiagnosticsPanel';
 import Select from './Select';
@@ -174,6 +177,68 @@ function LaunchAtLogin() {
 				<div className="pl-desc set-error" role="alert">
 					Couldn’t change launch at login: {error}
 				</div>
+			)}
+		</>
+	);
+}
+
+// Startup → the global edit-mode shortcut. A preset picker (no free-text capture): the backend
+// (hotkey.rs) validates, persists and re-registers it at once. The picker shows the backend's status
+// on mount; a chord another app already owns comes back as a registration error (and no edit
+// shortcut is active), and an invalid value is rejected without changing anything.
+function EditHotkeySetting() {
+	const [status, setStatus] = useState<EditHotkeyStatus | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	useEffect(() => {
+		let alive = true;
+		void getEditHotkey().then((s) => {
+			if (alive) setStatus(s);
+		});
+		return () => {
+			alive = false;
+		};
+	}, []);
+	const onPick = async (hotkey: string) => {
+		setError(null);
+		try {
+			setStatus(await setEditHotkey(hotkey));
+		} catch (err) {
+			setError(err instanceof Error ? err.message : String(err));
+		}
+	};
+	const failed = status?.error ?? null;
+	return (
+		<>
+			<div className="set-row">
+				<span className="set-label">edit mode</span>
+				{status ? (
+					<Select
+						value={status.hotkey}
+						options={editHotkeyOptions(status.hotkey)}
+						onChange={(v) => void onPick(v)}
+						searchable={false}
+						aria-label="Edit mode shortcut"
+					/>
+				) : (
+					<span className="dim">unavailable</span>
+				)}
+			</div>
+			<div className="pl-desc">
+				Turn desktop edit mode on or off from anywhere. Use <code>Ctrl+E</code> inside a Widgetsack
+				window. On some keyboard layouts AltGr is the same as <code>Ctrl+Alt</code>, so{' '}
+				<code>Ctrl+Alt+E</code> can block typing characters such as ę or €. Choose another shortcut
+				or Off if that happens.
+			</div>
+			{error ? (
+				<div className="pl-desc set-error" role="alert">
+					Couldn’t change the edit shortcut: {error}
+				</div>
+			) : (
+				failed && (
+					<div className="pl-desc set-error" role="alert">
+						Couldn’t register {status?.hotkey}: {failed}. No edit shortcut is active.
+					</div>
+				)
 			)}
 		</>
 	);
@@ -401,15 +466,7 @@ export default function StudioSettingsPanel({
 								tray icon or Start menu.
 							</div>
 							<div className="rp-hd">Global shortcuts</div>
-							<div className="set-row">
-								<span className="set-label">
-									<code>Ctrl+Alt+E</code>
-								</span>
-								<span>
-									Turn desktop edit mode on or off. Use <code>Ctrl+E</code> inside a Widgetsack
-									window.
-								</span>
-							</div>
+							<EditHotkeySetting />
 							<div className="set-row">
 								<span className="set-label">
 									<code>Ctrl+Alt+Shift+E</code>
