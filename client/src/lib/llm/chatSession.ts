@@ -60,9 +60,18 @@ export function acquireChatSession(): () => void {
 	};
 }
 
+// A stream that finished normally leaves its record behind; drop those before adding another.
+function pruneFinished(): void {
+	const turns = llmStore.getSnapshot().turns;
+	for (const [id, request] of requests) {
+		if (request.started && !turns.some((t) => t.id === id && t.streaming)) requests.delete(id);
+	}
+}
+
 export async function sendChat(text: string): Promise<string> {
 	const trimmed = text.trim();
 	if (!trimmed || !ready) return '';
+	pruneFinished();
 	const at = epoch;
 	const id = 'chat-' + namespace + '-' + ++seq;
 	const request: Request = { cancelled: false, started: false };

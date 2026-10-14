@@ -103,3 +103,21 @@ it('ignores a stream-start failure after reset', async () => {
 	});
 	expect(result.current.chat.turns).toEqual([]);
 });
+it('forgets finished requests but still cancels the in-flight one on release', async () => {
+	const { result, unmount } = renderHook(useLlmChat);
+	let first = '';
+	let second = '';
+	await act(async () => {
+		first = await result.current.send('one');
+	});
+	act(() => handleDelta({ requestId: first, token: 'done', done: true }));
+	await act(async () => {
+		second = await result.current.send('two');
+	});
+	await act(async () => {
+		await result.current.send('three');
+	});
+	unmount();
+	expect(llmCancel).not.toHaveBeenCalledWith(first);
+	expect(llmCancel).toHaveBeenCalledWith(second);
+});
