@@ -919,6 +919,7 @@ describe('updatePackage', () => {
 
 		// Stale consent dropped → the new host's loop stays OFF until re-confirmed.
 		expect(sourceStarts).toEqual([]);
+		expect(rowFor('pack-a')!.pendingConsent).toEqual(['network']);
 		// Re-enabling now re-prompts (consent was cleared).
 		const confirm = vi.fn(() => true);
 		await togglePackage('pack-a', false);
@@ -959,11 +960,13 @@ describe('updatePackage', () => {
 		await updatePackage('pack-a');
 
 		expect(styleTagFor('pack-a')).toBeNull();
+		expect(rowFor('pack-a')!.pendingConsent).toEqual(['theme']);
 		const confirm = vi.fn(() => true);
 		await togglePackage('pack-a', false);
 		await togglePackage('pack-a', true, confirm);
 		expect(confirm).toHaveBeenCalledTimes(1);
 		expect(styleTagFor('pack-a')?.textContent).toBe(newCss);
+		expect(rowFor('pack-a')!.pendingConsent).toEqual([]);
 	});
 });
 
@@ -1228,4 +1231,228 @@ it('orders a disable after an enable that is still applying its marker', async (
 	expect(enabledPackages.getSnapshot()).not.toContain('pack-a');
 	expect(styleTagFor('pack-a')).toBeNull();
 	expect(listTemplateGroups().some((g) => g.group === 'Pack A')).toBe(false);
+});
+
+// ---- template consent survives refresh / update --------------------------------------------------
+
+describe('template consent on refresh and update', () => {
+	const iframeTpl = (url: string) => ({
+		id: 'web',
+		name: 'Web',
+		size: { w: 100, h: 40 },
+		tree: {
+			id: 'fr',
+			unit: {
+				id: 'fr',
+				type: 'iframe',
+				rect: { x: 0, y: 0, w: 1, h: 1 },
+				config: { url, sandbox: true }
+			}
+		}
+	});
+	const hasGroup = (): boolean => listTemplateGroups().some((g) => g.group === 'Pack A');
+
+	it('keeps a refreshed manifest that adds an embedded page unregistered until re-consented', async () => {
+		setFiles([{ id: 'pack-a', manifest: manifestJson(), install: null }]);
+		await initPackages(hub);
+		await togglePackage('pack-a', true, () => true);
+		expect(hasGroup()).toBe(true);
+		expect(rowFor('pack-a')!.pendingConsent).toEqual([]);
+
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({ templates: [iframeTpl('https://dash.example')] }),
+				install: null
+			}
+		]);
+		await refreshPackages();
+
+		// Still enabled, but the never-approved iframe template must not reach the palette.
+		expect(enabledPackages.getSnapshot()).toContain('pack-a');
+		expect(hasGroup()).toBe(false);
+		expect(rowFor('pack-a')!.pendingConsent).toEqual(['templates']);
+
+		await togglePackage('pack-a', false);
+		expect(rowFor('pack-a')!.pendingConsent).toEqual([]);
+		const confirm = vi.fn(() => true);
+		await togglePackage('pack-a', true, confirm);
+		expect(confirm).toHaveBeenCalledTimes(1);
+		expect(hasGroup()).toBe(true);
+		expect(rowFor('pack-a')!.pendingConsent).toEqual([]);
+	});
+
+	it('drops stale template consent when an update changes what the templates embed', async () => {
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({ templates: [iframeTpl('https://old.example')] }),
+				install: sidecarJson()
+			}
+		]);
+		await initPackages(hub);
+		await togglePackage('pack-a', true, () => true);
+		expect(hasGroup()).toBe(true);
+
+		installImpl = () => {
+			setFiles([
+				{
+					id: 'pack-a',
+					manifest: manifestJson({
+						version: '2.0.0',
+						templates: [iframeTpl('https://new.example')]
+					}),
+					install: sidecarJson({ version: '2.0.0' })
+				}
+			]);
+			return Promise.resolve({ id: 'pack-a', version: '2.0.0' });
+		};
+		expect(await updatePackage('pack-a')).toEqual({ ok: true });
+
+		expect(hasGroup()).toBe(false);
+		expect(rowFor('pack-a')!.pendingConsent).toEqual(['templates']);
+		expect(localStorage.getItem('widgetsack.packages.templateConsent')).toBe('{}');
+	});
+
+	it('drops template consent when an update leaves an unparsable manifest', async () => {
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({ templates: [iframeTpl('https://old.example')] }),
+				install: sidecarJson()
+			}
+		]);
+		await initPackages(hub);
+		await togglePackage('pack-a', true, () => true);
+		installImpl = () => {
+			setFiles([{ id: 'pack-a', manifest: '{', install: sidecarJson({ version: '2.0.0' }) }]);
+			return Promise.resolve({ id: 'pack-a', version: '2.0.0' });
+		};
+		await updatePackage('pack-a');
+		expect(rowFor('pack-a')!.error).not.toBeNull();
+		expect(hasGroup()).toBe(false);
+		expect(localStorage.getItem('widgetsack.packages.templateConsent')).toBe('{}');
+	});
+
+	it('keeps matching template consent across an update that leaves the embeds unchanged', async () => {
+		const manifest = (version: string) =>
+			manifestJson({ version, templates: [iframeTpl('https://same.example')] });
+		setFiles([{ id: 'pack-a', manifest: manifest('1.0.0'), install: sidecarJson() }]);
+		await initPackages(hub);
+		await togglePackage('pack-a', true, () => true);
+		installImpl = () => {
+			setFiles([
+				{ id: 'pack-a', manifest: manifest('2.0.0'), install: sidecarJson({ version: '2.0.0' }) }
+			]);
+			return Promise.resolve({ id: 'pack-a', version: '2.0.0' });
+		};
+		await updatePackage('pack-a');
+		expect(hasGroup()).toBe(true);
+		expect(rowFor('pack-a')!.pendingConsent).toEqual([]);
+		expect(localStorage.getItem('widgetsack.packages.templateConsent')).not.toBe('{}');
+	});
+});
+
+// ---- cross-window sync ---------------------------------------------------------------------------
+// Another window (the studio) writes the persisted allowlist / consent maps; this window learns of
+// it through a `storage` event and must re-apply through the mutation queue.
+
+describe('cross-window package changes', () => {
+	const fromOtherWindow = (key: string, value: unknown): void => {
+		localStorage.setItem(key, JSON.stringify(value));
+		window.dispatchEvent(new StorageEvent('storage', { key }));
+	};
+	const hasGroup = (): boolean => listTemplateGroups().some((g) => g.group === 'Pack A');
+
+	beforeEach(() => {
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson({
+					theme: { name: 'T', file: 'theme.css' },
+					source: { file: 'src.js', pollSeconds: 30, hosts: ['api.example.com'] },
+					sensors: [{ id: 'temp' }]
+				}),
+				install: null
+			}
+		]);
+		assets.set('pack-a/theme.css', 'body { color: red; }');
+	});
+
+	it('applies a package another window enabled and drops it when that window disables it', async () => {
+		await initPackages(hub);
+		expect(hasGroup()).toBe(false);
+
+		fromOtherWindow('widgetsack.packages.netConsent', { 'pack-a': 'api.example.com' });
+		fromOtherWindow('widgetsack.packages.enabled', ['pack-a']);
+		await vi.waitFor(() => expect(sourceStarts).toEqual(['pack-a']));
+		expect(hasGroup()).toBe(true);
+		expect(styleTagFor('pack-a')).not.toBeNull();
+
+		fromOtherWindow('widgetsack.packages.enabled', []);
+		await vi.waitFor(() => expect(sourceStops).toContain('pack-a'));
+		await vi.waitFor(() => expect(hasGroup()).toBe(false));
+		expect(styleTagFor('pack-a')).toBeNull();
+	});
+
+	it('drops a package another window removed from disk', async () => {
+		await initPackages(hub);
+		fromOtherWindow('widgetsack.packages.enabled', ['pack-a']);
+		await vi.waitFor(() => expect(hasGroup()).toBe(true));
+
+		setFiles([]);
+		fromOtherWindow('widgetsack.packages.enabled', []);
+		await vi.waitFor(() => expect(rowFor('pack-a')).toBeUndefined());
+		expect(hasGroup()).toBe(false);
+	});
+
+	it('coalesces a burst of storage events into one queued refresh', async () => {
+		await initPackages(hub);
+		const before = listCalls;
+		fromOtherWindow('widgetsack.packages.enabled', ['pack-a']);
+		fromOtherWindow('widgetsack.packages.cssTrusted', {});
+		fromOtherWindow('widgetsack.packages.templateConsent', {});
+		fromOtherWindow('widgetsack.packages.netConsent', {});
+		await vi.waitFor(() => expect(hasGroup()).toBe(true));
+		await refreshPackages(); // drains the queue
+		expect(listCalls - before).toBe(2); // one coalesced sync + the explicit drain
+	});
+
+	it('ignores a whole-storage clear and keeps the queue alive when a synced refresh fails', async () => {
+		await initPackages(hub);
+		const before = listCalls;
+		window.dispatchEvent(new StorageEvent('storage', { key: null }));
+		await refreshPackages();
+		expect(listCalls - before).toBe(1);
+
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		listImpl = () => Promise.reject(new Error('disk gone'));
+		fromOtherWindow('widgetsack.packages.enabled', ['pack-a']);
+		await vi.waitFor(() =>
+			expect(warn).toHaveBeenCalledWith('[packages] cross-window refresh failed', expect.any(Error))
+		);
+		warn.mockRestore();
+		listImpl = () => Promise.resolve(listFiles);
+		fromOtherWindow('widgetsack.packages.enabled', ['pack-a']);
+		await vi.waitFor(() => expect(hasGroup()).toBe(true));
+	});
+
+	it('ignores unrelated keys and does not listen before init or after reset', async () => {
+		fromOtherWindow('widgetsack.packages.enabled', ['pack-a']);
+		await Promise.resolve();
+		expect(listCalls).toBe(0);
+
+		await initPackages(hub);
+		const before = listCalls;
+		fromOtherWindow('widgetsack.studio.panes', {});
+		await refreshPackages();
+		expect(listCalls - before).toBe(1);
+
+		resetPackagesForTest();
+		listCalls = 0;
+		fromOtherWindow('widgetsack.packages.enabled', ['pack-a']);
+		await Promise.resolve();
+		expect(listCalls).toBe(0);
+		localStorage.removeItem('widgetsack.studio.panes');
+	});
 });

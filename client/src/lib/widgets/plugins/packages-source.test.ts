@@ -135,6 +135,31 @@ describe('startPackageSource', () => {
 		warn.mockRestore();
 	});
 
+	it('skips interval ticks while a slow fetch is still in flight (no overlapping ticks)', async () => {
+		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+		const pending: (() => void)[] = [];
+		fetchImpl = (id, url) =>
+			new Promise((resolve) => {
+				pending.push(() =>
+					resolve({ url, status: 200, body: JSON.stringify({ t: pending.length, text: 'slow' }) })
+				);
+			});
+		const hub = createTelemetryHub();
+		stop = await startPackageSource(
+			manifest({ source: { ...manifest().source!, pollSeconds: 0.01 } }),
+			hub
+		);
+		await until(() => fetches.length === 1);
+		// Many intervals elapse while the first fetch hangs: none of them may start another tick.
+		await new Promise((r) => setTimeout(r, 80));
+		expect(fetches.length).toBe(1);
+		pending[0]();
+		await until(() => textOf(hub, 'pkg.wx.status') === 'ok');
+		// Once the in-flight tick settles, the interval resumes ticking.
+		await until(() => fetches.length === 2);
+		warn.mockRestore();
+	});
+
 	it('stop() halts the loop and disposes the sandbox', async () => {
 		const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
 		const hub = createTelemetryHub();

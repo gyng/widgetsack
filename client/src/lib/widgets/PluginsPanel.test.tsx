@@ -65,6 +65,7 @@ function pkgRow(over: Partial<PackageRow> = {}): PackageRow {
 		sensors: 0,
 		hosts: [],
 		installedFrom: null,
+		pendingConsent: [],
 		...over
 	};
 }
@@ -283,6 +284,15 @@ describe('PluginsPanel packages list', () => {
 		act(() => packagesStore.set([pkgRow()]));
 		const { getByText } = renderPanel();
 		expect(getByText('empty')).toBeTruthy();
+	});
+
+	it('tells the user which capabilities await re-approval after an update', () => {
+		act(() => packagesStore.set([pkgRow({ pendingConsent: ['templates', 'network'] })]));
+		act(() => enabledPackages.set(['demo']));
+		const { getByRole } = renderPanel();
+		expect(getByRole('status').textContent).toBe(
+			'Needs re-approval: templates, network — toggle off and on to review'
+		);
 	});
 
 	it('shows a warning dot (no error) for a package that parsed with drop warnings', () => {

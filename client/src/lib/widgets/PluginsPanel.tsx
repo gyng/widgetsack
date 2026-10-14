@@ -110,6 +110,13 @@ function PackageItem({ row, enabled }: { row: PackageRow; enabled: boolean }) {
 				<span className="pkg-sub pkg-net dim">network: {row.hosts.join(', ')}</span>
 			)}
 			{row.installedFrom && <span className="pkg-sub pkg-src dim">from {row.installedFrom}</span>}
+			{/* Enabled, but an update/edit changed what was approved — those parts stay off until
+			    the user re-runs the enable prompt. */}
+			{row.pendingConsent.length > 0 && (
+				<span className="pkg-sub pkg-consent" role="status">
+					Needs re-approval: {row.pendingConsent.join(', ')} — toggle off and on to review
+				</span>
+			)}
 			<div className="pkg-actions">
 				{row.installedFrom && (
 					<button type="button" disabled={busy} onClick={() => void onCheck()}>

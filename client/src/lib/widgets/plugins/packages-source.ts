@@ -102,8 +102,18 @@ export async function startPackageSource(
 		}
 	};
 
-	void tick();
-	const timer = setInterval(() => void tick(), src.pollSeconds * 1000);
+	// A slow host can outlast the poll interval: skip a tick while one is in flight so ticks never
+	// overlap and a stale transform can't land after (and overwrite) a newer one.
+	let inFlight = false;
+	const guardedTick = (): void => {
+		if (inFlight) return;
+		inFlight = true;
+		void tick().finally(() => {
+			inFlight = false;
+		});
+	};
+	guardedTick();
+	const timer = setInterval(guardedTick, src.pollSeconds * 1000);
 	return () => {
 		stopped = true;
 		clearInterval(timer);

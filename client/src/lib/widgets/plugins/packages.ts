@@ -72,7 +72,13 @@ export type PackageRow = {
 	installedFrom: string | null;
 	/** The version recorded at install time (usually equals `version` from the manifest). */
 	installedVersion?: string;
+	/** Capabilities of an ENABLED package held back because their stored consent no longer matches
+	 * (typically after an update or an on-disk edit) — re-consent by toggling off and on. */
+	pendingConsent: PendingConsent[];
 };
+
+/** A consent-gated capability that is enabled but not applied. */
+export type PendingConsent = 'templates' | 'theme' | 'network';
 
 const parseIds = (raw: unknown): string[] =>
 	Array.isArray(raw) ? raw.filter((x): x is string => typeof x === 'string') : [];
@@ -138,6 +144,9 @@ export const packagesStore = createStore<PackageRow[]>([]);
 
 const discovered = new Map<string, Discovered>();
 
+// Per enabled package: the capabilities applyPackage held back for missing/stale consent.
+const pendingConsent = new Map<string, PendingConsent[]>();
+
 function rowOf(d: Discovered): PackageRow {
 	return {
 		id: d.id,
@@ -151,7 +160,8 @@ function rowOf(d: Discovered): PackageRow {
 		sensors: d.manifest?.source ? d.manifest.sensors.length : 0,
 		hosts: d.manifest?.source?.hosts.slice() ?? [],
 		installedFrom: d.install ? installSourceLabel(d.install) : null,
-		...(d.install ? { installedVersion: d.install.version } : {})
+		...(d.install ? { installedVersion: d.install.version } : {}),
+		pendingConsent: pendingConsent.get(d.id)?.slice() ?? []
 	};
 }
 
@@ -168,21 +178,23 @@ function removePackageTheme(id: string): void {
 	document.querySelector(`style[data-pkg-theme="${CSS.escape(id)}"]`)?.remove();
 }
 
-async function injectPackageTheme(d: Discovered): Promise<void> {
+// Resolves false when the theme was held back for missing/stale CSS consent.
+async function injectPackageTheme(d: Discovered): Promise<boolean> {
 	const theme = d.manifest?.theme;
-	if (!theme) return;
+	if (!theme) return true;
 	const css = await readPluginPackageAsset(d.id, theme.file);
-	if (css == null) return;
+	if (css == null) return true;
 	if (
 		scanCssThreats(css).length &&
 		trustedCssPackages.getSnapshot()[d.id] !== (await cssConsentFingerprint(css))
 	)
-		return;
+		return false;
 	removePackageTheme(d.id);
 	const el = document.createElement('style');
 	el.setAttribute('data-pkg-theme', d.id);
 	el.textContent = css;
 	document.head.appendChild(el);
+	return true;
 }
 
 // ---- sandboxed sensor sources (Phase 2) ----------------------------------------------------------
@@ -206,6 +218,18 @@ function unapplyPackage(id: string): void {
 	removePackageTheme(id);
 	unregisterSource(`pkg:${id}`);
 	stopPackageSource(id);
+	if (pendingConsent.delete(id)) publishRows();
+}
+
+// Templates carrying capability units (embedded pages, remote images, service calls, widget CSS)
+// apply only when the user consented to exactly this set — togglePackage's prompt stores it, and a
+// refresh/update that changes the set fails closed until the user re-consents.
+function templatesConsented(m: PluginPackageManifest): boolean {
+	const threats = packageTemplateThreats(m);
+	return (
+		!threats.length ||
+		templateConsentPackages.getSnapshot()[m.id] === templateThreatFingerprint(threats)
+	);
 }
 
 function netConsented(d: Discovered): boolean {
@@ -256,12 +280,20 @@ async function applyPackage(d: Discovered, enabled: boolean): Promise<void> {
 	// Reapplication is replacement, not an additive merge. A same-id manifest that drops its theme,
 	// templates, or source must not leave the previous capability alive.
 	unapplyPackage(d.id);
+	const pending: PendingConsent[] = [];
 	if (d.manifest.templates.length) {
-		registerTemplates(`pkg:${d.id}`, packageTemplates(d.manifest), d.manifest.name);
+		if (templatesConsented(d.manifest)) {
+			registerTemplates(`pkg:${d.id}`, packageTemplates(d.manifest), d.manifest.name);
+		} else pending.push('templates');
 	}
 	// Before the source starts: its first package_fetch needs the marker on disk.
 	await mirrorEnabledMarker(d.id, true);
-	await injectPackageTheme(d);
+	if (!(await injectPackageTheme(d))) pending.push('theme');
+	if (d.manifest.source && !netConsented(d)) pending.push('network');
+	if (pending.length) {
+		pendingConsent.set(d.id, pending);
+		publishRows();
+	}
 	if (d.manifest.source) {
 		const m = d.manifest;
 		registerSource({
@@ -331,6 +363,32 @@ export function refreshPackages(): Promise<void> {
 	return enqueueMutation(refreshPackagesNow);
 }
 
+// ---- cross-window sync ---------------------------------------------------------------------------
+// The studio owns package mutations; every other window (an overlay) holds its own copy of the
+// persisted allowlist + consent maps, which adopt the studio's writes via `storage` events. A
+// storage event only fires for ANOTHER window's write, so this window's own toggles never echo
+// back here. Any such change re-scans + re-applies through the shared mutation queue (newly
+// enabled packages apply; disabled/removed ones drop their templates, theme CSS, and source). A
+// burst of writes (one remove touches four keys) coalesces into a single queued refresh.
+
+const SYNC_KEYS = new Set([
+	'widgetsack.packages.enabled',
+	'widgetsack.packages.cssTrusted',
+	'widgetsack.packages.templateConsent',
+	'widgetsack.packages.netConsent'
+]);
+
+let syncQueued = false;
+
+function onStorage(event: StorageEvent): void {
+	if (event.key === null || !SYNC_KEYS.has(event.key) || syncQueued) return;
+	syncQueued = true;
+	void enqueueMutation(() => {
+		syncQueued = false;
+		return refreshPackagesNow();
+	}).catch((err: unknown) => console.warn('[packages] cross-window refresh failed', err));
+}
+
 let initialized = false;
 
 /** One-shot init per window (Canvas mount, both roles — idempotent like registerBuiltinPlugins).
@@ -340,6 +398,7 @@ export async function initPackages(hub: TelemetryHub): Promise<void> {
 	if (initialized) return;
 	initialized = true;
 	hubRef = hub;
+	globalThis.addEventListener?.('storage', onStorage);
 	await refreshPackages();
 }
 
@@ -350,8 +409,8 @@ export async function initPackages(hub: TelemetryHub): Promise<void> {
  * `confirmEnable` is asked with a combined message stating both facts (the Plugins panel passes
  * window.confirm); declining aborts the enable. Both consents are stored — CSS by an exact-content
  * SHA-256 fingerprint, network by hosts FINGERPRINT — so changed content/hosts re-prompt while
- * unchanged packages apply on subsequent boots. Other windows pick the change up on their next
- * reload; localStorage is shared.
+ * unchanged packages apply on subsequent boots. Other windows re-apply live through their
+ * `storage` listener (see cross-window sync above).
  */
 async function togglePackageNow(
 	id: string,
@@ -473,13 +532,29 @@ async function updatePackageNow(id: string): Promise<PackageOpResult> {
 	// in applyPackage already kept the new source from starting during the refresh above.
 	const next = discovered.get(id);
 	const nextFp = next?.manifest?.source ? consentFingerprint(next.manifest.source.hosts) : null;
-	netConsentPackages.update((m) => {
-		if (m[id] === undefined || m[id] === nextFp) return m;
+	dropStaleConsent(netConsentPackages, id, nextFp);
+	// Same for template consent: a changed set of embeds / remote images / service calls must be
+	// re-confirmed (applyPackage already kept the new templates unregistered during the refresh).
+	const nextThreats = next?.manifest ? packageTemplateThreats(next.manifest) : [];
+	dropStaleConsent(
+		templateConsentPackages,
+		id,
+		nextThreats.length ? templateThreatFingerprint(nextThreats) : null
+	);
+	return { ok: true };
+}
+
+function dropStaleConsent(
+	store: typeof netConsentPackages,
+	id: string,
+	current: string | null
+): void {
+	store.update((m) => {
+		if (m[id] === undefined || m[id] === current) return m;
 		const rest = { ...m };
 		delete rest[id];
 		return rest;
 	});
-	return { ok: true };
 }
 
 /**
@@ -525,12 +600,15 @@ export function resetPackagesForTest(): void {
 	for (const d of discovered.values()) void applyPackage(d, false);
 	runningSources.clear();
 	discovered.clear();
+	pendingConsent.clear();
 	publishRows();
 	enabledPackages.set([]);
 	trustedCssPackages.set({});
 	netConsentPackages.set({});
 	templateConsentPackages.set({});
 	hubRef = null;
+	globalThis.removeEventListener?.('storage', onStorage);
+	syncQueued = false;
 	initialized = false;
 	mutationTail = Promise.resolve();
 }
