@@ -41,6 +41,14 @@ export type KeyboardDeps = {
 	gotoSection?: (index: number) => void; // serviced locally: needs the pressed digit (Ctrl+1..9)
 };
 
+/** Whether keys typed at `target` belong to a text field: form controls, or a contenteditable
+ * editor such as CodeMirror (which types into a contenteditable div, so a tag check misses it). */
+function isTypingTarget(target: EventTarget | null): boolean {
+	if (!(target instanceof Element)) return false;
+	if (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return true;
+	return target.closest('[contenteditable=""], [contenteditable="true"], .cm-editor') !== null;
+}
+
 export function useKeyboard(deps: KeyboardDeps): {
 	spaceDownRef: React.RefObject<boolean>;
 	spaceDown: boolean;
@@ -76,7 +84,7 @@ export function useKeyboard(deps: KeyboardDeps): {
 
 			// Text-field guard: editing keys must not hijack typing; command chords opt in via allowInInput.
 			const target = event.target as HTMLElement | null;
-			if (!hit.allowInInput && target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+			if (!hit.allowInInput && isTypingTarget(target)) return;
 
 			// Space pan-mode (hold): owns spaceDown; never steal Space from a focused button.
 			if (hit.id === 'studio.panHold') {

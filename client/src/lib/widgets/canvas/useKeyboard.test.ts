@@ -107,6 +107,24 @@ describe('useKeyboard registry dispatch', () => {
 		input.remove();
 	});
 
+	it('a code editor (contenteditable) blocks editing keys like a text field', () => {
+		renderHook(() => useKeyboard(deps));
+		state.hasSelection = true;
+		// CodeMirror types into a contenteditable line inside .cm-editor, not an <input>.
+		const editor = document.createElement('div');
+		editor.className = 'cm-editor';
+		const content = document.createElement('div');
+		content.setAttribute('contenteditable', 'true');
+		const line = document.createElement('span');
+		content.appendChild(line);
+		editor.appendChild(content);
+		document.body.appendChild(editor);
+		press({ key: 'Backspace', code: 'Backspace' }, line);
+		press({ key: 'Delete', code: 'Delete' }, content);
+		expect(handlers['studio.delete']).not.toHaveBeenCalled();
+		editor.remove();
+	});
+
 	it('arrows nudge by 1px, or the grid step with Shift; Space enters pan mode', () => {
 		state.hasSelection = true;
 		const { result } = renderHook(() => useKeyboard(deps));
