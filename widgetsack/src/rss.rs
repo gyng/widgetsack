@@ -167,7 +167,7 @@ fn feed_to_samples(items: &[FeedItem], ts: u64) -> Vec<SensorSample> {
 // ---- config I/O (server-side) ----
 
 fn rss_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = crate::file_io::config_root(app)?;
     Ok(dir.join("plugins").join("rss.json"))
 }
 
@@ -266,8 +266,15 @@ pub(crate) async fn fetch_text_capped(
         }
         buf.extend_from_slice(&bytes);
     }
-    // Feeds are overwhelmingly UTF-8; a lossy decode keeps a stray byte from failing the poll.
-    Ok(String::from_utf8_lossy(&buf).into_owned())
+    Ok(decode_feed_body(&buf))
+}
+
+/// Feeds are overwhelmingly UTF-8; a lossy decode keeps a stray byte from failing the poll. A
+/// leading UTF-8 byte-order mark is dropped so line-oriented parsers (ICS `BEGIN:VCALENDAR`) see
+/// the first line as sent. Pure.
+fn decode_feed_body(buf: &[u8]) -> String {
+    let buf = buf.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(buf);
+    String::from_utf8_lossy(buf).into_owned()
 }
 
 async fn fetch_text(client: &reqwest::Client, url: &str) -> Result<String, String> {
@@ -444,6 +451,16 @@ mod tests {
         assert!(!message.contains("secret-test-token"), "{message}");
         assert!(!message.contains("private-calendar"), "{message}");
         assert!(message.contains("builder"), "{message}");
+    }
+
+    #[test]
+    fn decode_feed_body_drops_a_leading_bom_and_tolerates_bad_bytes() {
+        assert_eq!(
+            decode_feed_body(b"\xEF\xBB\xBFBEGIN:VCALENDAR"),
+            "BEGIN:VCALENDAR"
+        );
+        assert_eq!(decode_feed_body(b"<rss>"), "<rss>");
+        assert_eq!(decode_feed_body(b"a\xFFb"), "a\u{fffd}b");
     }
 
     #[test]

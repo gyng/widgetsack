@@ -161,7 +161,7 @@ fn now_ms() -> u64 {
 // ---- config I/O (server-side; password never leaves) ----
 
 fn mqtt_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = crate::file_io::config_root(app)?;
     Ok(dir.join("plugins").join("mqtt.json"))
 }
 

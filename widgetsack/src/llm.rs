@@ -276,7 +276,7 @@ pub struct LlmState {
 // ---- config I/O (server-side; api_key never leaves) ----
 
 fn llm_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = crate::file_io::config_root(app)?;
     Ok(dir.join("plugins").join("llm.json"))
 }
 
@@ -697,13 +697,25 @@ fn llm_http_client(insecure: bool) -> Result<reqwest::Client, String> {
     llm_http_client_with(insecure, Duration::from_secs(120))
 }
 
+/// Total deadline for the NON-streaming calls (one-shot completion, model list, transcription,
+/// speech). The streaming chat has no total deadline — only the client's per-read idle timeout —
+/// so a slow local model can keep generating for as long as it keeps sending.
+const NON_STREAM_TIMEOUT: Duration = Duration::from_secs(600);
+
 /// PURE SEAM: a redirect the LLM client may follow. Anthropic's key travels in a custom
 /// `x-api-key` header, which reqwest does not strip on a cross-host redirect (it only strips
-/// Authorization/Cookie), so only same-origin redirects are followed.
-fn same_origin_redirect(from: &reqwest::Url, to: &reqwest::Url) -> bool {
-    from.scheme() == to.scheme()
-        && from.host_str() == to.host_str()
-        && from.port_or_known_default() == to.port_or_known_default()
+/// Authorization/Cookie), so the host must never change. Allowed: the same origin, or an upgrade
+/// of the same host from http to https (a local TLS proxy in front of Ollama), where the port may
+/// change too. Never a downgrade to http, and never another port on the same scheme.
+fn redirect_allowed(from: &reqwest::Url, to: &reqwest::Url) -> bool {
+    if from.host_str() != to.host_str() {
+        return false;
+    }
+    match (from.scheme(), to.scheme()) {
+        (a, b) if a == b => from.port_or_known_default() == to.port_or_known_default(),
+        ("http", "https") => true,
+        _ => false,
+    }
 }
 
 fn llm_http_client_with(insecure: bool, idle: Duration) -> Result<reqwest::Client, String> {
@@ -713,7 +725,7 @@ fn llm_http_client_with(insecure: bool, idle: Duration) -> Result<reqwest::Clien
                 && attempt
                     .previous()
                     .last()
-                    .is_some_and(|from| same_origin_redirect(from, attempt.url()));
+                    .is_some_and(|from| redirect_allowed(from, attempt.url()));
             if allowed {
                 attempt.follow()
             } else {
@@ -721,9 +733,9 @@ fn llm_http_client_with(insecure: bool, idle: Duration) -> Result<reqwest::Clien
             }
         }))
         .connect_timeout(Duration::from_secs(15))
-        .read_timeout(idle)
-        // Backstop for a stalled upload or a server trickling bytes forever.
-        .timeout(Duration::from_secs(600));
+        // Idle limit between reads. No client-wide total deadline: it would cut off a long
+        // streamed generation; one-shot calls set `NON_STREAM_TIMEOUT` per request instead.
+        .read_timeout(idle);
     if insecure {
         builder = builder
             .danger_accept_invalid_certs(true)
@@ -766,6 +778,7 @@ async fn chat_once(cfg: &LlmConfig, messages: &[ChatMessage]) -> Result<String, 
     let client = llm_http_client(cfg.insecure)?;
     let resp = apply_auth(client.post(&url), &cfg.provider, &cfg.api_key)
         .json(&body)
+        .timeout(NON_STREAM_TIMEOUT)
         .send()
         .await
         .map_err(ai_request_error)?;
@@ -1171,6 +1184,7 @@ pub async fn llm_list_models<R: Runtime>(
     let url = models_endpoint(&provider, &base);
     let client = llm_http_client(insecure)?;
     let resp = apply_auth(client.get(&url), &provider, &key)
+        .timeout(NON_STREAM_TIMEOUT)
         .send()
         .await
         .map_err(ai_request_error)?;
@@ -1238,6 +1252,7 @@ pub async fn llm_transcribe<R: Runtime>(
     let client = llm_http_client(cfg.insecure)?;
     let resp = apply_auth(client.post(&url), &cfg.provider, &cfg.api_key)
         .multipart(form)
+        .timeout(NON_STREAM_TIMEOUT)
         .send()
         .await
         .map_err(ai_request_error)?;
@@ -1299,6 +1314,7 @@ pub async fn llm_synthesize<R: Runtime>(
     let client = llm_http_client(cfg.insecure)?;
     let resp = apply_auth(client.post(&url), &cfg.provider, &cfg.api_key)
         .json(&body)
+        .timeout(NON_STREAM_TIMEOUT)
         .send()
         .await
         .map_err(ai_request_error)?;
@@ -1966,28 +1982,52 @@ mod tests {
     }
 
     #[test]
-    fn only_same_origin_redirects_are_followed() {
+    fn only_same_host_redirects_without_a_downgrade_are_followed() {
         let url = |s: &str| reqwest::Url::parse(s).unwrap();
         let api = url("https://api.anthropic.com/v1/messages");
-        assert!(same_origin_redirect(
+        assert!(redirect_allowed(
             &api,
             &url("https://api.anthropic.com/v2/messages")
         ));
-        assert!(same_origin_redirect(
+        assert!(redirect_allowed(
             &api,
             &url("https://api.anthropic.com:443/x")
         ));
-        assert!(!same_origin_redirect(
+        assert!(!redirect_allowed(
             &api,
             &url("https://evil.example/v1/messages")
         ));
-        assert!(!same_origin_redirect(
+        assert!(!redirect_allowed(
             &api,
             &url("http://api.anthropic.com/v1/messages")
         ));
-        assert!(!same_origin_redirect(
+        assert!(!redirect_allowed(
             &api,
             &url("https://api.anthropic.com:8443/v1")
+        ));
+        // A local proxy upgrading plain http to https on the same host is fine, port change included…
+        let local = url("http://ollama.local:11434/api/chat");
+        assert!(redirect_allowed(
+            &local,
+            &url("https://ollama.local/api/chat")
+        ));
+        assert!(redirect_allowed(
+            &local,
+            &url("https://ollama.local:8443/api/chat")
+        ));
+        // …but never to another host, and never a port change without the upgrade.
+        assert!(!redirect_allowed(
+            &local,
+            &url("https://evil.example/api/chat")
+        ));
+        assert!(!redirect_allowed(
+            &local,
+            &url("http://ollama.local:8080/api/chat")
+        ));
+        // A downgrade is refused even on the default ports.
+        assert!(!redirect_allowed(
+            &url("https://ollama.local/api/chat"),
+            &url("http://ollama.local/api/chat")
         ));
     }
 

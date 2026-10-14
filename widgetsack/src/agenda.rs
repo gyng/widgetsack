@@ -81,8 +81,10 @@ fn now_ms() -> u64 {
 // ---- pure seams (unit-tested, no I/O) ----
 
 /// Unfold ICS content lines: a line beginning with a space or tab is a continuation of the previous
-/// one (RFC 5545 folding). Returns the logical lines, CR-stripped. Pure.
+/// one (RFC 5545 folding). Returns the logical lines, CR-stripped. A leading UTF-8 BOM (some
+/// servers send one) is dropped so the first line still reads `BEGIN:VCALENDAR`. Pure.
 fn unfold(ics: &str) -> Vec<String> {
+    let ics = ics.strip_prefix('\u{feff}').unwrap_or(ics);
     let mut lines: Vec<String> = Vec::new();
     for raw in ics.split('\n') {
         let line = raw.strip_suffix('\r').unwrap_or(raw);
@@ -157,7 +159,7 @@ pub fn parse_ics_events(ics: &str, max: usize) -> Vec<AgendaEvent> {
     let mut location = String::new();
     let mut start: Option<(String, bool)> = None;
     for line in &lines {
-        match line.as_str() {
+        match line.trim_end() {
             "BEGIN:VEVENT" => {
                 in_event = true;
                 summary.clear();
@@ -280,7 +282,10 @@ fn calendar_for_bridge(body: &str, cutoff: u32) -> String {
         )
     };
     for line in unfold(body) {
-        let field = line.split_once(':');
+        // Component names never contain whitespace; a trailing space must not unbalance the frames.
+        let field = line
+            .split_once(':')
+            .map(|(key, value)| (key, value.trim_end()));
         if let Some((_, name)) = field.filter(|(key, _)| key.eq_ignore_ascii_case("BEGIN")) {
             if stack.is_empty() {
                 if started || !name.eq_ignore_ascii_case("VCALENDAR") {
@@ -420,7 +425,7 @@ fn feed_to_samples(body: &str, ts: u64) -> Vec<SensorSample> {
 // ---- config I/O ----
 
 fn agenda_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = crate::file_io::config_root(app)?;
     Ok(dir.join("plugins").join("agenda.json"))
 }
 
@@ -545,7 +550,17 @@ pub async fn run_agenda_client<R: Runtime>(app: AppHandle<R>, cfg: AgendaConfig)
         match fetch_text(&client, &url).await {
             Ok(body) => {
                 let _t = timings.start("plugin.agenda");
-                let batch = feed_to_samples(&body, now_ms());
+                // Parsing/pruning a body of up to 16 MiB is CPU work: keep it off the async
+                // workers that also drive every other integration and IPC command.
+                let ts = now_ms();
+                let batch =
+                    match tokio::task::spawn_blocking(move || feed_to_samples(&body, ts)).await {
+                        Ok(batch) => batch,
+                        Err(err) => {
+                            eprintln!("agenda: parse task failed: {err}");
+                            vec![SensorSample::text("agenda.status", ts, "error")]
+                        }
+                    };
                 let invalid = batch.iter().any(|sample| {
                     sample.sensor == "agenda.status"
                         && matches!(&sample.value, SensorValue::Text(status) if status == "error")
@@ -761,6 +776,20 @@ mod tests {
         let samples = feed_to_samples("<html>Not a calendar</html>", 9);
         assert!(samples.iter().any(|sample| sample.sensor == "agenda.status"
             && matches!(&sample.value, SensorValue::Text(status) if status == "error")));
+    }
+
+    #[test]
+    fn a_leading_bom_and_trailing_frame_whitespace_still_read_as_a_calendar() {
+        let body = "\u{feff}BEGIN:VCALENDAR \r\nBEGIN:VEVENT\t\r\nUID:a\r\nSUMMARY:Standup\r\n\
+            DTSTART:20261014T090000Z\r\nEND:VEVENT \r\nEND:VCALENDAR\r\n";
+        let samples = feed_to_samples(body, 1_791_979_200_000);
+        assert!(samples.iter().any(|sample| sample.sensor == "agenda.status"
+            && matches!(&sample.value, SensorValue::Text(status) if status == "connected")));
+        let calendar = calendar_for_bridge(body, 20261012);
+        assert!(calendar.starts_with("BEGIN:VCALENDAR\r\n"));
+        assert!(calendar.contains("BEGIN:VEVENT\r\nUID:a\r\n"));
+        assert!(calendar.ends_with("END:VEVENT\r\nEND:VCALENDAR\r\n"));
+        assert_eq!(parse_ics_events(body, 10).len(), 1);
     }
 
     #[test]

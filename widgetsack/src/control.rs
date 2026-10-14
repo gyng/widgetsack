@@ -136,13 +136,18 @@ fn is_denied_service(domain: &str, service: &str) -> bool {
 /// service URL, so `unlock?x`, `alarm_disarm#` or `unl%6Fck` would reach HA as a denied service the
 /// denylist never saw — then the physical-security denylist applies.
 fn ha_target_rejection(domain: &str, service: &str) -> Option<(&'static str, Value)> {
-    if !crate::ha::valid_service_slug(domain) || !crate::ha::valid_service_slug(service) {
+    // HA lowercases both parts, so the denylist must see (and `ha_call_service` sends) the same
+    // lowercased slugs: `Lock.Unlock` is `lock.unlock`.
+    let (Some(domain), Some(service)) = (
+        crate::ha::normalize_service_slug(domain),
+        crate::ha::normalize_service_slug(service),
+    ) else {
         return Some((
             "400 Bad Request",
-            json!({ "error": "domain/service must be lowercase [a-z0-9_] slugs" }),
+            json!({ "error": "domain/service must be [a-z0-9_] slugs" }),
         ));
-    }
-    if is_denied_service(domain, service) {
+    };
+    if is_denied_service(&domain, &service) {
         return Some((
             "403 Forbidden",
             json!({ "error": format!("{domain}.{service} is not allowed via agent control") }),
@@ -574,6 +579,10 @@ mod tests {
         let (status, _) = ha_target_rejection("lock", "unlock").unwrap();
         assert_eq!(status, "403 Forbidden");
         assert!(ha_target_rejection("light", "turn_on").is_none());
+        // HA lowercases service names: mixed case is accepted, and still hits the denylist.
+        assert!(ha_target_rejection("Light", "Turn_On").is_none());
+        let (status, _) = ha_target_rejection("Lock", "UnLock").unwrap();
+        assert_eq!(status, "403 Forbidden");
         assert!(ha_target_rejection("lock", "lock").is_none());
     }
 

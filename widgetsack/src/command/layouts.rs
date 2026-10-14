@@ -142,9 +142,14 @@ fn merge_saved_layout(
     touched_globals: &[String],
     backup: Option<&str>,
 ) -> Result<serde_json::Value, String> {
+    // Recovery authorization comes first: the frontend backs up files that parse as JSON but fail
+    // layout validation too (non-object root/monitors, a bad `library`), and those can never be
+    // merged into. The exact backed-up bytes still being on disk proves nothing changed since.
+    if backup == Some(raw) {
+        return Ok(incoming);
+    }
     match serde_json::from_str(raw) {
         Ok(current) => merge_layout_contents(current, incoming, touched_monitors, touched_globals),
-        Err(_) if backup == Some(raw) => Ok(incoming),
         Err(e) => Err(format!(
             "saved layout is invalid JSON; refusing overwrite without a matching backup: {e}"
         )),
@@ -470,6 +475,25 @@ mod tests {
         let merged = merge_saved_layout(valid, incoming, &["a".into()], &[], Some(raw)).unwrap();
         assert!(merged["monitors"].get("b").is_some());
         assert_eq!(merged["theme"], "keep");
+    }
+
+    #[test]
+    fn recovery_replaces_parseable_but_invalid_layouts_only_with_a_matching_backup() {
+        let incoming = json!({"version": 2, "monitors": {"a": {"floating": []}}});
+        for raw in [r#"[1,2]"#, r#"{"version":2,"monitors":[]}"#] {
+            // Without recovery authorization the merge can never succeed…
+            assert!(merge_saved_layout(raw, incoming.clone(), &["a".into()], &[], None).is_err());
+            // …with the exact backed-up bytes, the incoming document replaces it wholesale.
+            assert_eq!(
+                merge_saved_layout(raw, incoming.clone(), &["a".into()], &[], Some(raw)).unwrap(),
+                incoming
+            );
+        }
+        // A merge-able but invalid `library` is replaced wholesale too, not kept forever.
+        let raw = r#"{"version":2,"monitors":{},"library":"garbage"}"#;
+        let merged =
+            merge_saved_layout(raw, incoming.clone(), &["a".into()], &[], Some(raw)).unwrap();
+        assert!(merged.get("library").is_none());
     }
 
     #[test]

@@ -79,6 +79,9 @@ fn open_or_focus_studio(app: &tauri::AppHandle) {
     overlay_diag::log_snapshot(app, "before studio open");
     overlay_diag::log_after(app, "after studio open");
     if let Some(w) = app.get_webview_window("studio") {
+        // A minimized (or hidden) studio can't take focus — restore it first.
+        let _ = w.unminimize();
+        let _ = w.show();
         let _ = w.set_focus();
         return;
     }

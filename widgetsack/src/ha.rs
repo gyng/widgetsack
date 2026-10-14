@@ -135,20 +135,43 @@ pub struct HaState {
     /// is another failed login for HA's `ip_ban_enabled` counter, so while set a window's
     /// ensure-connect leaves the worker stopped and the REST commands refuse locally. Cleared only by
     /// a new config (`save_ha_config`) or an explicit studio restart.
-    auth_failed: std::sync::atomic::AtomicBool,
+    ///
+    /// Packed as `epoch << 1 | failed`: every clear starts a new token epoch, and a rejection only
+    /// latches if it belongs to the epoch its request STARTED in — so a request still in flight with
+    /// the old token can't re-latch the failure against a freshly saved one.
+    auth: AtomicU64,
 }
 
 impl HaState {
-    fn mark_auth_failed(&self) {
-        self.auth_failed.store(true, Ordering::SeqCst);
+    /// The current token epoch; capture it before a request and hand it to `mark_auth_failed`.
+    fn auth_epoch(&self) -> u64 {
+        self.auth.load(Ordering::SeqCst) >> 1
     }
 
+    /// Latch the rejection if `epoch` is still current. Returns whether it latched (a stale
+    /// rejection is about a token that has since been replaced).
+    fn mark_auth_failed(&self, epoch: u64) -> bool {
+        let current = epoch << 1;
+        match self
+            .auth
+            .compare_exchange(current, current | 1, Ordering::SeqCst, Ordering::SeqCst)
+        {
+            Ok(_) => true,
+            Err(actual) => actual == current | 1,
+        }
+    }
+
+    /// Lift the latch and start a new token epoch.
     fn clear_auth_failed(&self) {
-        self.auth_failed.store(false, Ordering::SeqCst);
+        let _ = self
+            .auth
+            .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |v| {
+                Some(((v >> 1) + 1) << 1)
+            });
     }
 
     fn is_auth_failed(&self) -> bool {
-        self.auth_failed.load(Ordering::SeqCst)
+        self.auth.load(Ordering::SeqCst) & 1 == 1
     }
 
     /// Whether `ha_connect` may (re)start the worker: an explicit restart always may; an ensure from a
@@ -157,12 +180,14 @@ impl HaState {
         restart || !self.is_auth_failed()
     }
 
-    /// `Err` while the saved token is known to be rejected, so a REST command never sends it again.
-    fn rest_allowed(&self) -> Result<(), String> {
-        if self.is_auth_failed() {
+    /// `Err` while the saved token is known to be rejected, so a REST command never sends it again;
+    /// otherwise the token epoch the request runs in (for `mark_auth_failed`).
+    fn rest_allowed(&self) -> Result<u64, String> {
+        let v = self.auth.load(Ordering::SeqCst);
+        if v & 1 == 1 {
             Err("HA rejected the access token — update it in the Home Assistant settings".into())
         } else {
-            Ok(())
+            Ok(v >> 1)
         }
     }
 
@@ -431,7 +456,7 @@ fn ping_frame(id: u64) -> String {
 // ---- config I/O (server-side; token never leaves) ----
 
 fn ha_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = crate::file_io::config_root(app)?;
     Ok(dir.join("plugins").join("ha.json"))
 }
 
@@ -540,6 +565,15 @@ pub(crate) fn valid_service_slug(s: &str) -> bool {
     !s.is_empty()
         && s.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+}
+
+/// HA lowercases service domains/names (`Light.Turn_On` runs `light.turn_on`), so callers may send
+/// mixed case: ASCII-lowercase first, then require a `valid_service_slug`. The returned value is the
+/// one to check (denylists) AND to send, so the two can never differ. ASCII-only lowercasing keeps a
+/// look-alike such as the Kelvin sign from folding into a real letter. Pure.
+pub(crate) fn normalize_service_slug(s: &str) -> Option<String> {
+    let lower = s.to_ascii_lowercase();
+    valid_service_slug(&lower).then_some(lower)
 }
 
 /// A safe HA `entity_picture` path to fetch: host-absolute (`/api/...`), no scheme/host (`//`), no
@@ -1007,26 +1041,30 @@ fn is_rest_auth_rejection(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::UNAUTHORIZED
 }
 
-/// Record that HA rejected the saved token: stop further attempts (`HaState::auth_failed`) and tell
-/// every window, so the tiles show the auth failure instead of a generic error.
-fn note_auth_rejected<R: Runtime>(app: &AppHandle<R>) {
-    if let Some(state) = app.try_state::<HaState>() {
-        state.mark_auth_failed();
+/// Record that HA rejected the token of `epoch`: stop further attempts (`HaState::auth`) and tell
+/// every window, so the tiles show the auth failure instead of a generic error. A rejection of a
+/// token that has since been replaced (a newer epoch) is ignored.
+fn note_auth_rejected<R: Runtime>(app: &AppHandle<R>, epoch: u64) {
+    let latched = app
+        .try_state::<HaState>()
+        .is_none_or(|state| state.mark_auth_failed(epoch));
+    if latched {
+        emit_status(app, "auth_failed");
     }
-    emit_status(app, "auth_failed");
 }
 
-/// Inspect a failed REST response's status; a 401 latches the auth failure.
-fn note_rest_failure<R: Runtime>(app: &AppHandle<R>, status: reqwest::StatusCode) {
+/// Inspect a failed REST response's status; a 401 latches the auth failure (for `epoch`).
+fn note_rest_failure<R: Runtime>(app: &AppHandle<R>, epoch: u64, status: reqwest::StatusCode) {
     if is_rest_auth_rejection(status) {
-        note_auth_rejected(app);
+        note_auth_rejected(app, epoch);
     }
 }
 
-/// The REST guard for commands holding an `AppHandle` (see `HaState::rest_allowed`).
-fn rest_allowed<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
+/// The REST guard for commands holding an `AppHandle` (see `HaState::rest_allowed`); `Ok` carries
+/// the token epoch the request starts in.
+fn rest_allowed<R: Runtime>(app: &AppHandle<R>) -> Result<u64, String> {
     app.try_state::<HaState>()
-        .map_or(Ok(()), |state| state.rest_allowed())
+        .map_or(Ok(0), |state| state.rest_allowed())
 }
 
 /// PURE SEAM: a rejected token is fatal. Retrying it on the backoff schedule records a failed login
@@ -1040,7 +1078,9 @@ fn is_auth_rejection(error: &str) -> bool {
 /// considered healthy (so an auth-then-immediate-close flap can't pin a 1s hammer loop).
 /// Runs until the task is aborted by `ha_disconnect`, or until HA rejects the token
 /// (`auth_failed`, latched in `HaState`); only a saved config or a studio restart starts it again.
-pub async fn run_ha_client<R: Runtime>(app: AppHandle<R>, cfg: HaConfig) {
+/// `epoch` is the token epoch captured BEFORE `cfg` was loaded: a rejection only latches while it is
+/// still current.
+pub async fn run_ha_client<R: Runtime>(app: AppHandle<R>, cfg: HaConfig, epoch: u64) {
     if let Some(state) = app.try_state::<HaState>() {
         state.forget_all();
     }
@@ -1066,7 +1106,7 @@ pub async fn run_ha_client<R: Runtime>(app: AppHandle<R>, cfg: HaConfig) {
                 let rejected = is_auth_rejection(&err.to_string());
                 log::warn("ha", "client error").field("error", err).emit();
                 if rejected {
-                    note_auth_rejected(&app);
+                    note_auth_rejected(&app, epoch);
                     return;
                 }
                 emit_status(&app, "error");
@@ -1241,6 +1281,7 @@ pub async fn ha_connect<R: Runtime>(
     state
         .task
         .start(restart, || {
+            let epoch = state.auth_epoch();
             let cfg = match load_ha_config(&app)? {
                 Some(cfg) => cfg,
                 None => {
@@ -1253,7 +1294,7 @@ pub async fn ha_connect<R: Runtime>(
             };
             let app_for_task = app.clone();
             Ok(Some(async move {
-                run_ha_client(app_for_task, cfg).await;
+                run_ha_client(app_for_task, cfg, epoch).await;
             }))
         })
         .await
@@ -1277,7 +1318,7 @@ pub async fn ha_disconnect<R: Runtime>(
 /// fetch, so it works regardless of the WS task's timing.
 #[tauri::command]
 pub async fn list_ha_entities<R: Runtime>(app: AppHandle<R>) -> Result<Vec<HaEntity>, String> {
-    rest_allowed(&app)?;
+    let epoch = rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let client = ha_http_client(cfg.insecure)?;
     let resp = client
@@ -1291,7 +1332,7 @@ pub async fn list_ha_entities<R: Runtime>(app: AppHandle<R>) -> Result<Vec<HaEnt
         .await
         .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
-        note_rest_failure(&app, resp.status());
+        note_rest_failure(&app, epoch, resp.status());
         return Err(format!("GET /api/states failed: {}", resp.status()));
     }
     let states: Vec<Value> = crate::http_response::read_json(resp, JSON_BODY_LIMIT).await?;
@@ -1303,7 +1344,7 @@ pub async fn list_ha_entities<R: Runtime>(app: AppHandle<R>) -> Result<Vec<HaEnt
 /// rows carry no secrets. The frontend joins these with live states into the tree.
 #[tauri::command]
 pub async fn ha_registry_snapshot<R: Runtime>(app: AppHandle<R>) -> Result<HaRegistry, String> {
-    rest_allowed(&app)?;
+    let epoch = rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let ws_url = ws_url_from(&cfg.url, &cfg.base_path);
     let results = ws_request_many(
@@ -1320,7 +1361,7 @@ pub async fn ha_registry_snapshot<R: Runtime>(app: AppHandle<R>) -> Result<HaReg
     .map_err(|e| {
         let e = e.to_string();
         if is_auth_rejection(&e) {
-            note_auth_rejected(&app);
+            note_auth_rejected(&app, epoch);
         }
         e
     })?;
@@ -1349,10 +1390,13 @@ pub async fn ha_call_service<R: Runtime>(
     service: String,
     data: Value,
 ) -> Result<Value, String> {
-    if !valid_service_slug(&domain) || !valid_service_slug(&service) {
+    let (Some(domain), Some(service)) = (
+        normalize_service_slug(&domain),
+        normalize_service_slug(&service),
+    ) else {
         return Err("invalid domain/service".to_string());
-    }
-    rest_allowed(&app)?;
+    };
+    let epoch = rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let client = ha_http_client(cfg.insecure)?;
     let resp = client
@@ -1369,7 +1413,7 @@ pub async fn ha_call_service<R: Runtime>(
         .await
         .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
-        note_rest_failure(&app, resp.status());
+        note_rest_failure(&app, epoch, resp.status());
         return Err(format!("HA service call failed: {}", resp.status()));
     }
     crate::http_response::read_json(resp, JSON_BODY_LIMIT).await
@@ -1395,7 +1439,7 @@ pub async fn ha_history<R: Runtime>(
     if iso8601_to_ms(&start).is_none() || iso8601_to_ms(&end).is_none() {
         return Err("invalid time range".to_string());
     }
-    rest_allowed(&app)?;
+    let epoch = rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let client = ha_http_client(cfg.insecure)?;
     // parse_with_params percent-encodes the query (the ISO `end_time` carries ':' and '+').
@@ -1421,7 +1465,7 @@ pub async fn ha_history<R: Runtime>(
         .await
         .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
-        note_rest_failure(&app, resp.status());
+        note_rest_failure(&app, epoch, resp.status());
         return Err(format!("GET /api/history failed: {}", resp.status()));
     }
     // HA returns an array-of-arrays (one inner array per filtered entity); we filtered to one.
@@ -1442,7 +1486,7 @@ pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result
     if !valid_art_path(&path) {
         return Err("invalid art path".to_string());
     }
-    rest_allowed(&app)?;
+    let epoch = rest_allowed(&app)?;
     let cfg = load_ha_config(&app)?.ok_or("HA not configured")?;
     let client = ha_http_client(cfg.insecure)?;
     let resp = client
@@ -1453,7 +1497,7 @@ pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result
         .await
         .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
-        note_rest_failure(&app, resp.status());
+        note_rest_failure(&app, epoch, resp.status());
         return Err(format!("GET art failed: {}", resp.status()));
     }
     let content_type = resp
@@ -2003,13 +2047,27 @@ mod tests {
     }
 
     #[test]
+    fn service_slugs_are_lowercased_before_validation() {
+        assert_eq!(normalize_service_slug("Light").as_deref(), Some("light"));
+        assert_eq!(
+            normalize_service_slug("Turn_On").as_deref(),
+            Some("turn_on")
+        );
+        assert_eq!(normalize_service_slug("UNLOCK").as_deref(), Some("unlock"));
+        // Case folding never rescues URL syntax, and only ASCII folds (Kelvin sign stays invalid).
+        for bad in ["", "Unlock?X", "LOCK/UNLOCK", "Turn On", "\u{212A}elvin"] {
+            assert_eq!(normalize_service_slug(bad), None, "{bad:?}");
+        }
+    }
+
+    #[test]
     fn an_auth_rejection_blocks_ensure_connect_and_rest_until_cleared() {
         let state = HaState::default();
         // Fresh: a window's ensure-connect may start the worker and REST commands may run.
         assert!(state.may_start(false));
         assert!(state.rest_allowed().is_ok());
 
-        state.mark_auth_failed();
+        assert!(state.mark_auth_failed(state.auth_epoch()));
         // A window mount (restart=false) must not retry the rejected token…
         assert!(!state.may_start(false));
         // …and REST commands short-circuit instead of sending another 401 to HA's ban counter.
@@ -2021,6 +2079,25 @@ mod tests {
         state.clear_auth_failed();
         assert!(state.may_start(false));
         assert!(state.rest_allowed().is_ok());
+    }
+
+    #[test]
+    fn a_rejection_of_a_replaced_token_does_not_relatch() {
+        let state = HaState::default();
+        // A REST call starts with the old token…
+        let old = state.rest_allowed().unwrap();
+        // …the user saves a new token while it is in flight…
+        state.clear_auth_failed();
+        let new = state.rest_allowed().unwrap();
+        assert_ne!(old, new);
+        // …and the old request's 401 arrives late: it must not lock out the new token.
+        assert!(!state.mark_auth_failed(old));
+        assert!(!state.is_auth_failed());
+        assert!(state.rest_allowed().is_ok());
+        // A rejection of the CURRENT token still latches (and repeating it is idempotent).
+        assert!(state.mark_auth_failed(new));
+        assert!(state.mark_auth_failed(new));
+        assert!(state.is_auth_failed());
     }
 
     #[test]

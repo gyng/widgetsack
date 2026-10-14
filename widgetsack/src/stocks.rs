@@ -15,7 +15,7 @@
 //! (Yahoo needs none); `StocksStatus` is fully non-secret.
 
 use std::path::PathBuf;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -29,6 +29,12 @@ const MAX_INTERVAL: u64 = 3600;
 /// While no `stocks.*` widget is mounted we don't fetch; re-check the demand gate this often so a
 /// freshly-placed ticker gets data quickly without polling the network when idle.
 const IDLE_RECHECK: Duration = Duration::from_secs(3);
+/// An early wake (a newly demanded symbol) waits this long for demand to settle — typing `AAPL` in
+/// the Inspector demands `A`, `AA`, `AAP`, `AAPL` in quick succession — before fetching.
+const WAKE_DEBOUNCE: Duration = Duration::from_secs(3);
+/// An early wake never starts a fetch sooner than this after the previous fetch started, so demand
+/// churn can't push the keyless provider into rate-limiting (429).
+const MIN_WAKE_SPACING: Duration = Duration::from_secs(30);
 
 fn default_interval() -> u64 {
     60
@@ -70,6 +76,10 @@ pub struct StocksState {
     /// Cuts the poll sleep short when a window starts demanding a symbol the last fetch didn't
     /// cover (a freshly placed Ticker), so it isn't blank for a whole interval.
     wake: tokio::sync::Notify,
+    /// Symbols the current worker has already tried to fetch, whether or not they resolved. A
+    /// symbol that never resolves is never cached, so without this every re-demand would wake the
+    /// poll again.
+    attempted: std::sync::Mutex<std::collections::HashSet<String>>,
 }
 
 fn now_ms() -> u64 {
@@ -82,7 +92,7 @@ fn now_ms() -> u64 {
 // ---- config I/O (server-side) ----
 
 fn stocks_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
+    let dir = crate::file_io::config_root(app)?;
     Ok(dir.join("plugins").join("stocks.json"))
 }
 
@@ -238,6 +248,15 @@ fn merge_symbols(configured: &[String], active: &[String]) -> Vec<String> {
     out
 }
 
+/// When an early-woken poll may fetch: once demand has been quiet for `WAKE_DEBOUNCE` (from `now`,
+/// the latest wake) AND `MIN_WAKE_SPACING` has passed since the previous fetch started — but never
+/// later than the normal interval `deadline`. Pure.
+fn wake_fetch_at(now: Instant, fetch_started: Instant, deadline: Instant) -> Instant {
+    (now + WAKE_DEBOUNCE)
+        .max(fetch_started + MIN_WAKE_SPACING)
+        .min(deadline)
+}
+
 // ---- telemetry emission ----
 
 /// Surface the feed state to widgets as a `stocks.status` text sample (a Text meter / the settings
@@ -264,17 +283,20 @@ fn emit_batch<R: Runtime>(app: &AppHandle<R>, batch: &[SensorSample]) {
 pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[String]) {
     if let Some(state) = window.app_handle().try_state::<StocksState>() {
         crate::sample_cache::prime_window(window, &state.latest, added);
-        if has_uncached_symbol(added, |sym| {
+        let attempted = state.attempted.lock().unwrap_or_else(|e| e.into_inner());
+        let wake = has_uncached_symbol(added, |sym| {
             let prefix = format!("stocks.{sym}.");
-            state.latest.any(|id| id.starts_with(&prefix))
-        }) {
+            attempted.contains(sym) || state.latest.any(|id| id.starts_with(&prefix))
+        });
+        drop(attempted);
+        if wake {
             state.wake.notify_one();
         }
     }
 }
 
 /// Whether `added` demands a symbol (`stocks.<SYM>.<field>`) for which `cached(SYM)` is false — i.e.
-/// the last fetch didn't cover it and the poll loop should run now. Pure.
+/// no fetch has covered (or tried) it yet and the poll loop should run early. Pure.
 fn has_uncached_symbol(added: &[String], cached: impl Fn(&str) -> bool) -> bool {
     symbols_from_active(added.iter().map(String::as_str))
         .iter()
@@ -345,6 +367,11 @@ pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig)
     // A new worker (or a new config) starts without the previous one's values.
     if let Some(state) = app.try_state::<StocksState>() {
         state.latest.clear();
+        state
+            .attempted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
     }
     let client = match http_client() {
         Ok(c) => c,
@@ -404,6 +431,15 @@ pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig)
         // symbol was known — so an unknown ticker (empty samples) still reads as connected, and only a
         // genuine fetch failure (network / 429) trips "error" + backoff.
         let mut fetched = false;
+        let fetch_started = Instant::now();
+        // A wake stored before this fetch (Notify keeps one permit when nobody waits) is answered
+        // by this fetch; drop it so it can't cut the next interval short.
+        let _ = futures_util::FutureExt::now_or_never(stocks.wake.notified());
+        stocks
+            .attempted
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .extend(symbols.iter().cloned());
         for symbol in &symbols {
             match fetch_chart(&client, symbol).await {
                 Ok(json) => {
@@ -429,11 +465,20 @@ pub async fn run_stocks_client<R: Runtime>(app: AppHandle<R>, cfg: StocksConfig)
                 .saturating_mul(1u32 << fails.min(4))
                 .min(Duration::from_secs(1800))
         };
-        // A newly demanded, never-fetched symbol ends the wait early — but never during a failure
-        // backoff, so a rate-limited provider isn't hammered by widgets (re)mounting.
+        // A newly demanded, never-tried symbol ends the wait early — but never during a failure
+        // backoff, so a rate-limited provider isn't hammered by widgets (re)mounting — and only once
+        // demand settles and the previous fetch is far enough back (`wake_fetch_at`).
+        let deadline = Instant::now() + wait;
         tokio::select! {
             _ = tokio::time::sleep(wait) => {}
-            _ = stocks.wake.notified(), if fails == 0 => {}
+            _ = stocks.wake.notified(), if fails == 0 => loop {
+                let at = wake_fetch_at(Instant::now(), fetch_started, deadline);
+                tokio::select! {
+                    _ = tokio::time::sleep_until(at.into()) => break,
+                    // Another newly demanded symbol: restart the debounce.
+                    _ = stocks.wake.notified() => {}
+                }
+            },
         }
     }
 }
@@ -551,6 +596,23 @@ mod tests {
             &["stocks.status".into(), "*".into(), "cpu.total".into()],
             cached
         ));
+    }
+
+    #[test]
+    fn early_wakes_are_debounced_spaced_from_the_last_fetch_and_capped_by_the_interval() {
+        let t0 = Instant::now();
+        let deadline = t0 + Duration::from_secs(600);
+        // Right after a fetch: wait out the minimum spacing, not just the debounce.
+        assert_eq!(
+            wake_fetch_at(t0 + Duration::from_secs(1), t0, deadline),
+            t0 + MIN_WAKE_SPACING
+        );
+        // Long after the last fetch: a wake still waits for demand to settle.
+        let late = t0 + Duration::from_secs(100);
+        assert_eq!(wake_fetch_at(late, t0, deadline), late + WAKE_DEBOUNCE);
+        // Never later than the regular poll would have run anyway.
+        let soon = t0 + Duration::from_secs(10);
+        assert_eq!(wake_fetch_at(t0 + Duration::from_secs(1), t0, soon), soon);
     }
 
     #[test]

@@ -210,22 +210,31 @@ fn read_tcp_table() -> Vec<RawConn> {
     }
     // A `u32`-backed buffer: MIB_TCPTABLE_OWNER_PID (all DWORD fields) needs 4-byte alignment, which a
     // `Vec<u8>` does not guarantee — dereferencing a misaligned table pointer is undefined behaviour.
-    let mut buf = vec![0u32; (size as usize).div_ceil(std::mem::size_of::<u32>())];
-    // SAFETY: `buf` holds at least `size` bytes; GetExtendedTcpTable fills it with a
-    // MIB_TCPTABLE_OWNER_PID.
-    let rc = unsafe {
-        GetExtendedTcpTable(
-            Some(buf.as_mut_ptr().cast()),
-            &mut size,
-            false,
-            AF_INET,
-            TCP_TABLE_OWNER_PID_ALL,
-            0,
-        )
+    // Connections opened between the sizing call and the fill make the table outgrow the buffer
+    // (ERROR_INSUFFICIENT_BUFFER, with `size` updated): resize and retry a few times.
+    let mut attempts = 0;
+    let buf = loop {
+        let mut buf = vec![0u32; (size as usize).div_ceil(std::mem::size_of::<u32>())];
+        // SAFETY: `buf` holds at least `size` bytes; GetExtendedTcpTable fills it with a
+        // MIB_TCPTABLE_OWNER_PID.
+        let rc = unsafe {
+            GetExtendedTcpTable(
+                Some(buf.as_mut_ptr().cast()),
+                &mut size,
+                false,
+                AF_INET,
+                TCP_TABLE_OWNER_PID_ALL,
+                0,
+            )
+        };
+        if rc == NO_ERROR.0 {
+            break buf;
+        }
+        attempts += 1;
+        if rc != ERROR_INSUFFICIENT_BUFFER.0 || size == 0 || attempts >= 4 {
+            return Vec::new();
+        }
     };
-    if rc != NO_ERROR.0 {
-        return Vec::new();
-    }
     // SAFETY: on success the (4-byte aligned) `buf` begins with a MIB_TCPTABLE_OWNER_PID whose
     // `table` is a flexible array of `dwNumEntries` rows within the same allocation.
     let table = unsafe { &*(buf.as_ptr().cast::<MIB_TCPTABLE_OWNER_PID>()) };

@@ -91,9 +91,38 @@ fn replace_file(from: &Path, to: &Path, overwrite: bool) -> Result<(), String> {
     }
 }
 
+/// Back-off between attempts of a replace that hit a transient lock: five tries, ~150 ms in all.
+/// Every caller runs on an async/blocking worker or a background thread (none on the UI thread),
+/// and the total stays small enough that even a stray UI-thread call would not visibly stall.
+#[cfg_attr(not(windows), allow(dead_code))]
+const REPLACE_RETRY_DELAYS_MS: [u64; 4] = [10, 20, 40, 80];
+
+/// Run `op`, retrying after each of `delays` while it fails with an error `is_transient` accepts.
+/// The last error is returned once the delays run out or the error is not transient. Pure apart
+/// from the injected `sleep` (tested).
+#[cfg_attr(not(windows), allow(dead_code))]
+fn with_retries<T, E>(
+    delays: &[u64],
+    mut op: impl FnMut() -> Result<T, E>,
+    is_transient: impl Fn(&E) -> bool,
+    mut sleep: impl FnMut(u64),
+) -> Result<T, E> {
+    let mut delays = delays.iter();
+    loop {
+        match op() {
+            Ok(value) => return Ok(value),
+            Err(err) => match delays.next() {
+                Some(&ms) if is_transient(&err) => sleep(ms),
+                _ => return Err(err),
+            },
+        }
+    }
+}
+
 #[cfg(windows)]
 fn replace_file(from: &Path, to: &Path, overwrite: bool) -> Result<(), String> {
     use std::os::windows::ffi::OsStrExt;
+    use windows::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_SHARING_VIOLATION};
     use windows::Win32::Storage::FileSystem::{
         MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH, MoveFileExW,
     };
@@ -101,17 +130,27 @@ fn replace_file(from: &Path, to: &Path, overwrite: bool) -> Result<(), String> {
 
     let from_wide: Vec<u16> = from.as_os_str().encode_wide().chain(Some(0)).collect();
     let to_wide: Vec<u16> = to.as_os_str().encode_wide().chain(Some(0)).collect();
-    unsafe {
-        MoveFileExW(
-            PCWSTR(from_wide.as_ptr()),
-            PCWSTR(to_wide.as_ptr()),
-            if overwrite {
-                MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
-            } else {
-                MOVEFILE_WRITE_THROUGH
-            },
-        )
-    }
+    // An antivirus scanner or the search indexer briefly holding the destination open makes the
+    // replace fail with access-denied / sharing-violation; those clear within milliseconds.
+    with_retries(
+        &REPLACE_RETRY_DELAYS_MS,
+        || unsafe {
+            MoveFileExW(
+                PCWSTR(from_wide.as_ptr()),
+                PCWSTR(to_wide.as_ptr()),
+                if overwrite {
+                    MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH
+                } else {
+                    MOVEFILE_WRITE_THROUGH
+                },
+            )
+        },
+        |err| {
+            err.code() == ERROR_ACCESS_DENIED.to_hresult()
+                || err.code() == ERROR_SHARING_VIOLATION.to_hresult()
+        },
+        |ms| std::thread::sleep(std::time::Duration::from_millis(ms)),
+    )
     .map_err(|e| e.to_string())
 }
 
@@ -260,6 +299,82 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "new");
         assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn retries_only_transient_errors_and_only_as_many_times_as_there_are_delays() {
+        // Transient failures clear on the third attempt: two sleeps, then success.
+        let mut calls = 0;
+        let mut slept = Vec::new();
+        let result = with_retries(
+            &[10, 20, 40],
+            || {
+                calls += 1;
+                if calls < 3 { Err("locked") } else { Ok(calls) }
+            },
+            |e| *e == "locked",
+            |ms| slept.push(ms),
+        );
+        assert_eq!(result, Ok(3));
+        assert_eq!(slept, vec![10, 20]);
+
+        // A lock that never clears gives up after the delays run out.
+        let mut calls = 0;
+        let result: Result<(), _> = with_retries(
+            &[10, 20],
+            || {
+                calls += 1;
+                Err("locked")
+            },
+            |e| *e == "locked",
+            |_| {},
+        );
+        assert_eq!((result, calls), (Err("locked"), 3));
+
+        // A permanent error is returned at once.
+        let mut calls = 0;
+        let result: Result<(), _> = with_retries(
+            &[10, 20],
+            || {
+                calls += 1;
+                Err("missing")
+            },
+            |e| *e == "locked",
+            |_| panic!("must not sleep for a permanent error"),
+        );
+        assert_eq!((result, calls), (Err("missing"), 1));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn atomic_write_waits_out_a_briefly_locked_destination() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let dir = std::env::temp_dir().join(format!(
+            "widgetsack-locked-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("config.json");
+        fs::write(&path, "old").unwrap();
+        // Like a scanner: open the destination with no sharing, then let go shortly after.
+        let lock = fs::OpenOptions::new()
+            .read(true)
+            .share_mode(0)
+            .open(&path)
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(25));
+            drop(lock);
+        });
+        atomic_write(&path, "new").unwrap();
+        release.join().unwrap();
+        assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]

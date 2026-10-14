@@ -109,32 +109,41 @@ fn enumerate() -> Vec<DisplayName> {
         DISPLAYCONFIG_TARGET_DEVICE_NAME, DisplayConfigGetDeviceInfo, GetDisplayConfigBufferSizes,
         QDC_ONLY_ACTIVE_PATHS, QueryDisplayConfig,
     };
-    use windows::Win32::Foundation::ERROR_SUCCESS;
+    use windows::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_SUCCESS};
 
     let mut out = Vec::new();
     unsafe {
-        // Size the path/mode arrays for the currently-active topology, then fetch them.
-        let mut n_paths: u32 = 0;
-        let mut n_modes: u32 = 0;
-        if GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut n_paths, &mut n_modes)
-            != ERROR_SUCCESS
-        {
-            return out;
-        }
-        let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); n_paths as usize];
-        let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); n_modes as usize];
-        if QueryDisplayConfig(
-            QDC_ONLY_ACTIVE_PATHS,
-            &mut n_paths,
-            paths.as_mut_ptr(),
-            &mut n_modes,
-            modes.as_mut_ptr(),
-            None,
-        ) != ERROR_SUCCESS
-        {
-            return out;
-        }
-        paths.truncate(n_paths as usize);
+        // Size the path/mode arrays for the currently-active topology, then fetch them. A display
+        // attached between the two calls makes the query fail with ERROR_INSUFFICIENT_BUFFER (this
+        // runs exactly on topology changes): re-size and retry a few times.
+        let mut attempts = 0;
+        let paths = loop {
+            let mut n_paths: u32 = 0;
+            let mut n_modes: u32 = 0;
+            if GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, &mut n_paths, &mut n_modes)
+                != ERROR_SUCCESS
+            {
+                return out;
+            }
+            let mut paths = vec![DISPLAYCONFIG_PATH_INFO::default(); n_paths as usize];
+            let mut modes = vec![DISPLAYCONFIG_MODE_INFO::default(); n_modes as usize];
+            let rc = QueryDisplayConfig(
+                QDC_ONLY_ACTIVE_PATHS,
+                &mut n_paths,
+                paths.as_mut_ptr(),
+                &mut n_modes,
+                modes.as_mut_ptr(),
+                None,
+            );
+            if rc == ERROR_SUCCESS {
+                paths.truncate(n_paths as usize);
+                break paths;
+            }
+            attempts += 1;
+            if rc != ERROR_INSUFFICIENT_BUFFER || attempts >= 4 {
+                return out;
+            }
+        };
 
         for p in &paths {
             // Source → the GDI device name (\\.\DISPLAYn): the key the overlays/studio share.

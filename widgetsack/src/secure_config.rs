@@ -8,6 +8,16 @@ use std::path::Path;
 const PREFIX: &str = "widgetsack-dpapi-v1:";
 
 pub fn read(path: &Path) -> Result<Option<String>, String> {
+    read_with(path, write)
+}
+
+/// `read` with the migration write injected (tested). A failed migration (file locked, read-only
+/// dir) must not make the config unreadable: the plaintext is still returned, and the next read
+/// tries the migration again.
+fn read_with(
+    path: &Path,
+    migrate: impl FnOnce(&Path, &str) -> Result<(), String>,
+) -> Result<Option<String>, String> {
     let raw = match std::fs::read_to_string(path) {
         Ok(raw) => raw,
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -23,7 +33,12 @@ pub fn read(path: &Path) -> Result<Option<String>, String> {
 
     // Existing installs have plaintext JSON. Return it only after replacing the file with the
     // protected representation, so merely launching the upgraded app completes the migration.
-    write(path, &raw)?;
+    if let Err(err) = migrate(path, &raw) {
+        crate::log::warn("config", "plaintext config migration failed; will retry")
+            .field("path", path.display())
+            .field("error", &err)
+            .emit();
+    }
     Ok(Some(raw))
 }
 
@@ -187,6 +202,29 @@ mod tests {
         assert!(stored.starts_with(PREFIX));
         assert!(!stored.contains("secret"));
         assert_eq!(read(&path).unwrap().as_deref(), Some(clear));
+
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_failed_migration_still_returns_the_plaintext_config() {
+        let dir = std::env::temp_dir().join(format!(
+            "widgetsack-secure-config-fail-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("secret.json");
+        let clear = "{\"token\":\"secret\"}";
+        std::fs::write(&path, clear).unwrap();
+
+        let result = read_with(&path, |_, _| Err("file is locked".into()));
+        assert_eq!(result.unwrap().as_deref(), Some(clear));
+        // The file is left as it was, so a later read retries the migration.
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), clear);
 
         std::fs::remove_dir_all(dir).unwrap();
     }

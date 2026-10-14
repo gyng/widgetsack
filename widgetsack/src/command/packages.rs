@@ -416,10 +416,16 @@ fn install_package_directory(
 /// into place, so download/write failures cannot leave a half-installed package.
 #[tauri::command]
 pub async fn install_plugin_package(
+    window: tauri::WebviewWindow,
     app: tauri::AppHandle,
     source: String,
     replace_id: Option<String>,
 ) -> Result<InstalledPackage, String> {
+    // Studio-only, like `set_package_enabled`: installing is a Plugins-panel action, and an overlay
+    // must not be able to pull third-party code onto disk.
+    if window.label() != "studio" {
+        return Err("install_plugin_package is only allowed from the studio window".into());
+    }
     let resolved = resolve_package_source(&source).ok_or_else(|| {
         "unrecognized source — use owner/repo, a github.com repo URL, or an https URL ending in /plugin.json"
             .to_string()
@@ -530,7 +536,14 @@ pub async fn check_plugin_package_update(
 /// Delete `plugins/<id>/` (works for installed AND hand-dropped packages — it's just a dir
 /// delete). Ok even if it's already gone (idempotent, like the other deletes here).
 #[tauri::command]
-pub async fn remove_plugin_package(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub async fn remove_plugin_package(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    if window.label() != "studio" {
+        return Err("remove_plugin_package is only allowed from the studio window".into());
+    }
     if !valid_name(&id) {
         return Err("invalid package id".to_string());
     }

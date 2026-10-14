@@ -775,9 +775,17 @@ pub async fn set_audio_mute(_muted: bool) -> Result<(), String> {
 /// clear the flag immediately so the state doesn't claim to be running).
 #[cfg(target_os = "windows")]
 fn spawn_capture(state: SpectrumState) {
-    let _ = std::thread::Builder::new()
+    let thread_state = state.clone();
+    if let Err(err) = std::thread::Builder::new()
         .name("spectrum-capture".to_string())
-        .spawn(move || run_capture(&state));
+        .spawn(move || run_capture(&thread_state))
+    {
+        // No thread will ever clear `running`: do it here so a later `start_spectrum` retries.
+        state.lock().running = false;
+        log::warn("audio", "spectrum: capture thread spawn failed")
+            .field("error", err)
+            .emit();
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
