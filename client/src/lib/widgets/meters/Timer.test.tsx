@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
-import { render, fireEvent, act, cleanup } from '@testing-library/react';
+import { render, fireEvent, act, cleanup, within } from '@testing-library/react';
 import Timer, { TimerView } from './Timer';
 
 afterEach(cleanup);
@@ -67,6 +67,28 @@ describe('TimerView', () => {
 });
 
 describe('Timer (default, self-sourcing) wires useTimer to TimerView', () => {
+	it.each(['editMode', 'previewMode'] as const)(
+		'keeps digital controls read-only in %s without overwriting live timer state',
+		(flag) => {
+			localStorage.clear();
+			const live = render(<Timer widgetId="shared-preview" duration={50} />);
+			act(() => fireEvent.click(live.getByLabelText('Start')));
+			act(() => vi.advanceTimersByTime(2000));
+			act(() => fireEvent.click(live.getByLabelText('Pause')));
+			const saved = localStorage.getItem('widgetsack.timer.shared-preview');
+			const preview = render(
+				<Timer widgetId="shared-preview" duration={60} {...{ [flag]: true }} />
+			);
+			expect(localStorage.getItem('widgetsack.timer.shared-preview')).toBe(saved);
+			expect(within(preview.container).getByLabelText('Start').hasAttribute('disabled')).toBe(true);
+			expect(within(preview.container).getByLabelText('Reset').hasAttribute('disabled')).toBe(true);
+			expect(localStorage.getItem('widgetsack.timer.shared-preview')).toBe(saved);
+			preview.rerender(<Timer widgetId="shared-preview" duration={70} {...{ [flag]: true }} />);
+			expect(localStorage.getItem('widgetsack.timer.shared-preview')).toBe(saved);
+			expect(val(live.container)).toBe('00:48');
+			localStorage.clear();
+		}
+	);
 	// Pin the clock ON a tick boundary: the tick is the shared boundary-aligned useNow clock, so an
 	// arbitrary real-time phase would make "how far past the flip" nondeterministic.
 	beforeEach(() => vi.useFakeTimers({ now: 1_000_000 }));

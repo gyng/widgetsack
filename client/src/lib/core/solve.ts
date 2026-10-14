@@ -1,3 +1,4 @@
+import { gridDimensions } from './gridDimensions';
 // Pure layout UTILITIES that the CSS-rendered editor/overlay leans on (the recursive
 // solver engine that once lived here is gone — native CSS now positions the flow tree).
 // What remains, all pure (ZERO Svelte/Tauri, no DOM, no text measurement):
@@ -19,17 +20,18 @@ import {
 	type Length,
 	type Library,
 	type MonitorLayout,
-	type ParamSpec,
 	type WidgetDef,
 	isContainer,
 	isGroup,
 	isLeaf,
 	resolvePad
 } from './layoutTree';
-import { isSafePath } from './safePath';
+import { applyParams } from './params';
+import { safeGroupReferences } from './groupReferences';
+export { applyParams } from './params';
 
 export type Solved = Map<string, Rect>;
-export type ResolvedGroup = { child: LayoutNode; size: { w: number; h: number } };
+export type ResolvedGroup = { child: LayoutNode; size: { w: number; h: number }; unsafe?: true };
 
 // A primitive widget ready to render: its solved rect + the (possibly group-cloned,
 // param-applied) instance, plus how the overlay should treat it.
@@ -128,8 +130,7 @@ export function collectContainerRects(monitor: MonitorLayout, solved: Solved): C
 // Grid row count: the explicit `rows` (a minimum) grown to fit the children, at least 1 (so an
 // EMPTY grid still shows one row of columns).
 function gridRows(c: Container): number {
-	const cols = Math.max(1, c.cols ?? 1);
-	return Math.max(c.rows ?? 1, Math.ceil(c.children.length / cols), 1);
+	return gridDimensions(c).rows;
 }
 
 // A grid cell's fixed column width / row height (its `cellW`/`cellH`), or null when flexible.
@@ -153,7 +154,7 @@ const trackWeight = (weights: number[] | undefined, t: number): number => {
 // it carries a cellW/cellH; the track takes the MAX such value among its cells. Shared by the track
 // sizer and the splitter collector (which only offers boundaries between two FLEXIBLE tracks).
 function gridFixedTracks(c: Container, count: number, horizontal: boolean): (number | null)[] {
-	const cols = Math.max(1, c.cols ?? 1);
+	const cols = gridDimensions(c).cols;
 	const fixed: (number | null)[] = Array.from({ length: count }, () => null);
 	c.children.forEach((child, i) => {
 		const t = horizontal ? i % cols : Math.floor(i / cols);
@@ -179,7 +180,7 @@ function gridTracks(c: Container, available: number, count: number, horizontal: 
 }
 
 function gridColWidths(c: Container, contentW: number): number[] {
-	return gridTracks(c, contentW, Math.max(1, c.cols ?? 1), true);
+	return gridTracks(c, contentW, gridDimensions(c).cols, true);
 }
 function gridRowHeights(c: Container, contentH: number): number[] {
 	return gridTracks(c, contentH, gridRows(c), false);
@@ -207,7 +208,7 @@ function trackOffsets(sizes: number[], gap: number, start: number): number[] {
 // (non-uniform tracks). Exported for the designer's cell outlines and drop targeting.
 export function gridCellRects(c: Container, box: Rect): Rect[] {
 	const content = insetPad(box, c.pad);
-	const cols = Math.max(1, c.cols ?? 1);
+	const cols = gridDimensions(c).cols;
 	const rows = gridRows(c);
 	const gap = c.gap ?? 0;
 	const colW = gridColWidths(c, content.w);
@@ -282,7 +283,7 @@ const SPLIT_BAR = 8; // bar thickness / hit area (px)
 function gridSplitters(node: Container, box: Rect): Splitter[] {
 	const out: Splitter[] = [];
 	const content = insetPad(box, node.pad);
-	const cols = Math.max(1, node.cols ?? 1);
+	const cols = gridDimensions(node).cols;
 	const rows = gridRows(node);
 	const gap = node.gap ?? 0;
 	const colW = gridColWidths(node, content.w);
@@ -419,8 +420,10 @@ export function resolveGroup(grp: Group, library?: Library): ResolvedGroup {
 
 	if (!baseChild) return { child: emptyContainer(grp.id + ':empty'), size };
 
-	const child = cloneNode(baseChild);
-	if (grp.params) applyParams(child, def?.params, grp.params);
+	let child = cloneNode(baseChild);
+	if (grp.params) child = applyParams(child, def?.params, grp.params);
+	if (!safeGroupReferences(child, library, def ? [def.id] : []))
+		return { child: emptyContainer(grp.id + ':empty'), size, unsafe: true };
 	return { child, size };
 }
 
@@ -472,7 +475,7 @@ function intrinsicContainer(
 	if (c.overlap) return padAlong + Math.max(...extents);
 
 	if (c.kind === 'grid') {
-		const cols = Math.max(1, c.cols ?? 1);
+		const cols = gridDimensions(c).cols;
 		const rows = gridRows(c);
 		const count = horizontal ? cols : rows;
 		// With per-cell fixed sizes, sum each track (its fixed size, else its largest child); with
@@ -516,49 +519,6 @@ function insetPad(box: Rect, pad: Container['pad']): Rect {
 }
 
 // ---- group params / clone (Phase 6c) -------------------------------------
-
-/** Write `params` onto a (cloned) child tree following each spec's dotted path(s) — `targets`
- * (several nodes driven by one value), else `target`, else the default 'unit.config.<key>'.
- * Exported so the template system applies insert-time options through the SAME mechanism. */
-export function applyParams(
-	child: LayoutNode,
-	specs: ParamSpec[] | undefined,
-	params: Record<string, unknown>
-): void {
-	if (!specs) return;
-	for (const spec of specs) {
-		if (!(spec.key in params)) continue;
-		const targets = spec.targets ?? [spec.target ?? 'unit.config.' + spec.key];
-		for (const target of targets) {
-			// Select controls carry strings; boolean defaults preserve the config's boolean type.
-			const value =
-				typeof spec.default === 'boolean'
-					? params[spec.key] === true || params[spec.key] === 'true'
-					: params[spec.key];
-			setPath(child as unknown as Record<string, unknown>, target, value);
-		}
-	}
-}
-
-// Fail-closed dotted-path setter: writes the final segment only if every intermediate
-// already exists as an OWN object property. So a default target 'unit.config.<key>' resolves on a
-// Leaf-rooted child (unit + config exist) but is a NO-OP on a container-rooted child
-// (no `unit`) — never auto-vivifying a bogus `unit` object onto a container. Specs come from
-// untrusted data (sack defs, package templates), so a path that names `__proto__` /
-// `constructor` / `prototype` anywhere is refused outright (prototype pollution), and only OWN
-// properties are descended into (an inherited `constructor` etc. is never walked).
-function setPath(root: Record<string, unknown>, path: string, value: unknown): void {
-	if (!isSafePath(path)) return;
-	const parts = path.split('.');
-	let cur: Record<string, unknown> = root;
-	for (let i = 0; i < parts.length - 1; i++) {
-		if (!Object.hasOwn(cur, parts[i])) return;
-		const next = cur[parts[i]];
-		if (typeof next !== 'object' || next === null) return;
-		cur = next as Record<string, unknown>;
-	}
-	cur[parts[parts.length - 1]] = value;
-}
 
 // ---- misc ----------------------------------------------------------------
 

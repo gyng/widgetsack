@@ -57,6 +57,32 @@ function setup(withVerification = false) {
 	};
 }
 describe('studio agent session', () => {
+	it.each(['stop', 'reset'] as const)(
+		'discards prompts waiting for cancellation when %s is requested',
+		async (action) => {
+			const s = setup();
+			let cancelled!: () => void;
+			vi.mocked(s.ports.cancel).mockImplementationOnce(
+				() =>
+					new Promise<void>((resolve) => {
+						cancelled = resolve;
+					})
+			);
+			const first = s.session.send('first', 'pi', '');
+			s.session.stop();
+			const waiting = s.session.send('queued', 'pi', '');
+			s.session[action]();
+			cancelled();
+			await Promise.resolve();
+			await Promise.resolve();
+			expect(s.ports.run).toHaveBeenCalledTimes(1);
+			s.finish();
+			await Promise.all([first, waiting]);
+			if (action === 'reset') expect(s.updates.at(-1)?.messages).toEqual([]);
+			s.session.dispose();
+		}
+	);
+
 	it('waits for cancellation before accepting a new request and ignores failures from the stopped run', async () => {
 		const s = setup();
 		let cancelDone = () => {};

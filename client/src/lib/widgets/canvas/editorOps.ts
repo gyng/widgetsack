@@ -1,3 +1,4 @@
+import { normalizeGridTrackCount, validGridTrackCount } from '../../core/gridDimensions';
 import { desktopMonitor, editingDefinitionId } from '../../core/editorMode';
 // The editor model's pure op helpers — ported VERBATIM from Canvas.svelte (via useEditorModel).
 // Each takes the current EditorState and returns a Patch (the new monitor/library/selection);
@@ -439,14 +440,17 @@ export function indent(s: EditorState, id: string): Patch {
 }
 
 export function patchContainerOp(s: EditorState, id: string, patch: Partial<Container>): Patch {
-	let root = updateContainer(s.monitor.root, id, patch);
+	const safePatch = { ...patch };
+	if (safePatch.cols !== undefined && !validGridTrackCount(safePatch.cols)) delete safePatch.cols;
+	if (safePatch.rows !== undefined && !validGridTrackCount(safePatch.rows)) delete safePatch.rows;
+	let root = updateContainer(s.monitor.root, id, safePatch);
 	// Resizing a GRID (its cols/rows) must DROP the cells that no longer fit — otherwise reducing the
 	// grid does nothing, because solve.ts's gridRows() just grows the row count back to hold the
 	// orphaned children. Trim from the end (grids fill row-major) down to the new cols×rows.
-	if (patch.cols !== undefined || patch.rows !== undefined) {
+	if (safePatch.cols !== undefined || safePatch.rows !== undefined) {
 		const node = findNode(root, id);
 		if (node && isContainer(node) && node.kind === 'grid') {
-			const cap = Math.max(1, node.cols ?? 1) * Math.max(1, node.rows ?? 1);
+			const cap = normalizeGridTrackCount(node.cols) * normalizeGridTrackCount(node.rows);
 			if (node.children.length > cap) {
 				root = updateNode(
 					root,
@@ -514,7 +518,8 @@ export function setGridTracks(
 	const key = which === 'col' ? 'colFr' : 'rowFr';
 	const cur = node[key];
 	const maxIdx = entries.reduce((m, e) => Math.max(m, e.index), -1);
-	const hint = which === 'col' ? Math.max(1, node.cols ?? 1) : Math.max(1, node.rows ?? 1);
+	const hint =
+		which === 'col' ? normalizeGridTrackCount(node.cols) : normalizeGridTrackCount(node.rows);
 	const count = Math.max(hint, cur?.length ?? 0, maxIdx + 1);
 	const next = Array.from({ length: count }, (_, i) => {
 		const w = cur?.[i];

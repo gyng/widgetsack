@@ -15,6 +15,17 @@ pub(super) enum ChangeOrigin {
     External,
 }
 
+/// Match a watched filename, including either side of an atomic rename event.
+pub(super) fn event_changes_file(event: &notify::Event, target: &std::path::Path) -> bool {
+    let Some(target) = target.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    event.paths.iter().any(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case(target))
+    })
+}
 /// After the first matching filesystem event, keep draining for this long so one logical change
 /// (an atomic write is create-temp + rename + attribute events) becomes ONE reload.
 const WATCH_DEBOUNCE: Duration = Duration::from_millis(150);
@@ -115,6 +126,25 @@ pub(super) fn watch_and_emit(
 mod tests {
     use super::*;
 
+    #[test]
+    fn file_events_accept_case_variants_and_both_rename_paths() {
+        let target = std::path::Path::new("widgets.json");
+        for (file, expected) in [
+            ("WIDGETS.JSON", true),
+            ("widgets.json", true),
+            ("widgets.json.tmp-1", false),
+            ("controls.json", false),
+        ] {
+            let event = notify::Event::new(notify::EventKind::Any).add_path(PathBuf::from(file));
+            assert_eq!(event_changes_file(&event, target), expected, "{file}");
+        }
+        let renamed = notify::Event::new(notify::EventKind::Any)
+            .add_path(PathBuf::from("widgets.json.tmp-1"))
+            .add_path(PathBuf::from("WIDGETS.JSON"));
+        assert!(event_changes_file(&renamed, target));
+        let empty = notify::Event::new(notify::EventKind::Any).add_path(PathBuf::new());
+        assert!(!event_changes_file(&empty, std::path::Path::new("")));
+    }
     #[test]
     fn drain_burst_coalesces_until_the_deadline() {
         let (tx, rx) = std::sync::mpsc::channel::<u32>();

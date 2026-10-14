@@ -1,3 +1,6 @@
+import { instantiateTemplate } from './templates';
+import type { Leaf } from './layoutTree';
+import type { WidgetInstance } from './layout';
 import { describe, expect, it } from 'vitest';
 import {
 	consentFingerprint,
@@ -11,6 +14,7 @@ import {
 	parseInstallSidecar,
 	parsePluginPackage,
 	reinstallSource,
+	installSourceLabel,
 	templateThreatFingerprint,
 	validateSourceRequests,
 	validateSourceSamples,
@@ -43,6 +47,35 @@ const manifest = (over: Record<string, unknown> = {}) =>
 	});
 
 describe('parsePluginPackage', () => {
+	it('keeps package parameter overrides sandboxed and reports their capability changes', () => {
+		const r = parsePluginPackage(
+			'weather-pack',
+			manifest({
+				templates: [
+					{
+						id: 'frame',
+						name: 'Frame',
+						size: { w: 100, h: 50 },
+						params: [
+							{ key: 'kind', default: 'iframe', target: 'unit.type' },
+							{ key: 'sandbox', default: false }
+						],
+						tree: { ...leafNode(), unit: { ...leafNode().unit, config: { sandbox: false } } }
+					}
+				]
+			})
+		);
+		expect(r.ok).toBe(true);
+		if (!r.ok) return;
+		const template = packageTemplates(r.pkg.manifest)[0]!;
+		const tree = instantiateTemplate(template) as Leaf;
+		expect((tree.unit as WidgetInstance).type).toBe('iframe');
+		expect((tree.unit as WidgetInstance).config.sandbox).toBe(true);
+		expect(
+			packageTemplateThreats(r.pkg.manifest).some((t) => t.kind === 'parameter-controls')
+		).toBe(true);
+	});
+
 	it('accepts a valid manifest and maps its template', () => {
 		const r = parsePluginPackage('weather-pack', manifest());
 		expect(r.ok).toBe(true);
@@ -303,6 +336,7 @@ describe('parsePluginPackage — template + param validation', () => {
 		if (!r.ok) return;
 		const spec = r.pkg.manifest.templates[0].params![0];
 		expect(spec).toEqual({
+			imported: true,
 			key: 'k',
 			label: 'K',
 			default: 7,
@@ -326,7 +360,7 @@ describe('parsePluginPackage — template + param validation', () => {
 		const r = tpl({ params: [{ key: 'onlykey' }] });
 		expect(r.ok).toBe(true);
 		if (!r.ok) return;
-		expect(r.pkg.manifest.templates[0].params).toEqual([{ key: 'onlykey' }]);
+		expect(r.pkg.manifest.templates[0].params).toEqual([{ key: 'onlykey', imported: true }]);
 	});
 });
 
@@ -654,6 +688,26 @@ describe('reinstallSource', () => {
 			'https://x.dev/p/plugin.json'
 		);
 		expect(reinstallSource({ ...base, ref: 'v2' })).toBe('https://github.com/acme/pack/tree/v2');
+	});
+});
+
+describe('installSourceLabel', () => {
+	it.each([
+		['acme/pack', 'main', 'acme/pack'],
+		['acme/pack', 'v2', 'acme/pack'],
+		['bad..owner/pack', 'main', 'Remote package'],
+		[
+			'https://user:synthetic-secret@host.example/private/plugin.json?token=synthetic-secret#synthetic-secret',
+			'direct',
+			'https://host.example'
+		],
+		['http://user:synthetic-secret@host.example/file', 'direct', 'Remote package'],
+		['not a URL synthetic-secret', 'direct', 'Remote package'],
+		['https://user:synthetic-secret@host.example/file', 'main', 'Remote package']
+	])('formats %s without exposing private URL components', (source, ref, label) => {
+		const sidecar = { source, ref, version: '1', installedAt: 0 };
+		expect(installSourceLabel(sidecar)).toBe(label);
+		if (ref === 'direct') expect(reinstallSource(sidecar)).toBe(source);
 	});
 });
 

@@ -7,10 +7,26 @@ import {
 	historyWindow,
 	decodeTasks,
 	meetingAlerts,
+	meetingAlertsFromEvents,
 	boundedNumber
 } from './dashboard';
 
 describe('dashboard contracts', () => {
+	it('keeps simultaneous meetings independently snoozable across title changes', () => {
+		const now = Date.parse('2026-10-12T10:00:00Z');
+		const events = ['first', 'second'].map((id) => ({
+			id,
+			summary: 'Standup',
+			start: '2026-10-12T10:05:00Z',
+			allDay: false,
+			location: ''
+		}));
+		const alerts = meetingAlertsFromEvents(events, now, 10);
+		expect(new Set(alerts.map((a) => a.id)).size).toBe(2);
+		expect(meetingAlertsFromEvents([{ ...events[0], summary: 'New title' }], now, 10)[0].id).toBe(
+			alerts[0].id
+		);
+	});
 	it('bounds numeric settings and restores defaults for malformed imports', () => {
 		expect(boundedNumber(null, 10, 0, 120)).toBe(10);
 		expect(boundedNumber('bad', 10, 0, 120)).toBe(10);
@@ -40,6 +56,7 @@ describe('dashboard contracts', () => {
 			})
 		]);
 		expect(meetingAlerts(state, now, 0)).toEqual([]);
+		expect(meetingAlertsFromEvents([], now, 0)).toEqual([]);
 		expect(meetingAlerts(undefined, now, 10)).toEqual([]);
 		expect(meetingAlerts({ history: [], value: { kind: 'scalar', value: 5 } }, now, 10)).toEqual(
 			[]

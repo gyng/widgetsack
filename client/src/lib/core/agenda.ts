@@ -1,11 +1,16 @@
 // Pure logic for the Agenda widget. No React/Tauri — unit-tested. The backend (widgetsack/src/agenda.rs)
-// parses an ICS feed into AgendaEvent rows (summary + ISO start) and emits them as the `agenda.list`
-// JSON sensor; this side filters to the upcoming events and formats a friendly "when" label (it has
-// the clock + locale, so the time work lives here).
+// supplies a minimal ICS snapshot to the calendar worker. Legacy/demo event arrays remain
+// readable here. This module filters expanded events and formats local date/time labels.
 
-/** One calendar event. Mirrors Rust `AgendaEvent` (camelCase). `start` is an ISO-8601 string (UTC `…Z`,
+/** One expanded calendar event. `start` is an ISO-8601 string (UTC `…Z`,
  * floating, or a date-only `YYYY-MM-DD` for all-day). */
-export type AgendaEvent = { summary: string; start: string; allDay: boolean; location: string };
+export type AgendaEvent = {
+	id?: string;
+	summary: string;
+	start: string;
+	allDay: boolean;
+	location: string;
+};
 
 /** Defensively parse the `agenda.list` JSON sensor value into typed events (malformed rows dropped). */
 export function parseAgendaList(value: unknown): AgendaEvent[] {
@@ -17,6 +22,7 @@ export function parseAgendaList(value: unknown): AgendaEvent[] {
 		if (typeof r.summary !== 'string' || !r.summary) continue;
 		if (typeof r.start !== 'string' || !r.start) continue;
 		out.push({
+			...(typeof r.id === 'string' && r.id ? { id: r.id } : {}),
 			summary: r.summary,
 			start: r.start,
 			allDay: r.allDay === true,
@@ -26,7 +32,10 @@ export function parseAgendaList(value: unknown): AgendaEvent[] {
 	return out;
 }
 
-const startMs = (ev: AgendaEvent): number => new Date(ev.start).getTime();
+// An ICS date is a calendar day, not UTC midnight. Preserve that day in the user's timezone.
+const eventDate = (start: string, allDay: boolean): Date =>
+	new Date(allDay && /^\d{4}-\d{2}-\d{2}$/.test(start) ? `${start}T00:00:00` : start);
+const startMs = (ev: AgendaEvent): number => eventDate(ev.start, ev.allDay).getTime();
 const localMidnight = (ms: number): number => {
 	const d = new Date(ms);
 	d.setHours(0, 0, 0, 0);
@@ -53,7 +62,7 @@ const pad = (n: number): string => String(n).padStart(2, '0');
 /** A friendly "when" label for an event start: Today / Tomorrow / weekday (this week) / "D Mon",
  * with the HH:mm appended for timed events. Pure (nowMs in). '' for an unparseable start. */
 export function formatEventWhen(startIso: string, allDay: boolean, nowMs: number): string {
-	const start = new Date(startIso);
+	const start = eventDate(startIso, allDay);
 	const sMs = start.getTime();
 	if (Number.isNaN(sMs)) return '';
 	const dayDiff = Math.round((localMidnight(sMs) - localMidnight(nowMs)) / 86_400_000);
@@ -63,4 +72,17 @@ export function formatEventWhen(startIso: string, allDay: boolean, nowMs: number
 	else if (dayDiff > 1 && dayDiff < 7) day = WEEKDAYS[start.getDay()];
 	else day = `${start.getDate()} ${MONTHS[start.getMonth()]}`;
 	return allDay ? day : `${day} ${pad(start.getHours())}:${pad(start.getMinutes())}`;
+}
+
+export type AgendaFeedback = { pending: boolean; warnings: string[] };
+/** Parse the local expansion status; legacy event arrays have no status sample. */
+export function parseAgendaFeedback(value: unknown): AgendaFeedback {
+	if (!value || typeof value !== 'object') return { pending: false, warnings: [] };
+	const data = value as Record<string, unknown>;
+	return {
+		pending: data.pending === true,
+		warnings: Array.isArray(data.warnings)
+			? data.warnings.filter((warning): warning is string => typeof warning === 'string')
+			: []
+	};
 }

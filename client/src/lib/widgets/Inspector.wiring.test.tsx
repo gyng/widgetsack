@@ -163,6 +163,22 @@ describe('Inspector manual-save dirty tracking (computeDirty)', () => {
 		expect(within(panel()).getByText('kind').closest('label')!.className).toContain('dirty');
 	});
 
+	it('explains sandbox behavior for shared widget parameters', () => {
+		const child = leaf(w({ id: 'frame', type: 'iframe' }));
+		const instance = group('g', { w: 100, h: 50 }, child, { def: 'shared' });
+		const def: WidgetDef = {
+			id: 'shared',
+			name: 'Shared',
+			size: { w: 100, h: 50 },
+			child,
+			params: [{ key: 'sandbox', imported: true }]
+		};
+		render(<Inspector groupUnit={instance} def={def} placement="flow" onOp={vi.fn()} />);
+		expect(
+			screen.getByText('Shared widget parameters keep embedded pages sandboxed.')
+		).toBeVisible();
+	});
+
 	it('flags changed group name / css / params against a baseline', () => {
 		const child = leaf(w({ id: 'c', type: 'clock' }));
 		const g = group('g1', { w: 1, h: 1 }, child, { name: 'A', css: 'x', params: { p: 'PVAL' } });
@@ -1437,4 +1453,20 @@ it('edits existing grouped charts through the Inspector and clears the linked de
 	);
 	expect(view.queryByRole('checkbox', { name: 'Smooth charts' })).toBeNull();
 	expect(view.getByRole('combobox', { name: 'param Smooth charts' })).toBeTruthy();
+});
+
+it('does not resize or remove grid content while a track field is empty or invalid', () => {
+	const onOp = vi.fn<(op: LayoutOp) => void>();
+	render(<Inspector container={container('root', 'grid', [], { cols: 2, rows: 2 })} onOp={onOp} />);
+	const cols = screen.getByRole('spinbutton', { name: 'cols' });
+	const rows = screen.getByRole('spinbutton', { name: 'rows' });
+	for (const field of [cols, rows])
+		for (const value of ['', '0', '2.5', '1000000']) fireEvent.input(field, { target: { value } });
+	expect(onOp).not.toHaveBeenCalled();
+	fireEvent.input(cols, { target: { value: '3' } });
+	expect(lastOp(onOp, 'patchContainer')).toEqual({
+		op: 'patchContainer',
+		id: 'root',
+		patch: { cols: 3 }
+	});
 });

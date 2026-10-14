@@ -13,7 +13,7 @@ vi.mock('../../overlay', () => ({
 	reconcileOverlays: vi.fn(),
 	recreateMain: vi.fn()
 }));
-const adoptTheme = vi.fn(async () => undefined);
+const adoptTheme = vi.fn(async (): Promise<void> => undefined);
 const applyTheme = vi.fn(async () => undefined);
 const setMyMonitor = vi.fn();
 const onMonitorSwitch = vi.fn();
@@ -114,6 +114,48 @@ describe('layout session', () => {
 			});
 		}
 	);
+	it('preserves edits and Undo made while a loaded theme is still resolving', async () => {
+		invoke.mockResolvedValue(document('a', 'old'));
+		const { result } = renderHook(() => useSession('a'));
+		await act(async () => {
+			await result.current.reloadLayout();
+		});
+		invoke.mockResolvedValue(
+			JSON.stringify({
+				version: 2,
+				theme: 'slow-theme',
+				monitors: { a: { root: container('loaded', 'row', []), floating: [] } }
+			})
+		);
+		let release!: () => void;
+		adoptTheme.mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					release = resolve;
+				})
+		);
+		let loading!: Promise<void>;
+		await act(async () => {
+			loading = result.current.reloadLayout();
+		});
+		act(() =>
+			result.current.commitOp(() => ({
+				monitor: { root: container('edited', 'row', []), floating: [] }
+			}))
+		);
+		await act(async () => {
+			release();
+			await loading;
+		});
+		await act(async () => {
+			await result.current.flushPreviewWrite();
+		});
+		expect(result.current.state.monitor.root.id).toBe('edited');
+		expect(result.current.state.savedBaseline?.monitor.root.id).toBe('loaded');
+		expect(result.current.dirty).toBe(true);
+		expect(result.current.state.undoStack).toHaveLength(1);
+	});
+
 	it('loads a document and anchors a clean baseline', async () => {
 		invoke.mockResolvedValue(document('a', 'loaded'));
 		const { result } = renderHook(() => useSession('a'));

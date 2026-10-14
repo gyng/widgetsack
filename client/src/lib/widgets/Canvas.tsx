@@ -18,7 +18,6 @@ import {
 	useRef,
 	useState
 } from 'react';
-import { flushSync } from 'react-dom';
 import { invoke } from '@tauri-apps/api/core';
 import { emit, listen } from '@tauri-apps/api/event';
 import { getVersion } from '@tauri-apps/api/app';
@@ -63,7 +62,7 @@ import { useMenuFocus } from './canvas/useMenuFocus';
 import WidgetHost from './WidgetHost';
 import FlowNode, { type RenderLeaf } from './FlowNode';
 import { startWindowSource } from '../windows/source';
-import { collectConditions } from './canvas/conditionVisibility';
+import { collectMonitorConditions } from './canvas/conditionVisibility';
 import { useConditionHidden } from './canvas/useConditionHidden';
 import GroupFrame from './GroupFrame';
 import { useMeasuredRects } from './canvas/useMeasuredRects';
@@ -87,6 +86,8 @@ import { screenRectToLayout } from '../core/measureMath';
 import { createMcpStudioController } from '../llm/mcpStudioController';
 import { listenMcpStudio, mcpStudioPorts } from '../bridge/mcp';
 import type { StudioSnapshot } from '../llm/studioAgentSession';
+import { verifyStudioSnapshot } from '../llm/verifyStudioSnapshot';
+import { waitForStudioRender } from './canvas/waitForStudioRender';
 import type { LayoutOp } from './ops';
 import { sensorCatalog } from '../core/sensors';
 import { getMeta } from '../core/widget';
@@ -106,7 +107,6 @@ import {
 	syncInteractiveRects,
 	applyOverlayPresentation
 } from '../overlay';
-import { startViewTransition } from '../viewTransition';
 import { TelemetryHubContext } from './telemetryContext';
 import { listMicrophones } from '../stt';
 import {
@@ -418,11 +418,12 @@ export default function Canvas({ studio = false }: Props) {
 	// studio — there you must still see+edit hidden content). The set of hidden container ids drives
 	// visibility:hidden in FlowNode; it recomputes as the referenced sensors / open-window list change.
 	const conditionsActive = !editMode && !previewing;
-	const hiddenIds = useConditionHidden(hub, monitor.root, conditionsActive);
+	const conditions = useMemo(() => collectMonitorConditions(monitor, library), [monitor, library]);
+	const hiddenIds = useConditionHidden(hub, conditions, conditionsActive);
 	// Feed the open-window list (for appOpen conditions) only when it's actually needed.
 	const hasAppOpenCondition = useMemo(
-		() => collectConditions(monitor.root).some((c) => c.condition.kind === 'appOpen'),
-		[monitor.root]
+		() => conditions.some((c) => c.condition.kind === 'appOpen'),
+		[conditions]
 	);
 	useEffect(() => {
 		if (!conditionsActive || !hasAppOpenCondition) return;
@@ -1071,19 +1072,8 @@ export default function Canvas({ studio = false }: Props) {
 		[commitOp, monitorRef, myMonitorRef, readAgentStudio, library, previewing]
 	);
 
-	const verifyAgentStudio = useCallback(
-		async (expected: StudioSnapshot) => {
-			if (document.visibilityState !== 'hidden')
-				await new Promise<void>((resolve) =>
-					requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-				);
-			const current = readAgentStudio();
-			if (
-				expected.monitor !== current.monitor ||
-				expected.editorTarget !== current.editorTarget ||
-				expected.library !== current.library
-			)
-				throw new Error('The editor changed during verification. Read it again.');
+	const measureAgentStudio = useCallback(
+		(current: StudioSnapshot) => {
 			const world = worldRef.current;
 			const measurements: Record<string, StudioMeasurement> = {};
 			if (world && document.visibilityState !== 'hidden') {
@@ -1110,18 +1100,36 @@ export default function Canvas({ studio = false }: Props) {
 				widgetTypes.map((item) => item.type)
 			);
 		},
-		[readAgentStudio, library, workArea, widgetTypes, zoom]
+		[library, workArea, widgetTypes, zoom]
+	);
+	const verifyAgentStudio = useCallback(
+		(
+			expected: StudioSnapshot,
+			signal?: AbortSignal
+		): Promise<ReturnType<typeof verifyStudioLayout>> =>
+			verifyStudioSnapshot(
+				expected,
+				{
+					ready: waitForStudioRender,
+					read: () => agentStudio.current.read(),
+					measure: (current) => agentStudio.current.measure(current)
+				},
+				signal
+			),
+		[]
 	);
 	const agentStudio = useRef({
 		read: readAgentStudio,
 		apply: applyAgentStudio,
-		verify: verifyAgentStudio
+		verify: verifyAgentStudio,
+		measure: measureAgentStudio
 	});
 	useEffect(() => {
 		agentStudio.current = {
 			read: readAgentStudio,
 			apply: applyAgentStudio,
-			verify: verifyAgentStudio
+			verify: verifyAgentStudio,
+			measure: measureAgentStudio
 		};
 	});
 	useEffect(() => {
@@ -1339,6 +1347,7 @@ export default function Canvas({ studio = false }: Props) {
 		studio,
 		navSection,
 		editingDefId,
+		monitorKey: myMonitor,
 		selectedTheme,
 		library,
 		tokenOverrides,
@@ -1444,11 +1453,7 @@ export default function Canvas({ studio = false }: Props) {
 				if (action === 'stay') return;
 				foldOpenDef();
 			}
-			// Cross-fade the section swap (View Transitions where supported): snapshots the old + new
-			// panels and blends them, which both polishes the change AND avoids the stage flashing
-			// through behind the incoming panel. flushSync so the new section is in the DOM when the
-			// transition captures its "after" snapshot.
-			startViewTransition(() => flushSync(() => setNavSection(id)));
+			setNavSection(id);
 		},
 		[designing, previewing, defDirty, editingDefName, foldOpenDef]
 	);
@@ -1878,14 +1883,14 @@ export default function Canvas({ studio = false }: Props) {
 		// Index the SAME grouped sequence the NavRail renders (main group, then foot), so Ctrl+1..8
 		// lands on the i-th visible rail button even if the section groups are reordered independently.
 		const s = RAIL_ORDER[index];
-		if (s) startViewTransition(() => flushSync(() => setNavSection(s.id)));
+		if (s) setNavSection(s.id);
 	}, []);
 	const cycleSection = useCallback((delta: number) => {
 		if (designingRef.current) return;
 		const ids = RAIL_ORDER.map((s) => s.id);
 		const i = ids.indexOf(navSectionRef.current);
 		const next = ids[(i + delta + ids.length) % ids.length];
-		startViewTransition(() => flushSync(() => setNavSection(next)));
+		setNavSection(next);
 	}, []);
 
 	// Select every widget on the monitor (Ctrl+A) — the distinct selectIds across all renderables, i.e.

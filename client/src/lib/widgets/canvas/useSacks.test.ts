@@ -58,19 +58,20 @@ describe('sackSummary', () => {
 
 // --- the hook itself ---
 
-const listSacks = vi.fn<() => Promise<string[]>>();
+const listSacks = vi.fn<(requireComplete?: boolean) => Promise<string[]>>();
 const readSack = vi.fn<(name: string) => Promise<string | null>>();
-const writeSack = vi.fn<(name: string, json: string) => Promise<string | null>>();
+const writeSack =
+	vi.fn<(name: string, json: string, overwrite?: boolean) => Promise<string | null>>();
 const listThemes = vi.fn<() => Promise<string[]>>();
-const resolveThemeCss = vi.fn<(id: string) => Promise<string>>();
-const saveThemeCss = vi.fn<(name: string, css: string) => Promise<void>>();
+const resolveThemeCss = vi.fn<(id: string, requireReadable?: boolean) => Promise<string>>();
+const saveThemeCss = vi.fn<(name: string, css: string, overwrite?: boolean) => Promise<void>>();
 vi.mock('../../overlay', () => ({
-	listSacks: (...a: []) => listSacks(...a),
+	listSacks: (...a: [boolean?]) => listSacks(...a),
 	readSack: (...a: [string]) => readSack(...a),
-	writeSack: (...a: [string, string]) => writeSack(...a),
+	writeSack: (...a: [string, string, boolean?]) => writeSack(...a),
 	listThemes: (...a: []) => listThemes(...a),
-	resolveThemeCss: (...a: [string]) => resolveThemeCss(...a),
-	saveThemeCss: (...a: [string, string]) => saveThemeCss(...a)
+	resolveThemeCss: (...a: [string, boolean?]) => resolveThemeCss(...a),
+	saveThemeCss: (...a: [string, string, boolean?]) => saveThemeCss(...a)
 }));
 
 const invoke = vi.fn<(cmd: string) => Promise<unknown>>();
@@ -93,6 +94,7 @@ function libWith(id = 'd1'): Library {
 type Opts = {
 	navSection?: 'sacks' | 'settings';
 	editingDefId?: string | null;
+	monitorKey?: string;
 	selectedTheme?: string;
 	library?: Library | undefined;
 	tokenOverrides?: Record<string, string>;
@@ -109,6 +111,7 @@ function setup(opts: Opts = {}) {
 			studio: true,
 			navSection: opts.navSection ?? 'sacks',
 			editingDefId: opts.editingDefId ?? null,
+			monitorKey: opts.monitorKey ?? 'default',
 			selectedTheme: opts.selectedTheme ?? '',
 			library: 'library' in opts ? opts.library : undefined,
 			tokenOverrides: opts.tokenOverrides ?? {},
@@ -198,6 +201,7 @@ describe('refreshSacks (section-open peek)', () => {
 					studio: true,
 					navSection: p.navSection,
 					editingDefId: null,
+					monitorKey: 'default',
 					selectedTheme: '',
 					library: undefined,
 					tokenOverrides: {},
@@ -253,6 +257,49 @@ describe('exportSack', () => {
 		expect(result.current.notice).toBeNull();
 	});
 
+	it('does not replace a sack when overwrite confirmation is declined', async () => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		listSacks.mockResolvedValue(['MY-SACK']);
+		const { result } = setup({ navSection: 'settings' });
+		act(() => result.current.setExportName('my-sack'));
+		await act(async () => result.current.exportSack());
+		expect(confirm).toHaveBeenCalled();
+		expect(writeSack).not.toHaveBeenCalled();
+	});
+
+	it('does not export when existing sack names cannot be checked', async () => {
+		listSacks.mockRejectedValueOnce(new Error('Access denied'));
+		const { result } = setup({ navSection: 'settings' });
+		await act(async () => result.current.exportSack());
+		expect(listSacks).toHaveBeenCalledWith(true);
+		expect(writeSack).not.toHaveBeenCalled();
+		expect(result.current.notice).toEqual({
+			tone: 'error',
+			text: expect.stringContaining('Access denied')
+		});
+	});
+
+	it('allows a confirmed replacement and tells the native write to overwrite', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		listSacks.mockResolvedValue(['my-sack']);
+		const { result } = setup({ navSection: 'settings' });
+		act(() => result.current.setExportName('my-sack'));
+		await act(async () => result.current.exportSack());
+		expect(writeSack).toHaveBeenCalledWith('my-sack', expect.any(String), true);
+	});
+
+	it('does not export empty CSS when the selected theme cannot be read', async () => {
+		resolveThemeCss.mockRejectedValueOnce(new Error('Access denied'));
+		const { result } = setup({ navSection: 'settings', selectedTheme: 'Nord' });
+		await act(async () => result.current.exportSack());
+		expect(resolveThemeCss).toHaveBeenCalledWith('Nord', true);
+		expect(writeSack).not.toHaveBeenCalled();
+		expect(result.current.notice).toEqual({
+			tone: 'error',
+			text: expect.stringContaining('Access denied')
+		});
+	});
+
 	it('packs library + resolved theme CSS + tokens, writes, and reports the saved path inline', async () => {
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		resolveThemeCss.mockResolvedValue(':root{--np-accent:#abc}');
@@ -269,8 +316,9 @@ describe('exportSack', () => {
 		await act(async () => {
 			await result.current.exportSack();
 		});
-		expect(resolveThemeCss).toHaveBeenCalledWith('builtin:nord');
+		expect(resolveThemeCss).toHaveBeenCalledWith('builtin:nord', true);
 		const [name, json] = writeSack.mock.calls[0];
+		expect(writeSack.mock.calls[0]?.[2]).toBe(false);
 		expect(name).toBe('my-sack'); // trimmed
 		const sack = JSON.parse(json);
 		expect(sack.library).toEqual(lib);
@@ -367,7 +415,7 @@ describe('importSack', () => {
 			await result.current.importSack('s');
 		});
 		// The theme was written under its own (uncollided) name + the picker list refreshed.
-		expect(saveThemeCss).toHaveBeenCalledWith('Imported', ':root{}');
+		expect(saveThemeCss).toHaveBeenCalledWith('Imported', ':root{}', false);
 		expect(setThemeList).toHaveBeenCalled();
 		expect(result.current.notice?.text).toContain('theme saved as Imported');
 		// ONE commit carries the merged library + tokens + selected theme.
@@ -391,8 +439,180 @@ describe('importSack', () => {
 		await act(async () => {
 			await result.current.importSack('s');
 		});
-		expect(saveThemeCss).toHaveBeenCalledWith('Nord-imported', ':root{}');
+		expect(saveThemeCss).toHaveBeenCalledWith('Nord-imported', ':root{}', false);
 		expect(adoptTheme).toHaveBeenCalledWith('Nord-imported');
+	});
+
+	it('does not overwrite an earlier import or a case-insensitive theme collision', async () => {
+		readSack.mockResolvedValue(
+			JSON.stringify(packSack({ theme: { name: 'Nord', css: ':root{}' } }))
+		);
+		listThemes.mockResolvedValue(['nord', 'NORD-imported', 'Nord-imported2']);
+		const { result } = setup({ navSection: 'settings' });
+		await act(async () => {
+			await result.current.importSack('s');
+		});
+		expect(saveThemeCss).toHaveBeenCalledWith('Nord-imported3', ':root{}', false);
+	});
+
+	it('serializes imports so they cannot choose the same theme filename', async () => {
+		const raw = JSON.stringify(packSack({ theme: { name: 'Nord', css: ':root{}' } }));
+		const names = new Set(['Nord']);
+		listThemes.mockImplementation(async () => [...names]);
+		saveThemeCss.mockImplementation(async (name) => {
+			names.add(name);
+		});
+		readSack.mockResolvedValue(raw);
+		const { result } = setup({ navSection: 'settings' });
+		await act(async () => {
+			await Promise.all([result.current.importSack('first'), result.current.importSack('second')]);
+		});
+		expect(saveThemeCss.mock.calls.map(([name]) => name)).toEqual([
+			'Nord-imported',
+			'Nord-imported2'
+		]);
+	});
+
+	it.each(['read', 'catalog', 'refresh'] as const)(
+		'does not apply an import after a target change during %s',
+		async (stage) => {
+			let release!: (value: string[] | string) => void;
+			const waiting = new Promise<string[] | string>((resolve) => {
+				release = resolve;
+			});
+			const raw = JSON.stringify(packSack({ theme: { name: 'Nord', css: ':root{}' } }));
+			readSack.mockResolvedValue(raw);
+			if (stage === 'read') readSack.mockImplementationOnce(async () => (await waiting) as string);
+			if (stage === 'catalog')
+				listThemes.mockImplementationOnce(async () => (await waiting) as string[]);
+			if (stage === 'refresh')
+				listThemes
+					.mockResolvedValueOnce([])
+					.mockImplementationOnce(async () => (await waiting) as string[]);
+			const opts: Opts = { navSection: 'settings', monitorKey: 'a' };
+			const { result, rerender, commitOp } = setup(opts);
+			let importing!: Promise<void>;
+			await act(async () => {
+				importing = result.current.importSack('s');
+			});
+			opts.monitorKey = 'b';
+			rerender();
+			await act(async () => {
+				release(stage === 'read' ? raw : []);
+				await importing;
+			});
+			expect(commitOp).not.toHaveBeenCalled();
+			expect(adoptTheme).not.toHaveBeenCalled();
+		}
+	);
+
+	it('drops queued imports when the editor unmounts', async () => {
+		let release!: (raw: string | null) => void;
+		readSack.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					release = resolve;
+				})
+		);
+		const { result, unmount, commitOp } = setup({ navSection: 'settings' });
+		let first!: Promise<void>, second!: Promise<void>;
+		await act(async () => {
+			first = result.current.importSack('a');
+			second = result.current.importSack('b');
+		});
+		unmount();
+		await act(async () => {
+			release(null);
+			await Promise.all([first, second]);
+		});
+		expect(readSack).toHaveBeenCalledTimes(1);
+		expect(commitOp).not.toHaveBeenCalled();
+	});
+
+	it('does not show old import feedback after a target change during theme application', async () => {
+		let release!: () => void;
+		adoptTheme.mockImplementationOnce(
+			() =>
+				new Promise<void>((resolve) => {
+					release = resolve;
+				})
+		);
+		readSack.mockResolvedValue(
+			JSON.stringify(packSack({ theme: { name: 'Nord', css: ':root{}' } }))
+		);
+		const opts: Opts = { navSection: 'settings', monitorKey: 'a' };
+		const { result, rerender } = setup(opts);
+		let importing!: Promise<void>;
+		await act(async () => {
+			importing = result.current.importSack('s');
+		});
+		opts.monitorKey = 'b';
+		rerender();
+		await act(async () => {
+			release();
+			await importing;
+		});
+		expect(result.current.notice).toBeNull();
+	});
+
+	it('drops old failure feedback when the import target has changed', async () => {
+		let reject!: (reason: Error) => void;
+		readSack.mockImplementationOnce(
+			() =>
+				new Promise((_, fail) => {
+					reject = fail;
+				})
+		);
+		const opts: Opts = { navSection: 'settings', monitorKey: 'a' };
+		const { result, rerender } = setup(opts);
+		let importing!: Promise<void>;
+		await act(async () => {
+			importing = result.current.importSack('s');
+		});
+		opts.monitorKey = 'b';
+		rerender();
+		await act(async () => {
+			reject(new Error('read failed'));
+			await importing;
+		});
+		expect(result.current.notice).toBeNull();
+	});
+
+	it('reports an unexpected import failure and lets the next import run', async () => {
+		readSack
+			.mockRejectedValueOnce(new Error('read failed'))
+			.mockResolvedValueOnce(JSON.stringify(packSack({ tokens: { '--np-fg': 'red' } })));
+		const { result, commitOp } = setup({ navSection: 'settings' });
+		await act(async () => {
+			await result.current.importSack('broken');
+		});
+		expect(result.current.notice?.tone).toBe('error');
+		await act(async () => {
+			await result.current.importSack('good');
+		});
+		expect(commitOp).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not write or apply an import when theme filename discovery fails', async () => {
+		readSack.mockResolvedValue(
+			JSON.stringify(
+				packSack({
+					name: 's',
+					theme: { name: 'Nord', css: ':root{}' }
+				})
+			)
+		);
+		listThemes.mockRejectedValueOnce(new Error('Access denied'));
+		const { result, commitOp } = setup({ navSection: 'settings' });
+		await act(async () => result.current.importSack('s'));
+		expect(listThemes).toHaveBeenCalledWith(true);
+		expect(saveThemeCss).not.toHaveBeenCalled();
+		expect(commitOp).not.toHaveBeenCalled();
+		expect(adoptTheme).not.toHaveBeenCalled();
+		expect(result.current.notice).toEqual({
+			tone: 'error',
+			text: expect.stringContaining('Access denied')
+		});
 	});
 
 	it('aborts the import without committing when its theme cannot be persisted', async () => {
@@ -444,7 +664,7 @@ describe('importSack', () => {
 		await act(async () => {
 			await result.current.importSack('s');
 		});
-		expect(saveThemeCss).toHaveBeenCalledWith('Risky', expect.any(String));
+		expect(saveThemeCss).toHaveBeenCalledWith('Risky', expect.any(String), false);
 		expect(commitOp).toHaveBeenCalledTimes(1);
 	});
 

@@ -111,3 +111,33 @@ test('Sensors pane: per-sensor "stays active after the studio closes?" dots + le
 	await expect(dotFor('net.linkspeed.rx')).toHaveClass(/\boff\b/);
 	await expect(dotFor('net.linkspeed.rx')).toHaveText('○');
 });
+
+test('tab navigation switches directly without capturing whole-window fade snapshots', async ({
+	page
+}) => {
+	await page.addInitScript(() => {
+		const state = window as unknown as { sectionTransitions: number };
+		state.sectionTransitions = 0;
+		const original = document.startViewTransition.bind(document);
+		document.startViewTransition = ((...args: Parameters<typeof document.startViewTransition>) => {
+			state.sectionTransitions++;
+			return Reflect.apply(original, document, args);
+		}) as typeof document.startViewTransition;
+	});
+	await gotoStudio(page);
+	for (const id of ['settings', 'plugins', 'sensors', 'layouts']) {
+		await openSection(page, id);
+		await expect(navItem(page, id)).toHaveClass(/active/);
+	}
+	await page.keyboard.press('Control+9');
+	await expect(navItem(page, 'settings')).toHaveClass(/active/);
+	await page.keyboard.press('Control+1');
+	await expect(navItem(page, 'layouts')).toHaveClass(/active/);
+	await page.keyboard.press('Control+Tab');
+	await expect(navItem(page, 'widget-designer')).toHaveClass(/active/);
+	expect(
+		await page.evaluate(
+			() => (window as unknown as { sectionTransitions: number }).sectionTransitions
+		)
+	).toBe(0);
+});

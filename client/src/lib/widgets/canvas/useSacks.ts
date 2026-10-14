@@ -3,9 +3,10 @@
 // The editable state itself stays in the editor model — this hook owns the sacks/ + themes/ file
 // I/O around it and funnels the import through ONE commit (one undo step). Theme side-effects go
 // through the useThemes seam (adoptTheme / setThemeList) so the live CSS can't drift.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { COMMANDS } from '../../bridge/contract';
+import { unusedFileName } from '../../core/fileNames';
 import type { Library } from '../../core/layoutTree';
 import {
 	mergeLibrary,
@@ -31,6 +32,7 @@ type Deps = {
 	studio: boolean;
 	navSection: SectionId;
 	editingDefId: string | null;
+	monitorKey: string;
 	selectedTheme: string;
 	library: Library | undefined;
 	tokenOverrides: Record<string, string>;
@@ -111,6 +113,7 @@ export function useSacks({
 	studio,
 	navSection,
 	editingDefId,
+	monitorKey,
 	selectedTheme,
 	library,
 	tokenOverrides,
@@ -120,6 +123,14 @@ export function useSacks({
 	const { themeLabel, setThemeList, adoptTheme } = themes;
 	const [sackInfos, setSackInfos] = useState<SackInfo[]>([]);
 	const [notice, setNotice] = useState<SackNotice | null>(null);
+	const importQueue = useRef(Promise.resolve());
+	const importRevision = useRef(0);
+	useEffect(
+		() => () => {
+			importRevision.current++;
+		},
+		[editingDefId, monitorKey]
+	);
 	const clearNotice = useCallback(() => setNotice(null), []);
 	// The inline export name: seeded from the active theme's label (what the old prompt defaulted to)
 	// until the user types their own (null = untouched → use the seed).
@@ -166,16 +177,31 @@ export function useSacks({
 			return;
 		}
 		const name = exportName.trim();
+		let existing: string[];
+		try {
+			existing = await listSacks(true);
+		} catch (error) {
+			setNotice({ tone: 'error', text: `Could not check existing sacks: ${String(error)}` });
+			return;
+		}
+		const exists = existing.some((saved) => saved.toLowerCase() === name.toLowerCase());
+		if (exists && !window.confirm(`Overwrite the sack "${name}"?`)) return;
 		// Re-read the theme CSS at export time so a not-yet-loaded `themeCss` can't silently drop it. A
 		// built-in is baked into the sack under its catalog name (the `builtin:` id never leaves the app).
-		const css = selectedTheme ? await resolveThemeCss(selectedTheme) : '';
+		let css: string;
+		try {
+			css = selectedTheme ? await resolveThemeCss(selectedTheme, true) : '';
+		} catch (error) {
+			setNotice({ tone: 'error', text: `Could not read the theme for export: ${String(error)}` });
+			return;
+		}
 		const sack = packSack({
 			name,
 			library,
 			theme: selectedTheme ? { name: themeLabel(selectedTheme), css } : undefined,
 			tokens: tokenOverrides
 		});
-		const path = await writeSack(name, JSON.stringify(sack, null, '\t'));
+		const path = await writeSack(name, JSON.stringify(sack, null, '\t'), exists);
 		await refreshSacks();
 		if (!path) {
 			// writeSack swallows the backend error (it logs + returns null): say so plainly, or a failed
@@ -188,13 +214,14 @@ export function useSacks({
 		setNotice({ tone: 'ok', text: `Exported ${name}`, path });
 	}, [editingDefId, exportName, selectedTheme, themeLabel, library, tokenOverrides, refreshSacks]);
 
-	const importSack = useCallback(
-		async (name: string) => {
+	const importSackNow = useCallback(
+		async (name: string, current: () => boolean) => {
 			if (editingDefId != null) {
 				window.alert('Finish editing the current widget (Done) before importing a sack.');
 				return;
 			}
 			const raw = await readSack(name);
+			if (!current()) return;
 			const unpacked = raw ? unpackSack(raw) : null;
 			if (!unpacked) {
 				window.alert('Could not read that sack.');
@@ -210,17 +237,18 @@ export function useSacks({
 			// Theme first: resolve a name collision so an import never clobbers an existing user theme.
 			let themeName: string | null = null;
 			if (sack.theme) {
-				const existing = await listThemes();
-				themeName = existing.includes(sack.theme.name)
-					? `${sack.theme.name}-imported`
-					: sack.theme.name;
+				const existing = await listThemes(true);
+				if (!current()) return;
+				themeName = unusedFileName(sack.theme.name, existing, '-imported');
 				try {
-					await saveThemeCss(themeName, sack.theme.css);
+					await saveThemeCss(themeName, sack.theme.css, false);
 				} catch (err) {
 					window.alert(`Could not import theme "${themeName}": ${String(err)}`);
 					return;
 				}
-				setThemeList(await listThemes());
+				const names = await listThemes();
+				if (!current()) return;
+				setThemeList(names);
 			}
 			// One commit applies the persisted parts: merged library + token overrides + selected theme.
 			commitOp((s) => {
@@ -236,6 +264,7 @@ export function useSacks({
 			});
 			// Live-apply the theme CSS (the commit set selectedTheme; mirror it for the live styles).
 			if (themeName) await adoptTheme(themeName);
+			if (!current()) return;
 			setNotice({
 				tone: 'ok',
 				text: importSummary({
@@ -246,6 +275,24 @@ export function useSacks({
 			});
 		},
 		[editingDefId, commitOp, setThemeList, adoptTheme]
+	);
+
+	const importSack = useCallback(
+		(name: string): Promise<void> => {
+			const revision = importRevision.current;
+			const current = () => revision === importRevision.current;
+			const pending = importQueue.current
+				.then(async () => {
+					if (current()) await importSackNow(name, current);
+				})
+				.catch((error: unknown) => {
+					if (current())
+						setNotice({ tone: 'error', text: `Could not import the sack: ${String(error)}` });
+				});
+			importQueue.current = pending;
+			return pending;
+		},
+		[importSackNow]
 	);
 
 	// Load the saved sacks (+ their summaries) when the Sacks section opens. setState lives in the

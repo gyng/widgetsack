@@ -11,6 +11,8 @@ export type TimerConfig = {
 	duration: number;
 	loop?: boolean;
 	storageKey?: string;
+	/** Observe shared state without changing or publishing it. */
+	readOnly?: boolean;
 };
 export type TimerState = {
 	/** Seconds remaining (countdown) or elapsed (stopwatch). */
@@ -49,6 +51,7 @@ const validRuntime = (value: unknown): value is Runtime => {
 		typeof runtime.running === 'boolean' &&
 		typeof runtime.accumulatedMs === 'number' &&
 		Number.isFinite(runtime.accumulatedMs) &&
+		runtime.accumulatedMs >= 0 &&
 		(runtime.durationSeconds === undefined ||
 			(typeof runtime.durationSeconds === 'number' &&
 				Number.isFinite(runtime.durationSeconds) &&
@@ -113,7 +116,7 @@ export function useTimer(cfg: TimerConfig): TimerState {
 
 	useEffect(() => {
 		const storageKey = cfg.storageKey;
-		if (!storageKey) return;
+		if (!storageKey || cfg.readOnly) return;
 		const stored: StoredTimer = { version: 1, config, runtime };
 		try {
 			localStorage.setItem(storageKey, JSON.stringify(stored));
@@ -121,7 +124,7 @@ export function useTimer(cfg: TimerConfig): TimerState {
 			// Timer controls remain usable when storage is disabled or full.
 		}
 		window.dispatchEvent(new CustomEvent(TIMER_EVENT, { detail: { storageKey, config, runtime } }));
-	}, [cfg.storageKey, config, runtime]);
+	}, [cfg.storageKey, cfg.readOnly, config, runtime]);
 
 	useEffect(() => {
 		const storageKey = cfg.storageKey;
@@ -167,12 +170,12 @@ export function useTimer(cfg: TimerConfig): TimerState {
 	}, [cfg.storageKey, config, identity]);
 
 	const start = useCallback(() => {
-		if (runtime.running) return;
+		if (cfg.readOnly || runtime.running) return;
 		const startedAt = Date.now();
 		setModel({ identity, runtime: { ...runtime, running: true, startedAt } });
-	}, [identity, runtime]);
+	}, [cfg.readOnly, identity, runtime]);
 	const pause = useCallback(() => {
-		if (!runtime.running) return;
+		if (cfg.readOnly || !runtime.running) return;
 		const pausedAt = Date.now();
 		setModel({
 			identity,
@@ -181,12 +184,14 @@ export function useTimer(cfg: TimerConfig): TimerState {
 				running: false,
 				/* v8 ignore next -- running runtimes are created only with a numeric startedAt anchor. */
 				accumulatedMs:
-					runtime.accumulatedMs + (runtime.startedAt == null ? 0 : pausedAt - runtime.startedAt),
+					runtime.accumulatedMs +
+					(runtime.startedAt == null ? 0 : Math.max(0, pausedAt - runtime.startedAt)),
 				startedAt: null
 			}
 		});
-	}, [identity, runtime]);
+	}, [cfg.readOnly, identity, runtime]);
 	const reset = useCallback(() => {
+		if (cfg.readOnly) return;
 		const resetAt = Date.now();
 		setModel({
 			identity,
@@ -197,10 +202,10 @@ export function useTimer(cfg: TimerConfig): TimerState {
 				startedAt: runtime.running ? resetAt : null
 			}
 		});
-	}, [identity, runtime]);
+	}, [cfg.readOnly, identity, runtime]);
 	const setCountdown = useCallback(
 		(seconds: number) => {
-			if (!Number.isFinite(seconds)) return;
+			if (cfg.readOnly || !Number.isFinite(seconds)) return;
 			const durationSeconds = Math.max(0, Math.min(3600, seconds));
 			setModel({
 				identity,
@@ -212,7 +217,7 @@ export function useTimer(cfg: TimerConfig): TimerState {
 				}
 			});
 		},
-		[identity]
+		[cfg.readOnly, identity]
 	);
 	const toggle = useCallback(
 		() => (runtime.running ? pause() : start()),

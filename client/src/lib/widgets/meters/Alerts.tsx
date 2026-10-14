@@ -2,22 +2,26 @@ import type { AlertRule } from '../../core/dashboard';
 import './Dashboard.css';
 export default function Alerts({
 	alerts,
+	calendarStatus = '',
 	label,
 	snoozeMin,
 	editMode,
 	onSnooze
 }: {
 	alerts: AlertRule[];
+	calendarStatus?: string;
 	label: string;
 	snoozeMin: number;
 	editMode: boolean;
 	onSnooze: (id: string) => void;
 }) {
-	if (!alerts.length && !editMode) return <div hidden data-widget-interactive="none" />;
+	if (!alerts.length && !editMode && !calendarStatus)
+		return <div hidden data-widget-interactive="none" />;
 	return (
 		<section className="np-dashboard" aria-label={label}>
 			<header>{label}</header>
-			{!alerts.length && <span>All clear</span>}
+			{calendarStatus && <span role="status">{calendarStatus}</span>}
+			{!alerts.length && !calendarStatus && <span>All clear</span>}
 			{alerts.map((a) => (
 				<div className="dashboard-row" key={a.id}>
 					<span role="status">{a.label}</span>

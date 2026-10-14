@@ -1,3 +1,4 @@
+import { normalizeGridTrackCount } from './gridDimensions';
 // Version-aware parse + v1→v2 migration. v1 (flat `widgets[]` per monitor) migrates to
 // v2 by dropping every widget into the `floating` layer (absolute rects unchanged) under
 // an empty flow root — so existing/demo layouts render identically. v2 is validated
@@ -159,7 +160,7 @@ function parseMonitor(raw: unknown): MonitorLayout | null {
 	const floatingRaw = o.floating;
 	if (floatingRaw !== undefined && !Array.isArray(floatingRaw)) return null;
 	const floating: Leaf[] = Array.isArray(floatingRaw)
-		? floatingRaw.map(parseLeaf).filter((l): l is Leaf => l !== null)
+		? floatingRaw.map((raw) => parseLeaf(raw)).filter((l): l is Leaf => l !== null)
 		: [];
 
 	// The per-monitor wallpaper layer (optional). A malformed background is dropped (→ undefined),
@@ -180,7 +181,7 @@ function parseMonitor(raw: unknown): MonitorLayout | null {
 
 // Tolerate a missing/non-object root by substituting an empty root; reject a present
 // root with a bad `kind` (a structural authoring error) by failing the monitor.
-function parseContainer(raw: unknown): Container | null {
+function parseContainer(raw: unknown, depth = 0): Container | null {
 	if (typeof raw !== 'object' || raw === null) return emptyRoot();
 	const o = raw as Record<string, unknown>;
 	const kind = o.kind;
@@ -189,13 +190,13 @@ function parseContainer(raw: unknown): Container | null {
 
 	const childrenRaw = o.children;
 	const children: LayoutNode[] = Array.isArray(childrenRaw)
-		? childrenRaw.map(parseNode).filter((n): n is LayoutNode => n !== null)
+		? childrenRaw.map((raw) => parseNode(raw, depth + 1)).filter((n): n is LayoutNode => n !== null)
 		: [];
 
 	const c: Container = { id: o.id, kind, children };
 	if (isLength(o.basis)) c.basis = o.basis as Length;
-	if (typeof o.cols === 'number') c.cols = o.cols;
-	if (typeof o.rows === 'number') c.rows = o.rows;
+	if (typeof o.cols === 'number') c.cols = normalizeGridTrackCount(o.cols);
+	if (typeof o.rows === 'number') c.rows = normalizeGridTrackCount(o.rows);
 	if (typeof o.gap === 'number') c.gap = o.gap;
 	if (isPad(o.pad)) c.pad = o.pad as Pad;
 	if (isPad(o.margin)) c.margin = o.margin as Pad;
@@ -230,19 +231,40 @@ export function parseLayoutNode(raw: unknown): LayoutNode | null {
 	return parseNode(raw);
 }
 
-function parseNode(raw: unknown): LayoutNode | null {
+function parseNode(raw: unknown, depth = 0): LayoutNode | null {
+	if (depth > 64) return null;
 	if (typeof raw !== 'object' || raw === null) return null;
 	const o = raw as Record<string, unknown>;
-	if (o.kind === 'row' || o.kind === 'col' || o.kind === 'grid') return parseContainer(o);
-	if ('unit' in o) return parseLeaf(o);
+	if (o.kind === 'row' || o.kind === 'col' || o.kind === 'grid') return parseContainer(o, depth);
+	if ('unit' in o) return parseLeaf(o, depth);
 	return null;
 }
 
-function parseLeaf(raw: unknown): Leaf | null {
+function parseLeaf(raw: unknown, depth = 0): Leaf | null {
 	if (typeof raw !== 'object' || raw === null) return null;
 	const o = raw as Record<string, unknown>;
-	const unit = o.unit;
+	let unit = o.unit;
 	if (!isUnit(unit)) return null;
+	if ((unit as Group).kind === 'group') {
+		const source = unit as Record<string, unknown>;
+		const child = parseNode(source.child, depth + 1);
+		const def = typeof source.def === 'string' ? source.def : undefined;
+		if (!child && !def) return null;
+		const size = source.size as Record<string, unknown> | undefined;
+		unit = {
+			...source,
+			def,
+			child: child ?? emptyRoot(),
+			size:
+				size &&
+				typeof size.w === 'number' &&
+				Number.isFinite(size.w) &&
+				typeof size.h === 'number' &&
+				Number.isFinite(size.h)
+					? { w: size.w, h: size.h }
+					: { w: 0, h: 0 }
+		};
+	}
 	const id = typeof o.id === 'string' ? o.id : (unit as { id: string }).id;
 	const lf: Leaf = { id, unit: unit as WidgetInstance | Group };
 	if (isLength(o.basis)) lf.basis = o.basis as Length;

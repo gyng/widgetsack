@@ -5,8 +5,9 @@
 import type { Rect } from './layout';
 import type { Zone, ZoneMatch } from './zones';
 import { hitTestZone } from './zones';
-import type { LayoutNode, LayoutV2 } from './layoutTree';
+import type { LayoutNode, LayoutV2, Library } from './layoutTree';
 import { isContainer, isGroup } from './layoutTree';
+import { resolveGroup } from './solve';
 
 /** Live pointer state during a drag — cursor in PHYSICAL px + the arming modifier. Mirrors the Rust
  * `PointerState` (windowmgr.rs) 1:1. */
@@ -36,24 +37,32 @@ export function matchOf(config: Record<string, unknown>): ZoneMatch | undefined 
  * A docked zone's screen rect is NOT its `unit.rect` — the CSS flow positions it, so the overlay reads
  * the rect by MEASURING the rendered element; this carries only the match rule, keyed by the widget id
  * (which equals the element's `data-w`). Floating zones are handled separately (they keep their own
- * absolute rect). Zones nested inside a group are skipped (their id is namespaced in the DOM). Pure. */
+ * absolute rect). Group descendants, including floating groups, use renderer namespaces and measured
+ * geometry. Resolve definitions and parameters exactly as FlowNode does. Pure. */
 export function collectDockedZoneMatches(
 	layout: LayoutV2 | null,
-	key: string
+	key: string,
+	library?: Library
 ): Map<string, ZoneMatch | undefined> {
 	const out = new Map<string, ZoneMatch | undefined>();
 	const monitor = layout?.monitors[key];
 	if (!monitor) return out;
-	const walk = (node: LayoutNode): void => {
+	const walk = (node: LayoutNode, prefix = ''): void => {
 		if (isContainer(node)) {
-			node.children.forEach(walk);
+			node.children.forEach((child) => walk(child, prefix));
 			return;
 		}
 		const unit = node.unit;
-		if (isGroup(unit) || unit.type !== 'zone') return;
-		out.set(unit.id, matchOf(unit.config));
+		if (isGroup(unit)) {
+			walk(resolveGroup(unit, library).child, `${prefix}${node.id}/`);
+			return;
+		}
+		if (unit.type === 'zone') out.set(prefix + node.id, matchOf(unit.config));
 	};
 	walk(monitor.root);
+	monitor.floating.forEach((leaf) => {
+		if (isGroup(leaf.unit)) walk(leaf);
+	});
 	return out;
 }
 

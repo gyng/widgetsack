@@ -1,10 +1,10 @@
-// Own synchronous cleanup handles, including resources acquired after cancellation.
+// Own cleanup handles, including asynchronous releases and resources acquired after cancellation.
 export function disposalScope(onError: (error: unknown) => void) {
 	let disposed = false;
 	const cleanups: (() => void)[] = [];
 	const release = (cleanup: () => void): void => {
 		try {
-			cleanup();
+			void Promise.resolve(cleanup()).catch(onError);
 		} catch (error) {
 			onError(error);
 		}

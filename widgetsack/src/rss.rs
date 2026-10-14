@@ -219,13 +219,17 @@ pub(crate) const FEED_BODY_CAP: usize = 1024 * 1024;
 /// GET `url` and return its body as text, enforcing `cap` WHILE STREAMING (`Content-Length` is
 /// checked first, then every chunk — a chunked/lying server can't exceed it either). Shared by
 /// the RSS and Agenda pollers.
+fn feed_request_error(error: reqwest::Error) -> String {
+    crate::http_response::request_error(error)
+}
+
 pub(crate) async fn fetch_text_capped(
     client: &reqwest::Client,
     url: &str,
     cap: usize,
 ) -> Result<String, String> {
     use futures_util::StreamExt;
-    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+    let resp = client.get(url).send().await.map_err(feed_request_error)?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
@@ -237,7 +241,7 @@ pub(crate) async fn fetch_text_capped(
     let mut buf: Vec<u8> = Vec::new();
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
-        let bytes = chunk.map_err(|e| e.to_string())?;
+        let bytes = chunk.map_err(feed_request_error)?;
         if buf.len() + bytes.len() > cap {
             return Err(format!("body exceeded the {cap}-byte cap"));
         }
@@ -401,6 +405,22 @@ pub async fn rss_disconnect(state: State<'_, RssState>) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn feed_errors_do_not_disclose_private_subscription_urls() {
+        let private_url =
+            reqwest::Url::parse("https://example.invalid/private-calendar?token=secret-test-token")
+                .unwrap();
+        let error = reqwest::Client::new()
+            .get("invalid URL")
+            .build()
+            .unwrap_err()
+            .with_url(private_url);
+        let message = feed_request_error(error);
+        assert!(!message.contains("secret-test-token"), "{message}");
+        assert!(!message.contains("private-calendar"), "{message}");
+        assert!(message.contains("builder"), "{message}");
+    }
 
     #[test]
     fn unescape_handles_entities_amp_last() {

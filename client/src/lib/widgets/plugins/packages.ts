@@ -22,6 +22,7 @@ import {
 	parseInstallSidecar,
 	parsePluginPackage,
 	reinstallSource,
+	installSourceLabel,
 	templateThreatFingerprint,
 	versionsDiffer,
 	type InstallSidecar,
@@ -66,8 +67,8 @@ export type PackageRow = {
 	sensors: number;
 	/** The source's network allowlist ([] when no source) — shown as a dim "network:" line. */
 	hosts: string[];
-	/** The install source (`owner/repo` or a URL) when installed via `installPackage`; null for a
-	 * hand-dropped folder (no update-check affordance — there's nowhere to check against). */
+	/** Public provenance label: GitHub owner/repo or HTTPS origin. Updates use the private
+	 * install record. Null for a hand-dropped package. */
 	installedFrom: string | null;
 	/** The version recorded at install time (usually equals `version` from the manifest). */
 	installedVersion?: string;
@@ -149,7 +150,7 @@ function rowOf(d: Discovered): PackageRow {
 		themeName: d.manifest?.theme?.name ?? null,
 		sensors: d.manifest?.source ? d.manifest.sensors.length : 0,
 		hosts: d.manifest?.source?.hosts.slice() ?? [],
-		installedFrom: d.install?.source ?? null,
+		installedFrom: d.install ? installSourceLabel(d.install) : null,
 		...(d.install ? { installedVersion: d.install.version } : {})
 	};
 }
@@ -288,7 +289,9 @@ async function refreshPackagesNow(): Promise<void> {
 	for (const d of discovered.values()) await applyPackage(d, false);
 	discovered.clear();
 	for (const f of files) {
-		const result = parsePluginPackage(f.id, f.manifest);
+		const result = f.manifest_error
+			? { ok: false as const, reason: f.manifest_error }
+			: parsePluginPackage(f.id, f.manifest);
 		const install = parseInstallSidecar(f.install);
 		discovered.set(
 			f.id,

@@ -32,3 +32,18 @@ describe('disposalScope', () => {
 		expect(report).toHaveBeenCalledWith(error);
 	});
 });
+
+it('reports an asynchronous release failure and continues releasing other resources', async () => {
+	const error = new Error('async release failed');
+	const report = vi.fn();
+	const stop = vi.fn();
+	const scope = disposalScope(report);
+	scope.add(stop);
+	scope.add(async () => {
+		throw error;
+	});
+	scope.dispose();
+	await Promise.resolve();
+	expect(stop).toHaveBeenCalledOnce();
+	expect(report).toHaveBeenCalledWith(error);
+});

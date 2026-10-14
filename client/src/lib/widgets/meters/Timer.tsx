@@ -14,6 +14,7 @@ export type TimerViewProps = {
 	color?: string;
 	onToggle?: () => void;
 	onReset?: () => void;
+	disabled?: boolean;
 };
 
 /** Pure presentation: the formatted time + the start/pause and reset controls. */
@@ -24,7 +25,8 @@ export function TimerView({
 	label = '',
 	color,
 	onToggle,
-	onReset
+	onReset,
+	disabled = false
 }: TimerViewProps) {
 	const colorCss = color || 'var(--np-fg, rgb(255, 255, 255))';
 	return (
@@ -47,6 +49,7 @@ export function TimerView({
 						<button
 							type="button"
 							className="timer-btn"
+							disabled={disabled}
 							onClick={onToggle}
 							title={running ? 'Pause' : 'Start'}
 							aria-label={running ? 'Pause' : 'Start'}
@@ -58,6 +61,7 @@ export function TimerView({
 						<button
 							type="button"
 							className="timer-btn"
+							disabled={disabled}
 							onClick={onReset}
 							title="Reset"
 							aria-label="Reset"
@@ -101,7 +105,8 @@ export default function Timer({
 		duration:
 			style === 'dial' && mode === 'countdown' ? Math.max(0, Math.min(3600, duration)) : duration,
 		loop,
-		storageKey: widgetId ? `widgetsack.timer.${widgetId}` : undefined
+		storageKey: widgetId ? `widgetsack.timer.${widgetId}` : undefined,
+		readOnly: editMode || previewMode
 	});
 	// A countdown shows the CEILING (4.2s left reads "00:05"); a stopwatch floors.
 	const shown = mode === 'countdown' ? Math.ceil(seconds) : seconds;
@@ -125,6 +130,7 @@ export default function Timer({
 			done={done}
 			label={label}
 			color={color}
+			disabled={editMode || previewMode}
 			onToggle={toggle}
 			onReset={reset}
 		/>

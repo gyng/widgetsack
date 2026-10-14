@@ -1,3 +1,4 @@
+import { gridDimensions } from './gridDimensions';
 // flowStyle.ts — map the layout grammar to NATIVE CSS, so the browser lays out the flow tree
 // instead of the pure solver (solve.ts). This is the keystone of the CSS-layout pivot: the same
 // row/col/grid + basis + align/justify grammar that the solver interpreted into rects is here
@@ -99,7 +100,7 @@ function gridFixedTracks(
 	count: number,
 	horizontal: boolean
 ): (number | null)[] | null {
-	const cols = Math.max(1, c.cols ?? 1);
+	const cols = gridDimensions(c).cols;
 	const fixed: (number | null)[] = Array.from({ length: count }, () => null);
 	let any = false;
 	c.children.forEach((child, i) => {
@@ -286,9 +287,9 @@ export function containerStyle(c: Container): Style {
 	}
 	if (c.kind === 'grid') {
 		s.display = 'grid';
-		const cols = Math.max(1, c.cols ?? 1);
+		const cols = gridDimensions(c).cols;
 		// Row count grown to fit children (mirrors solve.ts gridRows), so per-row cellH tracks line up.
-		const rows = Math.max(c.rows ?? 1, Math.ceil(c.children.length / cols), 1);
+		const rows = gridDimensions(c).rows;
 		s.gridTemplateColumns = gridTemplate(c, cols, true);
 		s.gridTemplateRows = gridTemplate(c, rows, false);
 		s.gridAutoRows = '1fr'; // any overflow row stays uniform

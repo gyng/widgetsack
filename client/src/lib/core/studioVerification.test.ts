@@ -137,3 +137,25 @@ it('covers every edge, allows half-pixel seams, and rejects a zero-height box', 
 		).ok
 	).toBe(true);
 });
+
+it('reports finite definitions beyond the verification nesting limit', () => {
+	const defs = Array.from({ length: 35 }, (_, i) => ({
+		id: String(i),
+		name: String(i),
+		size: { w: 100, h: 100 },
+		child: leaf(
+			group(`g${i}`, { w: 100, h: 100 }, container('end', 'col', []), { def: String(i + 1) })
+		)
+	}));
+	const m = {
+		root: container('root', 'col', [
+			leaf(group('start', { w: 100, h: 100 }, container('end', 'col', []), { def: '0' }))
+		]),
+		floating: []
+	};
+	expect(
+		verifyStudioLayout(m, { version: 1, defs }, bounds, {}, []).issues.some(
+			(issue) => issue.message === 'Group nesting exceeds the verification limit.'
+		)
+	).toBe(true);
+});

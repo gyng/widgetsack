@@ -1,5 +1,11 @@
-import { describe, it, expect } from 'vitest';
-import { parseAgendaList, upcomingEvents, formatEventWhen, type AgendaEvent } from './agenda';
+import { describe, it, expect, vi } from 'vitest';
+import {
+	parseAgendaFeedback,
+	parseAgendaList,
+	upcomingEvents,
+	formatEventWhen,
+	type AgendaEvent
+} from './agenda';
 
 const ev = (p: Partial<AgendaEvent> & { summary: string; start: string }): AgendaEvent => ({
 	allDay: false,
@@ -75,7 +81,54 @@ describe('formatEventWhen', () => {
 		expect(formatEventWhen('2027-01-02', true, now)).toBe('Tomorrow');
 	});
 
+	it('keeps explicit timestamps unchanged even when marked all-day', () => {
+		expect(formatEventWhen(new Date(2027, 0, 1, 12).toISOString(), true, now)).toBe('Today');
+	});
+
 	it("returns '' for an unparseable start", () => {
 		expect(formatEventWhen('not a date', false, now)).toBe('');
 	});
+});
+
+describe('all-day calendar dates across timezones', () => {
+	it.each(['America/New_York', 'Asia/Singapore'])('uses the local day in %s', (zone) => {
+		vi.stubEnv('TZ', zone);
+		try {
+			const now = new Date(2027, 0, 1, 13).getTime();
+			const holiday = ev({ summary: 'Holiday', start: '2027-01-01', allDay: true });
+			const meeting = ev({ summary: 'Meeting', start: new Date(2027, 0, 1, 14).toISOString() });
+			expect(upcomingEvents([meeting, holiday], now, 5)).toEqual([holiday, meeting]);
+			expect(formatEventWhen(holiday.start, true, now)).toBe('Today');
+			expect(formatEventWhen('2027-01-02', true, now)).toBe('Tomorrow');
+		} finally {
+			vi.unstubAllEnvs();
+		}
+	});
+});
+
+it('reads parse feedback without accepting untyped warning values', () => {
+	expect(parseAgendaFeedback(null)).toEqual({ pending: false, warnings: [] });
+	expect(parseAgendaFeedback({ pending: true, warnings: ['Warning', 42] })).toEqual({
+		pending: true,
+		warnings: ['Warning']
+	});
+	expect(parseAgendaFeedback({ pending: false, warnings: 42 })).toEqual({
+		pending: false,
+		warnings: []
+	});
+});
+
+it('preserves valid event IDs and ignores malformed optional IDs in legacy rows', () => {
+	const row = { summary: 'Meeting', start: '2026-10-14T09:00:00Z' };
+	expect(
+		parseAgendaList([
+			{ ...row, id: 'one' },
+			{ ...row, id: '' },
+			{ ...row, id: 123 }
+		])
+	).toEqual([
+		{ ...row, id: 'one', allDay: false, location: '' },
+		{ ...row, allDay: false, location: '' },
+		{ ...row, allDay: false, location: '' }
+	]);
 });

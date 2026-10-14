@@ -20,6 +20,33 @@ const setup = () => {
 	};
 	return { ports, studio, controller: createMcpStudioController(ports, studio) };
 };
+
+it('releases a cancelled verification so a later tool can run before rendering finishes', async () => {
+	const s = setup();
+	let finish!: (value: unknown) => void;
+	let started!: () => void;
+	const ready = new Promise<void>((resolve) => {
+		started = resolve;
+	});
+	s.studio.verify.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				finish = resolve;
+				started();
+			})
+	);
+	const verifying = s.controller.handle({ id: 'verify', name: 'studio_verify', args: {} });
+	await ready;
+	expect(s.studio.verify).toHaveBeenCalledOnce();
+	await s.controller.handle({ id: 'verify', name: 'studio_verify', args: {} });
+	const cancelling = s.controller.handle({ id: 'verify', cancelled: true });
+	const reading = s.controller.handle({ id: 'next', name: 'studio_read', args: {} });
+	await reading;
+	finish({ ok: true });
+	await Promise.all([verifying, reading, cancelling]);
+	expect(s.ports.reply).not.toHaveBeenCalledWith('verify', expect.anything());
+	expect(s.ports.reply).toHaveBeenCalledWith('next', expect.objectContaining({ revision: 'next' }));
+});
 it('requires a read revision, consumes it once, and returns rendered verification', async () => {
 	const s = setup();
 	await s.controller.handle({ id: 'read', name: 'studio_read', args: {} });
@@ -40,7 +67,7 @@ it('requires a read revision, consumes it once, and returns rendered verificatio
 		error: expect.stringContaining('revision')
 	});
 	await s.controller.handle({ id: 'verify', name: 'studio_verify', args: {} });
-	expect(s.studio.verify).toHaveBeenCalledWith(s.studio.read());
+	expect(s.studio.verify).toHaveBeenCalledWith(s.studio.read(), expect.any(AbortSignal));
 });
 it('reports unknown, malformed, read-only, and failed tools without changing the layout', async () => {
 	const s = setup();
@@ -111,17 +138,45 @@ it('bounds old snapshots and keeps the queue usable after a failed reply', async
 it('drops a verification reply after the controller is disposed', async () => {
 	const s = setup();
 	let finish!: (value: unknown) => void;
+	let started!: () => void;
+	const ready = new Promise<void>((resolve) => {
+		started = resolve;
+	});
 	s.studio.verify.mockImplementationOnce(
 		() =>
 			new Promise((resolve) => {
 				finish = resolve;
+				started();
 			})
 	);
 	const pending = s.controller.handle({ id: 'verify', name: 'studio_verify', args: {} });
-	await Promise.resolve();
-	await Promise.resolve();
+	await ready;
 	s.controller.dispose();
 	finish({ ok: true });
 	await pending;
 	expect(s.ports.reply).not.toHaveBeenCalled();
+});
+it('skips a request cancelled while it waits behind another tool', async () => {
+	const s = setup();
+	let finish!: (value: unknown) => void;
+	let started!: () => void;
+	const ready = new Promise<void>((resolve) => {
+		started = resolve;
+	});
+	s.studio.verify.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				finish = resolve;
+				started();
+			})
+	);
+	const verifying = s.controller.handle({ id: 'verify', name: 'studio_verify', args: {} });
+	await ready;
+	const queued = s.controller.handle({ id: 'queued', name: 'studio_read', args: {} });
+	await s.controller.handle({ id: 'queued', cancelled: true });
+	finish({ ok: true });
+	await Promise.all([verifying, queued]);
+	expect(s.ports.claim).not.toHaveBeenCalledWith('queued');
+	expect(s.ports.reply).not.toHaveBeenCalledWith('queued', expect.anything());
+	expect(s.ports.reply).toHaveBeenCalledWith('verify', { ok: true });
 });

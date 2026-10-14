@@ -1,5 +1,5 @@
 import type { SensorState } from './telemetry';
-import { parseAgendaList } from './agenda';
+import { parseAgendaList, type AgendaEvent } from './agenda';
 
 export type AlertRule = {
 	id: string;
@@ -86,13 +86,22 @@ export function meetingAlerts(
 	minutes: number
 ): AlertRule[] {
 	if (!state?.value || state.value.kind !== 'json' || minutes <= 0) return [];
-	return parseAgendaList(state.value.value).flatMap((event) => {
+	return meetingAlertsFromEvents(parseAgendaList(state.value.value), now, minutes);
+}
+
+export function meetingAlertsFromEvents(
+	events: readonly AgendaEvent[],
+	now: number,
+	minutes: number
+): AlertRule[] {
+	if (minutes <= 0) return [];
+	return events.flatMap((event) => {
 		const remaining = new Date(event.start).getTime() - now;
 		if (event.allDay || !Number.isFinite(remaining) || remaining < 0 || remaining > minutes * 60000)
 			return [];
 		return [
 			{
-				id: `meeting:${event.start}:${event.summary}`,
+				id: event.id ? `meeting:id:${event.id}` : `meeting:${event.start}:${event.summary}`,
 				sensor: 'agenda.list',
 				op: 'below' as const,
 				threshold: 0,

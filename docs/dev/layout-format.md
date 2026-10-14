@@ -8,28 +8,28 @@ Decoding and recovery live in [layoutDocument.ts](../../client/src/lib/core/layo
 
 ```json
 {
-	"version": 2,
-	"monitors": {
-		"default": {
-			"root": {
-				"id": "root",
-				"kind": "col",
-				"gap": 8,
-				"children": [
-					{
-						"id": "clock-slot",
-						"unit": {
-							"id": "clock",
-							"type": "clock",
-							"rect": { "x": 0, "y": 0, "w": 200, "h": 60 },
-							"config": { "format": "HH:mm" }
-						}
-					}
-				]
-			},
-			"floating": []
-		}
-	}
+  "version": 2,
+  "monitors": {
+    "default": {
+      "root": {
+        "id": "root",
+        "kind": "col",
+        "gap": 8,
+        "children": [
+          {
+            "id": "clock-slot",
+            "unit": {
+              "id": "clock",
+              "type": "clock",
+              "rect": { "x": 0, "y": 0, "w": 200, "h": 60 },
+              "config": { "format": "HH:mm" }
+            }
+          }
+        ]
+      },
+      "floating": []
+    }
+  }
 }
 ```
 
@@ -73,7 +73,12 @@ Group parameters and styles can override individual instances.
 
 The solver handles gaps, padding, margins, alignment, fixed sizing, content sizing, and fractional sizing.
 Grid nodes can define column and row weights.
+Explicit `cols` and `rows` are integers from 1 to 64. Imported numeric counts are rounded down and bounded.
+Automatic rows can exceed the explicit minimum to fit all children.
+Invalid or incomplete track input in Studio does not resize the grid.
 Visibility conditions keep their space while hiding content on the overlay.
+Conditions inside reusable widgets use each instance's resolved parameters and namespaced container IDs.
+Both docked and floating widgets participate.
 Studio keeps conditional content visible for editing.
 
 ## Editing and persistence

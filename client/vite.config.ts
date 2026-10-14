@@ -94,6 +94,9 @@ export default defineConfig({
 				'src/lib/diag.ts',
 				'src/lib/utils/**',
 				'src/lib/audio/**',
+				// Worker constructor and fixed message bridge; lifecycle/parser logic is unit-tested and
+				// the actual worker is exercised by the calendar browser journey.
+				'src/lib/calendar/{worker,workerClient,sourceClient}.ts',
 				'src/lib/windows/**',
 				'src/lib/ddc/**',
 				'src/lib/telemetry/**',

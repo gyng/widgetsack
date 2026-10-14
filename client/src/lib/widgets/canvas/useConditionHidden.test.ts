@@ -4,6 +4,7 @@ import { createTelemetryHub } from '../../core/telemetry';
 import { container } from '../../core/layoutTree';
 import { WINDOWS_SENSOR } from '../../core/condition';
 import { useConditionHidden } from './useConditionHidden';
+import { collectConditions, type ConditionalNode } from './conditionVisibility';
 
 const root = () =>
 	container('root', 'col', [
@@ -22,15 +23,45 @@ const spotifyWin = {
 };
 
 describe('useConditionHidden', () => {
+	it('replaces condition subscriptions after definition edits and releases them in edit mode', () => {
+		const hub = createTelemetryHub();
+		const initial: ConditionalNode[] = [
+			{
+				id: 'panel/conditional',
+				condition: { kind: 'sensor', sensorId: 'cpu.total', op: '>', value: '80' }
+			}
+		];
+		const replacement: ConditionalNode[] = [
+			{
+				id: 'panel/conditional',
+				condition: { kind: 'sensor', sensorId: 'mem.used', op: '>', value: '80' }
+			}
+		];
+		const view = renderHook(
+			({ conditions, active }) => useConditionHidden(hub, conditions, active),
+			{ initialProps: { conditions: initial, active: true } }
+		);
+		expect(hub.activeSensorIds()).toEqual(['cpu.total']);
+		view.rerender({ conditions: replacement, active: true });
+		expect(hub.activeSensorIds()).toEqual(['mem.used']);
+		act(() => hub.ingest({ sensor: 'mem.used', ts_ms: 1, value: { kind: 'scalar', value: 95 } }));
+		expect(view.result.current.size).toBe(0);
+		view.rerender({ conditions: replacement, active: false });
+		expect(hub.activeSensorIds()).toEqual([]);
+		view.rerender({ conditions: initial, active: true });
+		expect(view.result.current.has('panel/conditional')).toBe(true);
+		view.unmount();
+		expect(hub.activeSensorIds()).toEqual([]);
+	});
 	it('returns empty when inactive (studio / edit mode), even with conditions', () => {
 		const hub = createTelemetryHub();
-		const { result } = renderHook(() => useConditionHidden(hub, root(), false));
+		const { result } = renderHook(() => useConditionHidden(hub, collectConditions(root()), false));
 		expect(result.current.size).toBe(0);
 	});
 
 	it('hides unmet conditions when active and reacts to live changes', () => {
 		const hub = createTelemetryHub();
-		const r = root();
+		const r = collectConditions(root());
 		const { result } = renderHook(() => useConditionHidden(hub, r, true));
 		// No window list / sensor yet → both conditions unmet → both hidden.
 		expect([...result.current].sort()).toEqual(['busy', 'spotify']);

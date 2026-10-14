@@ -114,3 +114,17 @@ describe('distributeEvenly on a grid', () => {
 		expect(g.rowFr).toBeUndefined();
 	});
 });
+
+it.each([0, NaN, 2.5, 1e12])('preserves filled cells for an invalid grid count: %s', (cols) => {
+	const root = container('root', 'col', [grid2x2()]);
+	const g = gridOf(patchContainerOp(stub(root), 'g', { cols }));
+	expect(g).toMatchObject({ cols: 2, rows: 2 });
+	expect(g.children).toHaveLength(4);
+});
+
+it.each([0, NaN, 2.5, 1e12])('preserves filled cells for an invalid row count: %s', (rows) => {
+	const root = container('root', 'col', [grid2x2()]);
+	const g = gridOf(patchContainerOp(stub(root), 'g', { rows }));
+	expect(g.rows).toBe(2);
+	expect(g.children).toHaveLength(4);
+});

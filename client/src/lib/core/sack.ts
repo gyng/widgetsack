@@ -10,6 +10,7 @@ import {
 	type ParamSpec,
 	type WidgetDef
 } from './layoutTree';
+import { validLibrary, stringMap } from './libraryValidation';
 import { scanCssThreats, threatSummary } from './cssThreats';
 import { sanitizeParamSpecs } from './safePath';
 import { sanitizeImportedTree, scanDefsThreats, treeThreatSummary } from './treeThreats';
@@ -41,7 +42,19 @@ export function packSack(src: {
 
 /** A structural check that an arbitrary value is a sack (and not, say, a raw widgets.json). */
 export function isSack(o: unknown): o is Sack {
-	return !!o && typeof o === 'object' && (o as Sack).kind === 'widgetsack/sack';
+	if (!o || typeof o !== 'object' || Array.isArray(o)) return false;
+	const value = o as Record<string, unknown>;
+	if (value.kind !== 'widgetsack/sack' || value.version !== 1) return false;
+	if (value.name !== undefined && typeof value.name !== 'string') return false;
+	if (value.library !== undefined && !validLibrary(value.library)) return false;
+	if (value.tokens !== undefined && !stringMap(value.tokens)) return false;
+	if (value.theme !== undefined) {
+		const theme = value.theme;
+		if (!theme || typeof theme !== 'object' || Array.isArray(theme)) return false;
+		const fields = theme as Record<string, unknown>;
+		if (typeof fields.name !== 'string' || typeof fields.css !== 'string') return false;
+	}
+	return true;
 }
 
 /** Parse + validate raw JSON into a Sack, or null if it isn't one / is malformed. */
@@ -83,7 +96,7 @@ export function mergeLibrary(
 	incoming: WidgetDef[]
 ): { library: Library; idMap: Record<string, string> } {
 	const taken = new Set((into?.defs ?? []).map((d) => d.id));
-	const idMap: Record<string, string> = {};
+	const idMap: Record<string, string> = Object.create(null);
 	// Pass 1: assign a fresh id to every incoming def, reserving it so later incoming defs avoid it too.
 	for (const def of incoming) {
 		const newId = freshId(def.id, taken);
@@ -142,12 +155,9 @@ export function sanitizeSack(sack: Sack): { sack: Sack; changed: number } {
 		const r = sanitizeImportedTree(def);
 		changed += r.changed;
 		const params = sanitizeParamSpecs(def.params);
-		// `params` is defined iff def.params was an array (sanitizeParamSpecs' contract).
-		if (params !== undefined && params.length !== (def.params as ParamSpec[]).length) {
-			changed++;
-			return { ...r.value, params };
-		}
-		return r.value;
+		if (params === undefined) return r.value;
+		if (params.length !== (def.params as ParamSpec[]).length) changed++;
+		return { ...r.value, params: params.map((param) => ({ ...param, imported: true as const })) };
 	});
 	return { sack: { ...sack, library: { ...sack.library, defs } }, changed };
 }

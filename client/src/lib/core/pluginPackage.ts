@@ -129,7 +129,7 @@ function parseParamSpec(raw: unknown): ParamSpec | null {
 	if (o.choices !== undefined && !(Array.isArray(o.choices) && o.choices.every(isParamChoice))) {
 		return null;
 	}
-	const spec: ParamSpec = { key: o.key };
+	const spec: ParamSpec = { key: o.key, imported: true };
 	if (o.label !== undefined) spec.label = o.label;
 	if (o.default !== undefined) spec.default = o.default;
 	if (o.target !== undefined) spec.target = o.target as string;
@@ -384,6 +384,22 @@ export function reinstallSource(s: InstallSidecar): string {
 	return `https://github.com/${s.source}/tree/${s.ref}`;
 }
 
+/** Public provenance label. Keep private URL components in the update record only. */
+export function installSourceLabel(s: InstallSidecar): string {
+	if (s.ref !== 'direct') {
+		return /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/.test(s.source) &&
+			!s.source.includes('..')
+			? s.source
+			: 'Remote package';
+	}
+	try {
+		const url = new URL(s.source);
+		return url.protocol === 'https:' ? url.origin : 'Remote package';
+	} catch {
+		return 'Remote package';
+	}
+}
+
 /** The registry id of a package template: namespaced so two packages (or a package and a
  * built-in) can never collide — `pkg:<pkgId>:<tplId>`. */
 export function packageTemplateId(pkgId: string, tplId: string): string {
@@ -402,7 +418,9 @@ export function packageTemplates(manifest: PluginPackageManifest): Template[] {
 		name: t.name,
 		description: t.description ?? '',
 		size: { ...t.size },
-		...(t.params?.length ? { params: t.params } : {}),
+		...(t.params?.length
+			? { params: t.params.map((param) => ({ ...param, imported: true as const })) }
+			: {}),
 		tree: () => structuredClone(t.tree)
 	}));
 }
@@ -428,7 +446,9 @@ export function consentFingerprint(hosts: readonly string[]): string {
  * pages, remote images, buttons that run service calls, per-widget CSS. The sandbox is already
  * forced on at parse time, so `iframe-unsandboxed` never appears here. Pure. */
 export function packageTemplateThreats(manifest: PluginPackageManifest): TreeThreat[] {
-	return manifest.templates.flatMap((t) => scanTreeThreats(t.tree));
+	return manifest.templates.flatMap((t) =>
+		scanTreeThreats({ id: t.id, name: t.name, size: t.size, child: t.tree, params: t.params })
+	);
 }
 
 /** The consent key for a package's template threats: order-insensitive over (kind, id, detail),

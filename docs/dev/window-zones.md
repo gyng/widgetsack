@@ -13,6 +13,10 @@ See [Window zones](../window-zones.md) for user instructions.
 - [windowmgr.rs](../../widgetsack/src/windowmgr.rs) enumerates and moves native windows.
 
 The drag layer uses both floating zones and measured docked zones.
+Zones inside reusable widgets use the resolved definition and instance parameters.
+Their IDs follow the renderer's group namespaces. Their target rectangles come from the DOM,
+including when the parent widget is floating.
+Measured zones hidden by conditions or CSS visibility are excluded from the target set.
 Zone geometry is derived from widgets instead of a separate stored schema.
 The overlay remains available on a monitor whose layout contains only zones.
 
@@ -20,7 +24,12 @@ The overlay remains available on a monitor whose layout contains only zones.
 
 Windows event hooks detect move and size operations.
 Holding Shift arms snapping during a drag.
-Release snaps the target window to the highlighted zone.
+The native release event includes the physical pointer position and Shift state.
+Release checks that state against current zone geometry before moving the window.
+Failed pointer capture cancels snapping. A newer drag or window disposal cancels a pending release check.
+Layout reloads invalidate collected targets before reading the new document.
+Pending monitor and window queries cannot apply targets from an older revision.
+An active drag clears its highlight during the reload and measures the new targets when it completes.
 Dragging out restores the prior size under the cursor.
 Location-change handling supports some applications with nonstandard title bars.
 
@@ -37,7 +46,8 @@ Elevated windows can reject operations from a non-elevated process.
 ## Verification
 
 Automated tests cover geometry, hit testing, matching, and bridge contracts.
-The ignored native smoke test moves a temporary Notepad window and checks its actual geometry.
+The ignored native smoke tests create a temporary window in an owned child process.
+They verify its process ID before moving it. The snap test checks its actual geometry.
 Run it only in an interactive Windows session.
 
 Live dragging still needs a manual check:

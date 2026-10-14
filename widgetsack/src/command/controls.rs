@@ -1,4 +1,4 @@
-use super::watch::{ChangeOrigin, watch_and_emit};
+use super::watch::{ChangeOrigin, event_changes_file, watch_and_emit};
 use crate::{
     bridge::CONTROLS_CHANGED_EVENT,
     file_io::{atomic_write, config_root},
@@ -48,12 +48,7 @@ pub fn watch_controls(app: tauri::AppHandle) -> Result<(), String> {
         dir,
         "controls",
         CONTROLS_CHANGED_EVENT,
-        move |event| {
-            event
-                .paths
-                .iter()
-                .any(|p| p.file_name() == path.file_name())
-        },
+        move |event| event_changes_file(event, &path),
         |_| ChangeOrigin::External,
         |_| {},
     );

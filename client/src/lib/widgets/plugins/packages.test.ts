@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // ---- IO mocks ------------------------------------------------------------------------------------
 // packages-commands is the only Tauri seam; we drive its read commands from in-memory fixtures and
 // can make the remote (throwing) commands resolve or reject per test.
-type PkgFile = { id: string; manifest: string; install: string | null };
+import type { PluginPackageFile as PkgFile } from './packages-commands';
 let listFiles: PkgFile[] = [];
 let listImpl: () => Promise<PkgFile[]>;
 let listCalls = 0;
@@ -151,6 +151,15 @@ afterEach(() => {
 // ---- discovery → rows ----------------------------------------------------------------------------
 
 describe('refreshPackages → packagesStore rows', () => {
+	it('keeps unreadable package manifests visible with their IO error', async () => {
+		setFiles([
+			{ id: 'pack-a', manifest: '', manifest_error: 'package file exceeds 256 KiB', install: null }
+		]);
+		await refreshPackages();
+		expect(rowFor('pack-a')!.error).toBe('package file exceeds 256 KiB');
+		await togglePackage('pack-a', true);
+		expect(enabledPackages.getSnapshot()).not.toContain('pack-a');
+	});
 	it('publishes a row per discovered manifest with parsed metadata', async () => {
 		setFiles([
 			{
@@ -274,6 +283,23 @@ describe('refreshPackages → packagesStore rows', () => {
 		const row = rowFor('pack-a')!;
 		expect(row.installedFrom).toBe('gh/owner');
 		expect(row.installedVersion).toBe('0.9.0');
+	});
+
+	it('does not publish credentials or private paths in package rows', async () => {
+		setFiles([
+			{
+				id: 'pack-a',
+				manifest: manifestJson(),
+				install: sidecarJson({
+					source:
+						'https://user:synthetic-secret@packages.example/synthetic-secret/plugin.json?token=synthetic-secret',
+					ref: 'direct'
+				})
+			}
+		]);
+		await refreshPackages();
+		expect(rowFor('pack-a')!.installedFrom).toBe('https://packages.example');
+		expect(JSON.stringify(rowFor('pack-a'))).not.toContain('synthetic-secret');
 	});
 
 	it('treats a malformed sidecar as a hand-dropped (local) package', async () => {
@@ -805,6 +831,17 @@ describe('checkPackageUpdate', () => {
 // ---- updatePackage -------------------------------------------------------------------------------
 
 describe('updatePackage', () => {
+	it('updates with the original direct URL while exposing only its origin', async () => {
+		const source = 'https://user:synthetic-secret@packages.example/private/plugin.json';
+		setFiles([
+			{ id: 'pack-a', manifest: manifestJson(), install: sidecarJson({ source, ref: 'direct' }) }
+		]);
+		await initPackages(hub);
+		expect(rowFor('pack-a')!.installedFrom).toBe('https://packages.example');
+		expect(await updatePackage('pack-a')).toEqual({ ok: true });
+		expect(installCalls).toEqual([source]);
+		expect(replaceCalls).toEqual(['pack-a']);
+	});
 	it('refuses a hand-dropped (no-sidecar) package', async () => {
 		setFiles([{ id: 'pack-a', manifest: manifestJson(), install: null }]);
 		await initPackages(hub);

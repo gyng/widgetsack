@@ -37,6 +37,13 @@ describe('layout document decoding', () => {
 		});
 		if (result.kind === 'valid') expect(Object.keys(result.layout.monitors)).toEqual(['good']);
 	});
+	it('classifies a damaged reusable library as corrupt instead of rendering it', () => {
+		expect(
+			decodeLayoutDocument(
+				JSON.stringify({ version: 2, monitors: {}, library: { version: 1, defs: [null] } })
+			).kind
+		).toBe('corrupt');
+	});
 	it('migrates a legacy document through the existing layout grammar', () => {
 		const result = decodeLayoutDocument(
 			JSON.stringify({ version: 1, monitors: { a: { widgets: [] } } })

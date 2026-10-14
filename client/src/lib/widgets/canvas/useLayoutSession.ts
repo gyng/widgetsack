@@ -201,11 +201,11 @@ export function useLayoutSession({
 		// reloadLayout during init, before React commits the dispatch) decides primary-window
 		// visibility from the post-load monitor — deterministic, like Svelte's synchronous `monitor = mon`.
 		if (patch.monitor) monitorRef.current = patch.monitor;
-		// Apply the theme css for the new selectedTheme (side-effect), then re-baseline + reset history.
-		if (nextTheme !== null) await adoptTheme(nextTheme);
-		if (!isCurrent()) return;
+		// Anchor the loaded document before waiting for CSS. Edits made while the theme resolves
+		// must remain dirty and undoable, rather than becoming the loaded baseline.
 		dispatch({ type: 'resetHistory' });
 		dispatch({ type: 'setBaseline' });
+		if (nextTheme !== null) await adoptTheme(nextTheme);
 		// oxlint-disable-next-line react-hooks/exhaustive-deps
 	}, [dispatch, adoptTheme, backupLayoutFile]);
 	// myMonitor latest, for reloadLayout/persist reading inside listeners. Mirrored in the commit

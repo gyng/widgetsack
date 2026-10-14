@@ -584,6 +584,7 @@ enum StreamEvent {
     Token(String),
     Done,
     Ignore,
+    Error(String),
 }
 
 /// Parse ONE line of a streamed body into a `StreamEvent`. SSE providers (anthropic/openai) prefix
@@ -597,6 +598,9 @@ fn stream_event_from_line(provider: &str, line: &str) -> StreamEvent {
         let Ok(v) = serde_json::from_str::<Value>(line) else {
             return StreamEvent::Ignore;
         };
+        if let Some(message) = provider_error(&v) {
+            return StreamEvent::Error(message);
+        }
         if v["done"].as_bool() == Some(true) {
             return StreamEvent::Done;
         }
@@ -616,6 +620,9 @@ fn stream_event_from_line(provider: &str, line: &str) -> StreamEvent {
     let Ok(v) = serde_json::from_str::<Value>(rest) else {
         return StreamEvent::Ignore;
     };
+    if let Some(message) = provider_error(&v) {
+        return StreamEvent::Error(message);
+    }
     if provider == "anthropic" {
         match v["type"].as_str() {
             Some("message_stop") => StreamEvent::Done,
@@ -631,6 +638,55 @@ fn stream_event_from_line(provider: &str, line: &str) -> StreamEvent {
             _ => StreamEvent::Ignore,
         }
     }
+}
+
+const STREAM_LINE_LIMIT: usize = 1024 * 1024;
+const STREAM_BODY_LIMIT: usize = 64 * 1024 * 1024;
+
+fn stream_events_from_chunk(
+    provider: &str,
+    pending: &mut Vec<u8>,
+    total: &mut usize,
+    bytes: &[u8],
+) -> Result<Vec<StreamEvent>, String> {
+    if bytes.len() > STREAM_BODY_LIMIT.saturating_sub(*total) {
+        return Err("AI response exceeded the 64 MiB stream limit".into());
+    }
+    *total += bytes.len();
+    let mut events = Vec::new();
+    for part in bytes.split_inclusive(|&b| b == b'\n') {
+        if part.len() > STREAM_LINE_LIMIT.saturating_sub(pending.len()) {
+            return Err("AI response exceeded the 1 MiB line limit".into());
+        }
+        pending.extend_from_slice(part);
+        if part.last() == Some(&b'\n') {
+            let event = stream_event_from_line(provider, &String::from_utf8_lossy(pending));
+            pending.clear();
+            let terminal = matches!(event, StreamEvent::Done | StreamEvent::Error(_));
+            events.push(event);
+            if terminal {
+                break;
+            }
+        }
+    }
+    Ok(events)
+}
+
+const AI_JSON_LIMIT: usize = 16 * 1024 * 1024;
+const AI_ERROR_LIMIT: usize = 256 * 1024;
+const AI_AUDIO_LIMIT: usize = 32 * 1024 * 1024;
+
+async fn read_ai_body(response: reqwest::Response, limit: usize) -> Result<Vec<u8>, String> {
+    crate::http_response::read_body(response, limit).await
+}
+
+async fn read_ai_text(response: reqwest::Response, limit: usize) -> Result<String, String> {
+    let body = read_ai_body(response, limit).await?;
+    Ok(String::from_utf8_lossy(&body).into_owned())
+}
+
+fn ai_request_error(error: reqwest::Error) -> String {
+    crate::http_response::request_error(error)
 }
 
 // ---- HTTP ----
@@ -682,12 +738,17 @@ async fn chat_once(cfg: &LlmConfig, messages: &[ChatMessage]) -> Result<String, 
         .json(&body)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(ai_request_error)?;
     // Read the body as text first so a NON-JSON error (a proxy 502, an HTML block page, a wrong base
     // URL) surfaces the HTTP status instead of a confusing serde "expected value" error. Mirrors the
     // streaming path's error handling.
     let status = resp.status();
-    let body = resp.text().await.map_err(|e| e.to_string())?;
+    let limit = if status.is_success() {
+        AI_JSON_LIMIT
+    } else {
+        AI_ERROR_LIMIT
+    };
+    let body = read_ai_text(resp, limit).await?;
     if !status.is_success() {
         let msg = serde_json::from_str::<Value>(&body)
             .ok()
@@ -997,11 +1058,12 @@ pub async fn llm_list_models<R: Runtime>(
     let resp = apply_auth(client.get(&url), &provider, &key)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(ai_request_error)?;
     if !resp.status().is_success() {
         return Err(format!("could not list models: HTTP {}", resp.status()));
     }
-    let v: Value = resp.json().await.map_err(|e| e.to_string())?;
+    let body = read_ai_body(resp, AI_JSON_LIMIT).await?;
+    let v: Value = serde_json::from_slice(&body).map_err(|e| e.to_string())?;
     Ok(parse_models(&provider, &v))
 }
 
@@ -1062,9 +1124,14 @@ pub async fn llm_transcribe<R: Runtime>(
         .multipart(form)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(ai_request_error)?;
     let status = resp.status();
-    let body = resp.text().await.map_err(|e| e.to_string())?;
+    let limit = if status.is_success() {
+        AI_JSON_LIMIT
+    } else {
+        AI_ERROR_LIMIT
+    };
+    let body = read_ai_text(resp, limit).await?;
     if !status.is_success() {
         return Err(serde_json::from_str::<Value>(&body)
             .ok()
@@ -1117,11 +1184,11 @@ pub async fn llm_synthesize<R: Runtime>(
         .json(&body)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(ai_request_error)?;
     let status = resp.status();
     if !status.is_success() {
         // The error body is JSON (audio is only returned on success), so surface the provider message.
-        let body = resp.text().await.unwrap_or_default();
+        let body = read_ai_text(resp, AI_ERROR_LIMIT).await.unwrap_or_default();
         return Err(serde_json::from_str::<Value>(&body)
             .ok()
             .and_then(|v| provider_error(&v))
@@ -1133,7 +1200,7 @@ pub async fn llm_synthesize<R: Runtime>(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("audio/mpeg")
         .to_string();
-    let audio = resp.bytes().await.map_err(|e| e.to_string())?.to_vec();
+    let audio = read_ai_body(resp, AI_AUDIO_LIMIT).await?;
     if audio.is_empty() {
         return Err("speech synthesis returned no audio".into());
     }
@@ -1196,12 +1263,11 @@ async fn run_stream<R: Runtime>(
         .await
     {
         Ok(r) => r,
-        Err(e) => return emit_delta(&app, &request_id, "", true, Some(e.to_string())),
+        Err(e) => return emit_delta(&app, &request_id, "", true, Some(ai_request_error(e))),
     };
     if !resp.status().is_success() {
         let status = resp.status();
-        let msg = resp
-            .text()
+        let msg = read_ai_text(resp, AI_ERROR_LIMIT)
             .await
             .ok()
             .and_then(|t| serde_json::from_str::<Value>(&t).ok())
@@ -1214,18 +1280,23 @@ async fn run_stream<R: Runtime>(
     // across two network chunks would be mangled by a per-chunk lossy decode, but a full line is valid.
     let mut stream = resp.bytes_stream();
     let mut buf: Vec<u8> = Vec::new();
-    'outer: while let Some(chunk) = stream.next().await {
+    let mut total = 0;
+    while let Some(chunk) = stream.next().await {
         let bytes = match chunk {
             Ok(b) => b,
-            Err(e) => return emit_delta(&app, &request_id, "", true, Some(e.to_string())),
+            Err(e) => return emit_delta(&app, &request_id, "", true, Some(ai_request_error(e))),
         };
-        buf.extend_from_slice(&bytes);
-        while let Some(nl) = buf.iter().position(|&b| b == b'\n') {
-            let line_bytes: Vec<u8> = buf.drain(..=nl).collect();
-            let line = String::from_utf8_lossy(&line_bytes);
-            match stream_event_from_line(&cfg.provider, &line) {
+        let events = match stream_events_from_chunk(&cfg.provider, &mut buf, &mut total, &bytes) {
+            Ok(events) => events,
+            Err(error) => return emit_delta(&app, &request_id, "", true, Some(error)),
+        };
+        for event in events {
+            match event {
                 StreamEvent::Token(t) => emit_delta(&app, &request_id, &t, false, None),
-                StreamEvent::Done => break 'outer,
+                StreamEvent::Done => return emit_delta(&app, &request_id, "", true, None),
+                StreamEvent::Error(error) => {
+                    return emit_delta(&app, &request_id, "", true, Some(error));
+                }
                 StreamEvent::Ignore => {}
             }
         }
@@ -1233,8 +1304,12 @@ async fn run_stream<R: Runtime>(
     // Flush any final buffered line (a stream that ends without a trailing newline).
     if !buf.is_empty() {
         let line = String::from_utf8_lossy(&buf);
-        if let StreamEvent::Token(t) = stream_event_from_line(&cfg.provider, &line) {
-            emit_delta(&app, &request_id, &t, false, None);
+        match stream_event_from_line(&cfg.provider, &line) {
+            StreamEvent::Token(t) => emit_delta(&app, &request_id, &t, false, None),
+            StreamEvent::Error(error) => {
+                return emit_delta(&app, &request_id, "", true, Some(error));
+            }
+            StreamEvent::Done | StreamEvent::Ignore => {}
         }
     }
     emit_delta(&app, &request_id, "", true, None);
@@ -1291,6 +1366,139 @@ pub async fn llm_cancel<R: Runtime>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn stream_limits_reject_oversized_lines_and_responses() {
+        let mut pending = vec![b'x'; STREAM_LINE_LIMIT];
+        let mut total = STREAM_LINE_LIMIT;
+        assert!(stream_events_from_chunk("openai", &mut pending, &mut total, b"x").is_err());
+        let mut pending = Vec::new();
+        let mut total = STREAM_BODY_LIMIT;
+        assert!(stream_events_from_chunk("openai", &mut pending, &mut total, b"\n").is_err());
+    }
+
+    #[test]
+    fn stream_provider_errors_are_not_silently_ignored() {
+        for (provider, line, message) in [
+            (
+                "openai",
+                r#"data: {"error":{"message":"Rate limited"}}"#,
+                "Rate limited",
+            ),
+            (
+                "anthropic",
+                r#"data: {"type":"error","error":{"message":"Overloaded"}}"#,
+                "Overloaded",
+            ),
+            ("ollama", r#"{"error":"Model failed"}"#, "Model failed"),
+        ] {
+            assert_eq!(
+                stream_event_from_line(provider, line),
+                StreamEvent::Error(message.into()),
+                "{provider}"
+            );
+        }
+    }
+
+    #[test]
+    fn stream_chunks_preserve_utf8_and_stop_at_terminal_frames() {
+        let input = "data: {\"choices\":[{\"delta\":{\"content\":\"café\"}}]}\n".as_bytes();
+        let split = input.iter().position(|&b| b == 0xc3).unwrap() + 1;
+        let mut pending = Vec::new();
+        let mut total = 0;
+        assert!(
+            stream_events_from_chunk("openai", &mut pending, &mut total, &input[..split])
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            stream_events_from_chunk("openai", &mut pending, &mut total, &input[split..]).unwrap(),
+            vec![StreamEvent::Token("café".into())]
+        );
+        assert!(pending.is_empty());
+        assert_eq!(
+            stream_events_from_chunk(
+                "openai",
+                &mut pending,
+                &mut total,
+                b"data: [DONE]\ntrailing ignored bytes"
+            )
+            .unwrap(),
+            vec![StreamEvent::Done]
+        );
+        assert!(pending.is_empty());
+        assert_eq!(
+            stream_events_from_chunk(
+                "ollama",
+                &mut pending,
+                &mut total,
+                b"{\"error\":\"failed\"}\ntrailing"
+            )
+            .unwrap(),
+            vec![StreamEvent::Error("failed".into())]
+        );
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn line_limit_accepts_boundary_and_rejects_a_complete_oversized_line() {
+        let mut pending = Vec::new();
+        let mut total = 0;
+        let mut bytes = vec![b'x'; STREAM_LINE_LIMIT - 1];
+        bytes.push(b'\n');
+        assert_eq!(
+            stream_events_from_chunk("openai", &mut pending, &mut total, &bytes).unwrap(),
+            vec![StreamEvent::Ignore]
+        );
+        bytes.insert(0, b'x');
+        assert!(stream_events_from_chunk("openai", &mut pending, &mut total, &bytes).is_err());
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn ai_transport_errors_do_not_expose_private_endpoint_urls() {
+        let error = reqwest::Client::new()
+            .get("invalid URL")
+            .build()
+            .unwrap_err()
+            .with_url(
+                reqwest::Url::parse("https://private.invalid/secret-path?key=test-secret").unwrap(),
+            );
+        let message = ai_request_error(error);
+        assert!(!message.contains("test-secret"), "{message}");
+        assert!(!message.contains("secret-path"), "{message}");
+        assert!(message.contains("builder"), "{message}");
+    }
+
+    #[tokio::test]
+    async fn ai_body_rejects_declared_and_chunked_overflow() {
+        use std::io::{Read, Write};
+        for wire in [
+            "HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nabcde",
+            "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n3\r\nabc\r\n2\r\nde\r\n0\r\n\r\n",
+        ] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut request = [0; 1024];
+                assert!(socket.read(&mut request).unwrap() > 0);
+                socket.write_all(wire.as_bytes()).unwrap();
+            });
+            let response = reqwest::Client::new()
+                .get(format!("http://{address}/"))
+                .timeout(Duration::from_secs(2))
+                .send()
+                .await
+                .unwrap();
+            let result = read_ai_body(response, 4).await;
+            server.join().unwrap();
+            assert!(result.is_err(), "oversized response was accepted");
+        }
+    }
 
     fn msg(role: &str, content: &str) -> ChatMessage {
         ChatMessage {

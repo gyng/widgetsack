@@ -3,7 +3,14 @@
 // currently HIDDEN. The React layer (Canvas) supplies the live ConditionContext and applies the set
 // as visibility:hidden in FlowNode. Kept pure + co-located-testable; no React/Tauri.
 
-import { isContainer, type LayoutNode } from '../../core/layoutTree';
+import {
+	isContainer,
+	isGroup,
+	type LayoutNode,
+	type Library,
+	type MonitorLayout
+} from '../../core/layoutTree';
+import { resolveGroup } from '../../core/solve';
 import {
 	conditionMet,
 	conditionRefs,
@@ -25,15 +32,33 @@ export function windowsKey(windows: readonly WindowDescriptor[]): string {
 }
 
 /** Every container in the subtree that carries a condition (depth-first, stable order). */
-export function collectConditions(node: LayoutNode): ConditionalNode[] {
+export function collectConditions(
+	node: LayoutNode,
+	library?: Library,
+	prefix = ''
+): ConditionalNode[] {
 	const out: ConditionalNode[] = [];
-	const walk = (n: LayoutNode): void => {
-		if (!isContainer(n)) return; // conditions live on containers; leaves have none
-		if (n.condition) out.push({ id: n.id, condition: n.condition });
-		n.children.forEach(walk);
+	const walk = (n: LayoutNode, namespace: string): void => {
+		if (isContainer(n)) {
+			if (n.condition) out.push({ id: namespace + n.id, condition: n.condition });
+			n.children.forEach((child) => walk(child, namespace));
+		} else if (isGroup(n.unit)) {
+			walk(resolveGroup(n.unit, library).child, `${namespace}${n.id}/`);
+		}
 	};
-	walk(node);
+	walk(node, prefix);
 	return out;
+}
+
+/** Conditions in both rendered layers, including effective reusable widget definitions. */
+export function collectMonitorConditions(
+	monitor: MonitorLayout,
+	library?: Library
+): ConditionalNode[] {
+	return [
+		...collectConditions(monitor.root, library),
+		...monitor.floating.flatMap((leaf) => collectConditions(leaf, library))
+	];
 }
 
 /** The de-duplicated sensor ids all the conditions depend on (what to subscribe to). */

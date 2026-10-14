@@ -134,6 +134,8 @@ export type LayoutV2 = {
 /** One value a select param can take (rendered as a dropdown option). */
 export type ParamChoice = { value: string; label: string };
 export type ParamSpec = {
+	/** Shared content keeps iframe sandboxing after parameter overrides. */
+	imported?: true;
 	key: string; // e.g. 'core'
 	label?: string;
 	default?: unknown;

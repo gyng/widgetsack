@@ -1,4 +1,4 @@
-use crate::file_io::{atomic_write, config_root, valid_name};
+use crate::file_io::{atomic_write, atomic_write_new, config_root, list_named_files, valid_name};
 use std::{fs, path::PathBuf};
 
 // ---- sacks: shareable bundles (`sacks/<name>.sack.json` in the app config dir) ----
@@ -14,20 +14,7 @@ fn sacks_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// The sack names (file stems of `sacks/*.sack.json`), sorted.
 #[tauri::command]
 pub fn list_sacks(app: tauri::AppHandle) -> Result<Vec<String>, String> {
-    let dir = sacks_dir(&app)?;
-    let mut names = Vec::new();
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(file) = path.file_name().and_then(|s| s.to_str())
-                && let Some(stem) = file.strip_suffix(".sack.json")
-            {
-                names.push(stem.to_string());
-            }
-        }
-    }
-    names.sort();
-    Ok(names)
+    list_named_files(&sacks_dir(&app)?, ".sack.json")
 }
 
 /// The JSON of sack `name`, or `None` if it doesn't exist. The frontend parses/validates it.
@@ -46,14 +33,23 @@ pub fn read_sack(app: tauri::AppHandle, name: String) -> Result<Option<String>, 
 
 /// Write sack `name` (creates `sacks/`). Returns the absolute path written, for the UI to show.
 #[tauri::command]
-pub fn write_sack(app: tauri::AppHandle, name: String, contents: String) -> Result<String, String> {
+pub fn write_sack(
+    app: tauri::AppHandle,
+    name: String,
+    contents: String,
+    overwrite: Option<bool>,
+) -> Result<String, String> {
     if !valid_name(&name) {
         return Err("invalid sack name".to_string());
     }
     let dir = sacks_dir(&app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{name}.sack.json"));
-    atomic_write(&path, &contents)?;
+    if overwrite.unwrap_or(true) {
+        atomic_write(&path, &contents)?;
+    } else {
+        atomic_write_new(&path, &contents)?;
+    }
     Ok(path.to_string_lossy().into_owned())
 }
 

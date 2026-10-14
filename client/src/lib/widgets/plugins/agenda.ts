@@ -13,7 +13,7 @@ export const registerAgendaPlugin = (): void =>
 		id: 'agenda',
 		name: 'Agenda',
 		description:
-			'Upcoming events from any ICS (iCalendar) feed URL — Google / Outlook / Fastmail, etc. Set the URL in this panel, then drop an Agenda widget.',
+			'Show events from an ICS calendar feed. Configure its address here, then add an Agenda widget.',
 		sources: [agendaSource],
 		settings: AgendaSettings,
 		statusSensor: 'agenda.status',

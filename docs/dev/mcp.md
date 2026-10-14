@@ -11,7 +11,7 @@ Do not share the descriptor. It contains credentials.
 - `studio_read` returns the active target, monitor, layout, widget catalog, sensors, work area, and revision.
 - `studio_apply` accepts up to 32 edits against a revision. Each batch creates one undo step.
 - `studio_verify` measures rendered nodes and reports missing nodes, invalid sizes, overflow, hidden content, unknown types, and render errors.
-- `studio_screenshot` returns a PNG of Studio. It restores a minimized Studio window.
+- `studio_screenshot` returns a PNG of Studio. Restore Studio before capture.
 
 Read before applying. Use each revision once.
 A changed monitor or editor target invalidates the revision.
@@ -28,9 +28,21 @@ Screenshots contain Studio only.
 ## Transport and cancellation
 
 The HTTP server binds to `127.0.0.1`.
+The stdio bridge does not follow HTTP redirects.
+It limits each request line to 256,000 bytes and each response to 32 MiB.
+The response limit includes PNG screenshot data and JSON metadata.
 It checks a per-launch bearer token and rejects browser Origin headers.
 Disabling MCP cancels pending requests.
-Expired requests cannot claim an edit.
+Expired or cancelled requests cannot claim an edit.
+Pending requests are removed when their owning task ends or is aborted.
+
+Initialization returns `Mcp-Session-Id`. Include this header on later HTTP requests.
+The stdio bridge manages the header and accepts up to four concurrent tool requests.
+Send `notifications/cancelled` with the request ID to stop pending work in that session.
+Cancellation does not undo an edit that has already applied.
+Use a new request ID for each request. String IDs are limited to 256 UTF-8 bytes.
+Sessions and cancellation records are bounded. A short cancellation record handles requests that arrive after their cancellation message.
+See the [MCP cancellation contract](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation).
 
 ## Browser access
 

@@ -32,10 +32,11 @@ export async function loadLayoutRaw(): Promise<string | null> {
 }
 
 /** The names of saved layout profiles (file stems of `layouts/*.layout.json`). */
-export async function listLayouts(): Promise<string[]> {
+export async function listLayouts(requireComplete = false): Promise<string[]> {
 	try {
 		return [LOCAL_DESKTOP_PRESET_NAME, ...(await invoke<string[]>(COMMANDS.listLayouts))];
 	} catch (err) {
+		if (requireComplete) throw err;
 		console.warn('list_layouts failed', err);
 		return [LOCAL_DESKTOP_PRESET_NAME];
 	}
@@ -53,10 +54,14 @@ export async function readLayout(name: string): Promise<string | null> {
 }
 
 /** Save the current monitor's layout as profile `name`; returns the path written (or null). */
-export async function saveLayoutAs(name: string, contents: string): Promise<string | null> {
+export async function saveLayoutAs(
+	name: string,
+	contents: string,
+	overwrite = true
+): Promise<string | null> {
 	if (name === LOCAL_DESKTOP_PRESET_NAME) return null;
 	try {
-		return await invoke<string>(COMMANDS.saveLayoutAs, { name, contents });
+		return await invoke<string>(COMMANDS.saveLayoutAs, { name, contents, overwrite });
 	} catch (err) {
 		console.warn('save_layout_as failed', err);
 		return null;

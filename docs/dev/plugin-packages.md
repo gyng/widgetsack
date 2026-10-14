@@ -12,69 +12,69 @@ The [sample package](../../examples/packages/sample-pack) provides a working man
 
 ```json
 {
-	"manifestVersion": 1,
-	"id": "my-pack",
-	"name": "My pack",
-	"version": "1.0.0",
-	"description": "A clock cluster and a sky theme.",
-	"author": "you",
-	"homepage": "https://github.com/you/my-pack",
-	"templates": [
-		{
-			"id": "big-clock",
-			"name": "Big clock",
-			"description": "HH:mm over a date line.",
-			"size": { "w": 200, "h": 96 },
-			"params": [
-				{
-					"key": "hour",
-					"label": "Hour format",
-					"default": "HH:mm",
-					"targets": ["children.0.unit.config.format"],
-					"choices": [
-						{ "value": "HH:mm", "label": "24-hour" },
-						{ "value": "h:mm A", "label": "12-hour" }
-					]
-				}
-			],
-			"tree": {
-				"id": "bc-root",
-				"kind": "col",
-				"align": "stretch",
-				"gap": 2,
-				"children": [
-					{
-						"id": "bc-time",
-						"unit": {
-							"id": "bc-time",
-							"type": "clock",
-							"rect": { "x": 0, "y": 0, "w": 200, "h": 60 },
-							"config": { "format": "HH:mm" }
-						}
-					},
-					{
-						"id": "bc-date",
-						"unit": {
-							"id": "bc-date",
-							"type": "clock",
-							"rect": { "x": 0, "y": 0, "w": 200, "h": 24 },
-							"config": { "format": "ddd D MMMM" }
-						}
-					}
-				]
-			}
-		}
-	],
-	"theme": { "name": "Sky", "file": "sky.css" },
-	"source": {
-		"file": "source.js",
-		"pollSeconds": 600,
-		"hosts": ["api.open-meteo.com"]
-	},
-	"sensors": [
-		{ "id": "temp", "label": "Temperature", "unit": "°C" },
-		{ "id": "humidity", "label": "Humidity", "unit": "%" }
-	]
+  "manifestVersion": 1,
+  "id": "my-pack",
+  "name": "My pack",
+  "version": "1.0.0",
+  "description": "A clock cluster and a sky theme.",
+  "author": "you",
+  "homepage": "https://github.com/you/my-pack",
+  "templates": [
+    {
+      "id": "big-clock",
+      "name": "Big clock",
+      "description": "HH:mm over a date line.",
+      "size": { "w": 200, "h": 96 },
+      "params": [
+        {
+          "key": "hour",
+          "label": "Hour format",
+          "default": "HH:mm",
+          "targets": ["children.0.unit.config.format"],
+          "choices": [
+            { "value": "HH:mm", "label": "24-hour" },
+            { "value": "h:mm A", "label": "12-hour" }
+          ]
+        }
+      ],
+      "tree": {
+        "id": "bc-root",
+        "kind": "col",
+        "align": "stretch",
+        "gap": 2,
+        "children": [
+          {
+            "id": "bc-time",
+            "unit": {
+              "id": "bc-time",
+              "type": "clock",
+              "rect": { "x": 0, "y": 0, "w": 200, "h": 60 },
+              "config": { "format": "HH:mm" }
+            }
+          },
+          {
+            "id": "bc-date",
+            "unit": {
+              "id": "bc-date",
+              "type": "clock",
+              "rect": { "x": 0, "y": 0, "w": 200, "h": 24 },
+              "config": { "format": "ddd D MMMM" }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "theme": { "name": "Sky", "file": "sky.css" },
+  "source": {
+    "file": "source.js",
+    "pollSeconds": 600,
+    "hosts": ["api.open-meteo.com"]
+  },
+  "sensors": [
+    { "id": "temp", "label": "Temperature", "unit": "°C" },
+    { "id": "humidity", "label": "Humidity", "unit": "%" }
+  ]
 }
 ```
 
@@ -110,21 +110,21 @@ The host fetches data between these calls:
 ```js
 // source.js: compute requests and samples in the sandbox.
 module.exports = {
-	requests: function () {
-		return [
-			'https://api.open-meteo.com/v1/forecast?latitude=1.35&longitude=103.82' +
-				'&current=temperature_2m,relative_humidity_2m'
-		];
-	},
-	transform: function (responses) {
-		var r = responses[0]; // { url, status, body } — a failed fetch arrives as status 0
-		if (!r || r.status !== 200) return [];
-		var data = JSON.parse(r.body);
-		return [
-			{ sensor: 'temp', value: data.current.temperature_2m },
-			{ sensor: 'humidity', value: data.current.relative_humidity_2m }
-		];
-	}
+  requests: function () {
+    return [
+      "https://api.open-meteo.com/v1/forecast?latitude=1.35&longitude=103.82" +
+        "&current=temperature_2m,relative_humidity_2m",
+    ];
+  },
+  transform: function (responses) {
+    var r = responses[0]; // { url, status, body } — a failed fetch arrives as status 0
+    if (!r || r.status !== 200) return [];
+    var data = JSON.parse(r.body);
+    return [
+      { sensor: "temp", value: data.current.temperature_2m },
+      { sensor: "humidity", value: data.current.relative_humidity_2m },
+    ];
+  },
 };
 ```
 
@@ -145,7 +145,9 @@ Choose a polling interval that meets the API's rate limits.
 
 Packages start disabled. Approval is required before their features run.
 Template scanning reports embedded pages, remote images, button actions, and styles.
-Package frames are forced to use sandboxing.
+Package frames stay sandboxed after parameter overrides.
+The runtime uses import metadata on parameter bindings to preserve this policy.
+Approval also names native PowerShell widgets and parameters that can change widget content, actions, or styles.
 Unbalanced widget CSS is dropped.
 Theme scanning reports remote resources and rules that can cover the window.
 Changed features or flagged styles require new approval.
@@ -154,18 +156,28 @@ The Rust proxy re-reads the manifest and checks the enabled marker on disk.
 It accepts HTTPS GET requests to approved hosts only.
 Redirects, explicit ports, credentials, IP literals, and local hostnames are rejected.
 Requests have a 10-second timeout and a 256 KiB response limit.
+Native download and proxy errors omit request URLs, including credentials and query values.
 A changed hosts list stops network access until the user approves it.
 Package sensor names cannot replace built-in sensors or another package's sensors.
 
 ## Installation and updates
 
 The installer downloads the manifest and declared assets from the same directory.
-Each file has a 256 KiB limit and a 10-second timeout.
+Package files have a 256 KiB limit for local reads and downloads.
+Downloads have a 10-second timeout.
+An unreadable or oversized local manifest remains visible as a package error, with removal available.
 Downloads use HTTPS without redirects.
 A staged package replaces the installed directory only after the download succeeds.
 A failed install preserves the prior package.
+The backend checks required manifest fields before staging files.
+Asset filenames cannot replace `plugin.json` or `.install.json`.
+Filenames must be unique. The check ignores letter case.
+Invalid optional features produce frontend warnings instead of rejecting the package.
 
 URL installations record provenance in `plugins/<id>/.install.json`.
+Public package rows show the GitHub owner/repository or the direct URL's origin.
+Credentials, paths, query values, and fragments stay out of the label.
+Updates use the original source from the private install record.
 Local copies have no update source.
 Update checks compare version strings. Any difference can be offered as an update.
 Updates must retain the installed package ID.

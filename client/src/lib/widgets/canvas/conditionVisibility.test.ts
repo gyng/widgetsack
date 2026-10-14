@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { container, leaf, type WidgetInstance } from '../../core/layoutTree';
+import { container, leaf, group, type Library, type WidgetInstance } from '../../core/layoutTree';
 import { WINDOWS_SENSOR, type ConditionContext } from '../../core/condition';
 import {
 	collectConditions,
+	collectMonitorConditions,
 	conditionSensorRefs,
 	hiddenContainerIds,
 	windowsKey
@@ -21,6 +22,49 @@ const win = (exe: string): WindowDescriptor => ({
 });
 
 describe('collectConditions', () => {
+	it('collects nested inline and floating conditions and ignores unsafe references', () => {
+		const child = container('conditional', 'col', [], {
+			condition: { kind: 'appOpen', matchExe: 'test.exe' }
+		});
+		const inner = leaf(group('inner', { w: 100, h: 100 }, child));
+		const floating = leaf(group('floating', { w: 100, h: 100 }, inner));
+		const monitor = { root: container('root', 'col', []), floating: [floating, w('clock')] };
+		expect(collectMonitorConditions(monitor).map((c) => c.id)).toEqual([
+			'floating/inner/conditional'
+		]);
+		if (!('kind' in inner.unit)) throw new Error('expected group');
+		inner.unit.def = 'cycle';
+		const library: Library = {
+			version: 1,
+			defs: [{ id: 'cycle', name: 'Cycle', size: { w: 100, h: 100 }, child: inner }]
+		};
+		expect(collectMonitorConditions(monitor, library)).toEqual([]);
+	});
+	it('resolves independent condition values for reusable widget instances', () => {
+		const child = container('conditional', 'col', [], {
+			condition: { kind: 'sensor', sensorId: 'cpu.total', op: '>', value: '80' }
+		});
+		const library: Library = {
+			version: 1,
+			defs: [
+				{
+					id: 'panel',
+					name: 'Panel',
+					size: { w: 100, h: 100 },
+					child,
+					params: [{ key: 'sensor', target: 'condition.sensorId' }]
+				}
+			]
+		};
+		const instance = (id: string, sensor: string) =>
+			leaf(group(id, { w: 100, h: 100 }, child, { def: 'panel', params: { sensor } }));
+		const conditions = collectConditions(
+			container('root', 'col', [instance('one', 'cpu.total'), instance('two', 'mem.used')]),
+			library
+		);
+		expect(conditions.map((c) => c.id)).toEqual(['one/conditional', 'two/conditional']);
+		expect(conditionSensorRefs(conditions)).toEqual(['cpu.total', 'mem.used']);
+	});
 	it('finds conditions on nested containers, in order', () => {
 		const root = container('root', 'col', [
 			container('a', 'row', [w('w1')], { condition: { kind: 'appOpen', matchExe: 'spotify.exe' } }),

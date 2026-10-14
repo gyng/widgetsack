@@ -6,6 +6,7 @@
 - [Theming implementation](theming.md): style assembly and selectors.
 - [Plugin packages](plugin-packages.md): manifests, sensor sources, and validation.
 - [Window zones](window-zones.md): drag events, geometry, and native operations.
+- [Windows installer](windows-installer.md): upgrade guards, resource cleanup, and fixture tests.
 - [MCP implementation](mcp.md): transport, revisions, and verification.
 - [Design system](design-system.md): typography, spacing, and review criteria.
 - [Documentation](documentation.md): audiences, writing rules, and generated files.

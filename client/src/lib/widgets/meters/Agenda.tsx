@@ -1,17 +1,18 @@
 // Self-sourcing Agenda meter (binds:'none'): the upcoming events from an ICS feed. Like Connections it
 // reads the hub from context and subscribes to the `agenda.list` JSON sensor (which demand-gates the
-// backend poll AND carries the data); the fetch/parse happen server-side (widgetsack/src/agenda.rs).
+// backend poll AND carries the data). The proxy fetches the feed; a shared worker expands it.
 // It rides the shared minute clock (useNow) so the relative "when" labels stay current. BARE DOM;
 // styled via --np-*.
-import { useContext, useEffect, useState, type CSSProperties } from 'react';
+import { useContext, type CSSProperties } from 'react';
 import { TelemetryHubContext } from '../telemetryContext';
 import { useNow } from '../useNow';
 import {
 	parseAgendaList,
+	parseAgendaFeedback,
 	upcomingEvents,
-	formatEventWhen,
-	type AgendaEvent
+	formatEventWhen
 } from '../../core/agenda';
+import { useSensor } from '../useSensor';
 import './Agenda.css';
 
 const LIST = 'agenda.list';
@@ -20,26 +21,13 @@ type Props = { title?: string; maxRows?: number; color?: string };
 
 export default function Agenda({ title = '', maxRows = 6, color }: Props) {
 	const hub = useContext(TelemetryHubContext);
-	const [events, setEvents] = useState<AgendaEvent[]>([]);
-	// Re-evaluate "upcoming" + relative labels each minute (the shared boundary-aligned clock).
 	const now = useNow(60_000);
-
-	useEffect(() => {
-		if (!hub) return;
-		let sig = '';
-		const read = (): void => {
-			const v = hub.sensor(LIST).getSnapshot().value;
-			const next = parseAgendaList(v && v.kind === 'json' ? v.value : []);
-			const ns = JSON.stringify(next);
-			if (ns !== sig) {
-				sig = ns;
-				setEvents(next);
-			}
-		};
-		const off = hub.sensor(LIST).subscribe(read); // demand-gate + change notification
-		read();
-		return off;
-	}, [hub]);
+	const list = useSensor(hub, LIST);
+	const state = useSensor(hub, 'agenda.parse');
+	const events = parseAgendaList(list.value?.kind === 'json' ? list.value.value : null);
+	const { warnings, pending } = parseAgendaFeedback(
+		state.value?.kind === 'json' ? state.value.value : null
+	);
 
 	const upcoming = upcomingEvents(events, now, Number.MAX_SAFE_INTEGER);
 	const vis = upcoming.slice(0, Math.max(0, maxRows));
@@ -55,7 +43,11 @@ export default function Agenda({ title = '', maxRows = 6, color }: Props) {
 			)}
 			{vis.length === 0 ? (
 				<div className="ag-empty" data-part="empty">
-					No upcoming events
+					{pending
+						? 'Reading calendar…'
+						: warnings.length
+							? 'Calendar unavailable'
+							: 'No upcoming events'}
 				</div>
 			) : (
 				<ol className="ag-list" aria-label="Upcoming events" tabIndex={0}>
@@ -85,6 +77,11 @@ export default function Agenda({ title = '', maxRows = 6, color }: Props) {
 						);
 					})}
 				</ol>
+			)}
+			{warnings.length > 0 && (
+				<div className="ag-status" role="status">
+					{warnings.join(' ')}
+				</div>
 			)}
 			{more > 0 && (
 				<div className="ag-more">

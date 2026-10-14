@@ -9,16 +9,16 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { useThemes } from './useThemes';
 import type { EditorModel } from './useEditorModel';
 
-const resolveThemeCss = vi.fn<(name: string) => Promise<string>>();
-const loadThemeCss = vi.fn<(name: string) => Promise<string>>();
+const resolveThemeCss = vi.fn<(name: string, requireReadable?: boolean) => Promise<string>>();
+const loadThemeCss = vi.fn<(name: string, requireReadable?: boolean) => Promise<string>>();
 const listThemes = vi.fn<() => Promise<string[]>>();
-const saveThemeCss = vi.fn<(name: string, css: string) => Promise<void>>();
+const saveThemeCss = vi.fn<(name: string, css: string, overwrite?: boolean) => Promise<void>>();
 const deleteThemeCss = vi.fn<(name: string) => Promise<void>>();
 vi.mock('../../bridge/themes', () => ({
-	resolveThemeCss: (...a: [string]) => resolveThemeCss(...a),
-	loadThemeCss: (...a: [string]) => loadThemeCss(...a),
+	resolveThemeCss: (...a: [string, boolean?]) => resolveThemeCss(...a),
+	loadThemeCss: (...a: [string, boolean?]) => loadThemeCss(...a),
 	listThemes: (...a: []) => listThemes(...a),
-	saveThemeCss: (...a: [string, string]) => saveThemeCss(...a),
+	saveThemeCss: (...a: [string, string, boolean?]) => saveThemeCss(...a),
 	deleteThemeCss: (...a: [string]) => deleteThemeCss(...a)
 }));
 
@@ -63,6 +63,55 @@ beforeEach(() => {
 	listThemes.mockReset().mockResolvedValue([]);
 	saveThemeCss.mockReset().mockResolvedValue(undefined);
 	deleteThemeCss.mockReset().mockResolvedValue(undefined);
+});
+
+describe('theme read failures', () => {
+	it.each([false, true])('does not duplicate unreadable CSS (new editor: %s)', async (changed) => {
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		const read = deferred<string>();
+		resolveThemeCss.mockReturnValueOnce(read.promise);
+		const { result } = setup();
+		let copying!: Promise<void>;
+		await act(async () => {
+			copying = result.current.duplicateTheme('old');
+		});
+		if (changed) await act(async () => result.current.openThemeEditor('new'));
+		await act(async () => {
+			read.reject(new Error('Access denied'));
+			await copying;
+		});
+		expect(resolveThemeCss).toHaveBeenCalledWith('old', true);
+		expect(saveThemeCss).not.toHaveBeenCalled();
+		expect(alert).toHaveBeenCalledTimes(changed ? 0 : 1);
+	});
+
+	it('does not open an empty editor when the file cannot be read', async () => {
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		loadThemeCss.mockRejectedValueOnce(new Error('Access denied'));
+		const { result } = setup();
+		await act(async () => result.current.openThemeEditor('Nord'));
+		expect(loadThemeCss).toHaveBeenCalledWith('Nord', true);
+		expect(result.current.themeEditorOpen).toBe(false);
+		expect(alert).toHaveBeenCalledWith(expect.stringContaining('Access denied'));
+	});
+
+	it('does not show a stale read error over a newer editor', async () => {
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		const read = deferred<string>();
+		loadThemeCss.mockReturnValueOnce(read.promise);
+		const { result } = setup();
+		let opening!: Promise<void>;
+		act(() => {
+			opening = result.current.openThemeEditor('old');
+		});
+		await act(async () => result.current.openThemeEditor('new'));
+		await act(async () => {
+			read.reject(new Error('old read failed'));
+			await opening;
+		});
+		expect(alert).not.toHaveBeenCalled();
+		expect(result.current.themeDraftName).toBe('new');
+	});
 });
 
 describe('themeLabel', () => {
@@ -164,6 +213,98 @@ describe('applyTheme / adoptTheme / setTheme (CSS swaps)', () => {
 });
 
 describe('theme editor dialog', () => {
+	it('keeps the latest editor target when theme reads finish out of order', async () => {
+		const old = deferred<string>();
+		loadThemeCss.mockImplementation((name) =>
+			name === 'old' ? old.promise : Promise.resolve('/*new*/')
+		);
+		const { result } = setup();
+		let opening!: Promise<void>;
+		act(() => {
+			opening = result.current.openThemeEditor('old');
+		});
+		await act(async () => {
+			await result.current.openThemeEditor('new');
+		});
+		act(() => result.current.setThemeDraft('/*new edits*/'));
+		await act(async () => {
+			old.resolve('/*old*/');
+			await opening;
+		});
+		expect(result.current.themeDraftName).toBe('new');
+		expect(result.current.themeDraft).toBe('/*new edits*/');
+	});
+
+	it('does not let an old save select a theme or close a newer editor', async () => {
+		const saved = deferred<void>();
+		const { result, dispatch } = setup();
+		await act(async () => {
+			await result.current.openThemeEditor('old');
+		});
+		saveThemeCss.mockReturnValueOnce(saved.promise);
+		let saving!: Promise<void>;
+		act(() => {
+			saving = result.current.saveThemeEditor();
+		});
+		await act(async () => {
+			await result.current.openThemeEditor('new');
+		});
+		await act(async () => {
+			saved.resolve();
+			await saving;
+		});
+		expect(result.current.themeEditorOpen).toBe(true);
+		expect(result.current.themeDraftName).toBe('new');
+		expect(dispatch).not.toHaveBeenCalled();
+	});
+
+	it('does not reopen an editor after it is cancelled during its read', async () => {
+		const read = deferred<string>();
+		loadThemeCss.mockReturnValueOnce(read.promise);
+		const { result } = setup();
+		let opening!: Promise<void>;
+		act(() => {
+			opening = result.current.openThemeEditor('old');
+		});
+		act(() => result.current.setThemeEditorOpen(false));
+		await act(async () => {
+			read.resolve('/*old*/');
+			await opening;
+		});
+		expect(result.current.themeEditorOpen).toBe(false);
+	});
+
+	it.each(['preflight', 'write', 'catalog', 'css'] as const)(
+		'preserves new editor work when a save is pending at %s',
+		async (stage) => {
+			const waiting = deferred<void>();
+			const catalog = deferred<string[]>();
+			const css = deferred<string>();
+			const { result } = setup();
+			await act(async () => {
+				await result.current.openThemeEditor('old');
+			});
+			if (stage === 'write') saveThemeCss.mockReturnValueOnce(waiting.promise);
+			if (stage === 'preflight') listThemes.mockReturnValueOnce(catalog.promise);
+			if (stage === 'catalog')
+				listThemes.mockResolvedValueOnce([]).mockReturnValueOnce(catalog.promise);
+			if (stage === 'css') resolveThemeCss.mockReturnValueOnce(css.promise);
+			let saving!: Promise<void>;
+			await act(async () => {
+				saving = result.current.saveThemeEditor();
+			});
+			act(() => result.current.setThemeDraft('/*new edits*/'));
+			await act(async () => {
+				waiting.resolve();
+				catalog.resolve(['old']);
+				css.resolve('/*saved*/');
+				await saving;
+			});
+			expect(result.current.themeEditorOpen).toBe(true);
+			expect(result.current.themeDraft).toBe('/*new edits*/');
+		}
+	);
+
 	it('opens a USER theme in place: seeds the draft from its file CSS', async () => {
 		loadThemeCss.mockResolvedValue('.user{}');
 		const { result } = setup();
@@ -173,7 +314,7 @@ describe('theme editor dialog', () => {
 		expect(result.current.themeEditorOpen).toBe(true);
 		expect(result.current.themeDraftName).toBe('mine');
 		expect(result.current.themeDraft).toBe('.user{}');
-		expect(loadThemeCss).toHaveBeenCalledWith('mine');
+		expect(loadThemeCss).toHaveBeenCalledWith('mine', true);
 	});
 
 	it('opening a built-in FORKS it: draft seeded from resolved CSS under its catalog name, no in-place save', async () => {
@@ -184,7 +325,7 @@ describe('theme editor dialog', () => {
 		});
 		expect(result.current.themeDraftName).toBe('Nord');
 		expect(result.current.themeDraft).toBe('/*nord css*/');
-		expect(resolveThemeCss).toHaveBeenCalledWith('builtin:nord');
+		expect(resolveThemeCss).toHaveBeenCalledWith('builtin:nord', true);
 	});
 
 	it('forking an UNKNOWN built-in id falls back to the bare id as the draft name', async () => {
@@ -245,7 +386,7 @@ describe('theme editor dialog', () => {
 	});
 
 	it('saveThemeEditor writes, refreshes the list, dispatches the selection, and commits', async () => {
-		listThemes.mockResolvedValue(['fresh']);
+		listThemes.mockResolvedValueOnce([]).mockResolvedValue(['fresh']);
 		loadThemeCss.mockResolvedValue('.fresh{}');
 		const { result, dispatch, commitOp } = setup();
 		act(() => {
@@ -255,7 +396,7 @@ describe('theme editor dialog', () => {
 		await act(async () => {
 			await result.current.saveThemeEditor();
 		});
-		expect(saveThemeCss).toHaveBeenCalledWith('fresh', '.fresh{}');
+		expect(saveThemeCss).toHaveBeenCalledWith('fresh', '.fresh{}', false);
 		expect(dispatch).toHaveBeenCalledWith({ type: 'setTheme', name: 'fresh' });
 		expect(commitOp).toHaveBeenCalledTimes(1);
 		expect(result.current.themeEditorOpen).toBe(false);
@@ -296,6 +437,20 @@ describe('theme editor dialog', () => {
 		expect(saveThemeCss).not.toHaveBeenCalled();
 	});
 
+	it('requires overwrite confirmation for a filename that differs only by case', async () => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		const { result } = setup();
+		act(() => {
+			result.current.setThemeList(['taken']);
+			result.current.setThemeDraftName('TAKEN');
+		});
+		await act(async () => {
+			await result.current.saveThemeEditor();
+		});
+		expect(confirm).toHaveBeenCalled();
+		expect(saveThemeCss).not.toHaveBeenCalled();
+	});
+
 	it('saveThemeEditor proceeds past the overwrite confirm when accepted', async () => {
 		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		listThemes.mockResolvedValue(['taken']);
@@ -305,20 +460,76 @@ describe('theme editor dialog', () => {
 		await act(async () => {
 			await result.current.saveThemeEditor();
 		});
-		expect(saveThemeCss).toHaveBeenCalledWith('taken', expect.any(String));
+		expect(saveThemeCss).toHaveBeenCalledWith('taken', expect.any(String), true);
+	});
+});
+
+describe('fresh filename checks', () => {
+	it.each(['save', 'duplicate'] as const)('stops %s when discovery fails', async (action) => {
+		vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		listThemes.mockRejectedValueOnce(new Error('Access denied'));
+		const { result, commitOp } = setup();
+		act(() => result.current.setThemeDraftName('new'));
+		await act(async () => {
+			if (action === 'save') await result.current.saveThemeEditor();
+			else await result.current.duplicateTheme('base');
+		});
+		expect(saveThemeCss).not.toHaveBeenCalled();
+		expect(commitOp).not.toHaveBeenCalled();
+		expect(listThemes).toHaveBeenCalledWith(true);
+	});
+
+	it('checks disk names before overwriting a theme absent from the displayed list', async () => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		listThemes.mockResolvedValue(['NEW']);
+		const { result } = setup();
+		act(() => result.current.setThemeDraftName('new'));
+		await act(async () => result.current.saveThemeEditor());
+		expect(confirm).toHaveBeenCalled();
+		expect(saveThemeCss).not.toHaveBeenCalled();
 	});
 });
 
 describe('duplicateTheme', () => {
+	it.each(['preflight', 'css', 'write', 'catalog'] as const)(
+		'does not open a duplicate over a newer editor after a delayed %s',
+		async (stage) => {
+			const saved = deferred<void>();
+			const listed = deferred<string[]>();
+			const css = deferred<string>();
+			if (stage === 'write') saveThemeCss.mockReturnValueOnce(saved.promise);
+			if (stage === 'preflight') listThemes.mockReturnValueOnce(listed.promise);
+			if (stage === 'catalog')
+				listThemes.mockResolvedValueOnce([]).mockReturnValueOnce(listed.promise);
+			if (stage === 'css') resolveThemeCss.mockReturnValueOnce(css.promise);
+			const { result } = setup();
+			let duplicating!: Promise<void>;
+			await act(async () => {
+				duplicating = result.current.duplicateTheme('builtin:nord');
+			});
+			await act(async () => {
+				await result.current.openThemeEditor('new');
+			});
+			await act(async () => {
+				saved.resolve();
+				listed.resolve(['Nord-copy']);
+				css.resolve('/*old*/');
+				await duplicating;
+			});
+			expect(result.current.themeDraftName).toBe('new');
+			expect(result.current.themeEditorOpen).toBe(true);
+		}
+	);
+
 	it('saves to a free "<label>-copy" stem and opens the copy for editing', async () => {
 		resolveThemeCss.mockResolvedValue('/*src*/');
-		listThemes.mockResolvedValue(['nord-copy']); // post-save refresh
+		listThemes.mockResolvedValueOnce([]).mockResolvedValue(['nord-copy']);
 		const { result } = setup();
 		await act(async () => {
 			await result.current.duplicateTheme('builtin:nord');
 		});
 		// Built-in duplicates under its catalog label, not the builtin: id.
-		expect(saveThemeCss).toHaveBeenCalledWith('Nord-copy', '/*src*/');
+		expect(saveThemeCss).toHaveBeenCalledWith('Nord-copy', '/*src*/', false);
 		expect(result.current.themeEditorOpen).toBe(true);
 	});
 
@@ -330,7 +541,7 @@ describe('duplicateTheme', () => {
 		await act(async () => {
 			await result.current.duplicateTheme('base');
 		});
-		expect(saveThemeCss).toHaveBeenCalledWith('base-copy3', '/*src*/');
+		expect(saveThemeCss).toHaveBeenCalledWith('base-copy3', '/*src*/', false);
 	});
 
 	it('reports a duplicate failure and leaves the editor closed', async () => {
@@ -343,7 +554,7 @@ describe('duplicateTheme', () => {
 
 		expect(alert).toHaveBeenCalledWith('Could not duplicate theme "base": Error: disk full');
 		expect(result.current.themeEditorOpen).toBe(false);
-		expect(listThemes).not.toHaveBeenCalled();
+		expect(listThemes).toHaveBeenCalledWith(true);
 	});
 });
 

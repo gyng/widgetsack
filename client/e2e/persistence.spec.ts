@@ -4,6 +4,11 @@ import { addWidget, gotoStudio } from './helpers';
 test('studio stays open after a failed close-save, then closes after retry succeeds', async ({
 	page
 }) => {
+	const reconciliationErrors: string[] = [];
+	page.on('console', (message) => {
+		if (message.text().includes('overlay reconcile on studio close failed'))
+			reconciliationErrors.push(message.text());
+	});
 	await gotoStudio(page);
 	await page.evaluate(() => {
 		const w = window as unknown as {
@@ -18,7 +23,8 @@ test('studio stays open after a failed close-save, then closes after retry succe
 				w.persistenceTest.saved = (args as { contents: string }).contents;
 				return;
 			}
-			if (cmd === 'list_window_labels') return ['main', 'studio'];
+			if (cmd === 'list_window_labels' || cmd === 'plugin:window|get_all_windows')
+				return ['main', 'studio'];
 			if (cmd === 'plugin:window|destroy') {
 				w.persistenceTest.destroyed++;
 				return;
@@ -73,4 +79,5 @@ test('studio stays open after a failed close-save, then closes after retry succe
 			() => (window as unknown as { persistenceTest: { saved: string } }).persistenceTest.saved
 		)
 	).toContain(id!);
+	expect(reconciliationErrors).toEqual([]);
 });

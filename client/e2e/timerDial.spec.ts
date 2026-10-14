@@ -40,6 +40,8 @@ test('timer style is selectable in the studio and design gestures cannot start i
 }) => {
 	await gotoStudio(page);
 	const timer = await addWidget(page, 'Timer');
+	await expect(timer.getByRole('button', { name: 'Start', exact: true })).toBeDisabled();
+	await expect(timer.getByRole('button', { name: 'Reset', exact: true })).toBeDisabled();
 	await page.getByRole('combobox', { name: 'style', exact: true }).click();
 	await page.locator('.np-select-option', { hasText: /^dial$/ }).click();
 	await expect(timer.locator('.timer-dial')).toBeVisible();

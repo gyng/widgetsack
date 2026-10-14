@@ -3,12 +3,11 @@
 // snapshots — needed because appOpen reads the json window-list sensor and HA conditions read json
 // `.state`. The pure work lives in conditionVisibility.ts / condition.ts; this is the reactive glue.
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
-import type { Container } from '../../core/layoutTree';
 import type { SensorValue, TelemetryHub } from '../../core/telemetry';
 import type { WindowDescriptor } from '../../core/windowMatch';
 import { WINDOWS_SENSOR, type ConditionContext } from '../../core/condition';
 import {
-	collectConditions,
+	type ConditionalNode,
 	conditionSensorRefs,
 	hiddenContainerIds,
 	windowsKey
@@ -27,10 +26,9 @@ function windowsOf(v: SensorValue | null | undefined): WindowDescriptor[] {
  */
 export function useConditionHidden(
 	hub: TelemetryHub,
-	root: Container,
+	conds: readonly ConditionalNode[],
 	active: boolean
 ): ReadonlySet<string> {
-	const conds = useMemo(() => collectConditions(root), [root]);
 	// Sensors to subscribe to — gated by `active` so the studio / edit mode doesn't keep a condition's
 	// sensor marked active (demand-gating). Identity only changes when the conditions or active flag do.
 	const refs = useMemo(

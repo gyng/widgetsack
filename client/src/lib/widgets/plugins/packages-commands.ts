@@ -9,7 +9,12 @@ import { COMMANDS } from '../../bridge/contract';
 
 /** One discovered `plugins/<id>/plugin.json`: the directory name + the raw, unparsed manifest +
  * (for packages installed from a URL) the raw `.install.json` provenance sidecar. */
-export type PluginPackageFile = { id: string; manifest: string; install: string | null };
+export type PluginPackageFile = {
+	id: string;
+	manifest: string;
+	manifest_error?: string | null;
+	install: string | null;
+};
 
 /** Every package directory with a manifest, sorted by id. [] when none / on failure. */
 export async function listPluginPackages(): Promise<PluginPackageFile[]> {

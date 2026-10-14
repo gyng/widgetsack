@@ -32,6 +32,7 @@ Use the returned widget IDs for later edits. Use each revision once.
 Read the layout again if the editor changes. Template previews are read-only.
 
 Changes appear immediately. Use **Undo** to reverse a batch. Use **Save** in Studio to keep the result.
+Cancel a request in your agent to stop pending work. Cancellation does not undo an applied batch.
 
 Verification checks widget sizes, clipping, and render errors. Review a screenshot to check appearance.
 Scrollable content can produce a clipping warning. Check each warning before you change the layout.

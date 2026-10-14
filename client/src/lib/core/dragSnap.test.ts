@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Rect, WidgetInstance } from './layout';
 import type { Zone } from './zones';
-import type { LayoutV2, Leaf } from './layoutTree';
+import type { LayoutV2, Leaf, Library } from './layoutTree';
 import { armedZone, collectDockedZoneMatches, localToPhysical, matchOf } from './dragSnap';
 
 const r = (x: number, y: number, w: number, h: number): Rect => ({ x, y, w, h });
@@ -69,6 +69,80 @@ describe('collectDockedZoneMatches', () => {
 		config
 	});
 	const lf = (unit: WidgetInstance): Leaf => ({ id: unit.id, unit });
+
+	it('namespaces nested inline groups and rejects unsafe definition cycles', () => {
+		const inner: Leaf = {
+			id: 'inner',
+			unit: {
+				id: 'inner',
+				kind: 'group',
+				size: { w: 100, h: 100 },
+				child: lf(zoneUnit('target', {}))
+			}
+		};
+		const outer: Leaf = {
+			id: 'outer',
+			unit: { id: 'outer', kind: 'group', size: { w: 100, h: 100 }, child: inner }
+		};
+		const composed: LayoutV2 = {
+			version: 2,
+			monitors: {
+				default: {
+					root: { id: 'root', kind: 'col', children: [outer] },
+					floating: []
+				}
+			}
+		};
+		expect([...collectDockedZoneMatches(composed, 'default').keys()]).toEqual([
+			'outer/inner/target'
+		]);
+		if (!('kind' in inner.unit)) throw new Error('expected group');
+		inner.unit.def = 'cycle';
+		const library: Library = {
+			version: 1,
+			defs: [{ id: 'cycle', name: 'Cycle', size: { w: 100, h: 100 }, child: inner }]
+		};
+		expect(collectDockedZoneMatches(composed, 'default', library).size).toBe(0);
+	});
+
+	it('collects effective zones in docked and floating groups with renderer namespaces', () => {
+		const child = lf(zoneUnit('target', { matchExe: 'old.exe' }));
+		const library: Library = {
+			version: 1,
+			defs: [
+				{
+					id: 'zones',
+					name: 'Zones',
+					size: { w: 100, h: 100 },
+					child,
+					params: [{ key: 'exe', target: 'unit.config.matchExe' }]
+				}
+			]
+		};
+		const group = (id: string): Leaf => ({
+			id,
+			unit: {
+				id,
+				kind: 'group',
+				def: 'zones',
+				size: { w: 100, h: 100 },
+				child: lf(zoneUnit('fallback', {})),
+				params: { exe: 'notepad.exe' }
+			}
+		});
+		const composed: LayoutV2 = {
+			version: 2,
+			monitors: {
+				default: {
+					root: { id: 'root', kind: 'col', children: [group('docked')] },
+					floating: [group('floating'), lf(zoneUnit('absolute', {}))]
+				}
+			}
+		};
+		const matches = collectDockedZoneMatches(composed, 'default', library);
+		expect([...matches.keys()]).toEqual(['docked/target', 'floating/target']);
+		expect(matches.get('floating/target')?.exe).toBe('notepad.exe');
+	});
 
 	const layout: LayoutV2 = {
 		version: 2,

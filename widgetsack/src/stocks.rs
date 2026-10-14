@@ -286,11 +286,15 @@ fn http_client() -> Result<reqwest::Client, String> {
 
 async fn fetch_chart(client: &reqwest::Client, symbol: &str) -> Result<Value, String> {
     let url = yahoo_chart_url(symbol, "2m", "1d");
-    let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
         return Err(format!("{symbol}: HTTP {}", resp.status()));
     }
-    resp.json::<Value>().await.map_err(|e| e.to_string())
+    crate::http_response::read_json(resp, 8 * 1024 * 1024).await
 }
 
 /// Poll the in-demand symbols on the interval, emitting `stocks.*` telemetry. The fetch list is the

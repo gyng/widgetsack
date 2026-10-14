@@ -1,8 +1,8 @@
 //! Optional Agenda source — upcoming events from an ICS (iCalendar) feed URL. A PEER to rss.rs: a
 //! server-side reqwest poller fetches the `.ics` on an interval, parses the VEVENTs (summary + start),
-//! and forwards them over the EXISTING `telemetry` event as an `agenda.list` JSON sensor (+
-//! `agenda.count`). The frontend does the upcoming-filtering + friendly time formatting (it has the
-//! clock + locale); the backend stays a dumb, dep-free parser. Demand-gated (default OFF).
+//! and forwards a minimal ICS snapshot over `telemetry` as the `agenda.calendar` JSON sensor (+
+//! `agenda.count`). A frontend worker expands recurrences and timezones. The renderer filters
+//! upcoming events and formats local labels. Demand-gated (default OFF).
 //!
 //! The pure seams (`unfold`, `ics_to_iso`, `parse_ics_events`, `unescape_ics`) hold the logic and are
 //! unit-tested without network. DTSTART is reformatted to an ISO-8601 string so the frontend can
@@ -19,8 +19,6 @@ use crate::sensors::{ActiveSensors, SensorSample, SensorValue, TELEMETRY_EVENT};
 const MIN_INTERVAL: u64 = 300; // 5 min
 const MAX_INTERVAL: u64 = 21_600; // 6 h
 const IDLE_RECHECK: Duration = Duration::from_secs(5);
-/// Parse at most this many events from the feed (the frontend filters to the upcoming few).
-const MAX_EVENTS: usize = 60;
 
 fn default_interval() -> u64 {
     1800 // 30 min — calendars change slowly
@@ -53,7 +51,8 @@ pub struct AgendaStatus {
     pub poll_seconds: u64,
 }
 
-/// One parsed event. Mirrors `AgendaEvent` in `client/src/lib/core/agenda.ts`. `start` is an ISO-8601
+/// One basic event for the source count and parser tests. The rendered list uses the calendar
+/// snapshot from feed_to_samples and a frontend-expanded agenda.list array. `start` is an ISO-8601
 /// string (UTC `…Z`, floating, or a date-only `YYYY-MM-DD` for all-day events).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -120,9 +119,11 @@ fn ics_to_iso(value: &str) -> Option<(String, bool)> {
     if v.len() == 8 && v.bytes().all(|b| b.is_ascii_digit()) {
         return Some((format!("{}-{}-{}", &v[0..4], &v[4..6], &v[6..8]), true));
     }
-    if v.len() >= 15 && v.as_bytes()[8] == b'T' {
-        let date_ok = v[0..8].bytes().all(|b| b.is_ascii_digit());
-        let time_ok = v[9..15].bytes().all(|b| b.is_ascii_digit());
+    let bytes = v.as_bytes();
+    let datetime_length = bytes.len() == 15 || (bytes.len() == 16 && bytes[15] == b'Z');
+    if datetime_length && bytes[8] == b'T' {
+        let date_ok = bytes[..8].iter().all(u8::is_ascii_digit);
+        let time_ok = bytes[9..15].iter().all(u8::is_ascii_digit);
         if date_ok && time_ok {
             let z = if v.ends_with('Z') { "Z" } else { "" };
             return Some((
@@ -205,6 +206,138 @@ fn agenda_to_samples(events: &[AgendaEvent], ts: u64) -> Vec<SensorSample> {
     ]
 }
 
+// Keep only fields used by the calendar renderer. Private notes, attendee addresses,
+// attachments, calendar URLs, and alarms do not cross the bridge.
+fn calendar_for_bridge(body: &str) -> String {
+    let mut output = String::from("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n");
+    let mut stack: Vec<String> = Vec::new();
+    let mut started = false;
+    let mut ended = false;
+    let kept = |path: &[String]| {
+        if path.len() > 3 {
+            return false;
+        }
+        matches!(
+            path.iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .as_slice(),
+            ["VCALENDAR", "VEVENT"]
+                | ["VCALENDAR", "VTIMEZONE"]
+                | ["VCALENDAR", "VTIMEZONE", "STANDARD"]
+                | ["VCALENDAR", "VTIMEZONE", "DAYLIGHT"]
+        )
+    };
+    for line in unfold(body) {
+        let field = line.split_once(':');
+        if let Some((_, name)) = field.filter(|(key, _)| key.eq_ignore_ascii_case("BEGIN")) {
+            if stack.is_empty() {
+                if started || !name.eq_ignore_ascii_case("VCALENDAR") {
+                    return "invalid calendar".into();
+                }
+                started = true;
+            }
+            if stack.len() >= 16 {
+                return "invalid calendar".into();
+            }
+            stack.push(name.to_ascii_uppercase());
+            if kept(&stack) {
+                output.push_str(&format!("BEGIN:{}\r\n", stack.last().unwrap()));
+            }
+            continue;
+        }
+        if let Some((_, name)) = field.filter(|(key, _)| key.eq_ignore_ascii_case("END")) {
+            if stack
+                .last()
+                .is_some_and(|last| last.eq_ignore_ascii_case(name))
+            {
+                if kept(&stack) {
+                    output.push_str(&format!("END:{}\r\n", name.to_ascii_uppercase()));
+                }
+                if stack.len() == 1 {
+                    ended = true;
+                }
+                stack.pop();
+            } else {
+                return "invalid calendar".into();
+            }
+            continue;
+        }
+        if stack.len() > 3 {
+            continue;
+        }
+        let property = line
+            .split([';', ':'])
+            .next()
+            .unwrap_or("")
+            .to_ascii_uppercase();
+        let keep = match stack
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .as_slice()
+        {
+            ["VCALENDAR"] => property == "METHOD",
+            ["VCALENDAR", "VEVENT"] => matches!(
+                property.as_str(),
+                "UID"
+                    | "SUMMARY"
+                    | "LOCATION"
+                    | "DTSTART"
+                    | "DTEND"
+                    | "DURATION"
+                    | "RRULE"
+                    | "RDATE"
+                    | "EXDATE"
+                    | "EXRULE"
+                    | "RECURRENCE-ID"
+                    | "STATUS"
+                    | "SEQUENCE"
+                    | "DTSTAMP"
+            ),
+            ["VCALENDAR", "VTIMEZONE"] => property == "TZID",
+            ["VCALENDAR", "VTIMEZONE", "STANDARD"] | ["VCALENDAR", "VTIMEZONE", "DAYLIGHT"] => {
+                matches!(
+                    property.as_str(),
+                    "DTSTART"
+                        | "TZOFFSETFROM"
+                        | "TZOFFSETTO"
+                        | "RRULE"
+                        | "RDATE"
+                        | "EXDATE"
+                        | "TZNAME"
+                )
+            }
+            _ => false,
+        };
+        if keep {
+            output.push_str(&line);
+            output.push_str("\r\n");
+        }
+    }
+    if !started || !ended || !stack.is_empty() {
+        return "invalid calendar".into();
+    }
+    output.push_str("END:VCALENDAR\r\n");
+    output
+}
+
+// The HTTP reader bounds the source body. The worker expands this minimal ICS snapshot,
+// preserving timezone and recurrence rules. agenda.count remains the source event count.
+fn feed_to_samples(body: &str, ts: u64) -> Vec<SensorSample> {
+    let mut samples = agenda_to_samples(&parse_ics_events(body, usize::MAX), ts);
+    let calendar = calendar_for_bridge(body);
+    let status = if calendar == "invalid calendar" {
+        "error"
+    } else {
+        "connected"
+    };
+    samples[0].sensor = "agenda.calendar".into();
+    samples[0].value = SensorValue::Json(serde_json::json!({ "version": 1, "calendar": calendar }));
+    samples.push(SensorSample::text("agenda.status", ts, status));
+    samples
+}
+
 // ---- config I/O ----
 
 fn agenda_config_path<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
@@ -231,17 +364,19 @@ fn feed_host(url: &str) -> String {
 }
 
 fn has_feed(cfg: &AgendaConfig) -> bool {
-    let u = cfg.url.trim();
-    // webcal:// is the common calendar-subscription scheme; the poller rewrites it to https.
-    u.starts_with("http://") || u.starts_with("https://") || u.starts_with("webcal://")
+    reqwest::Url::parse(&normalize_url(&cfg.url))
+        .is_ok_and(|url| matches!(url.scheme(), "http" | "https") && url.host_str().is_some())
 }
 
 /// Normalise a webcal:// subscription URL to https:// for the HTTP client. Pure.
 fn normalize_url(url: &str) -> String {
     let u = url.trim();
-    match u.strip_prefix("webcal://") {
-        Some(rest) => format!("https://{rest}"),
-        None => u.to_string(),
+    if let Some((scheme, rest)) = u.split_once("://")
+        && scheme.eq_ignore_ascii_case("webcal")
+    {
+        format!("https://{rest}")
+    } else {
+        u.to_string()
     }
 }
 
@@ -304,13 +439,14 @@ pub async fn run_agenda_client<R: Runtime>(app: AppHandle<R>, cfg: AgendaConfig)
         }
         match fetch_text(&client, &url).await {
             Ok(body) => {
-                {
-                    let _t = timings.start("plugin.agenda");
-                    let events = parse_ics_events(&body, MAX_EVENTS);
-                    let _ = app.emit(TELEMETRY_EVENT, &agenda_to_samples(&events, now_ms()));
-                }
-                emit_status(&app, "connected");
-                fails = 0;
+                let _t = timings.start("plugin.agenda");
+                let batch = feed_to_samples(&body, now_ms());
+                let invalid = batch.iter().any(|sample| {
+                    sample.sensor == "agenda.status"
+                        && matches!(&sample.value, SensorValue::Text(status) if status == "error")
+                });
+                fails = if invalid { (fails + 1).min(5) } else { 0 };
+                let _ = app.emit(TELEMETRY_EVENT, &batch);
             }
             Err(err) => {
                 eprintln!("agenda: fetch {err}");
@@ -359,6 +495,9 @@ pub async fn save_agenda_config(
         title,
         poll_interval_secs: poll_seconds.clamp(MIN_INTERVAL, MAX_INTERVAL),
     };
+    if !has_feed(&cfg) {
+        return Err("Enter a valid HTTP, HTTPS, or webcal calendar address".into());
+    }
     let txt = serde_json::to_string_pretty(&cfg).map_err(|e| e.to_string())?;
     crate::secure_config::write(&path, &txt)
 }
@@ -447,6 +586,17 @@ mod tests {
     }
 
     #[test]
+    fn malformed_date_text_does_not_panic_or_accept_suffixes() {
+        for value in [
+            "20261231T12345é",
+            "20261231T123456garbage",
+            "20261231T123456ZZ",
+        ] {
+            assert_eq!(ics_to_iso(value), None, "{value}");
+        }
+    }
+
+    #[test]
     fn unescape_ics_decodes_text_escapes() {
         assert_eq!(
             unescape_ics("Lunch with Bob\\, then gym"),
@@ -501,6 +651,64 @@ mod tests {
     }
 
     #[test]
+    fn invalid_feed_reports_error_instead_of_connected() {
+        let samples = feed_to_samples("<html>Not a calendar</html>", 9);
+        assert!(samples.iter().any(|sample| sample.sensor == "agenda.status"
+            && matches!(&sample.value, SensorValue::Text(status) if status == "error")));
+    }
+
+    #[test]
+    fn calendar_projection_rejects_missing_or_mismatched_frames_and_excess_depth() {
+        for body in [
+            "<html>Private page</html>",
+            "BEGIN:VCALENDAR\nBEGIN:VEVENT\nEND:VCALENDAR",
+            "BEGIN:VCALENDAR",
+            "BEGIN:VEVENT\nEND:VEVENT",
+            "BEGIN:VCALENDAR\nEND:VCALENDAR\nBEGIN:VCALENDAR\nEND:VCALENDAR",
+        ] {
+            assert_eq!(calendar_for_bridge(body), "invalid calendar");
+        }
+        let body = format!("BEGIN:VCALENDAR\n{}", "BEGIN:X\n".repeat(10000));
+        assert_eq!(calendar_for_bridge(&body), "invalid calendar");
+        assert!(calendar_for_bridge("begin:vcalendar\nbegin:vevent\nsummary:Call\ndtstart:20261014T090000Z\nend:vevent\nend:vcalendar").contains("summary:Call"));
+    }
+
+    #[test]
+    fn bridge_calendar_preserves_rules_and_zones_without_unused_private_fields() {
+        let body = "BEGIN:VCALENDAR\nURL:https://private.example/secret-feed\nBEGIN:VTIMEZONE\nTZID:Europe/London\nBEGIN:DAYLIGHT\nDTSTART:19700329T010000\nTZOFFSETFROM:+0000\nTZOFFSETTO:+0100\nRRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=-1SU\nEND:DAYLIGHT\nEND:VTIMEZONE\nBEGIN:VEVENT\nUID:weekly\nSUMMARY:Call\nDTSTART;TZID=Europe/London:20261014T093000\nRRULE:FREQ=WEEKLY;COUNT=4\nEXDATE;TZID=Europe/London:20261021T093000\nDESCRIPTION:Private notes\nATTENDEE:mailto:private@example.com\nURL:https://private.example/secret-event\nBEGIN:VALARM\nDESCRIPTION:Private alarm\nEND:VALARM\nEND:VEVENT\nEND:VCALENDAR";
+        let samples = feed_to_samples(body, 5);
+        let SensorValue::Json(payload) = &samples[0].value else {
+            panic!("calendar payload");
+        };
+        assert_eq!(payload["version"], 1);
+        let calendar = payload["calendar"].as_str().expect("calendar text");
+        assert!(calendar.contains("RRULE:FREQ=WEEKLY;COUNT=4"));
+        assert!(calendar.contains("TZID:Europe/London"));
+        assert!(calendar.contains("TZOFFSETTO:+0100"));
+        assert!(calendar.contains("EXDATE;TZID=Europe/London:20261021T093000"));
+        assert!(!calendar.contains("private"));
+        assert!(!calendar.contains("VALARM"));
+    }
+
+    #[test]
+    fn feed_samples_preserve_future_events_after_a_long_historical_prefix() {
+        let mut body = String::from("BEGIN:VCALENDAR\n");
+        for i in 0..70 {
+            body.push_str(&format!(
+                "BEGIN:VEVENT\nSUMMARY:Past {i}\nDTSTART:20200101T100000Z\nEND:VEVENT\n"
+            ));
+        }
+        body.push_str("BEGIN:VEVENT\nSUMMARY:Future meeting\nDTSTART:20300101T100000Z\nEND:VEVENT\nEND:VCALENDAR");
+        let samples = feed_to_samples(&body, 9);
+        let SensorValue::Json(events) = &samples[0].value else {
+            panic!("expected event list");
+        };
+        let calendar = events["calendar"].as_str().unwrap();
+        assert_eq!(parse_ics_events(calendar, usize::MAX).len(), 71);
+        assert!(calendar.contains("SUMMARY:Future meeting"));
+    }
+
+    #[test]
     fn agenda_to_samples_emits_json_list_and_count() {
         let ev = vec![AgendaEvent {
             summary: "X".into(),
@@ -515,6 +723,21 @@ mod tests {
         assert_eq!(json["value"][0]["summary"], "X");
         assert_eq!(json["value"][0]["allDay"], true);
         assert_eq!(s[1].sensor, "agenda.count");
+    }
+
+    #[test]
+    fn subscription_schemes_are_case_insensitive_like_the_settings_form() {
+        let cfg = AgendaConfig {
+            url: "WEBCAL://calendar.example/private.ics".into(),
+            title: String::new(),
+            poll_interval_secs: 300,
+        };
+        assert!(has_feed(&cfg));
+        assert_eq!(
+            normalize_url(&cfg.url),
+            "https://calendar.example/private.ics"
+        );
+        assert_eq!(feed_host(&cfg.url), "calendar.example");
     }
 
     #[test]

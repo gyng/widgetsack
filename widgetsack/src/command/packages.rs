@@ -38,10 +38,38 @@ pub struct PluginPackageFile {
     pub id: String,
     /// Raw `plugin.json` contents, unparsed.
     pub manifest: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub manifest_error: Option<String>,
     /// Raw `.install.json` sidecar (written by `install_plugin_package`), unparsed — the frontend
     /// parses it (core/pluginPackage.ts `parseInstallSidecar`) to show provenance and drive the
     /// update-check/update affordances. `None` for hand-dropped (local) packages.
     pub install: Option<String>,
+}
+
+fn read_package_text(path: &Path) -> std::io::Result<String> {
+    use std::io::Read;
+    let file = fs::File::open(path)?;
+    let limit = super::http::FETCH_CAP;
+    let too_large = || {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "package file exceeds 256 KiB",
+        )
+    };
+    if file.metadata()?.len() > limit as u64 {
+        return Err(too_large());
+    }
+    let mut bytes = Vec::new();
+    file.take((limit + 1) as u64).read_to_end(&mut bytes)?;
+    if bytes.len() > limit {
+        return Err(too_large());
+    }
+    String::from_utf8(bytes).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "package file is not valid UTF-8",
+        )
+    })
 }
 
 /// Every `plugins/<id>/plugin.json`, sorted by id. Directories only (first-party config FILES in
@@ -63,12 +91,20 @@ pub fn list_plugin_packages(app: tauri::AppHandle) -> Result<Vec<PluginPackageFi
             if !valid_name(id) {
                 continue;
             }
-            if let Ok(manifest) = fs::read_to_string(path.join("plugin.json")) {
-                out.push(PluginPackageFile {
+            match read_package_text(&path.join("plugin.json")) {
+                Ok(manifest) => out.push(PluginPackageFile {
                     id: id.to_string(),
                     manifest,
-                    install: fs::read_to_string(path.join(INSTALL_SIDECAR)).ok(),
-                });
+                    manifest_error: None,
+                    install: read_package_text(&path.join(INSTALL_SIDECAR)).ok(),
+                }),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => out.push(PluginPackageFile {
+                    id: id.to_string(),
+                    manifest: String::new(),
+                    manifest_error: Some(error.to_string()),
+                    install: read_package_text(&path.join(INSTALL_SIDECAR)).ok(),
+                }),
             }
         }
     }
@@ -91,7 +127,7 @@ pub fn read_plugin_package_asset(
         return Err("invalid asset name".to_string());
     }
     let path = plugins_dir(&app)?.join(&id).join(&name);
-    match fs::read_to_string(&path) {
+    match read_package_text(&path) {
         Ok(contents) => Ok(Some(contents)),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err.to_string()),
@@ -103,8 +139,8 @@ pub fn read_plugin_package_asset(
 // manifest + its declared assets over https (10s timeout, 256 KiB per-file cap), write them into
 // `plugins/<id>/` via atomic_write, and record provenance in a `.install.json` sidecar so the
 // frontend can offer MANUAL update checks later. Validation stays split exactly like Phase 1: the
-// backend only enforces the path-safety invariants (`valid_name` id, `valid_asset_name` assets);
-// the frontend does the full structural validation and the enable/consent gate — a freshly
+// backend enforces path safety and the manifest fields required for frontend loading;
+// the frontend validates feature contents and controls the enable/consent gate — a freshly
 // installed package lands DISABLED like a hand-dropped folder.
 
 /// Provenance sidecar filename. Starts with a dot so its stem fails `valid_name`, which keeps it
@@ -234,6 +270,43 @@ pub struct InstalledPackage {
     pub version: String,
 }
 
+fn install_manifest_identity(json: &serde_json::Value) -> Result<(String, String), String> {
+    if json.get("manifestVersion").and_then(|v| v.as_f64()) != Some(1.0) {
+        return Err("unsupported package manifestVersion (expected 1)".into());
+    }
+    if json
+        .get("name")
+        .and_then(|v| v.as_str())
+        .is_none_or(|name| {
+            name.trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}')
+                .is_empty()
+        })
+    {
+        return Err("manifest has no \"name\"".into());
+    }
+    for field in ["description", "author", "homepage"] {
+        if json.get(field).is_some_and(|value| !value.is_string()) {
+            return Err(format!("manifest \"{field}\" must be a string"));
+        }
+    }
+    if json.get("templates").is_some_and(|value| !value.is_array()) {
+        return Err("manifest \"templates\" must be an array".into());
+    }
+    let id = json.get("id").and_then(|v| v.as_str()).unwrap_or_default();
+    if !valid_name(id) {
+        return Err("manifest \"id\" is missing or not a safe folder name".into());
+    }
+    let version = json
+        .get("version")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .trim_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
+    if version.is_empty() {
+        return Err("manifest has no \"version\"".into());
+    }
+    Ok((id.into(), version.into()))
+}
+
 fn plugin_install_lock() -> &'static tokio::sync::Mutex<()> {
     static LOCK: std::sync::OnceLock<tokio::sync::Mutex<()>> = std::sync::OnceLock::new();
     LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
@@ -257,6 +330,15 @@ fn install_package_directory_with(
     replace: bool,
     mut write_file: impl FnMut(&Path, &str) -> Result<(), String>,
 ) -> Result<(), String> {
+    let mut names =
+        std::collections::HashSet::from(["plugin.json".to_string(), INSTALL_SIDECAR.to_string()]);
+    for (name, _) in assets {
+        if !valid_asset_name(name) || !names.insert(name.to_ascii_lowercase()) {
+            return Err(format!(
+                "package asset filename \"{name}\" is invalid, reserved, or repeated"
+            ));
+        }
+    }
     fs::create_dir_all(root).map_err(|e| e.to_string())?;
     let target = root.join(id);
     if target.exists() != replace {
@@ -346,29 +428,13 @@ pub async fn install_plugin_package(
     let manifest_text = fetch_text_capped(client, &resolved.manifest_url).await?;
     let json: serde_json::Value = serde_json::from_str(&manifest_text)
         .map_err(|_| "downloaded plugin.json is not valid JSON".to_string())?;
-    let id = json
-        .get("id")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .to_string();
-    if !valid_name(&id) {
-        return Err("manifest \"id\" is missing or not a safe folder name".to_string());
-    }
+    let (id, version) = install_manifest_identity(&json)?;
     if let Some(expected) = &replace_id
         && (!valid_name(expected) || expected != &id)
     {
         return Err(format!(
             "update expected package id \"{expected}\", but manifest declares \"{id}\""
         ));
-    }
-    let version = json
-        .get("version")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
-        .trim()
-        .to_string();
-    if version.is_empty() {
-        return Err("manifest has no \"version\"".to_string());
     }
     // Declared assets: `theme.file` (Phase 1) and `source.file` (Phase 2 sandbox script) are the
     // only asset slots in manifestVersion 1. Fetch before writing anything.
@@ -424,7 +490,7 @@ pub async fn check_plugin_package_update(
     if !valid_name(&id) {
         return Err("invalid package id".to_string());
     }
-    let raw = fs::read_to_string(plugins_dir(&app)?.join(&id).join(INSTALL_SIDECAR))
+    let raw = read_package_text(&plugins_dir(&app)?.join(&id).join(INSTALL_SIDECAR))
         .map_err(|_| "package was not installed from a URL".to_string())?;
     let side: serde_json::Value =
         serde_json::from_str(&raw).map_err(|_| "install record is corrupt".to_string())?;
@@ -469,7 +535,14 @@ pub async fn remove_plugin_package(app: tauri::AppHandle, id: String) -> Result<
         return Err("invalid package id".to_string());
     }
     let _guard = plugin_install_lock().lock().await;
-    match fs::remove_dir_all(plugins_dir(&app)?.join(&id)) {
+    remove_package_directory(&plugins_dir(&app)?, &id)
+}
+
+fn remove_package_directory(root: &Path, id: &str) -> Result<(), String> {
+    if !valid_name(id) {
+        return Err("invalid package id".into());
+    }
+    match fs::remove_dir_all(root.join(id)) {
         Ok(()) => Ok(()),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(err) => Err(err.to_string()),
@@ -569,6 +642,39 @@ pub struct PackageFetchResponse {
     pub body: String,
 }
 
+fn validate_package_url(url: &str, hosts: &[String]) -> Result<(), String> {
+    if !host_allowed(url, hosts) {
+        return Err("request URL is not in the package's host allowlist".into());
+    }
+    if reqwest::Url::parse(url)
+        .ok()
+        .and_then(|u| u.host_str().map(is_internal_host))
+        .unwrap_or(true)
+    {
+        return Err("request URL targets a local or internal host".into());
+    }
+    Ok(())
+}
+
+async fn fetch_package_response(
+    client: &reqwest::Client,
+    url: String,
+) -> Result<PackageFetchResponse, String> {
+    let resp = client.get(&url).send().await.map_err(|e| {
+        format!(
+            "package request failed: {}",
+            crate::http_response::request_error(e)
+        )
+    })?;
+    let status = resp.status().as_u16();
+    let buf = read_body_capped(resp)
+        .await
+        .map_err(|e| format!("package request failed: {e}"))?;
+    let body =
+        String::from_utf8(buf).map_err(|_| "package response is not valid UTF-8".to_string())?;
+    Ok(PackageFetchResponse { url, status, body })
+}
+
 /// GET `url` on behalf of package `id`'s sandboxed source. Non-2xx responses are returned (with
 /// their status) rather than erroring — the sandbox's `transform` decides what a miss means; only
 /// transport/validation failures are `Err`. Refused unless the package carries the server-side
@@ -583,7 +689,7 @@ pub async fn package_fetch(
         return Err("invalid package id".to_string());
     }
     let pkg_dir = plugins_dir(&app)?.join(&id);
-    let raw = fs::read_to_string(pkg_dir.join("plugin.json"))
+    let raw = read_package_text(&pkg_dir.join("plugin.json"))
         .map_err(|_| "package manifest not found".to_string())?;
     if !pkg_dir.join(ENABLED_MARKER).is_file() {
         return Err("package is not enabled".to_string());
@@ -602,33 +708,199 @@ pub async fn package_fetch(
     if hosts.is_empty() {
         return Err("package declares no source hosts".to_string());
     }
-    if !host_allowed(&url, &hosts) {
-        return Err(format!("url is not in the package's host allowlist: {url}"));
-    }
-    if reqwest::Url::parse(&url)
-        .ok()
-        .and_then(|u| u.host_str().map(is_internal_host))
-        .unwrap_or(true)
-    {
-        return Err(format!("url targets a local / internal host: {url}"));
-    }
-    let client = install_http_client()?;
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("GET {url} failed: {e}"))?;
-    let status = resp.status().as_u16();
-    let buf = read_body_capped(resp)
-        .await
-        .map_err(|e| format!("GET {url}: {e}"))?;
-    let body = String::from_utf8(buf).map_err(|_| format!("{url} body is not valid UTF-8"))?;
-    Ok(PackageFetchResponse { url, status, body })
+    validate_package_url(&url, &hosts)?;
+    fetch_package_response(install_http_client()?, url).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_package_reads_enforce_the_package_file_limit() {
+        let root = package_test_dir("read-limit");
+        fs::create_dir_all(&root).unwrap();
+        let file = root.join("plugin.json");
+        let limit = super::super::http::FETCH_CAP;
+        fs::write(&file, "x".repeat(limit)).unwrap();
+        assert_eq!(read_package_text(&file).unwrap().len(), limit);
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_len((limit + 1) as u64)
+            .unwrap();
+        assert!(
+            read_package_text(&file).is_err(),
+            "accepted an oversized local package file"
+        );
+        fs::write(&file, [0xff]).unwrap();
+        assert!(read_package_text(&file).is_err());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(windows)]
+    fn package_junction(link: &Path, target: &Path) {
+        use std::os::windows::process::CommandExt;
+        let quote = |path: &Path| path.to_str().unwrap().replace('\'', "''");
+        let command = format!(
+            "$ErrorActionPreference = 'Stop'; New-Item -ItemType Junction -Path '{}' -Target '{}' | Out-Null",
+            quote(link),
+            quote(target)
+        );
+        let output = std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &command])
+            .creation_flags(0x08000000)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "junction creation failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn package_updates_and_removals_preserve_junction_targets() {
+        let fixture = package_test_dir("junctions");
+        let root = fixture.join("plugins");
+        let outside = fixture.join("outside");
+        fs::create_dir_all(&root).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(outside.join("plugin.json"), "external manifest").unwrap();
+        fs::write(outside.join("keep.txt"), "external data").unwrap();
+        let target = root.join("demo");
+        package_junction(&target, &outside);
+        install_package_directory(&root, "demo", "replacement", &[], "sidecar", true).unwrap();
+        assert_eq!(
+            fs::read_to_string(target.join("plugin.json")).unwrap(),
+            "replacement"
+        );
+        assert_eq!(
+            fs::read_to_string(outside.join("plugin.json")).unwrap(),
+            "external manifest"
+        );
+        assert_eq!(
+            fs::read_to_string(outside.join("keep.txt")).unwrap(),
+            "external data"
+        );
+        package_junction(&target.join("linked"), &outside);
+        remove_package_directory(&root, "demo").unwrap();
+        assert!(!target.exists());
+        assert_eq!(
+            fs::read_to_string(outside.join("keep.txt")).unwrap(),
+            "external data"
+        );
+        package_junction(&target, &outside);
+        remove_package_directory(&root, "demo").unwrap();
+        assert!(!fs::exists(&target).unwrap());
+        assert_eq!(
+            fs::read_to_string(outside.join("keep.txt")).unwrap(),
+            "external data"
+        );
+        fs::remove_dir_all(fixture).unwrap();
+    }
+
+    #[tokio::test]
+    async fn package_proxy_preserves_responses_but_redacts_failure_urls() {
+        use std::io::{Read, Write};
+        for (response, status) in [
+            (
+                &b"HTTP/1.1 403 Forbidden\r\nContent-Length: 2\r\nConnection: close\r\n\r\nno"[..],
+                Some(403),
+            ),
+            (
+                &b"HTTP/1.1 200 OK\r\nContent-Length: 1\r\nConnection: close\r\n\r\n\xff"[..],
+                None,
+            ),
+            (
+                &b"HTTP/1.1 200 OK\r\nContent-Length: 10\r\nConnection: close\r\n\r\nx"[..],
+                None,
+            ),
+            (
+                &b"HTTP/1.1 200 OK\r\nContent-Length: 262145\r\nConnection: close\r\n\r\n"[..],
+                None,
+            ),
+            (&b""[..], None),
+        ] {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let server = std::thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut request = [0; 2048];
+                let _ = stream.read(&mut request);
+                stream.write_all(response).unwrap();
+            });
+            let url = format!(
+                "http://user:synthetic-secret@{address}/synthetic-secret?key=synthetic-secret"
+            );
+            let result = fetch_package_response(install_http_client().unwrap(), url.clone()).await;
+            server.join().unwrap();
+            match status {
+                Some(status) => {
+                    let result = result.unwrap();
+                    assert_eq!(result.status, status);
+                    assert_eq!(result.url, url);
+                    assert_eq!(result.body, "no");
+                }
+                None => {
+                    let error = result.err().expect("accepted invalid response");
+                    assert!(
+                        !error.contains("synthetic-secret"),
+                        "URL disclosed in error: {error}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn package_url_validation_does_not_disclose_secrets() {
+        let hosts = vec!["api.example".into(), "localhost".into()];
+        for url in [
+            "https://user:synthetic-secret@api.example/data",
+            "https://other.example/data?token=synthetic-secret",
+            "https://localhost/synthetic-secret",
+        ] {
+            let error = validate_package_url(url, &hosts).unwrap_err();
+            assert!(
+                !error.contains("synthetic-secret"),
+                "URL disclosed in error: {error}"
+            );
+        }
+        assert!(
+            validate_package_url("https://api.example/data?token=synthetic-secret", &hosts).is_ok()
+        );
+    }
+
+    #[test]
+    fn remote_manifest_rejects_headers_the_frontend_cannot_load() {
+        let valid = serde_json::json!({ "manifestVersion": 1, "id": "demo", "name": "Demo", "version": " 2 " });
+        assert_eq!(
+            install_manifest_identity(&valid).unwrap(),
+            ("demo".into(), "2".into())
+        );
+        for (field, value) in [
+            ("manifestVersion", serde_json::json!(2)),
+            ("name", serde_json::json!(" ")),
+            ("name", serde_json::json!("\u{feff}")),
+            ("version", serde_json::json!("\u{feff}")),
+            ("templates", serde_json::json!({})),
+            ("description", serde_json::Value::Null),
+            ("author", serde_json::json!(false)),
+            ("homepage", serde_json::json!([])),
+        ] {
+            let mut manifest = valid.clone();
+            manifest[field] = value;
+            assert!(
+                install_manifest_identity(&manifest).is_err(),
+                "accepted invalid {field}"
+            );
+        }
+        let soft = serde_json::json!({ "manifestVersion": 1.0, "id": "demo", "name": "Demo", "version": "2", "templates": [null], "theme": false, "source": null });
+        assert!(install_manifest_identity(&soft).is_ok());
+    }
 
     fn package_test_dir(label: &str) -> std::path::PathBuf {
         std::env::temp_dir().join(format!(
@@ -639,6 +911,39 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ))
+    }
+
+    #[test]
+    fn package_asset_collisions_preserve_the_installed_manifest() {
+        for names in [
+            vec!["plugin.json"],
+            vec!["PLUGIN.JSON"],
+            vec!["theme.css", "THEME.CSS"],
+        ] {
+            let root = package_test_dir("asset-collision");
+            let target = root.join("demo");
+            fs::create_dir_all(&target).unwrap();
+            fs::write(target.join("plugin.json"), "original manifest").unwrap();
+            let assets = names
+                .iter()
+                .map(|name| (name.to_string(), "asset".into()))
+                .collect::<Vec<_>>();
+            let result = install_package_directory(
+                &root,
+                "demo",
+                "replacement manifest",
+                &assets,
+                "sidecar",
+                true,
+            );
+            assert!(result.is_err(), "accepted colliding assets: {names:?}");
+            assert_eq!(
+                fs::read_to_string(target.join("plugin.json")).unwrap(),
+                "original manifest"
+            );
+            assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+            fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

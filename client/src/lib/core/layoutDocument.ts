@@ -1,3 +1,4 @@
+import { validLibrary } from './libraryValidation';
 import { parseLayoutAny } from './migration';
 import type { Library, LayoutV2 } from './layoutTree';
 
@@ -28,16 +29,15 @@ export function decodeLayoutDocument(contents: string | null): DecodedLayoutDocu
 	const layout = parseLayoutAny(value);
 	if (!layout) return { kind: 'corrupt', reason: 'unsupported or invalid layout' };
 	const raw = value as Record<string, unknown>;
-	const library = raw.library;
+	const library = raw.library == null ? undefined : raw.library;
+	if (library !== undefined && !validLibrary(library))
+		return { kind: 'corrupt', reason: 'invalid widget library' };
 	const tokens = raw.tokens;
 	return {
 		kind: 'valid',
 		raw,
 		layout,
-		library:
-			library && typeof library === 'object' && Array.isArray((library as Library).defs)
-				? (library as Library)
-				: undefined,
+		library,
 		theme: typeof raw.theme === 'string' ? raw.theme : '',
 		themeLock: raw.themeLock !== false,
 		tokens:

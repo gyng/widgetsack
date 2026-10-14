@@ -1,3 +1,8 @@
+import {
+	MAX_GRID_TRACKS,
+	normalizeGridTrackCount,
+	validGridTrackCount
+} from '../core/gridDimensions';
 import Icon from './Icon';
 // Editor inspector (edit mode): a palette to add widgets, plus a properties panel for
 // the selected node — widget props (sensor / rect / config / dock·float) or container
@@ -1312,8 +1317,13 @@ export default function Inspector({
 									<input
 										type="number"
 										min="1"
-										value={container.cols ?? 1}
-										onInput={(e) => patchContainer({ cols: Number(e.currentTarget.value) })}
+										max={MAX_GRID_TRACKS}
+										step="1"
+										value={normalizeGridTrackCount(container.cols)}
+										onInput={(e) => {
+											const value = e.currentTarget.valueAsNumber;
+											if (validGridTrackCount(value)) patchContainer({ cols: value });
+										}}
 									/>
 								</label>
 								<label className={dirtyKeys.has('rows') ? 'dirty' : undefined}>
@@ -1321,8 +1331,13 @@ export default function Inspector({
 									<input
 										type="number"
 										min="1"
-										value={container.rows ?? 1}
-										onInput={(e) => patchContainer({ rows: Number(e.currentTarget.value) })}
+										max={MAX_GRID_TRACKS}
+										step="1"
+										value={normalizeGridTrackCount(container.rows)}
+										onInput={(e) => {
+											const value = e.currentTarget.valueAsNumber;
+											if (validGridTrackCount(value)) patchContainer({ rows: value });
+										}}
 									/>
 								</label>
 							</div>
@@ -1731,6 +1746,11 @@ export default function Inspector({
 							{def.params?.length ? (
 								<>
 									<span className="hd">Params</span>
+									{def.params.some((p) => p.imported) && (
+										<div className="meta">
+											Shared widget parameters keep embedded pages sandboxed.
+										</div>
+									)}
 									{def.params.map((p) => (
 										<label
 											key={p.key}

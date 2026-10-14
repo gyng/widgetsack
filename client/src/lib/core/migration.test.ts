@@ -583,3 +583,44 @@ describe("parseLayoutNode preserves a 'content' (hug) basis", () => {
 		);
 	});
 });
+
+describe('group child validation', () => {
+	it.each([42, 'not a node', {}, { kind: 'bad' }, { id: 'leaf', unit: null }])(
+		'rejects a malformed inline group tree: %j',
+		(child) => {
+			expect(
+				parseLayoutNode({
+					id: 'g',
+					unit: { id: 'g', kind: 'group', size: { w: 10, h: 10 }, child }
+				})
+			).toBeNull();
+		}
+	);
+	it('normalizes reference-only groups to a safe inline fallback', () => {
+		expect(
+			parseLayoutNode({ id: 'g', unit: { id: 'g', kind: 'group', def: 'missing' } })
+		).toMatchObject({
+			unit: { size: { w: 0, h: 0 }, child: { kind: 'col', children: [] } }
+		});
+	});
+	it('filters malformed descendants inside a valid inline group', () => {
+		const parsed = parseLayoutNode({
+			id: 'g',
+			unit: {
+				id: 'g',
+				kind: 'group',
+				child: {
+					id: 'row',
+					kind: 'col',
+					children: [{ id: 'valid', unit: validWidgetNode }, { nope: true }]
+				}
+			}
+		});
+		expect(parsed).toHaveProperty('unit.child.children.length', 1);
+	});
+	it('bounds deeply nested nodes before they overflow the parser stack', () => {
+		let raw: unknown = { id: 'leaf', unit: validWidgetNode };
+		for (let i = 0; i < 10000; i++) raw = { id: String(i), kind: 'col', children: [raw] };
+		expect(() => parseLayoutNode(raw)).not.toThrow();
+	});
+});

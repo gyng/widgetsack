@@ -39,6 +39,47 @@ describe('isRemoteUrl', () => {
 });
 
 describe('scanTreeThreats', () => {
+	it('discloses native commands and parameters that can alter capabilities', () => {
+		const def: WidgetDef = {
+			id: 'def',
+			name: 'Commands',
+			size: { w: 100, h: 50 },
+			child: leaf(unit('run', 'command', { command: 'Get-Date' })),
+			params: [{ key: 'content', target: 'unit.config.command' }]
+		};
+		const threats = scanTreeThreats(def);
+		expect(threats.some((t) => t.kind === 'shell-command')).toBe(true);
+		expect(threats.some((t) => t.kind === 'parameter-controls')).toBe(true);
+		expect(treeThreatSummary(threats)).toContain('PowerShell');
+	});
+
+	it('discloses blank command widgets and both CSS and token parameter targets', () => {
+		const def: WidgetDef = {
+			id: 'styled',
+			name: 'Styled',
+			size: { w: 100, h: 50 },
+			child: leaf(unit('empty-command', 'command', {})),
+			params: [
+				{ key: 'css', target: 'unit.css' },
+				{ key: 'token', targets: ['unit.tokens.--np-bg'] }
+			]
+		};
+		const threats = scanTreeThreats(def);
+		expect(threats.filter((t) => t.kind === 'parameter-controls')).toHaveLength(2);
+		expect(threats.find((t) => t.kind === 'shell-command')?.detail).toBe('(not configured)');
+	});
+
+	it('does not warn for ordinary formatting parameters', () => {
+		const def: WidgetDef = {
+			id: 'clock',
+			name: 'Clock',
+			size: { w: 100, h: 50 },
+			child: leaf(unit('clock', 'clock', {})),
+			params: [{ key: 'format' }]
+		};
+		expect(scanTreeThreats(def)).toEqual([]);
+	});
+
 	it('discloses automatic service requests in imported layouts without flagging blank endpoints', () => {
 		const tree = container('root', 'col', [
 			leaf(unit('health', 'servicehealth', { url: 'http://nas.local/health' })),

@@ -15,12 +15,13 @@ import type { EditorState } from './types';
 
 const listLayouts = vi.fn<() => Promise<string[]>>();
 const readLayout = vi.fn<(name: string) => Promise<string | null>>();
-const saveLayoutAs = vi.fn<(name: string, json: string) => Promise<string | null>>();
+const saveLayoutAs =
+	vi.fn<(name: string, json: string, overwrite?: boolean) => Promise<string | null>>();
 const deleteLayout = vi.fn<(name: string) => Promise<boolean>>();
 vi.mock('../../overlay', () => ({
 	listLayouts: (...a: []) => listLayouts(...a),
 	readLayout: (...a: [string]) => readLayout(...a),
-	saveLayoutAs: (...a: [string, string]) => saveLayoutAs(...a),
+	saveLayoutAs: (...a: [string, string, boolean?]) => saveLayoutAs(...a),
 	deleteLayout: (...a: [string]) => deleteLayout(...a)
 }));
 
@@ -80,6 +81,26 @@ describe('section load', () => {
 });
 
 describe('saveCurrentLayout', () => {
+	it('requires confirmation for a case-insensitive filename collision', async () => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		listLayouts.mockResolvedValue(['HOME']);
+		const { result } = setup({ navSection: 'settings' });
+		await act(async () => result.current.saveCurrentLayout('Home'));
+		expect(confirm).toHaveBeenCalled();
+		expect(saveLayoutAs).not.toHaveBeenCalled();
+	});
+
+	it('does not write when existing filenames cannot be checked', async () => {
+		listLayouts.mockRejectedValueOnce(new Error('Access denied'));
+		const { result } = setup({ navSection: 'settings' });
+		await act(async () => result.current.saveCurrentLayout('Home'));
+		expect(saveLayoutAs).not.toHaveBeenCalled();
+		expect(listLayouts).toHaveBeenCalledWith(true);
+		expect(result.current.status).toEqual({
+			kind: 'error',
+			message: expect.stringContaining('Access denied')
+		});
+	});
 	it('refuses (status error) while editing a custom widget', async () => {
 		const { result } = setup({ editingDefId: 'd1' });
 		await act(async () => {
@@ -115,6 +136,7 @@ describe('saveCurrentLayout', () => {
 		});
 		expect(saveLayoutAs).toHaveBeenCalledTimes(1);
 		const [name, json] = saveLayoutAs.mock.calls[0];
+		expect(saveLayoutAs.mock.calls[0]?.[2]).toBe(false);
 		expect(name).toBe('Gaming');
 		expect(JSON.parse(json)).toEqual(packLayout(mon, 'Gaming'));
 		await waitFor(() => expect(result.current.layoutNames).toEqual(['Gaming']));
@@ -122,6 +144,28 @@ describe('saveCurrentLayout', () => {
 			kind: 'ok',
 			message: 'Saved preset Gaming · 1 preset'
 		});
+	});
+
+	it('saves the clicked layout when the monitor changes during the name check', async () => {
+		let release!: (names: string[]) => void;
+		listLayouts.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					release = resolve;
+				})
+		);
+		const clicked = monitorWith('clicked');
+		const { result, monitorRef } = setup({ navSection: 'settings', monitor: clicked });
+		let saving!: Promise<void>;
+		act(() => {
+			saving = result.current.saveCurrentLayout('Home');
+		});
+		monitorRef.current = monitorWith('new-target');
+		await act(async () => {
+			release([]);
+			await saving;
+		});
+		expect(JSON.parse(saveLayoutAs.mock.calls[0]![1])).toEqual(packLayout(clicked, 'Home'));
 	});
 
 	it('confirms before overwriting an existing name; declining aborts the write', async () => {
@@ -142,7 +186,7 @@ describe('saveCurrentLayout', () => {
 		await act(async () => {
 			await result.current.saveCurrentLayout('Home');
 		});
-		expect(saveLayoutAs).toHaveBeenCalledWith('Home', expect.any(String));
+		expect(saveLayoutAs).toHaveBeenCalledWith('Home', expect.any(String), true);
 		expect(result.current.status).toEqual({ kind: 'ok', message: 'Saved preset Home · 2 presets' });
 	});
 
@@ -195,6 +239,69 @@ describe('loadSavedLayout', () => {
 		expect(commitOp).not.toHaveBeenCalled();
 	});
 
+	it('does not replace a monitor that changes while a preset is being read', async () => {
+		let release!: (value: string) => void;
+		readLayout.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					release = resolve;
+				})
+		);
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		const { result, commitOp, monitorRef } = setup();
+		let loading!: Promise<void>;
+		act(() => {
+			loading = result.current.loadSavedLayout('Home');
+		});
+		monitorRef.current = monitorWith('other-monitor');
+		await act(async () => {
+			release(JSON.stringify(packLayout(monitorWith('saved'), 'Home')));
+			await loading;
+		});
+		expect(commitOp).not.toHaveBeenCalled();
+		expect(result.current.status?.kind).toBe('error');
+	});
+
+	it.each(['newer load', 'definition mode', 'unmount'] as const)(
+		'ignores an old preset read after %s',
+		async (action) => {
+			let release!: (raw: string) => void;
+			readLayout.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						release = resolve;
+					})
+			);
+			readLayout.mockResolvedValue(JSON.stringify(packLayout(monitorWith('newest'), 'Work')));
+			vi.spyOn(window, 'confirm').mockReturnValue(true);
+			const opts: Opts = { navSection: 'settings' };
+			const { result, commitOp, rerender, unmount } = setup(opts);
+			let loading!: Promise<void>;
+			act(() => {
+				loading = result.current.loadSavedLayout('Home');
+			});
+			if (action === 'newer load') {
+				await act(async () => {
+					await result.current.loadSavedLayout('Work');
+				});
+			} else if (action === 'definition mode') {
+				opts.editingDefId = 'd1';
+				rerender();
+			} else {
+				unmount();
+			}
+			await act(async () => {
+				release(JSON.stringify(packLayout(monitorWith('stale'), 'Home')));
+				await loading;
+			});
+			expect(commitOp).toHaveBeenCalledTimes(action === 'newer load' ? 1 : 0);
+			if (action === 'newer load') {
+				const patch = commitOp.mock.calls[0]![0]({} as EditorState);
+				expect((patch.monitor as MonitorLayout).root.children[0]!.id).toBe('newest');
+			}
+		}
+	);
+
 	it('asks to confirm the replace; declining does not commit', async () => {
 		readLayout.mockResolvedValue(JSON.stringify(packLayout(monitorWith('saved'), 'Home')));
 		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
@@ -238,6 +345,17 @@ describe('deleteSavedLayout', () => {
 		});
 		expect(confirm).toHaveBeenCalledWith('Delete the preset “Home”?');
 		expect(deleteLayout).not.toHaveBeenCalled();
+	});
+
+	it('reports a failed removal without claiming that the preset was deleted', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		deleteLayout.mockResolvedValue(false);
+		const { result } = setup({ navSection: 'settings' });
+		await act(async () => {
+			await result.current.deleteSavedLayout('Home');
+		});
+		expect(result.current.status?.kind).toBe('error');
+		expect(result.current.status?.message).toContain('Could not delete');
 	});
 
 	it('deletes + refreshes the list on confirm, with the remaining count in the status', async () => {

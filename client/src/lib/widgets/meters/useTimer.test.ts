@@ -18,6 +18,56 @@ const advance = (ms: number): void => {
 };
 
 describe('useTimer countdown', () => {
+	it('observes a shared running timer without publishing changes or accepting controls', () => {
+		const cfg: TimerConfig = { mode: 'countdown', duration: 10, storageKey: 'read-only-timer' };
+		const live = renderHook(() => useTimer(cfg));
+		act(() => live.result.current.start());
+		advance(2000);
+		const saved = localStorage.getItem(cfg.storageKey!);
+		const observer = renderHook(() => useTimer({ ...cfg, readOnly: true }));
+		expect(observer.result.current.seconds).toBeCloseTo(8, 5);
+		for (const action of [
+			observer.result.current.start,
+			observer.result.current.pause,
+			observer.result.current.reset,
+			() => observer.result.current.setCountdown(60)
+		]) {
+			act(action);
+			expect(observer.result.current.running).toBe(true);
+			expect(observer.result.current.seconds).toBeCloseTo(8, 5);
+		}
+		expect(localStorage.getItem(cfg.storageKey!)).toBe(saved);
+		act(() => live.result.current.pause());
+		expect(observer.result.current.running).toBe(false);
+		expect(observer.result.current.seconds).toBeCloseTo(8, 5);
+		act(() => observer.result.current.start());
+		expect(observer.result.current.running).toBe(false);
+		expect(live.result.current.running).toBe(false);
+	});
+	it('recovers persisted negative elapsed time produced by a backward-clock pause', () => {
+		localStorage.setItem(
+			'timer-negative',
+			JSON.stringify({
+				version: 1,
+				config: 'countdown:10:0',
+				runtime: { running: false, accumulatedMs: -1000, startedAt: null }
+			})
+		);
+		const { result } = renderHook(() =>
+			useTimer({ mode: 'countdown', duration: 10, storageKey: 'timer-negative' })
+		);
+		expect(result.current.seconds).toBe(10);
+	});
+	it('does not add time when the system clock moves backward before pause', () => {
+		const { result } = renderHook(() => useTimer({ mode: 'countdown', duration: 10 }));
+		act(() => result.current.start());
+		act(() => vi.setSystemTime(999000));
+		act(() => result.current.pause());
+		expect(result.current.seconds).toBe(10);
+		act(() => result.current.start());
+		advance(1000);
+		expect(result.current.seconds).toBeCloseTo(9, 5);
+	});
 	it('bounds dial selections and ignores non-finite values', () => {
 		const { result } = renderHook(() => useTimer({ mode: 'countdown', duration: 300, loop: true }));
 		act(() => result.current.setCountdown(9999));

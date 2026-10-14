@@ -15,7 +15,11 @@ impl IntegrationTask {
         make: impl FnOnce() -> Result<Option<F>, String>,
     ) -> Result<(), String> {
         let mut handle = self.handle.lock().await;
-        if !restart && handle.is_some() {
+        if !restart
+            && handle
+                .as_ref()
+                .is_some_and(|task| !task.inner().is_finished())
+        {
             return Ok(());
         }
         // Validate/load the replacement before interrupting the current worker.
@@ -47,6 +51,42 @@ mod tests {
         Arc,
         atomic::{AtomicUsize, Ordering},
     };
+    #[tokio::test]
+    async fn ensure_replaces_a_finished_worker() {
+        let task = IntegrationTask::default();
+        task.start(false, || Ok(Some(async {}))).await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                if task
+                    .handle
+                    .lock()
+                    .await
+                    .as_ref()
+                    .unwrap()
+                    .inner()
+                    .is_finished()
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("initial worker should finish");
+        let starts = AtomicUsize::new(0);
+        task.start(false, || {
+            starts.fetch_add(1, Ordering::SeqCst);
+            Ok(Some(std::future::pending()))
+        })
+        .await
+        .unwrap();
+        assert_eq!(
+            starts.load(Ordering::SeqCst),
+            1,
+            "a finished handle must not suppress a new connection"
+        );
+        assert!(task.stop().await);
+    }
     #[tokio::test]
     async fn ensure_shares_the_worker_and_failed_replacement_preserves_it() {
         let task = IntegrationTask::default();

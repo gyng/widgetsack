@@ -1,10 +1,10 @@
 use super::{
-    watch::{ChangeOrigin, watch_and_emit},
+    watch::{ChangeOrigin, event_changes_file, watch_and_emit},
     windows::respawn_main_hidden,
 };
 use crate::{
     bridge::LAYOUT_CHANGED_EVENT,
-    file_io::{atomic_write, config_root, valid_name},
+    file_io::{atomic_write, atomic_write_new, config_root, list_named_files, valid_name},
     log,
 };
 use serde::Serialize;
@@ -343,20 +343,7 @@ fn layouts_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// The saved-layout names (file stems of `layouts/*.layout.json`), sorted.
 #[tauri::command]
 pub fn list_layouts(app: tauri::AppHandle) -> Result<Vec<String>, String> {
-    let dir = layouts_dir(&app)?;
-    let mut names = Vec::new();
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if let Some(file) = path.file_name().and_then(|s| s.to_str())
-                && let Some(stem) = file.strip_suffix(".layout.json")
-            {
-                names.push(stem.to_string());
-            }
-        }
-    }
-    names.sort();
-    Ok(names)
+    list_named_files(&layouts_dir(&app)?, ".layout.json")
 }
 
 /// The JSON of saved layout `name`, or `None` if it doesn't exist. The frontend parses/validates it.
@@ -374,11 +361,13 @@ pub fn read_layout(app: tauri::AppHandle, name: String) -> Result<Option<String>
 }
 
 /// Write saved layout `name` (creates `layouts/`). Returns the absolute path written.
+/// `overwrite: false` publishes only if no file exists, even if another save wins after discovery.
 #[tauri::command]
 pub fn save_layout_as(
     app: tauri::AppHandle,
     name: String,
     contents: String,
+    overwrite: Option<bool>,
 ) -> Result<String, String> {
     if !valid_name(&name) {
         return Err("invalid layout name".to_string());
@@ -386,7 +375,11 @@ pub fn save_layout_as(
     let dir = layouts_dir(&app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{name}.layout.json"));
-    atomic_write(&path, &contents)?;
+    if overwrite.unwrap_or(true) {
+        atomic_write(&path, &contents)?;
+    } else {
+        atomic_write_new(&path, &contents)?;
+    }
     Ok(path.to_string_lossy().into_owned())
 }
 
@@ -416,19 +409,13 @@ pub fn watch_layout(app: tauri::AppHandle) -> Result<(), String> {
         .ok_or_else(|| "layout path has no parent".to_string())?
         .to_path_buf();
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let file_name = path.file_name().map(|n| n.to_os_string());
     let classify_path = path.clone();
     watch_and_emit(
         app,
         dir,
         "layout",
         LAYOUT_CHANGED_EVENT,
-        move |event| {
-            event
-                .paths
-                .iter()
-                .any(|p| p.file_name().map(|n| n.to_os_string()) == file_name)
-        },
+        move |event| event_changes_file(event, &path),
         move |app| {
             let current = fs::read(&classify_path).ok();
             match app.try_state::<LayoutIoState>() {

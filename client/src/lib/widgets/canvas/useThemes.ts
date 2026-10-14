@@ -13,6 +13,7 @@ import {
 	saveThemeCss
 } from '../../bridge/themes';
 import { parseTokens, swatchFromTokens, type Swatch } from '../../core/tokens';
+import { unusedFileName } from '../../core/fileNames';
 import { builtinById, builtinIdOf } from '../../core/builtinThemes';
 import type { EditorModel } from './useEditorModel';
 
@@ -71,6 +72,14 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 	// Mirrored in a commit effect (not during render); every read happens later, off-render.
 	const themeRef = useRef(selectedTheme);
 	const cssRequestRef = useRef(0);
+	const editorRequestRef = useRef(0);
+	useEffect(
+		() => () => {
+			cssRequestRef.current++;
+			editorRequestRef.current++;
+		},
+		[]
+	);
 	const resolveLatest = useCallback(async (name: string) => {
 		const request = ++cssRequestRef.current;
 		const css = await resolveThemeCss(name);
@@ -126,9 +135,16 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 	// Theme editor (item 5). A real (focus-managed) dialog: autofocus on open, focus-return on
 	// close, Esc-to-close handled locally (useKeyboard suppresses registry controls while a field
 	// is focused).
-	const [themeEditorOpen, setThemeEditorOpen] = useState(false);
+	const [themeEditorOpen, setEditorOpen] = useState(false);
+	const setThemeEditorOpen = useCallback((open: boolean) => {
+		editorRequestRef.current++;
+		setEditorOpen(open);
+	}, []);
 	const [themeDraft, setThemeDraft] = useState('');
 	const [themeDraftName, setThemeDraftName] = useState('');
+	useEffect(() => {
+		editorRequestRef.current++;
+	}, [themeDraft, themeDraftName]);
 	// The theme whose CSS we opened in the editor ('' = a brand-new theme). Used to tell an in-place
 	// save (no surprise) from a save that would clobber a DIFFERENT existing theme (confirm first).
 	const [themeOpenedName, setThemeOpenedName] = useState('');
@@ -151,70 +167,99 @@ export function useThemes({ studio, selectedTheme, dispatch, commitOp }: Deps): 
 	// toolbar button) — '' falls through to a starter scaffold for a new theme.
 	const openThemeEditor = useCallback(
 		async (name?: string) => {
+			const request = ++editorRequestRef.current;
 			themeTriggerRef.current = document.activeElement as HTMLElement;
 			const target = name ?? selectedTheme;
 			const builtinId = builtinIdOf(target);
 			let opened: { name: string; css: string };
-			if (builtinId) {
-				// Built-ins are immutable: opening one in the editor FORKS it into a new user theme. Seed
-				// the draft from the preset's CSS under its name, and treat it as brand-new (no in-place
-				// save).
-				setThemeOpenedName('');
-				opened = {
-					name: builtinById(builtinId)?.name ?? builtinId,
-					css: await resolveThemeCss(target)
-				};
-			} else {
-				setThemeOpenedName(target || '');
-				opened = {
-					name: target || 'custom',
-					css: target ? await loadThemeCss(target) : STARTER_THEME_CSS
-				};
+			try {
+				if (builtinId) {
+					// Built-ins are immutable: opening one in the editor FORKS it into a new user theme. Seed
+					// the draft from the preset's CSS under its name, and treat it as brand-new (no in-place
+					// save).
+					opened = {
+						name: builtinById(builtinId)?.name ?? builtinId,
+						css: await resolveThemeCss(target, true)
+					};
+				} else {
+					opened = {
+						name: target || 'custom',
+						css: target ? await loadThemeCss(target, true) : STARTER_THEME_CSS
+					};
+				}
+			} catch (error) {
+				if (request === editorRequestRef.current)
+					window.alert(`Could not open theme "${target}": ${String(error)}`);
+				return;
 			}
+			if (request !== editorRequestRef.current) return;
+			setThemeOpenedName(builtinId ? '' : target);
 			setThemeDraftName(opened.name);
 			setThemeDraft(opened.css);
 			setThemeOpened(opened);
-			setThemeEditorOpen(true);
+			setEditorOpen(true);
 		},
 		[selectedTheme]
 	);
 	const saveThemeEditor = useCallback(async () => {
+		const request = editorRequestRef.current;
 		const name = themeDraftName.trim();
 		if (!name) return;
+		let existing: string[];
+		try {
+			existing = await listThemes(true);
+		} catch (error) {
+			window.alert(`Could not check existing themes: ${String(error)}`);
+			return;
+		}
+		if (request !== editorRequestRef.current) return;
 		// Guard a destructive overwrite: saving under a name that already exists AND isn't the theme
 		// we opened in place. (Re-saving the theme you're editing under its own name is expected.)
-		if (name !== themeOpenedName && themeList.includes(name)) {
+		const inPlace = name.toLowerCase() === themeOpenedName.toLowerCase();
+		const exists = [...themeList, ...existing].some(
+			(saved) => saved.toLowerCase() === name.toLowerCase()
+		);
+		if (!inPlace && exists) {
 			if (!window.confirm(`Overwrite the existing theme "${name}"?`)) return;
 		}
 		try {
-			await saveThemeCss(name, themeDraft);
+			await saveThemeCss(name, themeDraft, inPlace || exists);
 		} catch (err) {
 			window.alert(`Could not save theme "${name}": ${String(err)}`);
 			return;
 		}
-		setThemeList(await listThemes());
+		if (request !== editorRequestRef.current) return;
+		const names = await listThemes();
+		if (request !== editorRequestRef.current) return;
+		setThemeList(names);
 		dispatch({ type: 'setTheme', name });
 		themeRef.current = name;
 		commitOp(() => ({})); // saveLayout()
 		await resolveLatest(name);
-		setThemeEditorOpen(false);
+		if (request === editorRequestRef.current) setEditorOpen(false);
 	}, [themeDraftName, themeDraft, themeOpenedName, themeList, dispatch, commitOp, resolveLatest]);
 	// Duplicate a theme to a free "<name>-copy" stem and open the copy for editing.
 	const duplicateTheme = useCallback(
 		async (name: string) => {
-			const existing = new Set(themeList);
-			// A built-in duplicates under its catalog name (e.g. "Nord-copy"), not "builtin:nord-copy".
-			const base = `${themeLabel(name).replace(/^\(default\)$/, 'theme')}-copy`;
-			let candidate = base;
-			let i = 2;
-			while (existing.has(candidate)) candidate = `${base}${i++}`;
+			const request = ++editorRequestRef.current;
+			const base = themeLabel(name).replace(/^\(default\)$/, 'theme');
+			let candidate: string;
 			try {
-				await saveThemeCss(candidate, await resolveThemeCss(name));
+				const existing = await listThemes(true);
+				if (request !== editorRequestRef.current) return;
+				candidate = unusedFileName(base, [...themeList, ...existing], '-copy', true);
+				const css = await resolveThemeCss(name, true);
+				if (request !== editorRequestRef.current) return;
+				await saveThemeCss(candidate, css, false);
 			} catch (err) {
-				window.alert(`Could not duplicate theme "${name}": ${String(err)}`);
+				if (request === editorRequestRef.current)
+					window.alert(`Could not duplicate theme "${name}": ${String(err)}`);
 				return;
 			}
-			setThemeList(await listThemes());
+			if (request !== editorRequestRef.current) return;
+			const names = await listThemes();
+			if (request !== editorRequestRef.current) return;
+			setThemeList(names);
 			await openThemeEditor(candidate);
 		},
 		[themeList, themeLabel, openThemeEditor]

@@ -1,7 +1,7 @@
 use super::watch::{ChangeOrigin, watch_and_emit};
 use crate::{
     bridge::THEMES_CHANGED_EVENT,
-    file_io::{atomic_write, config_root, valid_name},
+    file_io::{atomic_write, atomic_write_new, config_root, list_named_files, valid_name},
 };
 use std::{fs, path::PathBuf};
 
@@ -12,24 +12,19 @@ fn themes_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir.join("themes"))
 }
 
+fn theme_event_matches(event: &notify::Event) -> bool {
+    event.paths.iter().any(|path| {
+        path.extension()
+            .and_then(|value| value.to_str())
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("css"))
+    })
+}
+
 /// The theme names (file stems of `themes/*.css`), sorted. The frontend adds a synthetic
 /// "(default)" option (no theme = the meters' token fallbacks).
 #[tauri::command]
 pub fn list_themes(app: tauri::AppHandle) -> Result<Vec<String>, String> {
-    let dir = themes_dir(&app)?;
-    let mut names = Vec::new();
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|x| x.to_str()) == Some("css")
-                && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
-            {
-                names.push(stem.to_string());
-            }
-        }
-    }
-    names.sort();
-    Ok(names)
+    list_named_files(&themes_dir(&app)?, ".css")
 }
 
 /// The CSS of theme `name` (a bare file stem), or `None` if it doesn't exist.
@@ -48,14 +43,25 @@ pub fn load_theme(app: tauri::AppHandle, name: String) -> Result<Option<String>,
 
 /// Write theme `name` (used by the studio's theme editor + token panel, Phase 7d). Creates
 /// `themes/`. Atomic (temp + rename) so a concurrent overlay reload never reads a half-written file.
+/// `overwrite: false` rejects an existing destination at publication time, including concurrent saves.
 #[tauri::command]
-pub fn save_theme(app: tauri::AppHandle, name: String, contents: String) -> Result<(), String> {
+pub fn save_theme(
+    app: tauri::AppHandle,
+    name: String,
+    contents: String,
+    overwrite: Option<bool>,
+) -> Result<(), String> {
     if !valid_name(&name) {
         return Err("invalid theme name".to_string());
     }
     let dir = themes_dir(&app)?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    atomic_write(&dir.join(format!("{name}.css")), &contents)
+    let path = dir.join(format!("{name}.css"));
+    if overwrite.unwrap_or(true) {
+        atomic_write(&path, &contents)
+    } else {
+        atomic_write_new(&path, &contents)
+    }
 }
 
 /// Delete theme `name` → removes `themes/<name>.css`. Ok even if it's already gone (idempotent),
@@ -113,14 +119,27 @@ pub fn watch_themes(app: tauri::AppHandle) -> Result<(), String> {
         dir,
         "themes",
         THEMES_CHANGED_EVENT,
-        |event| {
-            event
-                .paths
-                .iter()
-                .any(|p| p.extension().and_then(|x| x.to_str()) == Some("css"))
-        },
+        theme_event_matches,
         |_| ChangeOrigin::External,
         |_| {},
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn theme_events_accept_case_variants_without_tracking_temporary_files() {
+        for (file, expected) in [
+            ("Nord.CSS", true),
+            ("normal.css", true),
+            ("normal.css.tmp-1", false),
+            ("notes.txt", false),
+        ] {
+            let event = notify::Event::new(notify::EventKind::Any).add_path(PathBuf::from(file));
+            assert_eq!(theme_event_matches(&event), expected, "{file}");
+        }
+    }
 }

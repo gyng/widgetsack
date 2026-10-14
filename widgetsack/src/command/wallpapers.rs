@@ -1,4 +1,4 @@
-use crate::file_io::config_root;
+use crate::file_io::{config_root, windows_device_name};
 use std::{fs, path::PathBuf};
 
 // ---- wallpapers: media for the per-monitor full-screen background layer ----
@@ -18,10 +18,15 @@ const WALLPAPER_EXTS: &[&str] = &[
 ];
 
 /// A wallpaper filename is a single path component with a media extension. Rejects separators / `..`
-/// (path traversal) but — unlike `valid_name` — ALLOWS the extension dot.
+/// (path traversal), Windows device names, and reserved characters. Allows Unicode and extension dots.
 fn valid_wallpaper_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= 128
+        && name == name.trim_end()
+        && !name
+            .chars()
+            .any(|c| c.is_control() || matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+        && !windows_device_name(name.split('.').next().unwrap_or("").trim_end())
         && !name.contains('/')
         && !name.contains('\\')
         && !name.contains("..")
@@ -80,6 +85,34 @@ pub fn open_wallpapers_dir(app: tauri::AppHandle) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn wallpaper_name_is_one_windows_media_filename() {
+        for name in [
+            "C:outside.png",
+            "file:stream.jpg",
+            "CON.png",
+            "nul.preview.jpg",
+            "LPT1.mp4",
+            "COM¹.png",
+            "CONIN$.jpg",
+            "bad?.png",
+            "bad*.webm",
+            "bad|.jpg",
+            "bad\".jpg",
+            "bad<.png",
+            "bad>.png",
+            "new\nline.png",
+            "CON .png",
+            "trailing.png ",
+        ] {
+            assert!(
+                !super::valid_wallpaper_name(name),
+                "unsafe filename accepted: {name:?}"
+            );
+        }
+        assert!(super::valid_wallpaper_name("壁紙.png"));
+    }
 
     #[test]
     fn valid_wallpaper_name_requires_media_ext_and_no_traversal() {

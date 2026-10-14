@@ -88,6 +88,19 @@ Sensor access and helper functions are explicitly provided.
 Package sources use a separate sandbox and host-controlled fetch process.
 See [Plugin packages](plugin-packages.md) for its contract and limits.
 
+## AI provider requests
+
+`llm.rs` adapts OpenAI, Anthropic, and Ollama responses to the shared chat store.
+Provider stream errors end the turn with an error instead of a successful completion.
+Streams have a 1 MiB line limit and a 64 MiB response limit.
+Raw bytes remain buffered until a complete line is available, preserving split UTF-8 characters.
+Completion and error frames stop parsing the response.
+Transport errors omit the configured endpoint URL.
+`http_response.rs` enforces body limits before JSON or audio decoding.
+AI JSON responses have a 16 MiB limit, error bodies 256 KiB, and audio 32 MiB.
+Home Assistant REST JSON responses have a 64 MiB limit.
+Weather and stock JSON responses have an 8 MiB limit.
+
 ## Agents
 
 The assistant discovers installed Pi, Codex, and Claude executables.

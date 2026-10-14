@@ -24,7 +24,8 @@ Snoozes end when the window session ends.
 A configured Agenda feed can also provide meeting reminders.
 Set **meeting reminder** to zero to disable them.
 All-day and past events do not trigger reminders.
-The overlay shows nothing when there are no alerts.
+Calendar parse warnings remain visible so a missing reminder does not appear as “All clear”.
+The overlay shows nothing when there are no alerts or calendar warnings.
 The designer preview shows “All clear”.
 
 ## Service Health

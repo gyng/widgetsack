@@ -60,8 +60,8 @@ export default function FlowNode({
 
 	if (isContainer(node)) {
 		// An unmet conditional container keeps its slot but hides its subtree (visibility inherits to
-		// descendants, and hidden elements don't take pointer events). Keyed by raw node id.
-		const hidden = hiddenIds?.has(node.id);
+		// descendants, and hidden elements don't take pointer events). Keyed by rendered instance ID.
+		const hidden = hiddenIds?.has(id);
 		const hideStyle: Record<string, string> = hidden ? { visibility: 'hidden' } : {};
 		return (
 			<div

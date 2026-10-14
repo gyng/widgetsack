@@ -1,3 +1,4 @@
+import { applyParams } from './solve';
 import { describe, expect, it } from 'vitest';
 import {
 	isSack,
@@ -58,6 +59,32 @@ describe('sack pack/unpack', () => {
 		});
 	});
 
+	it.each([
+		{ version: 2 },
+		{ name: 42 },
+		{ tokens: [] },
+		{ theme: null },
+		{ theme: [] },
+		{ theme: { name: 42, css: 'x' } },
+		{ theme: { name: 'Broken', css: 42 } },
+		{ library: { version: 1, defs: [null] } },
+		{
+			library: {
+				version: 1,
+				defs: [{ id: 'bad', name: 'Bad', size: { w: 100, h: 50 }, child: null }]
+			}
+		}
+	])('rejects malformed shared content before import scanning: %j', (fields) => {
+		expect(
+			unpackSack(JSON.stringify({ kind: 'widgetsack/sack', version: 1, ...fields }))
+		).toBeNull();
+	});
+
+	it.each([null, [], 42])('rejects a non-object sack root: %j', (value) => {
+		expect(isSack(value)).toBe(false);
+		expect(unpackSack(JSON.stringify(value))).toBeNull();
+	});
+
 	it('isSack rejects a raw widgets.json (no kind tag), and unpack rejects malformed input', () => {
 		expect(isSack({ version: 2, monitors: {} })).toBe(false);
 		expect(unpackSack('{"version":2,"monitors":{}}')).toBeNull();
@@ -66,6 +93,16 @@ describe('sack pack/unpack', () => {
 });
 
 describe('mergeLibrary', () => {
+	it('keeps prototype-named IDs and does not invent remaps for inherited keys', () => {
+		const { library, idMap } = mergeLibrary(undefined, [
+			mkDef('__proto__'),
+			mkDef('wrapper', groupLeaf('g', 'constructor'))
+		]);
+		expect(library.defs[0]!.id).toBe('__proto__');
+		expect(Object.hasOwn(idMap, '__proto__')).toBe(true);
+		expect((library.defs[1]!.child as Leaf).unit).toMatchObject({ def: 'constructor' });
+	});
+
 	it('appends non-colliding defs unchanged', () => {
 		const into: Library = { version: 1, defs: [mkDef('a')] };
 		const { library, idMap } = mergeLibrary(into, [mkDef('b')]);
@@ -226,6 +263,24 @@ describe('sackConsentMessage', () => {
 });
 
 describe('sanitizeSack', () => {
+	it('keeps imported iframe parameters sandboxed after their values are applied', () => {
+		const source = packSack({
+			library: {
+				version: 1,
+				defs: [
+					{
+						...mkDef('frame', iframeLeaf('f', { url: 'https://example.com', sandbox: true })),
+						params: [{ key: 'sandbox', default: true }]
+					}
+				]
+			}
+		});
+		const def = sanitizeSack(source).sack.library!.defs[0]!;
+		const original = structuredClone(def.child);
+		const tree = (applyParams(original, def.params, { sandbox: false }) ?? original) as Leaf;
+		expect((tree.unit as import('./layout').WidgetInstance).config.sandbox).toBe(true);
+	});
+
 	it('forces the iframe sandbox on and drops unsafe param specs, counting changes; input untouched', () => {
 		const sack = {
 			kind: 'widgetsack/sack' as const,

@@ -499,8 +499,7 @@ export function resolveTemplateOptions(
  * options and library params can never drift. Returns template-local ids (remap via freshIds). */
 export function instantiateTemplate(t: Template, options?: Record<string, string>): LayoutNode {
 	const tree = t.tree(); // a fresh tree each call — safe to write params onto
-	applyParams(tree, t.params, resolveTemplateOptions(t, options));
-	return tree;
+	return applyParams(tree, t.params, resolveTemplateOptions(t, options));
 }
 
 /** Deep-clone a flow tree with fresh, unique node/unit ids. Template-local ids are stable, so two

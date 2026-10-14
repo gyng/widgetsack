@@ -32,6 +32,8 @@ export type TreeThreatKind =
 	| 'remote-background' // a monitor wallpaper (`background.src`) that is a remote URL
 	| 'service-check' // a configured HTTP endpoint contacted automatically by Service Health
 	| 'button-macro' // a button carrying service calls (domain.service list)
+	| 'shell-command'
+	| 'parameter-controls'
 	| 'css'; // unit / def css or token values with CSS threats (cssThreats.ts)
 
 export type TreeThreat = {
@@ -98,7 +100,13 @@ export function scanTreeThreats(input: ScannableTree): TreeThreat[] {
 			return;
 		}
 		const cfg = (unit.config ?? {}) as Record<string, unknown>;
-		if (unit.type === 'iframe') {
+		if (unit.type === 'command') {
+			add(
+				'shell-command',
+				unit.id,
+				typeof cfg.command === 'string' ? cfg.command : '(not configured)'
+			);
+		} else if (unit.type === 'iframe') {
 			add('iframe', unit.id, snippet(typeof cfg.url === 'string' ? cfg.url : '(no url)'));
 			if (cfg.sandbox === false) add('iframe-unsandboxed', unit.id, 'sandbox: false');
 			if (cfg.interact === true) add('iframe-interactive', unit.id, 'interact: true');
@@ -133,6 +141,33 @@ export function scanTreeThreats(input: ScannableTree): TreeThreat[] {
 		walk(input.root);
 		input.floating.forEach(walk);
 	} else if (isDef(input)) {
+		for (const param of input.params ?? []) {
+			const targets = param.targets ?? [param.target ?? `unit.config.${param.key}`];
+			const capable = targets.some((target) => {
+				const parts = target.split('.');
+				return (
+					parts.some((part) => part === 'css' || part === 'tokens') ||
+					[
+						'unit',
+						'child',
+						'children',
+						'config',
+						'type',
+						'sandbox',
+						'url',
+						'src',
+						'host',
+						'command',
+						'actions',
+						'entity',
+						'sources',
+						'volumeTarget',
+						'volumeDevice'
+					].includes(parts.at(-1)!)
+				);
+			});
+			if (capable) add('parameter-controls', input.id, JSON.stringify(param));
+		}
 		addCss(input.id, scanCssThreats(input.css));
 		walk(input.child);
 	} else {
@@ -180,6 +215,24 @@ export function treeThreatSummary(threats: readonly TreeThreat[]): string {
 	const macros = n('button-macro');
 	if (macros)
 		bits.push(plural(macros, 'button that runs service calls', 'buttons that run service calls'));
+	const commands = n('shell-command');
+	if (commands)
+		bits.push(
+			plural(
+				commands,
+				'widget that runs PowerShell commands',
+				'widgets that run PowerShell commands'
+			)
+		);
+	const parameters = n('parameter-controls');
+	if (parameters)
+		bits.push(
+			plural(
+				parameters,
+				'parameter that can change widget types, network addresses, commands, or styles',
+				'parameters that can change widget types, network addresses, commands, or styles'
+			)
+		);
 	const css = n('css');
 	if (css)
 		bits.push(

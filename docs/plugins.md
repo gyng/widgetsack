@@ -14,6 +14,19 @@ Packages can add widget templates, themes, and sensor sources.
 The widget list shows a configuration link for Home Assistant and AI Provider.
 Use this link when a widget reports that its connection is not configured.
 
+## Calendar feed
+
+Select **Agenda** in Plugins and enter an ICS calendar address.
+Keep a private calendar address secret. `webcal://` addresses also work.
+After you save the address, leave the field blank to keep it.
+Add an Agenda widget to show the events, or use **Status / Alerts** for meeting reminders.
+
+Times appear in the computer's local timezone.
+The feed can supply its own timezone rules or use IANA timezone names.
+Repeating events are expanded for the next 366 days.
+Non-repeating future events can appear beyond this period.
+The list holds up to 2,048 events. A warning appears when it reaches this limit or some events cannot be read.
+
 ## Install a package
 
 1. Open **Plugins**.
@@ -28,6 +41,7 @@ Use a GitHub `tree/<ref>` URL to select a branch or tag.
 
 New packages are disabled.
 The enable prompt lists network hosts and widget or theme features that need approval.
+Embedded pages in shared widgets stay sandboxed after parameter changes.
 Only enable packages from sources you trust.
 
 ## Use a package

@@ -5,6 +5,8 @@
 ;   1. a "Launch widgetsack at login" checkbox on the finish page (WS_AutostartShow/WS_AutostartLeave)
 ;      that writes the durable HKCU preference the app re-asserts on startup (see widgetsack/src/autostart.rs);
 ;   2. cleanup of that preference in the delete-app-data branch.
+;   3. installation-scoped file guards instead of image-name process termination;
+;   4. guarded replacement uninstallers instead of executing old shutdown hooks.
 ; RE-SYNC THIS FILE when the Tauri bundler is upgraded: diff against the new version's
 ; src/bundle/windows/nsis/installer.nsi and re-apply the WIDGETSACK additions.
 Unicode true
@@ -37,6 +39,8 @@ ${StrLoc}
 {{#if installer_hooks}}
 !include "{{installer_hooks}}"
 {{/if}}
+!insertmacro _WS_DEFINE_REMOVE_TREE ""
+!insertmacro _WS_DEFINE_REMOVE_TREE "un."
 
 !define WEBVIEW2APPGUID "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
 
@@ -356,7 +360,8 @@ Function PageLeaveReinstall
       ExecWait '$R1' $0
     ${Else}
       ReadRegStr $4 SHCTX "${MANUPRODUCTKEY}" ""
-      ReadRegStr $R1 SHCTX "${UNINSTKEY}" "UninstallString"
+      ; WIDGETSACK: do not execute legacy uninstallers with global process shutdown hooks.
+      !insertmacro _WS_REPLACEMENT_UNINSTALLER
       ${IfThen} $UpdateMode = 1 ${|} StrCpy $R1 "$R1 /UPDATE" ${|} ; append /UPDATE
       ${IfThen} $PassiveMode = 1 ${|} StrCpy $R1 "$R1 /P" ${|} ; append /P
       StrCpy $R1 "$R1 _?=$4" ; append uninstall directory
@@ -681,7 +686,7 @@ Section Install
     !insertmacro NSIS_HOOK_PREINSTALL
   !endif
 
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  ; WIDGETSACK: NSIS_HOOK_PREINSTALL checks this executable without terminating other copies.
 
   ; Copy main executable
   File "${MAINBINARYSRCPATH}"
@@ -818,7 +823,7 @@ Section Uninstall
     !insertmacro NSIS_HOOK_PREUNINSTALL
   !endif
 
-  !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+  ; WIDGETSACK: NSIS_HOOK_PREUNINSTALL checks this executable without terminating other copies.
 
   ; Delete the app directory and its content from disk
   ; Copy main executable

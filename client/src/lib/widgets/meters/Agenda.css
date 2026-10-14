@@ -101,3 +101,10 @@
 	font-size: 0.72em;
 	color: var(--np-label, rgba(255, 255, 255, 0.6));
 }
+
+.ag-status {
+	flex: 0 0 auto;
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
+	color: var(--np-warn, #ffd280);
+}

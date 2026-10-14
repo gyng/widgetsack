@@ -2,15 +2,17 @@
 // readable; nothing in core/ changes). `hub.sensor(id).getSnapshot()` returns a referentially
 // stable SensorState (same object until a sample arrives), so useSyncExternalStore won't tear.
 import { useCallback, useSyncExternalStore } from 'react';
-import type { SensorState, TelemetryHub } from '../core/telemetry';
+import { emptySensorState, type SensorState, type TelemetryHub } from '../core/telemetry';
 
-export function useSensor(hub: TelemetryHub, id: string, enabled = true): SensorState {
+const EMPTY = emptySensorState();
+
+export function useSensor(hub: TelemetryHub | null, id: string, enabled = true): SensorState {
 	// Memoize by [hub, id] so we only re-subscribe when the sensor id changes (mirrors Svelte's
 	// `$: store = sensorStore(hub, id)` recreating the readable on id change).
 	const subscribe = useCallback(
-		(cb: () => void) => (enabled ? hub.sensor(id).subscribe(cb) : () => undefined),
+		(cb: () => void) => (enabled && hub ? hub.sensor(id).subscribe(cb) : () => undefined),
 		[hub, id, enabled]
 	);
-	const getSnapshot = useCallback(() => hub.sensor(id).getSnapshot(), [hub, id]);
+	const getSnapshot = useCallback(() => hub?.sensor(id).getSnapshot() ?? EMPTY, [hub, id]);
 	return useSyncExternalStore(subscribe, getSnapshot);
 }

@@ -334,6 +334,7 @@ const WS_PING_INTERVAL: Duration = Duration::from_secs(30);
 const WS_READ_TIMEOUT: Duration = Duration::from_secs(90);
 /// Budget for the short REST calls (`/api/states`, a service call) and every connect.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+const JSON_BODY_LIMIT: usize = 64 * 1024 * 1024;
 
 /// Pure seam for the application-level ping/pong: tracks the OLDEST unanswered ping so a socket
 /// that keeps accepting our pings but never answers is declared dead after `timeout`.
@@ -1114,11 +1115,11 @@ pub async fn list_ha_entities<R: Runtime>(app: AppHandle<R>) -> Result<Vec<HaEnt
         .timeout(HTTP_TIMEOUT)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
         return Err(format!("GET /api/states failed: {}", resp.status()));
     }
-    let states: Vec<Value> = resp.json().await.map_err(|e| e.to_string())?;
+    let states: Vec<Value> = crate::http_response::read_json(resp, JSON_BODY_LIMIT).await?;
     Ok(states.iter().filter_map(entity_from_state).collect())
 }
 
@@ -1183,11 +1184,11 @@ pub async fn ha_call_service<R: Runtime>(
         .timeout(HTTP_TIMEOUT)
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
         return Err(format!("HA service call failed: {}", resp.status()));
     }
-    resp.json().await.map_err(|e| e.to_string())
+    crate::http_response::read_json(resp, JSON_BODY_LIMIT).await
 }
 
 /// Fetch historical state for ONE entity over [start, end] (ISO-8601 UTC) via REST
@@ -1233,12 +1234,12 @@ pub async fn ha_history<R: Runtime>(
         .timeout(std::time::Duration::from_secs(120))
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
         return Err(format!("GET /api/history failed: {}", resp.status()));
     }
     // HA returns an array-of-arrays (one inner array per filtered entity); we filtered to one.
-    let data: Vec<Value> = resp.json().await.map_err(|e| e.to_string())?;
+    let data: Vec<Value> = crate::http_response::read_json(resp, JSON_BODY_LIMIT).await?;
     Ok(data
         .first()
         .map(|h| history_to_samples(&entity_id, h))
@@ -1263,7 +1264,7 @@ pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result
         .timeout(std::time::Duration::from_secs(20))
         .send()
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
         return Err(format!("GET art failed: {}", resp.status()));
     }
@@ -1283,7 +1284,11 @@ pub async fn ha_media_art<R: Runtime>(app: AppHandle<R>, path: String) -> Result
     }
     let mut resp = resp;
     let mut bytes = Vec::new();
-    while let Some(chunk) = resp.chunk().await.map_err(|e| e.to_string())? {
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(crate::http_response::request_error)?
+    {
         accept_art_chunk(&mut bytes, &chunk, ART_MAX_BYTES)?;
     }
     let img = std::sync::Arc::new(crate::listener::ImageWrapper::new(content_type, bytes));

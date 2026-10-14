@@ -166,6 +166,27 @@ describe('FlowNode — overlap (stacking) parents', () => {
 });
 
 describe('FlowNode — conditional containers (hiddenIds)', () => {
+	it('hides only the matching group instance when child container IDs are shared', () => {
+		const child = container('conditional', 'col', [leaf(prim('A'))]);
+		const node = container('root', 'col', [
+			leaf(group('one', { w: 100, h: 100 }, child)),
+			leaf(group('two', { w: 100, h: 100 }, child))
+		]);
+		const view = render(
+			<FlowNode
+				node={node}
+				parentKind="col"
+				renderLeaf={renderLeaf}
+				hiddenIds={new Set(['one/conditional'])}
+			/>
+		);
+		expect(view.container.querySelector('[data-id="one/conditional"]')).toHaveStyle({
+			visibility: 'hidden'
+		});
+		expect(view.container.querySelector('[data-id="two/conditional"]')).not.toHaveAttribute(
+			'data-hidden'
+		);
+	});
 	it('an unmet conditional container keeps its slot but hides its subtree', () => {
 		const node = container('cond', 'col', [leaf(prim('A'))]);
 		const view = render(

@@ -29,6 +29,8 @@ See the [widget reference](docs/widgets.md) for the full list of widgets and the
 
 ## Getting started
 
+For an update, save your Studio changes and exit Widgetsack from the tray before you run the installer.
+
 1. Install Widgetsack with the [latest installer](https://github.com/gyng/widgetsack/releases/latest).
 2. Open **Studio** from the tray icon or Start menu.
 3. Open **Layout**. Select a monitor above the outline.

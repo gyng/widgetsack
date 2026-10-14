@@ -31,6 +31,7 @@ import { readOverlayPrefs, type OverlayLayer } from './widgets/canvas/overlayPre
 import type { OverlayPresentation } from './widgets/canvas/overlayPresentation';
 import { COMMANDS, EVENTS } from './bridge/contract';
 import { singleFlight } from './core/singleFlight';
+import { asyncCache } from './core/asyncCache';
 import {
 	driftTrigger,
 	fitWindowVerified,
@@ -383,7 +384,9 @@ let ownRevealed = false;
  * Best-effort: failures are logged, never thrown. */
 export async function fillOwnMonitor(key: string): Promise<void> {
 	try {
-		const [monitors, ids] = await Promise.all([availableMonitors(), displayIds()]);
+		const [monitors, ids] = await displayIdsCache.snapshot(() =>
+			Promise.all([availableMonitors(), displayIds()])
+		);
 		const m = monitorByKey(monitors, key, ids.stable);
 		const win = getCurrentWindow();
 		if (!m) {
@@ -400,11 +403,11 @@ export async function fillOwnMonitor(key: string): Promise<void> {
 			await win.setShadow(false);
 		}
 		if (!ownRevealed) {
-			ownRevealed = true;
 			// Click-through BEFORE the window is ever visible (a passive secondary starts
 			// click-through; edit mode can't be on at first reveal), then show and seed the z-order.
 			if (!prefs.debugWindowed) await win.setIgnoreCursorEvents(true);
 			await win.show();
+			ownRevealed = true;
 			fadeInOverlayContent();
 			// show() raises the window; re-assert the chosen z-order layer AFTER it (see
 			// setMainWindowVisible). Safe to apply the full layer here, incl. the wallpaper SetParent,
@@ -437,7 +440,9 @@ export async function overlayDrift(key: string | null): Promise<string | null> {
 		if (readOverlayPrefs().debugWindowed) return null;
 		let m: Monitor | null;
 		if (key) {
-			const [monitors, ids] = await Promise.all([availableMonitors(), displayIds()]);
+			const [monitors, ids] = await displayIdsCache.snapshot(() =>
+				Promise.all([availableMonitors(), displayIds()])
+			);
 			m = monitorByKey(monitors, key, ids.stable);
 		} else {
 			m = (await primaryMonitor()) ?? (await currentMonitor());
@@ -513,7 +518,7 @@ export function watchDisplayChanges(
 				// mis-fit during an HDMI switch was otherwise invisible in the postmortem.
 				logClient('info', 'overlay', 'display topology changed', { previous: last, current: s });
 				last = s;
-				displayIdsCache = null; // GDI names may have been re-numbered with it
+				displayIdsCache.invalidate(); // GDI names may have been re-numbered with it
 				onChange();
 				return;
 			}
@@ -641,11 +646,9 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 export async function studioMonitorOptions(): Promise<
 	{ key: string; label: string; name: string; w: number; h: number }[]
 > {
-	const [all, primary, ids] = await Promise.all([
-		availableMonitors(),
-		primaryMonitor(),
-		displayIds()
-	]);
+	const [all, primary, ids] = await displayIdsCache.snapshot(() =>
+		Promise.all([availableMonitors(), primaryMonitor(), displayIds()])
+	);
 	const options = all.map((m, i) => {
 		const isPrimary =
 			!!primary && m.position.x === primary.position.x && m.position.y === primary.position.y;
@@ -694,18 +697,10 @@ async function displayIds(): Promise<{ friendly: Map<string, string>; stable: St
 	// Cached: stable ids are, by definition, stable while the topology is — and this runs on every
 	// poller tick (drift probe), every fit and every reconcile. Invalidated by the topology poller on
 	// a change and by a TTL as a safety net. Every caller is in the same webview.
-	const now = Date.now();
-	if (displayIdsCache && now - displayIdsCache.at < DISPLAY_IDS_TTL_MS) return displayIdsCache.ids;
-	const ids = await fetchDisplayIds();
-	displayIdsCache = { at: now, ids };
-	return ids;
+	return displayIdsCache.get();
 }
 
-let displayIdsCache: {
-	at: number;
-	ids: { friendly: Map<string, string>; stable: StableIds };
-} | null = null;
-const DISPLAY_IDS_TTL_MS = 60_000;
+const displayIdsCache = asyncCache(fetchDisplayIds, Date.now, 60_000);
 
 async function fetchDisplayIds(): Promise<{ friendly: Map<string, string>; stable: StableIds }> {
 	const friendly = new Map<string, string>();
@@ -750,13 +745,15 @@ async function windowStateHints(): Promise<WindowGeometryHint[]> {
  * (the loser errors). Wrapped in {@link singleFlight} below so overlapping calls collapse into the
  * in-flight pass plus at most one trailing rerun that picks up whatever changed meanwhile. */
 async function reconcileOverlaysOnce(): Promise<void> {
-	const [monitors, primary, existing, ids, hints] = await Promise.all([
-		availableMonitors(),
-		primaryMonitor(),
-		getAllWebviewWindows(),
-		displayIds(),
-		windowStateHints()
-	]);
+	const [monitors, primary, existing, ids, hints] = await displayIdsCache.snapshot(() =>
+		Promise.all([
+			availableMonitors(),
+			primaryMonitor(),
+			getAllWebviewWindows(),
+			displayIds(),
+			windowStateHints()
+		])
+	);
 	const isPrimaryMon = (m: Monitor): boolean =>
 		!!primary && m.position.x === primary.position.x && m.position.y === primary.position.y;
 	// Legacy key → stable identity key (core/monitorMigration.ts): the old enumeration index AND the

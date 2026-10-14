@@ -103,10 +103,7 @@
 	line-height: var(--line-body);
 	z-index: 7;
 	pointer-events: auto;
-	/* No entry animation: the panel is opaque and covers the whole stage, so fading it up from
-	   opacity:0 briefly revealed the layout/stage behind it — a flash on every tab switch. An instant,
-	   opaque swap is flash-free. (A content-only fade could return the "new screen" cue without
-	   exposing the stage, but the hard swap is the safe fix.) */
+	/* Keep section panels opaque during navigation. */
 }
 
 /* A picker grid (widget types / templates) that spreads across the full-screen panel. */

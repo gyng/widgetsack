@@ -54,11 +54,13 @@ export function createStudioAgentSession(
 	let active: { id: string; target: string; expected: StudioSnapshot | null } | null = null;
 	let disposed = false;
 	let stopping: Promise<void> | null = null;
+	let stopRevision = 0;
 	const update = (patch: Partial<AgentState>) => {
 		state = { ...state, ...patch };
 		if (!disposed) publish(state);
 	};
 	const stop = () => {
+		stopRevision++;
 		const run = active;
 		active = null;
 		if (run) stopping = ports.cancel(run.id).catch(() => {});
@@ -66,9 +68,10 @@ export function createStudioAgentSession(
 	};
 	const send = async (text: string, backend: string, model: string) => {
 		if (active || disposed || !text.trim()) return;
+		const revision = stopRevision;
 		if (stopping) {
 			await stopping;
-			if (active || disposed) return;
+			if (active || disposed || revision !== stopRevision) return;
 		}
 		const snapshot = studio.read();
 		const run = {

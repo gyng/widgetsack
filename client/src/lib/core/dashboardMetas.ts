@@ -54,7 +54,12 @@ export const dashboardMetas: WidgetMeta[] = [
 		sensors: (c) =>
 			Object.fromEntries([
 				...alertRules(String(c.rules ?? '')).map((r) => [r.sensor, r.sensor]),
-				...(boundedNumber(c.meetingMinutes, 10, 0, 120) > 0 ? [['agenda.list', 'agenda.list']] : [])
+				...(boundedNumber(c.meetingMinutes, 10, 0, 120) > 0
+					? [
+							['agenda.list', 'agenda.list'],
+							['agenda.parse', 'agenda.parse']
+						]
+					: [])
 			])
 	},
 	{

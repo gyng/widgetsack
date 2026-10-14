@@ -87,7 +87,10 @@ export function verifyStudioLayout(
 			const defId = node.unit.def;
 			if (defId && !library?.defs.some((def) => def.id === defId))
 				issue(id, 'definition', 'The referenced custom widget definition is missing.');
-			walk(resolveGroup(node.unit, library).child, id + '/', depth + 1);
+			const resolved = resolveGroup(node.unit, library);
+			if (resolved.unsafe)
+				issue(id, 'nesting', 'Custom widget references form a cycle or exceed the nesting limit.');
+			else walk(resolved.child, id + '/', depth + 1);
 		} else if (!types.includes(node.unit.type))
 			issue(id, 'type', `Unknown widget type: ${node.unit.type}`);
 	};

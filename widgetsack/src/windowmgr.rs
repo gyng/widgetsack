@@ -321,6 +321,27 @@ struct DragEvent {
 }
 
 #[cfg(target_os = "windows")]
+#[derive(Clone, Copy, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DragEndEvent {
+    hwnd: i64,
+    pointer: Option<PointerState>,
+}
+
+#[cfg(target_os = "windows")]
+fn release_pointer() -> Option<PointerState> {
+    use windows::Win32::Foundation::POINT;
+    use windows::Win32::UI::WindowsAndMessaging::GetPhysicalCursorPos;
+    let mut point = POINT::default();
+    unsafe { GetPhysicalCursorPos(&mut point) }.ok()?;
+    Some(PointerState {
+        x: f64::from(point.x),
+        y: f64::from(point.y),
+        shift: shift_held(),
+    })
+}
+
+#[cfg(target_os = "windows")]
 fn shift_held() -> bool {
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_SHIFT};
     (unsafe { GetAsyncKeyState(VK_SHIFT.0 as i32) } as u16 & 0x8000) != 0
@@ -489,7 +510,13 @@ fn apply_drag_action(action: DragAction) {
             let _ = app.emit(crate::bridge::WIN_DRAG_START_EVENT, DragEvent { hwnd: id });
         }
         DragAction::End(id) => {
-            let _ = app.emit(crate::bridge::WIN_DRAG_END_EVENT, DragEvent { hwnd: id });
+            let _ = app.emit(
+                crate::bridge::WIN_DRAG_END_EVENT,
+                DragEndEvent {
+                    hwnd: id,
+                    pointer: release_pointer(),
+                },
+            );
         }
         DragAction::None => {}
     }
@@ -1036,22 +1063,44 @@ mod tests {
         assert_eq!(json["y"], 20.0);
         assert_eq!(json["shift"], true);
     }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn drag_end_serializes_captured_pointer_and_read_failure() {
+        let pointer = Some(PointerState {
+            x: 10.0,
+            y: 20.0,
+            shift: false,
+        });
+        let json = serde_json::to_value(DragEndEvent { hwnd: 42, pointer }).unwrap();
+        assert_eq!(json["hwnd"], 42);
+        assert_eq!(
+            json["pointer"],
+            serde_json::json!({ "x": 10.0, "y": 20.0, "shift": false })
+        );
+        let json = serde_json::to_value(DragEndEvent {
+            hwnd: 42,
+            pointer: None,
+        })
+        .unwrap();
+        assert!(json["pointer"].is_null());
+    }
 }
 
 /// Opt-in LIVE smoke test of the real `SetWindowPos` path (the one thing the pure seams can't cover):
-/// spawn a throwaway Notepad, snap it into a target rect, read its real geometry back to prove it
+/// spawn an owned test window, snap it into a target rect, read its real geometry back to prove it
 /// moved, then close it. `#[ignore]` so normal `cargo test` / CI never spawns a GUI window — run it
 /// explicitly:  `cargo test -p widgetsack -- --ignored --nocapture snap_moves_a_real_window`.
-/// The window is identified by DIFFING the arrangeable-window set across the spawn, so it can never
-/// hijack a window you already had open, and it is closed before any assertion (so a failure never
-/// leaves it behind).
+/// The fixture runs in a dedicated child process and reports its HWND. Tests verify that HWND's
+/// PID before using it; cleanup terminates only the owned child process.
 #[cfg(all(test, target_os = "windows"))]
 mod manual_smoke {
     use super::*;
-    use std::collections::HashSet;
-    use std::process::Command;
+    use std::io::{BufRead, BufReader};
+    use std::os::windows::process::CommandExt;
+    use std::process::{Child, Command, Stdio};
     use std::thread::sleep;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
     fn arrangeable() -> Vec<WindowDescriptor> {
         list_arrangeable().unwrap_or_default()
@@ -1064,42 +1113,90 @@ mod manual_smoke {
             .map(|w| w.rect)
     }
 
-    fn close_window(hwnd: i64) {
-        use std::ffi::c_void;
-        use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-        use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, WM_CLOSE};
-        let h = HWND(hwnd as isize as *mut c_void);
-        let _ = unsafe { PostMessageW(Some(h), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+    static GUI_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    struct MouseReset(windows::Win32::Foundation::POINT);
+    impl MouseReset {
+        fn new() -> Self {
+            use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON};
+            use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+            let mut point = windows::Win32::Foundation::POINT::default();
+            unsafe {
+                assert_eq!(
+                    GetAsyncKeyState(VK_LBUTTON.0 as i32) as u16 & 0x8000,
+                    0,
+                    "do not run the drag smoke while the mouse button is held"
+                );
+                GetCursorPos(&mut point).expect("read cursor position");
+            }
+            Self(point)
+        }
+    }
+    impl Drop for MouseReset {
+        fn drop(&mut self) {
+            send_lmb(false);
+            unsafe {
+                let _ = windows::Win32::UI::WindowsAndMessaging::SetCursorPos(self.0.x, self.0.y);
+            }
+        }
+    }
+
+    struct OwnedWindow {
+        child: Child,
+        hwnd: i64,
+    }
+    impl OwnedWindow {
+        fn new() -> Self {
+            // The script is fixed test code. It creates no document and touches no existing app.
+            let mut child = Command::new("powershell.exe")
+                .args(["-NoProfile", "-NonInteractive", "-STA", "-Command",
+                    "Add-Type -AssemblyName System.Windows.Forms; $fixture = New-Object System.Windows.Forms.Form; $fixture.Text = 'Widgetsack native test'; $fixture.Width = 500; $fixture.Height = 400; $fixture.TopMost = $true; $fixture.Show(); Write-Output ('HWND:' + $fixture.Handle.ToInt64()); [System.Windows.Forms.Application]::Run($fixture)"])
+                .creation_flags(0x08000000)
+                .stdout(Stdio::piped())
+                .spawn().expect("could not start the owned window fixture");
+            let stdout = child.stdout.take().expect("fixture stdout");
+            let mut owned = Self { child, hwnd: 0 };
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                    if let Some(value) = line.strip_prefix("HWND:") {
+                        let _ = tx.send(value.parse::<i64>());
+                        break;
+                    }
+                }
+            });
+            owned.hwnd = rx
+                .recv_timeout(Duration::from_secs(10))
+                .expect("owned fixture did not report a window")
+                .expect("invalid fixture HWND");
+            use windows::Win32::Foundation::HWND;
+            use windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId;
+            let mut pid = 0;
+            unsafe {
+                GetWindowThreadProcessId(HWND(owned.hwnd as isize as _), Some(&mut pid));
+            }
+            assert_eq!(
+                pid,
+                owned.child.id(),
+                "fixture HWND must belong to its child process"
+            );
+            owned
+        }
+    }
+    impl Drop for OwnedWindow {
+        fn drop(&mut self) {
+            // Never send WM_CLOSE to an enumerated or potentially reused foreign HWND.
+            let _ = self.child.kill();
+            let _ = self.child.wait();
+        }
     }
 
     #[test]
-    #[ignore = "spawns + moves a real Notepad window; run explicitly with --ignored"]
+    #[ignore = "spawns + moves an owned test window; run explicitly with --ignored"]
     fn snap_moves_a_real_window() {
-        let before: HashSet<i64> = arrangeable().into_iter().map(|w| w.hwnd).collect();
-        let mut child = Command::new("notepad.exe")
-            .spawn()
-            .expect("failed to spawn notepad.exe");
-
-        // Wait for a NEW arrangeable window (ours) — prefer one whose exe is notepad.exe.
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let mut hwnd = None;
-        while Instant::now() < deadline && hwnd.is_none() {
-            sleep(Duration::from_millis(150));
-            let cur = arrangeable();
-            hwnd = cur
-                .iter()
-                .find(|w| !before.contains(&w.hwnd) && exe_basename(&w.exe) == "notepad.exe")
-                .or_else(|| cur.iter().find(|w| !before.contains(&w.hwnd)))
-                .map(|w| w.hwnd);
-        }
-        let hwnd = match hwnd {
-            Some(h) => h,
-            None => {
-                let _ = child.kill();
-                let _ = child.wait(); // reap the process so clippy's zombie_processes lint is satisfied
-                panic!("no new window appeared within 5s — did Notepad open?");
-            }
-        };
+        let _gui = GUI_LOCK.lock().unwrap();
+        let owned = OwnedWindow::new();
+        let hwnd = owned.hwnd;
 
         let start = rect_of(hwnd);
         let target = ScreenRect {
@@ -1113,9 +1210,7 @@ mod manual_smoke {
         let end = rect_of(hwnd);
 
         // Clean up BEFORE asserting so a failed assertion never leaves the window on screen.
-        close_window(hwnd);
-        let _ = child.kill();
-        let _ = child.wait(); // reap the process so clippy's zombie_processes lint is satisfied
+        drop(owned);
 
         println!("snap result: {snapped:?}");
         println!("target: {target:?}");
@@ -1184,6 +1279,8 @@ mod manual_smoke {
     #[test]
     #[ignore = "spawns a real window + injects synthetic mouse input; run explicitly with --ignored"]
     fn synthetic_drag_emits_start_then_end() {
+        let _gui = GUI_LOCK.lock().unwrap();
+        let _mouse = MouseReset::new();
         use std::ffi::c_void;
         use std::sync::mpsc;
         use windows::Win32::Foundation::{HWND, RECT};
@@ -1199,25 +1296,8 @@ mod manual_smoke {
         spawn_drag_pump();
         sleep(Duration::from_millis(250)); // let the hooks install + the pump start
 
-        // Spawn a throwaway window; identify it by diffing the arrangeable set across the spawn.
-        let before: HashSet<i64> = arrangeable().into_iter().map(|w| w.hwnd).collect();
-        let mut child = Command::new("notepad.exe")
-            .spawn()
-            .expect("failed to spawn notepad.exe");
-        let deadline = Instant::now() + Duration::from_secs(5);
-        let mut hwnd_id = None;
-        while Instant::now() < deadline && hwnd_id.is_none() {
-            sleep(Duration::from_millis(150));
-            hwnd_id = arrangeable()
-                .into_iter()
-                .find(|w| !before.contains(&w.hwnd))
-                .map(|w| w.hwnd);
-        }
-        let Some(hwnd_id) = hwnd_id else {
-            let _ = child.kill();
-            let _ = child.wait();
-            panic!("no new window appeared within 5s — did Notepad open?");
-        };
+        let owned = OwnedWindow::new();
+        let hwnd_id = owned.hwnd;
         let hwnd = HWND(hwnd_id as isize as *mut c_void);
 
         // Press the button over the window's CLIENT area (NOT the caption — pressing a titlebar would
@@ -1228,6 +1308,12 @@ mod manual_smoke {
         let cx = (rc.left + rc.right) / 2;
         let cy = rc.top + (rc.bottom - rc.top) * 3 / 4; // lower portion → client area
         let _ = unsafe { SetCursorPos(cx, cy) };
+        let root = unsafe {
+            use windows::Win32::Foundation::POINT;
+            use windows::Win32::UI::WindowsAndMessaging::{GA_ROOT, GetAncestor, WindowFromPoint};
+            GetAncestor(WindowFromPoint(POINT { x: cx, y: cy }), GA_ROOT)
+        };
+        assert_eq!(root, hwnd, "mouse input must target the owned fixture");
         send_lmb(true);
         sleep(Duration::from_millis(40));
         for i in 1..=4 {
@@ -1249,9 +1335,7 @@ mod manual_smoke {
 
         // Clean up BEFORE asserting so a failure never leaves the window (or a held button) behind.
         send_lmb(false); // belt-and-suspenders: ensure the injected button is released
-        close_window(hwnd_id);
-        let _ = child.kill();
-        let _ = child.wait();
+        drop(owned);
 
         let signals: Vec<DragAction> = rx.try_iter().collect();
         println!("captured drag signals: {signals:?}");

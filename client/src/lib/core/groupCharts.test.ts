@@ -83,3 +83,11 @@ it('recognizes Sensor History and leaves unknown widget types intact', () => {
 	);
 	expect(setGroupChartsSmooth(unknown, false)).toBe(unknown);
 });
+
+it('finds and edits charts in a finite deeply nested group', () => {
+	let child = chart('deep-chart', false);
+	for (let i = 0; i < 35; i++) child = leaf(group(`g${i}`, { w: 100, h: 100 }, child));
+	const root = group('root', { w: 100, h: 100 }, child);
+	expect(groupChartState(root)).toEqual({ count: 1, value: 'off' });
+	expect(groupChartState(setGroupChartsSmooth(root, true))).toEqual({ count: 1, value: 'on' });
+});

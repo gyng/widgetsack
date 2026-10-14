@@ -232,11 +232,15 @@ fn http_client() -> Result<reqwest::Client, String> {
 }
 
 async fn fetch_forecast(client: &reqwest::Client, url: &str) -> Result<Value, String> {
-    let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .map_err(crate::http_response::request_error)?;
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
     }
-    resp.json::<Value>().await.map_err(|e| e.to_string())
+    crate::http_response::read_json(resp, 8 * 1024 * 1024).await
 }
 
 /// Poll the configured location on the interval, emitting `weather.*` telemetry. Demand-gated: idles

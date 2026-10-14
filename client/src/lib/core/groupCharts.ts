@@ -4,10 +4,9 @@ import { resolveGroup } from './solve';
 function visitCharts(group: Group, library?: Library, smooth?: boolean) {
 	let count = 0;
 	let enabled = 0;
-	const visitGroup = (unit: Group, depth: number): Group => {
-		if (depth >= 32) return unit; // Corrupt or cyclic definitions must not hang the Inspector.
+	const visitGroup = (unit: Group): Group => {
 		const resolved = resolveGroup(unit, library);
-		const child = visit(resolved.child, depth + 1);
+		const child = visit(resolved.child);
 		if (child === resolved.child) return unit;
 		const def = library?.defs.find((def) => def.id === unit.def);
 		const changed: Group = {
@@ -21,13 +20,13 @@ function visitCharts(group: Group, library?: Library, smooth?: boolean) {
 		delete changed.params;
 		return changed;
 	};
-	const visit = (node: LayoutNode, depth: number): LayoutNode => {
+	const visit = (node: LayoutNode): LayoutNode => {
 		if (isContainer(node)) {
-			const children = node.children.map((child) => visit(child, depth));
+			const children = node.children.map((child) => visit(child));
 			return children.some((child, i) => child !== node.children[i]) ? { ...node, children } : node;
 		}
 		if (isGroup(node.unit)) {
-			const unit = visitGroup(node.unit, depth);
+			const unit = visitGroup(node.unit);
 			return unit === node.unit ? node : { ...node, unit };
 		}
 		if (!['cpu', 'sparkline', 'history'].includes(node.unit.type)) return node;
@@ -38,7 +37,7 @@ function visitCharts(group: Group, library?: Library, smooth?: boolean) {
 			? node
 			: { ...node, unit: { ...node.unit, config: { ...node.unit.config, smooth } } };
 	};
-	const changed = visitGroup(group, 0);
+	const changed = visitGroup(group);
 	return {
 		group: changed,
 		count,

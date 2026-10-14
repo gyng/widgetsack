@@ -4,7 +4,7 @@
 // arrives from the panel's inline field (no prompt()); only the destructive/overwriting steps keep
 // a confirm(). Reads the live monitor via the Canvas's monitorRef so a save mid-render captures the
 // committed tree, not a stale closure.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MonitorLayout } from '../../core/layoutTree';
 import { packLayout, unpackLayout } from '../../core/savedLayout';
 import { deleteLayout, listLayouts, readLayout, saveLayoutAs } from '../../overlay';
@@ -44,6 +44,13 @@ export function useSavedLayouts({
 }: Deps): SavedLayouts {
 	const [layoutNames, setLayoutNames] = useState<string[]>([]);
 	const [status, setStatus] = useState<PresetStatus>(null);
+	const loadRevision = useRef(0);
+	useEffect(
+		() => () => {
+			loadRevision.current++;
+		},
+		[editingDefId]
+	);
 
 	// Load the preset names when the Presets section opens.
 	useEffect(() => {
@@ -62,16 +69,24 @@ export function useSavedLayouts({
 				setStatus({ kind: 'error', message: 'Enter a name for the preset.' });
 				return;
 			}
-			const existing = await listLayouts();
-			if (existing.includes(name) && !window.confirm(`Overwrite the preset “${name}”?`)) return;
 			const json = JSON.stringify(packLayout(monitorRef.current, name), null, '\t');
-			const path = await saveLayoutAs(name, json);
+			let existing: string[];
+			try {
+				existing = await listLayouts(true);
+			} catch (error) {
+				setStatus({ kind: 'error', message: `Could not check existing presets: ${String(error)}` });
+				return;
+			}
+			const exists = existing.some((saved) => saved.toLowerCase() === name.toLowerCase());
+			if (exists && !window.confirm(`Overwrite the preset “${name}”?`)) return;
+			const path = await saveLayoutAs(name, json, exists);
 			const names = await listLayouts();
 			setLayoutNames(names);
 			if (!path) {
 				setStatus({
 					kind: 'error',
-					message: 'Could not save the preset. Names allow letters, numbers, spaces, _ and - (≤64).'
+					message:
+						'Could not save the preset. Check the name and folder permissions, then try again.'
 				});
 				return;
 			}
@@ -89,7 +104,18 @@ export function useSavedLayouts({
 				setStatus({ kind: 'error', message: `${FINISH_EDITING}loading a preset.` });
 				return;
 			}
+			const revision = ++loadRevision.current;
+			const target = monitorRef.current;
 			const raw = await readLayout(name);
+			if (revision !== loadRevision.current) return;
+			if (target !== monitorRef.current) {
+				setStatus({
+					kind: 'error',
+					message:
+						'The layout changed while the preset was loading. Load it again to replace the current layout.'
+				});
+				return;
+			}
 			const mon = raw ? unpackLayout(raw) : null;
 			if (!mon) {
 				setStatus({ kind: 'error', message: `Could not read the preset “${name}”.` });
@@ -110,12 +136,15 @@ export function useSavedLayouts({
 				message: `Loaded preset ${name} — Ctrl+Z restores the previous layout.`
 			});
 		},
-		[editingDefId, commitOp]
+		[editingDefId, monitorRef, commitOp]
 	);
 
 	const deleteSavedLayout = useCallback(async (name: string) => {
 		if (!window.confirm(`Delete the preset “${name}”?`)) return;
-		await deleteLayout(name);
+		if (!(await deleteLayout(name))) {
+			setStatus({ kind: 'error', message: `Could not delete the preset “${name}”.` });
+			return;
+		}
 		const names = await listLayouts();
 		setLayoutNames(names);
 		setStatus({
