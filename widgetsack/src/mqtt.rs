@@ -10,7 +10,7 @@
 //! `topic_to_id`, `is_discovery_config`, `subscription_filters`, `payload_text`,
 //! `catalog_insert`) hold the logic and are unit-tested without a broker.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -24,7 +24,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 
 use crate::log;
-use crate::sensors::{SensorSample, SensorValue, TELEMETRY_EVENT};
+use crate::sensors::{ActiveSensors, SensorSample, SensorValue, TELEMETRY_EVENT};
 
 /// The conventional HA MQTT discovery topic prefix (`homeassistant/<component>/.../config`).
 const DISCOVERY_PREFIX: &str = "homeassistant";
@@ -102,6 +102,53 @@ pub struct MqttCatalogEntry {
 pub struct MqttState {
     task: crate::integration_task::IntegrationTask,
     catalog: Arc<StdMutex<BTreeMap<String, MqttCatalogEntry>>>,
+    /// Newest sample per sensor id, so a window that starts binding a topic is primed at once
+    /// instead of waiting for the next publish (hours, for a retained door sensor).
+    latest: Arc<StdMutex<HashMap<String, SensorSample>>>,
+}
+
+/// Upper bound on cached sensor ids (a JSON payload flattens into one id per key).
+const MAX_LATEST_SAMPLES: usize = 4 * MAX_CATALOG_ENTRIES;
+
+/// Remember each sample as its id's newest value; new ids are skipped once `cap` is reached. Pure.
+fn remember_samples(
+    cache: &mut HashMap<String, SensorSample>,
+    samples: &[SensorSample],
+    cap: usize,
+) {
+    for sample in samples {
+        if cache.len() < cap || cache.contains_key(&sample.sensor) {
+            cache.insert(sample.sensor.clone(), sample.clone());
+        }
+    }
+}
+
+/// The cached samples a window that just started wanting `added` should receive. Pure.
+fn primed_samples(cache: &HashMap<String, SensorSample>, added: &[String]) -> Vec<SensorSample> {
+    if added.iter().any(|id| id == "*") {
+        return cache.values().cloned().collect();
+    }
+    added
+        .iter()
+        .filter_map(|id| cache.get(id).cloned())
+        .collect()
+}
+
+/// Send `window` the cached value of every MQTT id it just started consuming (see ha::prime_window).
+pub fn prime_window<R: Runtime>(window: &tauri::WebviewWindow<R>, added: &[String]) {
+    if added.is_empty() {
+        return;
+    }
+    let Some(state) = window.app_handle().try_state::<MqttState>() else {
+        return;
+    };
+    let batch = primed_samples(
+        &state.latest.lock().unwrap_or_else(|e| e.into_inner()),
+        added,
+    );
+    if !batch.is_empty() {
+        let _ = window.emit_to(window.label(), TELEMETRY_EVENT, &batch);
+    }
 }
 
 fn now_ms() -> u64 {
@@ -317,7 +364,10 @@ pub async fn run_mqtt_client<R: Runtime>(
     app: AppHandle<R>,
     cfg: MqttConfig,
     catalog: Arc<StdMutex<BTreeMap<String, MqttCatalogEntry>>>,
+    latest: Arc<StdMutex<HashMap<String, SensorSample>>>,
 ) {
+    // A new connection (or broker) starts without old values.
+    latest.lock().unwrap_or_else(|e| e.into_inner()).clear();
     // Seed the catalog with concrete configured topics so the dropdown lists them immediately.
     if let Ok(mut cat) = catalog.lock() {
         for t in cfg.topics.iter().filter(|t| is_concrete_topic(t)) {
@@ -434,8 +484,22 @@ pub async fn run_mqtt_client<R: Runtime>(
                             MAX_CATALOG_ENTRIES,
                         );
                     }
-                    let batch = payload_to_samples(&p.topic, &payload, now_ms());
-                    let _ = app.emit(TELEMETRY_EVENT, &batch);
+                    // A busy `#` subscription publishes many times a second: only what some window
+                    // wants crosses the bridge, the rest is cached for priming.
+                    let samples = payload_to_samples(&p.topic, &payload, now_ms());
+                    remember_samples(
+                        &mut latest.lock().unwrap_or_else(|e| e.into_inner()),
+                        &samples,
+                        MAX_LATEST_SAMPLES,
+                    );
+                    let active = app.state::<ActiveSensors>();
+                    let batch: Vec<SensorSample> = samples
+                        .into_iter()
+                        .filter(|sample| active.wanted(|id| id == sample.sensor))
+                        .collect();
+                    if !batch.is_empty() {
+                        let _ = app.emit(TELEMETRY_EVENT, &batch);
+                    }
                 }
             }
             Ok(_) => {}
@@ -558,8 +622,9 @@ pub async fn mqtt_connect<R: Runtime>(
             };
             let app_for_task = app.clone();
             let catalog = state.catalog.clone();
+            let latest = state.latest.clone();
             Ok(Some(async move {
-                run_mqtt_client(app_for_task, cfg, catalog).await;
+                run_mqtt_client(app_for_task, cfg, catalog, latest).await;
             }))
         })
         .await
@@ -583,6 +648,25 @@ pub fn mqtt_catalog(state: State<'_, MqttState>) -> Result<Vec<MqttCatalogEntry>
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn latest_cache_is_bounded_and_primes_only_requested_ids() {
+        let mut cache = HashMap::new();
+        remember_samples(&mut cache, &payload_to_samples("door", "open", 1), 1);
+        remember_samples(&mut cache, &payload_to_samples("temp", "21.5", 2), 1);
+        // At the cap: the known id updates, new ids are not cached.
+        remember_samples(&mut cache, &payload_to_samples("door", "closed", 3), 1);
+        assert_eq!(cache.len(), 1);
+        assert_eq!(
+            serde_json::to_value(&cache["mqtt.door"]).unwrap()["value"]["value"],
+            "closed"
+        );
+        let primed = primed_samples(&cache, &["mqtt.door".into(), "mqtt.temp".into()]);
+        assert_eq!(primed.len(), 1);
+        assert_eq!(primed[0].sensor, "mqtt.door");
+        assert_eq!(primed_samples(&cache, &["*".into()]).len(), 1);
+        assert!(primed_samples(&cache, &[]).is_empty());
+    }
 
     #[test]
     fn topic_id_keeps_slashes() {

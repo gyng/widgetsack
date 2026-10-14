@@ -828,9 +828,10 @@ pub async fn set_active_sensors<R: Runtime>(
         newly_added(previous.as_ref(), &ids)
     };
     // Demand-gated peer sources only stream what some window wants; a window that just started
-    // wanting an HA entity is primed from the cached latest state (ha.rs) so it isn't blank until
-    // that entity next changes.
+    // wanting an HA entity or MQTT topic is primed from the cached latest state so it isn't blank
+    // until that value next changes.
     crate::ha::prime_window(&window, &added);
+    crate::mqtt::prime_window(&window, &added);
     Ok(())
 }
 
