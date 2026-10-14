@@ -3,6 +3,47 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.65
+
+### Added
+
+- Choose the edit-mode shortcut in Studio settings (Ctrl+Alt+E, Win+Alt+E, Ctrl+Shift+F9 or Off).
+  Ctrl+Alt is AltGr on many keyboard layouts, so Ctrl+Alt+E can block typing ę or €.
+- Show which plugin package capabilities need re-approval after an update.
+
+### Changed
+
+- The primary-monitor overlay is now click-through outside edit mode, like the other overlays, so
+  desktop icons and apps behind it can be clicked. Use the rescue shortcut or Diagnostics to recover
+  a stuck page.
+- Edit mode is shared by every overlay, including ones that appear or reload while editing.
+- The studio agent and MCP clients can no longer add command, embedded-page, remote-image or
+  service-check widgets, or remote CSS. Add those in the studio yourself.
+- Update to Tauri 2.12.
+
+### Fixed
+
+- Keep layouts safe: no writes before the layout has loaded, recover a damaged widgets.json from its
+  backup, keep unsaved Inspector edits when switching widgets, keep widgets added while designing a
+  custom widget, and stop overlays and the studio overwriting each other's saves.
+- Harden shared sacks, packages and AI edits: escaped design tokens and widget ids can no longer
+  inject CSS, remote URLs written without slashes are flagged, package updates re-ask for consent,
+  and agent-control Home Assistant calls only accept plain service names.
+- Home Assistant stops retrying a rejected token (which could ban the PC), and a saved token or
+  password is not sent to a changed server address.
+- Now-playing priority and ignore lists, package changes and edit mode reach every window.
+- Weather, RSS, agenda and stocks show their last values in newly opened windows. Large calendars,
+  calendars with a byte-order mark and unknown time zones load, and the agenda no longer flickers.
+- Open the studio from the tray even while the primary overlay is starting or has crashed.
+- Overlays recover after display changes, a damaged monitor record no longer stops them, and hidden
+  conditional widgets no longer block clicks.
+- A theme with a missing brace or comment end no longer removes every widget's styling, and
+  per-user fonts keep their regular weight.
+- The MCP bridge reconnects after an app restart, and enabling browser tools no longer stops other
+  windows opening.
+- Many smaller fixes to undo, ungroup ids, sticky notes and timers, Home Assistant controls, formulas,
+  the spectrum, the AI provider and the Diagnostics panel.
+
 ## 0.0.64
 
 ### Added
