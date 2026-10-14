@@ -82,5 +82,17 @@ describe('template preview lifecycle', () => {
 		expect(previewDefinition(s.mode)).toBeNull(); // no longer a preview
 		expect(editingDefinitionId(s.mode)).toBe(previewId); // still editing the same def…
 		expect(s.library?.defs.map((d) => d.id)).toContain(previewId); // …now a real library def
+		expect(s.saveSeq).toBeGreaterThan(0); // …and persisted
+	});
+
+	it('undo right after clonePreview cannot remove the def being designed', () => {
+		const { result } = renderHook(() => useEditorModel(true, []));
+		act(() => result.current.dispatch({ type: 'previewTemplate', templateId: CLOCK }));
+		const previewId = previewDefinition(result.current.state.mode)?.id;
+		act(() => result.current.dispatch({ type: 'clonePreview' }));
+		act(() => result.current.dispatch({ type: 'undo' }));
+		const s = result.current.state;
+		expect(editingDefinitionId(s.mode)).toBe(previewId);
+		expect(s.library?.defs.map((d) => d.id)).toContain(previewId);
 	});
 });

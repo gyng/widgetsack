@@ -360,7 +360,7 @@ function reduceDefEdit(state: EditorState, action: DefEditAction): EditorState {
 				version: state.library?.version ?? 1,
 				defs: [...(state.library?.defs ?? []), def]
 			};
-			let next: EditorState = {
+			const next: EditorState = {
 				...state,
 				library,
 				mode: {
@@ -370,8 +370,9 @@ function reduceDefEdit(state: EditorState, action: DefEditAction): EditorState {
 					baseline: state.monitor
 				} // a real def-edit baseline from here on
 			};
-			next = { ...next, ...commitPatch(next) }; // record + persist the new library def
-			return next;
+			// Persist the new library def, but start history here (like enterNewDef): an undo step back
+			// to the library without it would leave the editor designing a def that no longer exists.
+			return { ...next, ...resetHistoryPatch(next), saveSeq: next.saveSeq + 1 };
 		}
 		case 'enterDefEdit': {
 			// Never re-enter while already designing — a nested enter would overwrite the retained desktop with
