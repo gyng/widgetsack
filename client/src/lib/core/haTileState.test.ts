@@ -34,6 +34,7 @@ describe('haTileState', () => {
 		['connecting', 'Connecting to Home Assistant…'],
 		['disconnected', 'Home Assistant offline'],
 		['error', 'Home Assistant offline'],
+		['auth_failed', 'Home Assistant rejected the token'],
 		['something-new', 'Home Assistant offline']
 	])('says offline while the connection is down (%s)', (status, message) => {
 		// Even a stale cached entity value must not read as live data while offline.

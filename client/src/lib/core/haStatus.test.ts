@@ -6,6 +6,10 @@ describe('haStatusBadge', () => {
 		expect(haStatusBadge('connected')).toEqual({ label: 'Connected', tone: 'ok' });
 		expect(haStatusBadge('connecting')).toEqual({ label: 'Connecting…', tone: 'busy' });
 		expect(haStatusBadge('error')).toEqual({ label: 'Error', tone: 'warn' });
+		expect(haStatusBadge('auth_failed')).toEqual({
+			label: 'Token rejected — save a new one',
+			tone: 'warn'
+		});
 		expect(haStatusBadge('disconnected')).toEqual({ label: 'Disconnected', tone: 'idle' });
 		expect(haStatusBadge('unconfigured')).toEqual({ label: 'Not configured', tone: 'idle' });
 	});

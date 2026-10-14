@@ -142,6 +142,24 @@ impl HaState {
             latest.insert(entity_id.to_string(), state.clone());
         }
     }
+
+    /// A connection's full snapshot is the server's whole entity set: entities missing from it
+    /// (deleted while disconnected, or from a previous server) must not prime later windows.
+    fn replace_snapshot(&self, states: &[Value]) {
+        let snapshot = states
+            .iter()
+            .filter_map(|st| Some((st["entity_id"].as_str()?.to_string(), st.clone())))
+            .collect();
+        *self.latest.lock().unwrap_or_else(|e| e.into_inner()) = snapshot;
+    }
+
+    /// Forget every cached entity (a stopped or replaced worker's server is no longer current).
+    fn forget_all(&self) {
+        self.latest
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
+    }
 }
 
 /// The HA entity a bound sensor id refers to: `ha.<entity_id>` or `ha.<entity_id>.state`. `None`
@@ -648,14 +666,14 @@ fn emit_snapshot<R: Runtime>(app: &AppHandle<R>, states: &Value) {
         return;
     };
     let active = app.state::<ActiveSensors>();
-    let ha = app.state::<HaState>();
+    // Cached for later-binding windows regardless of current demand.
+    app.state::<HaState>().replace_snapshot(arr);
     let ts = now_ms();
     let mut batch = Vec::new();
     for st in arr {
         let Some(eid) = st["entity_id"].as_str() else {
             continue;
         };
-        ha.remember(eid, st); // cached for later-binding windows regardless of current demand
         if entity_wanted(&active, eid)
             && let Some(mut samples) = state_to_samples(eid, st, ts)
         {
@@ -916,11 +934,21 @@ async fn connect_and_stream<R: Runtime>(
     Ok(())
 }
 
+/// PURE SEAM: a rejected token is fatal. Retrying it on the backoff schedule records a failed login
+/// with HA every ~30s, which HA's `ip_ban_enabled` can turn into a permanent ban of this PC's IP.
+fn is_auth_rejection(error: &str) -> bool {
+    error.starts_with("auth_invalid")
+}
+
 /// Reconnecting client loop: owns the single backoff. Exponential backoff (1s→30s) with
 /// jitter; the backoff is reset to 1s only after a session that stayed up long enough to be
 /// considered healthy (so an auth-then-immediate-close flap can't pin a 1s hammer loop).
-/// Runs until the task is aborted by `ha_disconnect`.
+/// Runs until the task is aborted by `ha_disconnect`, or until HA rejects the token
+/// (`auth_failed`); a saved config or a window's ensure-connect starts it again.
 pub async fn run_ha_client<R: Runtime>(app: AppHandle<R>, cfg: HaConfig) {
+    if let Some(state) = app.try_state::<HaState>() {
+        state.forget_all();
+    }
     let ws_url = ws_url_from(&cfg.url, &cfg.base_path);
     let mut backoff = Duration::from_secs(1);
     const STABLE: Duration = Duration::from_secs(30);
@@ -931,7 +959,12 @@ pub async fn run_ha_client<R: Runtime>(app: AppHandle<R>, cfg: HaConfig) {
         match connect_and_stream(&app, &ws_url, &cfg.token, cfg.insecure).await {
             Ok(()) => emit_status(&app, "disconnected"),
             Err(err) => {
+                let rejected = is_auth_rejection(&err.to_string());
                 log::warn("ha", "client error").field("error", err).emit();
+                if rejected {
+                    emit_status(&app, "auth_failed");
+                    return;
+                }
                 emit_status(&app, "error");
             }
         }
@@ -1095,6 +1128,7 @@ pub async fn ha_disconnect<R: Runtime>(
     state: State<'_, HaState>,
 ) -> Result<(), String> {
     if state.task.stop().await {
+        state.forget_all();
         emit_status(&app, "disconnected");
     }
     Ok(())
@@ -1497,6 +1531,16 @@ mod tests {
         );
         state.remember("light.a", &Value::Null); // entity removed
         assert!(state.latest.lock().unwrap().is_empty());
+        // A new snapshot replaces entities from an earlier connection or server.
+        state.remember("sensor.old", &json!({"state": "1"}));
+        state.replace_snapshot(&[
+            json!({"entity_id": "sensor.new", "state": "2"}),
+            json!({"state": "no id"}),
+        ]);
+        let latest = state.latest.lock().unwrap().clone();
+        assert_eq!(latest.keys().collect::<Vec<_>>(), ["sensor.new"]);
+        state.forget_all();
+        assert!(state.latest.lock().unwrap().is_empty());
     }
 
     #[test]
@@ -1720,6 +1764,12 @@ mod tests {
             .unwrap();
         assert!(ok2.ha_version.is_none());
 
+        // A rejected token stops the reconnect loop; transport failures keep retrying.
+        assert!(is_auth_rejection("auth_invalid: Invalid access token"));
+        assert!(!is_auth_rejection("connection closed during handshake"));
+        assert!(!is_auth_rejection(
+            "timed out waiting for `auth_ok` during handshake"
+        ));
         // auth_invalid maps to a descriptive error (so the UI can say "bad token").
         let err =
             auth_outcome(&json!({ "type": "auth_invalid", "message": "Invalid access token" }))

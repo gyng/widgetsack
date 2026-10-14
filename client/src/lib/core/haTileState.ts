@@ -6,7 +6,7 @@
 // itself is `unavailable` in HA, or we're connected but the entity hasn't been delivered yet. Data
 // in → a kind + user-facing message out; the HA meters render it in place of their value.
 // Framework-agnostic (AGENTS.md §5). The `status` string is the `ha.status` bridge contract from
-// ha.rs::emit_status (unconfigured | connecting | connected | disconnected | error) — keep the
+// ha.rs::emit_status (unconfigured | connecting | connected | disconnected | error | auth_failed) — keep the
 // cases in sync with core/haStatus.ts.
 
 export type HaTileState =
@@ -36,7 +36,12 @@ export function haTileState(status: string | null | undefined, sample: unknown):
 	if (status !== 'connected') {
 		return {
 			kind: 'offline',
-			message: status === 'connecting' ? 'Connecting to Home Assistant…' : 'Home Assistant offline'
+			message:
+				status === 'connecting'
+					? 'Connecting to Home Assistant…'
+					: status === 'auth_failed'
+						? 'Home Assistant rejected the token'
+						: 'Home Assistant offline'
 		};
 	}
 	const s = (sample ?? null) as HaSample;
