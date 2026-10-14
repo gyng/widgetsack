@@ -119,7 +119,21 @@ describe('persistToDisk — widgets.json assembly', () => {
 
 	it('LOCKED: the selection becomes the GLOBAL theme and the monitor record carries none', async () => {
 		const { result } = renderHook(() =>
-			usePersistence(editorState({ themeLock: true, selectedTheme: 'builtin:nord' }), 'mon-A')
+			usePersistence(
+				editorState({
+					themeLock: true,
+					selectedTheme: 'builtin:nord',
+					// The theme is promoted only as an edit against a loaded baseline.
+					savedBaseline: {
+						monitor: monitorWith(),
+						library: undefined,
+						theme: '',
+						themeLock: true,
+						tokens: {}
+					}
+				}),
+				'mon-A'
+			)
 		);
 		await act(async () => {
 			await result.current.persistToDisk([]);

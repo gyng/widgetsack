@@ -902,10 +902,14 @@ export const reconcileOverlays = singleFlight(reconcileOverlaysOnce);
  * always-interactive `main` window, or windowed-debug mode — send none (no per-widget
  * cursor watching is needed).
  */
+// Latest syncInteractiveRects call: a passive call still awaiting the window's scale/position
+// must not land after a newer call (e.g. the whole-window `[]`) and resurrect stale rects.
+let interactiveRectsSeq = 0;
 export async function syncInteractiveRects(
 	items: { rect: Rect; interactive?: boolean }[],
 	wholeWindowInteractive: boolean
 ): Promise<void> {
+	const seq = ++interactiveRectsSeq;
 	const win = getCurrentWindow();
 	const label = win.label;
 	if (wholeWindowInteractive) {
@@ -913,6 +917,7 @@ export async function syncInteractiveRects(
 		return;
 	}
 	const [scale, pos] = await Promise.all([win.scaleFactor(), win.outerPosition()]);
+	if (seq !== interactiveRectsSeq) return; // superseded while reading the window geometry
 	const rects = items
 		.filter((i) => i.interactive)
 		.map((i) => ({

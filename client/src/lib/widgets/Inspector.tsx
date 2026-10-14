@@ -580,6 +580,31 @@ export default function Inspector({
 	// idiom keyed on config identity (widget switch + each committed edit), so the reset runs
 	// during render — never on other widget prop changes, which would clobber in-progress typing.
 	const widgetConfig = widget?.config;
+	// The widget whose config the raw-JSON box holds an uncommitted draft for — captured when typing
+	// starts. Selecting another widget happens on pointerdown, BEFORE the textarea blurs, and resets
+	// the box to the new widget's config; the draft is committed to its OWN widget on that switch.
+	const configDraftOwner = useRef<string | null>(null);
+	const configTextRef = useRef(configText); // last committed text (mirrored below)
+	const onOpRef = useRef(onOp); // mirrored below
+	useEffect(() => {
+		configTextRef.current = configText;
+		onOpRef.current = onOp;
+	});
+	const widgetId = widget?.id;
+	useEffect(
+		() => () => {
+			// Runs before the mirror above, so configTextRef still holds this widget's draft text.
+			if (configDraftOwner.current !== widgetId) return;
+			configDraftOwner.current = null;
+			try {
+				const config = JSON.parse(configTextRef.current) as Record<string, unknown>;
+				onOpRef.current?.({ op: 'patchWidget', id: widgetId!, patch: { config } });
+			} catch {
+				// An unparseable draft has nothing to commit (its error was already shown while typing).
+			}
+		},
+		[widgetId]
+	);
 	const [prevConfig, setPrevConfig] = useState(widgetConfig);
 	if (widgetConfig !== prevConfig) {
 		setPrevConfig(widgetConfig);
@@ -690,9 +715,12 @@ export default function Inspector({
 	}
 
 	function commitConfig() {
+		// Nothing typed since the last commit: re-patching would only add a no-op undo step.
+		if (configDraftOwner.current === null) return;
 		try {
 			const parsed = JSON.parse(configText) as Record<string, unknown>;
 			setConfigError(false);
+			configDraftOwner.current = null;
 			patchWidget({ config: parsed });
 		} catch {
 			setConfigError(true);
@@ -1625,7 +1653,10 @@ export default function Inspector({
 								rows={4}
 								value={configText}
 								className={configError ? 'error' : undefined}
-								onChange={(e) => setConfigText(e.currentTarget.value)}
+								onChange={(e) => {
+									configDraftOwner.current = widget.id;
+									setConfigText(e.currentTarget.value);
+								}}
 								onBlur={commitConfig}
 							/>
 						</label>

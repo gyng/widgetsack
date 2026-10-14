@@ -5,7 +5,9 @@
 // data-part hooks) and fragment linting all come from cssEditorExt. The view is created once;
 // external `value` changes resync the doc only while the editor is NOT focused, so it works both
 // controlled (theme: value+onChange) and commit-on-blur (inspector: value+onBlur, remounted via
-// React `key` on selection change).
+// React `key` on selection change). A commit-on-blur editor that unmounts with an uncommitted edit
+// (the selection moved on pointerdown, before any blur) commits it through the handler of its last
+// render, which is bound to the item that was being edited.
 import { useEffect, useRef } from 'react';
 import { EditorState } from '@codemirror/state';
 import { EditorView } from '@codemirror/view';
@@ -37,6 +39,9 @@ export default function CssEditorImpl({
 	useEffect(() => {
 		cbRef.current = { onChange, onBlur };
 	});
+	// The document as last committed (blur) or synced from `value`; a different doc at unmount is
+	// an uncommitted edit.
+	const committedRef = useRef(value);
 
 	useEffect(() => {
 		// React attaches the host ref before running effects.
@@ -53,7 +58,8 @@ export default function CssEditorImpl({
 					}),
 					EditorView.domEventHandlers({
 						blur: (_e, v) => {
-							cbRef.current.onBlur?.(v.state.doc.toString());
+							committedRef.current = v.state.doc.toString();
+							cbRef.current.onBlur?.(committedRef.current);
 							return false;
 						}
 					}),
@@ -63,6 +69,8 @@ export default function CssEditorImpl({
 		});
 		viewRef.current = view;
 		return () => {
+			const doc = view.state.doc.toString();
+			if (doc !== committedRef.current) cbRef.current.onBlur?.(doc);
 			view.destroy();
 			viewRef.current = null;
 		};
@@ -78,6 +86,7 @@ export default function CssEditorImpl({
 		const current = view.state.doc.toString();
 		/* v8 ignore else -- unchanged/focused behavior is asserted, but V8 cannot map the implicit arm. */
 		if (value !== current && !view.hasFocus) {
+			committedRef.current = value;
 			view.dispatch({ changes: { from: 0, to: current.length, insert: value } });
 		}
 	}, [value]);

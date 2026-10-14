@@ -372,4 +372,45 @@ describe('Inspector advanced config JSON / CSS escape hatch', () => {
 		expect(area.className).toContain('error');
 		expect(onOp.mock.calls.some((c) => c[0].op === 'patchWidget')).toBe(false);
 	});
+
+	it('commits an unblurred draft to the widget it was typed for when the selection moves', () => {
+		const onOp = vi.fn<(op: LayoutOp) => void>();
+		const a = gaugeWidget({ label: 'A' });
+		const b = { ...gaugeWidget({ label: 'B' }), id: 'w2' };
+		const { rerender } = render(
+			<Inspector widget={a} placement="floating" configFields={[]} onOp={onOp} />
+		);
+		const area = within(panel()).getByRole('textbox', { name: /config \(JSON\)/i });
+		fireEvent.change(area, { target: { value: '{ "label": "edited" }' } });
+		// The stage selects B on pointerdown, before the textarea blurs.
+		rerender(<Inspector widget={b} placement="floating" configFields={[]} onOp={onOp} />);
+		const patches = onOp.mock.calls.map((c) => c[0]).filter((o) => o.op === 'patchWidget');
+		expect(patches).toEqual([
+			{ op: 'patchWidget', id: 'w1', patch: { config: { label: 'edited' } } }
+		]);
+		expect((area as HTMLTextAreaElement).value).toContain('"label": "B"');
+		// The late blur must not write anything (least of all B's JSON over B, or A's draft over B).
+		fireEvent.blur(area);
+		expect(onOp.mock.calls.filter((c) => c[0].op === 'patchWidget')).toHaveLength(1);
+	});
+
+	it('commits the draft when the selection clears; drops an unparseable one', () => {
+		const onOp = vi.fn<(op: LayoutOp) => void>();
+		const { rerender } = render(
+			<Inspector widget={gaugeWidget()} placement="floating" configFields={[]} onOp={onOp} />
+		);
+		const area = within(panel()).getByRole('textbox', { name: /config \(JSON\)/i });
+		fireEvent.change(area, { target: { value: '{ "label": "kept" }' } });
+		rerender(<Inspector widget={null} configFields={[]} onOp={onOp} />);
+		expect(lastConfigPatch(onOp)).toEqual({ label: 'kept' });
+
+		onOp.mockClear();
+		rerender(
+			<Inspector widget={gaugeWidget()} placement="floating" configFields={[]} onOp={onOp} />
+		);
+		const again = within(panel()).getByRole('textbox', { name: /config \(JSON\)/i });
+		fireEvent.change(again, { target: { value: '{ broken' } });
+		rerender(<Inspector widget={null} configFields={[]} onOp={onOp} />);
+		expect(onOp).not.toHaveBeenCalled();
+	});
 });

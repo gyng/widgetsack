@@ -45,6 +45,18 @@ describe('layout persistence planning', () => {
 		expect(plan.document.theme).toBe('external');
 		expect({ current, saved }).toEqual(before);
 	});
+	it('claims no globals before any layout has loaded (no baseline)', () => {
+		const current = {
+			...view(),
+			savedBaseline: null,
+			selectedTheme: 'seed',
+			tokenOverrides: { '--accent': 'red' }
+		};
+		const plan = planLayoutSave({ ...file(), fileLib: { version: 1, defs: [] } }, current, []);
+		expect(plan.touchedGlobals).toEqual([]);
+		expect(plan.document.library).toEqual({ version: 1, defs: [] });
+		expect(plan.document.theme).toBe('external');
+	});
 	it('folds definition edits without replacing the real monitor or mutating the library', () => {
 		const library: Library = {
 			version: 1,

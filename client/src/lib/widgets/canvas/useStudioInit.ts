@@ -28,12 +28,16 @@ import {
 import type { MonitorOption } from './types';
 import { isForeignWriter } from './externalChange';
 
+// Backoff for re-reading widgets.json after a failed initial load (see retryInitialLoad).
+const INITIAL_LOAD_RETRY_MS = [1000, 3000];
+
 export type StudioInitDeps = {
 	studio: boolean;
 	windowLabel: string; // this window's label, to tell its own layout writes from others'
 	hub: TelemetryHub;
 	updateWorkArea: () => Promise<void>;
-	reloadLayout: () => Promise<unknown>;
+	/** Resolves `false` when widgets.json could not be read (the editor keeps its seed state). */
+	reloadLayout: () => Promise<boolean | void>;
 	reloadControls: () => Promise<void>; // load control remaps (startup + controls_changed)
 	editMode: () => boolean; // for the layout_changed guard
 	syncRects: () => void;
@@ -114,6 +118,20 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			const triggerRefit = (): void => {
 				refit().catch((err) => logClient('error', 'overlay', `refit failed: ${String(err)}`));
 			};
+			const retryInitialLoad = async (): Promise<void> => {
+				for (const delay of INITIAL_LOAD_RETRY_MS) {
+					await new Promise((r) => setTimeout(r, delay));
+					if (scope.disposed) return;
+					if ((await d.current.reloadLayout()) !== false) return;
+				}
+				if (scope.disposed) return;
+				logClient('error', 'layout', 'initial layout load failed; edits will not be saved');
+				if (dep.studio)
+					window.alert(
+						'Could not read the saved layout (widgets.json). Edits will not be saved until it ' +
+							'loads — reopen the studio to try again.'
+					);
+			};
 			// A secondary overlay (?monitor=<key>) fits + reveals ITSELF before anything else, through
 			// the same single-flight so no later trigger can interleave with it. (The spawn side no
 			// longer fits: it lived in the creating window's JS context and died with an empty-primary
@@ -149,7 +167,10 @@ export function useStudioInit(deps: StudioInitDeps): void {
 			if (scope.disposed) return;
 			scope.add(await startAllSources(dep.hub)); // built-in `system` + any plugin sources
 			if (scope.disposed) return;
-			await dep.reloadLayout();
+			// A failed initial read leaves the seed tree with no saved baseline, so persistence holds
+			// every write until a load succeeds: retry in the background (init must not stall on it),
+			// and tell the studio user if it never comes back.
+			if ((await dep.reloadLayout()) === false) void retryInitialLoad();
 			if (scope.disposed) return;
 
 			// Control remaps (controls.json): load once, then live-reload on external edits or a save
@@ -175,9 +196,11 @@ export function useStudioInit(deps: StudioInitDeps): void {
 					}
 					const editing = d.current.editMode();
 					if (editing && !isForeignWriter(e.payload?.writer, dep.windowLabel)) return;
-					// An editing overlay lands its own pending edit first, so the reload neither drops it
-					// nor reads the file before it is written.
-					(editing ? d.current.flushPreviewWrite() : Promise.resolve())
+					// Land this overlay's own pending edit first (a no-op when none is pending), so the reload
+					// neither drops it nor reads the file before it is written. Not only while editing: a
+					// debounced preview can still be pending just after edit mode was left.
+					d.current
+						.flushPreviewWrite()
 						.then(() => d.current.reloadLayout())
 						.then(() => {
 							d.current.syncRects();

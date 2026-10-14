@@ -262,6 +262,91 @@ describe('useStudioInit layout_changed routing', () => {
 		expect(deps.reloadLayout).toHaveBeenCalledTimes(2);
 		expect(deps.onForeignLayoutChange).not.toHaveBeenCalled();
 	});
+
+	it('overlay out of edit mode: a still-pending preview lands before the reload reads the file', async () => {
+		const deps = makeDeps({ editMode: () => false });
+		renderHook(() => useStudioInit(deps));
+		await waitFor(() => expect(deps.syncRects).toHaveBeenCalled());
+		vi.mocked(deps.reloadLayout).mockClear();
+		let flushed!: () => void;
+		vi.mocked(deps.flushPreviewWrite).mockImplementationOnce(
+			() => new Promise<void>((resolve) => (flushed = resolve))
+		);
+		fire({ writer: 'studio' });
+		await waitFor(() => expect(deps.flushPreviewWrite).toHaveBeenCalled());
+		await Promise.resolve();
+		expect(deps.reloadLayout).not.toHaveBeenCalled();
+		flushed();
+		await waitFor(() => expect(deps.reloadLayout).toHaveBeenCalledTimes(1));
+	});
+});
+
+describe('useStudioInit initial layout load', () => {
+	it('retries a failed initial load, then surfaces the failure in the studio', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout'] });
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		try {
+			const deps = makeDeps({ studio: true, reloadLayout: vi.fn(async () => false) });
+			renderHook(() => useStudioInit(deps));
+			await vi.waitFor(() => expect(deps.reloadLayout).toHaveBeenCalledTimes(1));
+			await vi.advanceTimersByTimeAsync(1000);
+			expect(deps.reloadLayout).toHaveBeenCalledTimes(2);
+			expect(alert).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(3000);
+			expect(deps.reloadLayout).toHaveBeenCalledTimes(3);
+			expect(alert).toHaveBeenCalledTimes(1);
+			expect(logClient).toHaveBeenCalledWith(
+				'error',
+				'layout',
+				'initial layout load failed; edits will not be saved'
+			);
+		} finally {
+			alert.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
+	it('stops retrying once a load succeeds, and an overlay never alerts', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout'] });
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		try {
+			const reloadLayout = vi.fn(async () => false).mockResolvedValueOnce(false);
+			const deps = makeDeps({ reloadLayout });
+			renderHook(() => useStudioInit(deps));
+			await vi.waitFor(() => expect(reloadLayout).toHaveBeenCalledTimes(1));
+			reloadLayout.mockResolvedValue(true);
+			await vi.advanceTimersByTimeAsync(5000);
+			expect(reloadLayout).toHaveBeenCalledTimes(2);
+			expect(alert).not.toHaveBeenCalled();
+		} finally {
+			alert.mockRestore();
+			vi.useRealTimers();
+		}
+	});
+
+	it('an overlay that exhausts its retries logs without alerting; unmount cancels retries', async () => {
+		vi.useFakeTimers({ toFake: ['setTimeout'] });
+		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
+		try {
+			const overlay = makeDeps({ reloadLayout: vi.fn(async () => false) });
+			renderHook(() => useStudioInit(overlay));
+			await vi.waitFor(() => expect(overlay.reloadLayout).toHaveBeenCalledTimes(1));
+			await vi.advanceTimersByTimeAsync(4000);
+			expect(overlay.reloadLayout).toHaveBeenCalledTimes(3);
+			expect(alert).not.toHaveBeenCalled();
+
+			const studio = makeDeps({ studio: true, reloadLayout: vi.fn(async () => false) });
+			const { unmount } = renderHook(() => useStudioInit(studio));
+			await vi.waitFor(() => expect(studio.reloadLayout).toHaveBeenCalledTimes(1));
+			unmount();
+			await vi.advanceTimersByTimeAsync(4000);
+			expect(studio.reloadLayout).toHaveBeenCalledTimes(1);
+			expect(alert).not.toHaveBeenCalled();
+		} finally {
+			alert.mockRestore();
+			vi.useRealTimers();
+		}
+	});
 });
 
 describe('useStudioInit resource ownership', () => {

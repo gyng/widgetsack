@@ -986,15 +986,26 @@ export default function Canvas({ studio = false }: Props) {
 		const api: StudioApi = {
 			monitor: () => monitorRef.current,
 			apply: (ops) => {
+				// Mirrors applyAgentStudio: a template preview is read-only, and the ref is advanced
+				// eagerly so a second apply before React commits builds on this result, not a stale tree.
+				if (previewingRef.current)
+					return {
+						applied: 0,
+						addedIds: [],
+						errors: ['The studio is previewing a template; exit the preview before editing.']
+					};
 				const r = applyAssistantOps(
 					monitorRef.current,
 					ops,
 					(type) => `${type}-${editHelpers.rand()}`
 				);
-				commitOp((s) => ({
-					monitor: r.monitor,
-					selectedId: r.addedIds.length ? r.addedIds[r.addedIds.length - 1] : s.selectedId
-				}));
+				if (r.applied) {
+					monitorRef.current = r.monitor;
+					commitOp((s) => ({
+						monitor: r.monitor,
+						selectedId: r.addedIds.length ? r.addedIds[r.addedIds.length - 1] : s.selectedId
+					}));
+				}
 				return { applied: r.applied, addedIds: r.addedIds, errors: r.errors };
 			}
 		};
@@ -1442,7 +1453,7 @@ export default function Canvas({ studio = false }: Props) {
 		closePreview,
 		renameWidget,
 		deleteWidget
-	} = useDefEditor({ editingDefId, previewing, stateRef, dispatch, handleOp });
+	} = useDefEditor({ editingDefId, previewing, stateRef, dispatch, handleOp, myMonitor });
 	// Pick a studio section from the nav rail. While a widget def is open the rail used to be a dead
 	// modal (clicks no-opped, which reads as broken); instead a click now leaves the designer. An
 	// edited def asks first (Done saves it); a read-only/unedited def leaves silently. foldOpenDef does
@@ -1922,8 +1933,13 @@ export default function Canvas({ studio = false }: Props) {
 		overrides: () => overridesRef.current,
 		handlers: {
 			// Escape: close an open menu first; otherwise clear the selection (the control's `when`
-			// already gates this to "a menu is open OR something is selected").
-			'studio.closeMenu': () => (menuRef.current !== null ? closeMenu() : clearSelection()),
+			// already gates this to "a menu is open OR something is selected"). Not while typing in a
+			// field: deselecting would unmount the Inspector field mid-edit (and CodeMirror uses
+			// Escape itself, e.g. to dismiss autocomplete).
+			'studio.closeMenu': () => {
+				if (menuRef.current !== null) closeMenu();
+				else if (!focusInTextField()) clearSelection();
+			},
 			'global.toggleEdit': () => emit(EVENTS.toggleEdit), // broadcast: every monitor's overlay toggles
 			'studio.save': commitSave,
 			'studio.undo': undo,
@@ -3782,6 +3798,27 @@ export default function Canvas({ studio = false }: Props) {
 
 // Label a list of nodes for a picker: with developer mode on, append the instance id; otherwise keep
 // the plain type/kind and number repeats ("gauge", "gauge (2)") so two look-alikes stay tellable.
+const NON_TEXT_INPUTS = new Set([
+	'button',
+	'checkbox',
+	'color',
+	'file',
+	'radio',
+	'range',
+	'submit'
+]);
+/** Whether keyboard focus is in a text field (a draft may be in progress): a textarea, a text-like
+ * input, or a contenteditable editor such as CodeMirror. */
+function focusInTextField(): boolean {
+	const el = document.activeElement;
+	if (el instanceof HTMLTextAreaElement) return true;
+	if (el instanceof HTMLInputElement) return !NON_TEXT_INPUTS.has(el.type);
+	return (
+		el instanceof Element &&
+		el.closest('[contenteditable=""], [contenteditable="true"], .cm-editor') !== null
+	);
+}
+
 function disambiguate(
 	items: { id: string; label: string }[],
 	withIds: boolean

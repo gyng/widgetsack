@@ -70,6 +70,44 @@ describe('CssEditorImpl', () => {
 		expect(onBlur).toHaveBeenCalledWith('x: 1');
 	});
 
+	it('commits an uncommitted edit through its last onBlur when it unmounts', async () => {
+		const onBlurA = vi.fn();
+		const { container, unmount } = render(<CssEditorImpl value="a" onBlur={onBlurA} />);
+		await waitFor(() => expect(cmEditor(container)).toBeTruthy());
+		act(() => {
+			view(container).dispatch({ changes: { from: 1, insert: 'b' } });
+		});
+		unmount();
+		expect(onBlurA).toHaveBeenCalledTimes(1);
+		expect(onBlurA).toHaveBeenCalledWith('ab');
+	});
+
+	it('a controlled (onChange-only) editor unmounts with an edit without committing anything', async () => {
+		const onChange = vi.fn();
+		const { container, unmount } = render(<CssEditorImpl value="a" onChange={onChange} />);
+		await waitFor(() => expect(cmEditor(container)).toBeTruthy());
+		act(() => {
+			view(container).dispatch({ changes: { from: 1, insert: 'b' } });
+		});
+		expect(() => unmount()).not.toThrow();
+		expect(onChange).toHaveBeenCalledTimes(1);
+	});
+
+	it('does not re-commit on unmount once blurred, nor after an external resync', async () => {
+		const onBlur = vi.fn();
+		const { container, rerender, unmount } = render(<CssEditorImpl value="a" onBlur={onBlur} />);
+		await waitFor(() => expect(cmEditor(container)).toBeTruthy());
+		act(() => {
+			view(container).dispatch({ changes: { from: 1, insert: 'b' } });
+			cmContent(container)!.dispatchEvent(new FocusEvent('blur', { bubbles: true }));
+		});
+		expect(onBlur).toHaveBeenCalledTimes(1);
+		rerender(<CssEditorImpl value="synced" onBlur={onBlur} />);
+		await waitFor(() => expect(cmContent(container)?.textContent).toContain('synced'));
+		unmount();
+		expect(onBlur).toHaveBeenCalledTimes(1);
+	});
+
 	it('resyncs the doc when the external value changes while unfocused', async () => {
 		const { container, rerender } = render(<CssEditorImpl value="before" />);
 		await waitFor(() => expect(cmEditor(container)).toBeTruthy());

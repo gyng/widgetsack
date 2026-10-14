@@ -36,7 +36,9 @@ function touchedGlobals(
 	},
 	baseline: Baseline | null
 ): GlobalField[] {
-	if (!baseline) return ['library', 'theme', 'themeLock', 'tokens'];
+	// No loaded baseline means nothing is known to have changed: claim no globals, so the backend
+	// keeps the file's library/theme/tokens rather than dropping ones this editor never saw.
+	if (!baseline) return [];
 	const touched: GlobalField[] = [];
 	if (!sameJson(current.library, baseline.library)) touched.push('library');
 	if (current.themeLock !== baseline.themeLock) {

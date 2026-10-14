@@ -127,6 +127,9 @@ export function useLayoutSession({
 			return; // saveSeq starts at 0; don't write on mount
 		}
 		if (holdPreview.current) return;
+		// No layout has loaded yet (the initial load failed): the editor still holds the seed tree,
+		// and writing it would replace this monitor and drop the file's library/theme/tokens.
+		if (!stateRef.current.savedBaseline) return;
 		schedulePreviewWrite();
 	}, [saveSeq, schedulePreviewWrite]);
 
@@ -227,6 +230,12 @@ export function useLayoutSession({
 		const snapshot = stateRef.current;
 		const monitorKey = myMonitorRef.current;
 		const revision = loadRevision.current;
+		if (!snapshot.savedBaseline) {
+			// The layout never loaded: saving the seed tree would replace this monitor and drop the
+			// file's library/theme/tokens.
+			window.alert('The layout has not loaded yet, so there is nothing to save. Try again.');
+			return false;
+		}
 		const ok = await persistToDisk(snapshot.pendingExtras);
 		if (!ok) {
 			// Hard failure (disk full / file locked / permissions): keep `dirty` true and the pending
@@ -243,12 +252,18 @@ export function useLayoutSession({
 		if (monitorKey !== myMonitorRef.current || revision !== loadRevision.current) return false;
 		dispatch({ type: 'extrasFlushed', extras: snapshot.pendingExtras });
 		dispatch({ type: 'setBaseline', snapshot });
+		// An explicit Save is a "Keep mine": this editor's state now IS the file, so the
+		// "Layout changed on disk" banner and its preview hold are resolved.
+		holdPreview.current = false;
+		setExternalChange(false);
 		// Flash a transient confirmation in the powerbar (the write reached disk → the overlays reload).
 		setSavedFlash(true);
 		if (savedFlashTimer.current) clearTimeout(savedFlashTimer.current);
 		savedFlashTimer.current = window.setTimeout(() => setSavedFlash(false), 2200);
 		return true;
 	}, [studio, clearPreviewWrite, persistToDisk, dispatch]);
+	// Raised by onForeignLayoutChange (below); declared here because Save resolves it.
+	const [externalChange, setExternalChange] = useState(false);
 	// Mirrored in the effect below (read only from the studio-close listener).
 	const pendingExtrasRef = useRef(pendingExtras);
 	const commitSaveRef = useRef(commitSave);
@@ -317,6 +332,12 @@ export function useLayoutSession({
 	const cancelEdits = useCallback(async () => {
 		if (!studio || !dirtyRef.current || !savedBaselineRef.current) return;
 		if (!window.confirm('Discard all unsaved changes since the last save?')) return;
+		// The file changed under us ("Layout changed on disk"): discarding means adopting it, not
+		// writing the old baseline over the other writer's change.
+		if (holdPreview.current) {
+			reloadExternalRef.current();
+			return;
+		}
 		if (!(await revertDraftToDisk())) return;
 		// Drop out of def editing only once the saved baseline has reached disk.
 		dispatch({
@@ -345,9 +366,8 @@ export function useLayoutSession({
 	}, [dispatch, revertDraftToDisk]);
 
 	// --- studio: switch monitor ---
-	const switchMonitor = useCallback(
+	const switchMonitorNow = useCallback(
 		async (key: string) => {
-			if (key === myMonitorRef.current) return;
 			// No preview timer may outlive this point: one that fired after the switch used to write
 			// the placeholder EMPTY tree (below) under the NEW key. A pending write for the old
 			// monitor is landed now (flushed, not dropped — an undo back to baseline still debouncing
@@ -361,7 +381,9 @@ export function useLayoutSession({
 			}
 			if (dirtyRef.current) {
 				if (!window.confirm('Discard unsaved changes to this monitor and switch?')) return;
-				if (!(await revertDraftToDisk())) return;
+				// While the "Layout changed on disk" banner holds edits, the file already has the
+				// other writer's version: discarding must not write the old baseline over it.
+				if (!holdPreview.current && !(await revertDraftToDisk())) return;
 			}
 			const previousKey = myMonitorRef.current;
 			const previousMonitor = stateRef.current.monitor;
@@ -374,7 +396,12 @@ export function useLayoutSession({
 			dispatch({ type: 'patch', patch: { selectedId: null, selectedIds: [] } });
 			switchUiRef.current();
 			dispatch({ type: 'replaceMonitor', monitor: { root: emptyRoot(), floating: [] } });
-			if (await reloadLayout()) return;
+			if (await reloadLayout()) {
+				// The banner was about the previous monitor's draft, now discarded.
+				holdPreview.current = false;
+				setExternalChange(false);
+				return;
+			}
 			// The new monitor could not be read: an edit now would write the empty placeholder over
 			// its saved layout. Go back to the monitor that was showing.
 			setMyMonitor(previousKey);
@@ -385,11 +412,25 @@ export function useLayoutSession({
 		},
 		[studio, dispatch, revertDraftToDisk, reloadLayout, flushPreviewWrite, setMyMonitor]
 	);
+	// A switch awaits disk work and confirms: a second request while one is in flight is ignored,
+	// or both would revert/reload and race over myMonitor.
+	const switchingRef = useRef(false);
+	const switchMonitor = useCallback(
+		async (key: string) => {
+			if (key === myMonitorRef.current || switchingRef.current) return;
+			switchingRef.current = true;
+			try {
+				await switchMonitorNow(key);
+			} finally {
+				switchingRef.current = false;
+			}
+		},
+		[switchMonitorNow]
+	);
 	// --- widgets.json changed under the studio by ANOTHER writer (an overlay's edit mode, a hand
 	// edit, a sync tool). Reload silently when nothing here would be lost; otherwise raise the
 	// "Layout changed on disk" banner — the studio used to ignore every change (it is always
 	// editing) and then clobber the external edit on its next preview write. ---
-	const [externalChange, setExternalChange] = useState(false);
 	const onForeignLayoutChange = useCallback(() => {
 		const verdict = decideExternalChange({
 			dirty: dirtyRef.current,
@@ -425,6 +466,7 @@ export function useLayoutSession({
 		schedulePreviewWrite();
 	}, [schedulePreviewWrite]);
 	const onForeignLayoutChangeRef = useRef(onForeignLayoutChange); // mirrored in the effect below
+	const reloadExternalRef = useRef(reloadExternal); // mirrored in the effect below
 
 	useEffect(() => {
 		stateRef.current = state;
@@ -435,6 +477,7 @@ export function useLayoutSession({
 		savedBaselineRef.current = savedBaseline;
 		dirtyRef.current = dirty;
 		onForeignLayoutChangeRef.current = onForeignLayoutChange;
+		reloadExternalRef.current = reloadExternal;
 		switchUiRef.current = onMonitorSwitch;
 	});
 	return {
