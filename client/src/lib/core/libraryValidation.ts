@@ -29,6 +29,15 @@ function param(value: unknown): boolean {
 
 /** Validate reusable definitions before their trees reach scanners, rendering, or persistence. */
 export function validLibrary(value: unknown): value is Library {
+	return (
+		validLibraryShape(value) &&
+		value.defs.every((def) => safeGroupReferences(def.child, value, [def.id]))
+	);
+}
+
+/** The structural half of `validLibrary`: well-formed, uniquely-identified definitions whose
+ * references may still be unsafe (see `withoutUnsafeDefinitions`). */
+export function validLibraryShape(value: unknown): value is Library {
 	if (!record(value) || value.version !== 1 || !Array.isArray(value.defs)) return false;
 	const ids = new Set<string>();
 	const valid = value.defs.every((def) => {
@@ -48,7 +57,5 @@ export function validLibrary(value: unknown): value is Library {
 		ids.add(def.id);
 		return true;
 	});
-	if (!valid) return false;
-	const library = value as unknown as Library;
-	return library.defs.every((def) => safeGroupReferences(def.child, library, [def.id]));
+	return valid;
 }

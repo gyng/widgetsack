@@ -1,5 +1,6 @@
 import { normalizeGridTrackCount, validGridTrackCount } from '../../core/gridDimensions';
 import { desktopMonitor, editingDefinitionId } from '../../core/editorMode';
+import { definitionReaches } from '../../core/groupReferences';
 // The editor model's pure op helpers — ported VERBATIM from Canvas.svelte (via useEditorModel).
 // Each takes the current EditorState and returns a Patch (the new monitor/library/selection);
 // none of them touch React, history, or disk — the reducer's commit chokepoint does that. Grouped
@@ -737,6 +738,9 @@ export function ungroupSelected(s: EditorState, id: string): Patch {
 export function insertWidget(s: EditorState, defId: string): Patch {
 	const def = s.library?.defs.find((d) => d.id === defId);
 	if (!def) return {};
+	// A definition must never contain itself, directly or through another definition.
+	const editing = editingDefinitionId(s.mode);
+	if (editing && definitionReaches(s.library, defId, editing)) return {};
 	const grpId = `grp-${rand()}`;
 	const g = group(grpId, def.size, clone(def.child), { def: defId, name: def.name });
 	// Dock the placed group into the selected container, else the monitor's flow ROOT — widgets join

@@ -11,6 +11,7 @@ import {
 	type WidgetDef
 } from './layoutTree';
 import { validLibrary, stringMap } from './libraryValidation';
+import { withoutUnsafeDefinitions } from './groupReferences';
 import { scanCssThreats, threatSummary } from './cssThreats';
 import { sanitizeParamSpecs } from './safePath';
 import { sanitizeImportedTree, scanDefsThreats, treeThreatSummary } from './treeThreats';
@@ -113,10 +114,12 @@ export function mergeLibrary(
 		if (copy.params !== undefined) copy.params = sanitizeParamSpecs(copy.params) ?? [];
 		return copy;
 	});
-	const library: Library = {
-		version: into?.version ?? 1,
-		defs: [...(into?.defs ?? []), ...remapped]
-	};
+	// An incoming def can still close a cycle through an existing def's unresolved reference;
+	// drop such incoming defs rather than the user's own.
+	const { library } = withoutUnsafeDefinitions(
+		{ version: into?.version ?? 1, defs: [...(into?.defs ?? []), ...remapped] },
+		new Set(remapped.map((def) => def.id))
+	);
 	return { library, idMap };
 }
 

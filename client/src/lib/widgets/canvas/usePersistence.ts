@@ -65,7 +65,8 @@ async function readLayoutFile(backedUp: boolean): Promise<LayoutFile | null> {
 		const decoded = decodeLayoutDocument(raw);
 		const damaged =
 			decoded.kind === 'corrupt' ||
-			(decoded.kind === 'valid' && decoded.droppedMonitors.length > 0);
+			(decoded.kind === 'valid' &&
+				decoded.droppedMonitors.length + decoded.droppedDefinitions.length > 0);
 		if (damaged && !backedUp) throw new Error('layout is damaged and has not been backed up');
 		if (damaged) console.warn('widgets.json is damaged but backed up; recovering the layout');
 		return {

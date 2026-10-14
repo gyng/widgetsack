@@ -110,6 +110,14 @@ describe('mergeLibrary', () => {
 		expect(idMap).toEqual({ b: 'b' });
 	});
 
+	it('drops an incoming def that would close a cycle through an existing def', () => {
+		// The user's B has an unresolved reference to "a"; the sack's A references "b".
+		const into: Library = { version: 1, defs: [mkDef('b', groupLeaf('g', 'a'))] };
+		const { library } = mergeLibrary(into, [mkDef('a', groupLeaf('h', 'b')), mkDef('c')]);
+		expect(library.defs.map((d) => d.id)).toEqual(['b', 'c']);
+		expect(isSack({ kind: 'widgetsack/sack', version: 1, library })).toBe(true);
+	});
+
 	it('regenerates a colliding def id', () => {
 		const into: Library = { version: 1, defs: [mkDef('a')] };
 		const { library, idMap } = mergeLibrary(into, [mkDef('a')]);

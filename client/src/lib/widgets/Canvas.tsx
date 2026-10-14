@@ -3381,6 +3381,7 @@ export default function Canvas({ studio = false }: Props) {
 										groupUnit={selectedGroup}
 										def={selectedDef}
 										defs={library?.defs ?? []}
+										editingDefId={editingDefId}
 										tokens={tokenOverrides}
 										baseWidget={baseWidget}
 										baseContainer={baseContainer}

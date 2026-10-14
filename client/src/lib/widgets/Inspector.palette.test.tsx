@@ -106,6 +106,35 @@ describe('Inspector add-palette — library defs', () => {
 		expect(onOp).toHaveBeenCalledWith({ op: 'insertWidget', defId: 'd1' });
 	});
 
+	it('hides defs that would make the designed definition contain itself', () => {
+		const wrapper: WidgetDef = {
+			...def('wrap', 'Wrapper'),
+			child: {
+				id: 'g',
+				unit: {
+					id: 'g',
+					kind: 'group',
+					def: 'self',
+					size: { w: 1, h: 1 },
+					child: def('x', 'x').child
+				}
+			}
+		};
+		render(
+			<Inspector
+				defs={[def('self', 'Designed'), wrapper, def('d1', 'My Widget')]}
+				editingDefId="self"
+				onOp={vi.fn()}
+			/>
+		);
+		const items = within(palette())
+			.getAllByRole('button')
+			.map((b) => b.getAttribute('aria-label'));
+		expect(items).toContain('My Widget');
+		expect(items).not.toContain('Designed');
+		expect(items).not.toContain('Wrapper');
+	});
+
 	it('routes the ✕ delete through onDeleteDef when provided', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		const onDeleteDef = vi.fn<(id: string, name: string) => void>();

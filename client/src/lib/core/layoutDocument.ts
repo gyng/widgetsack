@@ -1,4 +1,5 @@
-import { validLibrary } from './libraryValidation';
+import { validLibraryShape } from './libraryValidation';
+import { withoutUnsafeDefinitions } from './groupReferences';
 import { parseLayoutAny } from './migration';
 import type { Library, LayoutV2 } from './layoutTree';
 
@@ -14,6 +15,8 @@ export type DecodedLayoutDocument =
 			themeLock: boolean;
 			tokens: Record<string, string>;
 			droppedMonitors: string[];
+			/** Unsafe (cyclic or too deep) definitions removed from `library`. */
+			droppedDefinitions: string[];
 	  };
 
 /** One interpretation of layout files for editing, persistence and overlay reconciliation.
@@ -29,9 +32,12 @@ export function decodeLayoutDocument(contents: string | null): DecodedLayoutDocu
 	const layout = parseLayoutAny(value);
 	if (!layout) return { kind: 'corrupt', reason: 'unsupported or invalid layout' };
 	const raw = value as Record<string, unknown>;
-	const library = raw.library == null ? undefined : raw.library;
-	if (library !== undefined && !validLibrary(library))
+	const stored = raw.library == null ? undefined : raw.library;
+	if (stored !== undefined && !validLibraryShape(stored))
 		return { kind: 'corrupt', reason: 'invalid widget library' };
+	// One self-containing definition must not blank every monitor: drop only the unsafe ones.
+	const safe = stored === undefined ? undefined : withoutUnsafeDefinitions(stored);
+	const library = safe?.library;
 	const tokens = raw.tokens;
 	return {
 		kind: 'valid',
@@ -48,6 +54,7 @@ export function decodeLayoutDocument(contents: string | null): DecodedLayoutDocu
 						)
 					)
 				: {},
+		droppedDefinitions: safe?.dropped ?? [],
 		// parseLayoutAny validates the monitors object before returning a layout.
 		droppedMonitors: Object.keys(raw.monitors as Record<string, unknown>).filter(
 			(key) => !Object.hasOwn(layout.monitors, key)

@@ -171,7 +171,11 @@ export function useLayoutSession({
 			if (!isCurrent()) return;
 			const decoded = decodeLayoutDocument(raw);
 			const valid = decoded.kind === 'valid' ? decoded : null;
-			if (decoded.kind === 'corrupt' || valid?.droppedMonitors.length) {
+			if (
+				decoded.kind === 'corrupt' ||
+				valid?.droppedMonitors.length ||
+				valid?.droppedDefinitions.length
+			) {
 				logClient('error', 'layout', 'widgets.json is damaged; backing it up before editing');
 				backupLayoutFile();
 			}

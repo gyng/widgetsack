@@ -31,6 +31,7 @@ import type {
 	WidgetDef,
 	WidgetInstance
 } from '../core/layoutTree';
+import { definitionReaches } from '../core/groupReferences';
 import { fieldGroups, getMeta } from '../core/widget';
 import type { ConfigField } from '../core/widget';
 import { readOverlayPrefs } from './canvas/overlayPrefs';
@@ -80,6 +81,7 @@ type Props = {
 	groupUnit?: Group | null;
 	def?: WidgetDef | null; // the selected group's def (for params)
 	defs?: WidgetDef[]; // the whole library (for insert / delete)
+	editingDefId?: string | null; // the definition being designed: never insertable into itself
 	tokens?: Record<string, string>; // global token overrides (7d)
 	// Manual-save baseline (item 2): the selected node / tokens as they were at the last save, so
 	// changed fields can be flagged. `baseTokens === null` = no baseline (overlay / nothing saved);
@@ -345,6 +347,7 @@ export default function Inspector({
 	groupUnit = null,
 	def = null,
 	defs = [],
+	editingDefId = null,
 	tokens = {},
 	baseWidget = null,
 	baseContainer = null,
@@ -458,7 +461,11 @@ export default function Inspector({
 	const fWidgetGroups = groupPalette(
 		widgetTypes.filter((w) => pmatch(w.label, w.type, getMeta(w.type)?.description))
 	);
-	const fDefs = defs.filter((d) => pmatch(d.name));
+	const fDefs = defs.filter(
+		(d) =>
+			pmatch(d.name) &&
+			!(editingDefId && definitionReaches({ version: 1, defs }, d.id, editingDefId))
+	);
 	const fTemplateGroups = templateGroups
 		.map((g) => ({ ...g, templates: g.templates.filter((t) => pmatch(t.name, t.description)) }))
 		.filter((g) => g.templates.length);

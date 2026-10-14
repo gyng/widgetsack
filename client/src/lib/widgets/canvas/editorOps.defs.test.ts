@@ -128,6 +128,21 @@ describe('cfgNum', () => {
 });
 
 describe('insertWidget', () => {
+	it('refuses to insert the designed definition into itself, directly or indirectly', () => {
+		const wrapper: WidgetDef = { ...gaugeDef('wrapper'), child: instanceOf('designed') };
+		const library: Library = {
+			version: 1,
+			defs: [gaugeDef('designed'), wrapper, gaugeDef('other')]
+		};
+		const desktop = emptyMonitorLayout();
+		const s = state({
+			library,
+			mode: { kind: 'definition', defId: 'designed', desktop, baseline: desktop }
+		});
+		expect(insertWidget(s, 'designed')).toEqual({});
+		expect(insertWidget(s, 'wrapper')).toEqual({});
+		expect(insertWidget(s, 'other').monitor?.root.children).toHaveLength(1);
+	});
 	it('docks a group instance of the def into the flow ROOT and selects it', () => {
 		const library: Library = { version: 1, defs: [gaugeDef('def-1')] };
 		const s = state({ library });
