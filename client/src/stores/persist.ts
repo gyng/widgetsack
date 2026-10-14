@@ -72,7 +72,8 @@ export function createPersistedStore<T>(
 	};
 	persist();
 	store.subscribe(persist);
-	window.addEventListener('storage', (event) => {
+	// Absent outside a browser (the docs generator imports stores under Node).
+	globalThis.addEventListener?.('storage', (event: StorageEvent) => {
 		if (event.key !== key) return;
 		const incoming = parse(readJson(key));
 		last = JSON.stringify(serialize(incoming));

@@ -1,4 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
+// The cold import of overlay.ts (a large module) can exceed 5s under the parallel coverage run.
+vi.setConfig({ testTimeout: 30_000 });
 const fixture = vi.hoisted(() => ({
 	win: {
 		label: 'overlay-DISPLAY2',
