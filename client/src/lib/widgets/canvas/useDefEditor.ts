@@ -134,7 +134,11 @@ export function useDefEditor({
 				handleOp({ op: 'deleteDef', defId });
 			};
 			if (myMonitor === undefined) decide([]);
-			else void savedMonitorsBesides(myMonitor).then(decide);
+			else
+				void savedMonitorsBesides(myMonitor).then(decide, () =>
+					// Can't tell whether other monitors still use it: refuse rather than orphan them.
+					window.alert(`Could not read the saved layout to check where “${name}” is used.`)
+				);
 		},
 		[stateRef, foldOpenDef, handleOp, myMonitor]
 	);

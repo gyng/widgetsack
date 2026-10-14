@@ -265,6 +265,17 @@ describe('deleteWidget (saved other monitors)', () => {
 	});
 });
 
+describe('deleteWidget (layout read failure)', () => {
+	it('refuses to delete when the saved layout cannot be read', async () => {
+		confirm.mockReturnValue(true);
+		vi.mocked(loadLayoutRaw).mockRejectedValue(new Error('locked'));
+		const { result, handleOp } = setup({ myMonitor: 'mine' });
+		await act(async () => result.current.deleteWidget('free', 'Spare'));
+		expect(alert.mock.calls[0][0]).toContain('Spare');
+		expect(handleOp).not.toHaveBeenCalled();
+	});
+});
+
 describe('callback stability', () => {
 	it('keeps every wrapper identity stable across a rerender (deps are dispatch/handleOp/stateRef)', () => {
 		const { result, rerender, base } = setup();

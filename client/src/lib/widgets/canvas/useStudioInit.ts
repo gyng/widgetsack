@@ -152,13 +152,17 @@ export function useStudioInit(deps: StudioInitDeps): void {
 				watchDisplayChanges(
 					triggerRefit,
 					dep.studio ? undefined : () => overlayDrift(ownKey),
-					// Only while main is gone: main owns reconciliation, and two webviews creating the
-					// same overlay race (the loser burns that overlay's create-retry budget).
+					// A monitor can wake without a topology change after its secondary was destroyed, so
+					// reconcile on stable ticks too. Main owns it; the studio stands in only while main is
+					// gone (two webviews creating the same overlay race and the loser burns that overlay's
+					// create-retry budget).
 					dep.studio
 						? async () => {
 								if (!(await mainWindowExists())) await reconcileOverlays();
 							}
-						: undefined
+						: ownKey === null
+							? reconcileOverlays
+							: undefined
 				)
 			);
 			if (scope.disposed) return;

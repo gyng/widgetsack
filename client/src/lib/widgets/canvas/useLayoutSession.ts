@@ -121,6 +121,7 @@ export function useLayoutSession({
 	// While the "Layout changed on disk" banner is up, edits stay in memory: a preview write would
 	// overwrite the external change before the user chose Reload or Keep mine.
 	const holdPreview = useRef(false);
+	const unsavedWarned = useRef(false);
 	useEffect(() => {
 		if (firstSave.current) {
 			firstSave.current = false;
@@ -129,9 +130,19 @@ export function useLayoutSession({
 		if (holdPreview.current) return;
 		// No layout has loaded yet (the initial load failed): the editor still holds the seed tree,
 		// and writing it would replace this monitor and drop the file's library/theme/tokens.
-		if (!stateRef.current.savedBaseline) return;
+		if (!stateRef.current.savedBaseline) {
+			// The studio says so when the load retries give up; an overlay in edit mode says so on
+			// its first held edit.
+			if (!studio && !unsavedWarned.current) {
+				unsavedWarned.current = true;
+				window.alert(
+					'Could not read the saved layout (widgets.json), so edits here are not being saved.'
+				);
+			}
+			return;
+		}
 		schedulePreviewWrite();
-	}, [saveSeq, schedulePreviewWrite]);
+	}, [saveSeq, schedulePreviewWrite, studio]);
 
 	// --- reloadLayout ---
 	// An unparseable widgets.json is backed up ONCE per window (the backend copies it aside as
@@ -274,6 +285,9 @@ export function useLayoutSession({
 		const sequence = stateRef.current.saveSeq;
 		const unchanged = () =>
 			revision === loadRevision.current && sequence === stateRef.current.saveSeq;
+		// The layout never loaded, so nothing here can be saved (commitSave refuses): don't trap the
+		// window open — the user was already told edits are not being saved.
+		if (!stateRef.current.savedBaseline) return true;
 		try {
 			if (dirtyRef.current || pendingExtrasRef.current.length > 0) {
 				if (!(await commitSaveRef.current())) return false;
@@ -407,7 +421,11 @@ export function useLayoutSession({
 			setMyMonitor(previousKey);
 			myMonitorRef.current = previousKey;
 			if (studio) writeStudioMonitor(previousKey);
-			dispatch({ type: 'replaceMonitor', monitor: previousMonitor });
+			// Back to the saved state: a draft was either clean (it equals the baseline) or discarded
+			// above, and `stateRef` may still hold that pre-revert draft (or a def's scoped tree).
+			// Without a baseline (no load ever succeeded) only the tree that was showing is left.
+			if (savedBaselineRef.current) dispatch({ type: 'revertToBaseline' });
+			else dispatch({ type: 'replaceMonitor', monitor: previousMonitor });
 			window.alert('Could not load that monitor’s layout. Staying on the current monitor.');
 		},
 		[studio, dispatch, revertDraftToDisk, reloadLayout, flushPreviewWrite, setMyMonitor]
