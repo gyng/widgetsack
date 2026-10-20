@@ -26,6 +26,16 @@ const unit = (
 ): WidgetInstance => ({ id, type, rect: { x: 0, y: 0, w: 10, h: 10 }, config, ...extra });
 
 describe('isRemoteUrl', () => {
+	it('reports custom AI usage commands in imported trees', () => {
+		const threats = scanTreeThreats(
+			leaf(
+				unit('usage', 'aiusage', {
+					providers: [{ source: 'codex' }, { source: 'command', command: 'Get-Usage' }]
+				})
+			)
+		);
+		expect(threats).toContainEqual({ kind: 'shell-command', id: 'usage', detail: 'Get-Usage' });
+	});
 	it('is true for http(s) and protocol-relative, false for local/data/asset/non-strings', () => {
 		expect(isRemoteUrl('https://x.example/a.png')).toBe(true);
 		expect(isRemoteUrl('  HTTP://x.example')).toBe(true);

@@ -10,6 +10,7 @@ import { topProcessSensors } from './topProcess';
 import { pingSensors } from './ping';
 import { procWatchSensors } from './procWatch';
 import { dashboardMetas } from './dashboardMetas';
+import { aiUsageMeta } from './aiUsageMeta';
 
 // A typed config field, so the inspector can render a real input instead of raw JSON. `help` is a
 // one-line description surfaced in the inspector; `default` is the field's own reset value (falls
@@ -70,7 +71,8 @@ export type ConfigField =
 	// detected DDC inputs — pick which to show and optionally rename each. The value is the same
 	// `code=label` spec string `text` would hold (core/monitorInputs); the editor just builds it. The
 	// inspector renders MonitorSourcesEditor (it detects inputs via a Tauri command — studio-only).
-	| ({ key: string; label: string; kind: 'monitorSources' } & FieldMeta);
+	| ({ key: string; label: string; kind: 'monitorSources' } & FieldMeta)
+	| ({ key: string; label: string; kind: 'usageProviders' } & FieldMeta);
 
 export type SensorKind = 'scalar' | 'series' | 'text' | 'json' | 'none';
 
@@ -1371,7 +1373,8 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 			}
 		]
 	},
-	...dashboardMetas
+	...dashboardMetas,
+	aiUsageMeta
 ];
 
 // The defaultConfig keys with no matching ConfigField — i.e. config a user could only reach via the

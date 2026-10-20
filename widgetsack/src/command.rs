@@ -1,5 +1,7 @@
 //! Tauri command adapters grouped by capability. Shared filesystem operations live in file_io.
 
+pub mod ai_usage;
+mod ai_usage_tokens;
 pub mod application;
 pub mod controls;
 pub mod fonts;

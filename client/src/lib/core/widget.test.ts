@@ -86,7 +86,8 @@ describe('meta registry', () => {
 			'servicehealth',
 			'audiomixer',
 			'checklist',
-			'history'
+			'history',
+			'aiusage'
 		]);
 		expect(getMeta('gauge')).toMatchObject({ label: 'Gauge', binds: 'scalar' });
 		expect(getMeta('sparkline')?.binds).toBe('series');
@@ -342,4 +343,14 @@ describe('field metadata: showWhen / group / help', () => {
 		expect(target.details).toBeTruthy();
 		expect(target.help!.length).toBeLessThan(120);
 	});
+});
+it('creates AI Usage as a two-row compact widget sized for a narrow sidebar', () => {
+	const widget = createWidget('aiusage', 'usage');
+	expect(widget.config).toMatchObject({
+		compact: true,
+		minimal: false,
+		showHeader: false,
+		interval: 900
+	});
+	expect(widget.rect).toMatchObject({ w: 265, h: 44 });
 });

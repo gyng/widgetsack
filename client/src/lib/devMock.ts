@@ -25,6 +25,34 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 	let overlayEdit = false; // backend-owned overlay edit state (the mock has no overlays to notify)
 	const handleCommand: Parameters<typeof mockIPC>[0] = (cmd, args) => {
 		switch (cmd) {
+			case COMMANDS.readAiUsage:
+				return {
+					version: 1,
+					metrics: [
+						{
+							id: 'weekly',
+							label: 'Weekly',
+							kind: 'quota',
+							unit: '%',
+							period: 'week',
+							scope: 'demo account',
+							used: 42,
+							limit: 100,
+							resetsAt: Date.now() + 86400000
+						},
+						{
+							id: 'tokens',
+							label: 'Tokens',
+							kind: 'tokens',
+							unit: 'tokens',
+							period: 'today',
+							scope: 'demo activity',
+							used: 1250000
+						}
+					],
+					bankedResets: { available: 2 },
+					note: 'Browser demo data; native app reads live provider usage.'
+				};
 			case COMMANDS.mcpStatus:
 			case COMMANDS.mcpSetPreferences:
 				return {

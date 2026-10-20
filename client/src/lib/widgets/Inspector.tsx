@@ -38,6 +38,7 @@ import { readOverlayPrefs } from './canvas/overlayPrefs';
 import { toYaml } from '../core/yaml';
 import { normalizeMacro } from '../core/macro';
 import MacroEditor from './MacroEditor';
+import UsageProvidersEditor from './UsageProvidersEditor';
 import MonitorSourcesEditor from './meters/MonitorSourcesEditor';
 import WidgetPreview from './WidgetPreview';
 import CssEditor from './CssEditor';
@@ -843,6 +844,20 @@ export default function Inspector({
 		const help = <FieldHelp help={f.help} details={f.details} />;
 		// A macro field isn't a single labeled control — render its list editor outside a <label>
 		// (wrapping the multi-input editor in a label would be an a11y regression).
+		if (f.kind === 'usageProviders') {
+			return (
+				<div className="cfg-field" key={f.key}>
+					{resetBtn}
+					<span className="hd">{f.label}</span>
+					<UsageProvidersEditor
+						value={w.config[f.key]}
+						defaults={w.config}
+						onChange={(next) => setConfig(f.key, next)}
+					/>
+					{help}
+				</div>
+			);
+		}
 		if (f.kind === 'macro') {
 			return (
 				<div

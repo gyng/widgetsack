@@ -578,6 +578,23 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 | `threshold` | number | 80 |  | Beginning of the shaded warning band. |
 | `showStats` | toggle | true |  | Show summaries of each visible history window in the legend. |
 
+### AI Usage — `aiusage`
+
+Claude and Codex quotas, token activity, credit balances and banked resets, with optional local history graphs and consumption estimates. Add OpenRouter, OMP or custom JSON commands.
+
+- **Default size:** 265×44
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `minimal` | toggle | false |  | Values only, one line per provider. Overrides provider density. |
+| `minimalIcons` | toggle | false |  | Optional provider icons instead of hiding labels entirely. |
+| `showHeader` | toggle | false |  | Optional heading above the provider rows. |
+| `label` | text | "AI Usage" |  | Widget heading. |
+| `providers` | usageProviders | [{"settings":{"session":{},"week":{},"other":{},"tokens":{},"credits":{},"banked":{},"graph":{},"eta":{},"resets":{}},"labels":{},"order":["session","week","other","tokens","credits","banked","graph","eta","resets"],"id":"codex","source":"codex","label":"Codex","enabled":true,"command":"","env":"OPENROUTER_API_KEY","account":"","compact":"inherit","session":true,"week":true,"other":false,"tokens":false,"credits":false,"banked":true,"eta":false,"resets":false,"graph":false},{"settings":{"session":{},"week":{},"other":{},"tokens":{},"credits":{},"banked":{},"graph":{},"eta":{},"resets":{}},"labels":{},"order":["session","week","other","tokens","credits","banked","graph","eta","resets"],"id":"claude","source":"claude","label":"Claude","enabled":true,"command":"","env":"OPENROUTER_API_KEY","account":"","compact":"inherit","session":true,"week":true,"other":false,"tokens":false,"credits":false,"banked":true,"eta":false,"resets":false,"graph":false}] |  | Codex and Claude are enabled initially. Add providers, override commands and choose visible readings independently. |
+| `interval` | number | 900 | min 60, max 3600 | Backend requests are shared for 60 seconds across windows. Default: fifteen minutes. |
+| `timeout` | number | 20 | min 5, max 60 | Maximum duration of each provider refresh. |
+| `compact` | toggle | true |  | One line per provider with optional inline sparklines. Detailed layout includes estimates and full graph captions. |
+
 ### HA Sensor — `ha.sensor`
 
 ![HA Sensor widget](img/widgets/ha.sensor.png)

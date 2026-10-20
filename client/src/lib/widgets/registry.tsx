@@ -13,6 +13,7 @@ import ServiceHealthHost from './ServiceHealthHost';
 import AudioMixerHost from './AudioMixerHost';
 import History from './meters/History';
 import CommandHost from './CommandHost';
+import AiUsageHost from './AiUsageHost';
 import Sparkline from './meters/Sparkline';
 import Text from './meters/Text';
 import Clock from './meters/Clock';
@@ -53,6 +54,7 @@ const components: Record<string, MeterComponent> = {
 	audiomixer: asMeter(AudioMixerHost),
 	history: asMeter(History),
 	command: asMeter(CommandHost),
+	aiusage: asMeter(AiUsageHost),
 	gauge: asMeter(Gauge),
 	sparkline: asMeter(Sparkline),
 	text: asMeter(Text),

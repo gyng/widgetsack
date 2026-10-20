@@ -35,6 +35,23 @@ const lastConfigPatch = (onOp: ReturnType<typeof vi.fn>): Record<string, unknown
 const panel = (): HTMLElement => screen.getByRole('tabpanel');
 
 describe('Inspector config-field rendering (per ConfigField kind)', () => {
+	it('edits provider settings through the AI Usage field', () => {
+		const onOp = vi.fn();
+		render(
+			<Inspector
+				widget={{ ...gaugeWidget(), type: 'aiusage' }}
+				placement="floating"
+				configFields={[{ key: 'providers', label: 'providers', kind: 'usageProviders' }]}
+				onOp={onOp}
+			/>
+		);
+		fireEvent.change(within(screen.getByRole('group', { name: 'Codex' })).getByLabelText('Label'), {
+			target: { value: 'Work Codex' }
+		});
+		expect(lastConfigPatch(onOp)?.providers).toEqual(
+			expect.arrayContaining([expect.objectContaining({ label: 'Work Codex' })])
+		);
+	});
 	it('renders a text field and emits the typed value into config (empty → undefined)', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		const fields: ConfigField[] = [{ key: 'label', label: 'label', kind: 'text' }];

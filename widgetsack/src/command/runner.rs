@@ -6,10 +6,10 @@ const OUTPUT_LIMIT: usize = 64 * 1024;
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommandResult {
-    stdout: String,
-    stderr: String,
-    exit_code: Option<i32>,
-    truncated: bool,
+    pub(super) stdout: String,
+    pub(super) stderr: String,
+    pub(super) exit_code: Option<i32>,
+    pub(super) truncated: bool,
 }
 async fn read_bounded(mut reader: impl AsyncRead + Unpin) -> std::io::Result<(String, bool)> {
     let mut bytes = Vec::new();
@@ -36,7 +36,7 @@ fn validate_command(command: &str) -> Result<(), String> {
     }
     Ok(())
 }
-async fn execute(command: &str, deadline: Duration) -> Result<CommandResult, String> {
+pub(super) async fn execute(command: &str, deadline: Duration) -> Result<CommandResult, String> {
     validate_command(command)?;
     let mut process = tokio::process::Command::new("powershell.exe");
     let script = format!(
@@ -55,6 +55,9 @@ async fn execute(command: &str, deadline: Duration) -> Result<CommandResult, Str
     let mut child = process
         .spawn()
         .map_err(|e| format!("Could not start PowerShell: {e}"))?;
+    #[cfg(windows)]
+    let _job =
+        crate::studio_agent::ProcessJob::attach(child.id().ok_or("Command has no process ID")?)?;
     let stdout = child.stdout.take().expect("stdout is piped");
     let stderr = child.stderr.take().expect("stderr is piped");
     let work = async {
@@ -69,7 +72,7 @@ async fn execute(command: &str, deadline: Duration) -> Result<CommandResult, Str
     };
     tokio::time::timeout(deadline, work)
         .await
-        .map_err(|_| "Command timed out after 30 seconds".to_string())?
+        .map_err(|_| format!("Command timed out after {} seconds", deadline.as_secs()))?
         .map_err(|e| format!("Could not read command output: {e}"))
 }
 /// Not studio-gated (overlay Command widgets call it), so a non-studio caller may only run a

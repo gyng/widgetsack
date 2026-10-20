@@ -6,3 +6,6 @@ settings.json
 .claude/
 # Playwright MCP scratch (screenshots / console logs from interactive browser sessions)
 .playwright-mcp/
+
+# Local development probes, layouts, screenshots and build logs
+/work/

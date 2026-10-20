@@ -19,6 +19,8 @@ import { container, group, isContainer, isGroup, leaf } from './layoutTree';
 import { applyParams } from './solve';
 import { NOWPLAYING_DEFAULT_CSS, createWidget } from './widget';
 import { dashboardMetas } from './dashboardMetas';
+import { aiUsageMeta } from './aiUsageMeta';
+import { aiUsageTemplates } from './aiUsageTemplates';
 import { LOCAL_DESKTOP_DEF } from './localDesktop';
 
 const rand = (): string => Math.random().toString(36).slice(2, 8);
@@ -318,6 +320,7 @@ const CLOCK_PARAMS: ParamSpec[] = [
 ];
 
 export const TEMPLATES: Template[] = [
+	...aiUsageTemplates,
 	{
 		id: 'local-desktop',
 		name: 'Local desktop',
@@ -325,9 +328,9 @@ export const TEMPLATES: Template[] = [
 		size: LOCAL_DESKTOP_DEF.size,
 		tree: () => structuredClone(LOCAL_DESKTOP_DEF.child)
 	},
-	...dashboardMetas.map((meta) => ({
+	...[...dashboardMetas, aiUsageMeta].map((meta) => ({
 		id: `dashboard-widget-${meta.type}`,
-		name: meta.label!,
+		name: meta.type === 'aiusage' ? 'AI Usage panel' : meta.label!,
 		description: meta.description!,
 		size: meta.defaultSize!,
 		tree: () => leaf(createWidget(meta.type, `template-${meta.type}`))

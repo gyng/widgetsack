@@ -3,6 +3,24 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.66
+
+### Added
+
+- AI Usage widget for Codex and Claude quotas, token tracking, banked Codex resets, OpenRouter
+  credits, OMP and custom JSON commands. The default Compact layout fits two providers in a
+  265 × 44 sidebar widget, with Minimal and Detailed presets also available.
+- Reorder and rename provider readings, choose Used or Left, and add independent rate/ETA,
+  reset countdown and sparkline items. Quotas default to Left and refresh every 15 minutes.
+
+### Fixed
+
+- Share provider requests across windows, respect rate-limit cooldowns, retain the last successful
+  readings on errors, and avoid new requests when editing display settings.
+- Keep overlay commands limited to saved layouts, pin package downloads and clear removed AI keys.
+- Fix per-widget Spectrum device/scale settings, GPU handle cleanup and Windows wallpaper layering.
+- Steady Studio interactions, including newly added widget highlighting and early palette clicks.
+
 ## 0.0.65
 
 ### Added
