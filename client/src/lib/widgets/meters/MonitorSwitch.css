@@ -21,7 +21,7 @@
 	gap: 8px;
 }
 .ms-title {
-	font-size: var(--ms-title-size, 0.66em);
+	font-size: var(--ms-title-size, var(--np-text-caption, 12px));
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 	color: var(--np-label, rgba(255, 255, 255, 0.5));
@@ -31,7 +31,7 @@
 }
 .ms-stats {
 	flex: 0 0 auto;
-	font-size: var(--ms-stats-size, 0.6em);
+	font-size: var(--ms-stats-size, var(--np-text-caption, 12px));
 	color: var(--np-label, rgba(255, 255, 255, 0.4));
 	white-space: nowrap;
 }
@@ -48,17 +48,17 @@
 	/* Big, tiled, finger-friendly buttons (wrap to fill the widget). */
 	flex: 1 1 var(--ms-btn-min, 84px);
 	min-width: var(--ms-btn-min, 84px);
-	min-height: var(--ms-btn-h, var(--np-touch-target, 44px));
+	min-height: var(--ms-btn-h, var(--np-control-size, 44px));
 	display: flex;
 	align-items: center;
 	justify-content: center;
 	padding: 8px 12px;
 	border: 1px solid var(--ms-border, rgba(255, 255, 255, 0.16));
-	border-radius: var(--ms-radius, 8px);
+	border-radius: var(--ms-radius, var(--np-radius, 8px));
 	background: var(--ms-row-bg, rgba(255, 255, 255, 0.06));
 	color: inherit;
 	font: inherit;
-	font-size: var(--ms-row-size, 0.95em);
+	font-size: var(--ms-row-size, var(--np-text-body, 14px));
 	text-align: center;
 	cursor: pointer;
 	transition:
@@ -109,8 +109,8 @@
 	justify-content: flex-start;
 	padding: 2px 8px;
 	border: 0;
-	border-radius: var(--ms-radius, 5px);
-	font-size: var(--ms-row-size-compact, 0.86em);
+	border-radius: var(--ms-radius, var(--np-radius, 5px));
+	font-size: var(--ms-row-size-compact, var(--np-text-body, 14px));
 	font-weight: 400;
 	text-align: left;
 }

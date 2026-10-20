@@ -16,7 +16,7 @@
 	flex: 0 0 auto;
 }
 .as-title {
-	font-size: var(--as-title-size, 0.66em);
+	font-size: var(--as-title-size, var(--np-text-caption, 12px));
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 	color: var(--np-label, rgba(255, 255, 255, 0.5));
@@ -37,11 +37,11 @@
 	min-height: var(--np-control-size, 28px);
 	padding: 2px 6px;
 	border: 0;
-	border-radius: var(--as-radius, 5px);
+	border-radius: var(--as-radius, var(--np-radius, 5px));
 	background: var(--as-row-bg, rgba(255, 255, 255, 0.06));
 	color: inherit;
 	font: inherit;
-	font-size: var(--as-row-size, 0.86em);
+	font-size: var(--as-row-size, var(--np-text-body, 14px));
 	text-align: left;
 	cursor: pointer;
 	transition: background 0.12s ease;

@@ -39,6 +39,7 @@ import { toYaml } from '../core/yaml';
 import { normalizeMacro } from '../core/macro';
 import MacroEditor from './MacroEditor';
 import UsageProvidersEditor from './UsageProvidersEditor';
+import { resolveUsageLayout } from '../core/aiUsageSettings';
 import MonitorSourcesEditor from './meters/MonitorSourcesEditor';
 import WidgetPreview from './WidgetPreview';
 import CssEditor from './CssEditor';
@@ -960,7 +961,11 @@ export default function Inspector({
 						/>
 					) : f.kind === 'select' ? (
 						<Select
-							value={cfgStr(w.config[f.key])}
+							value={
+								w.type === 'aiusage' && f.key === 'layout'
+									? resolveUsageLayout(w.config)
+									: cfgStr(w.config[f.key])
+							}
 							// An unset key shows its effective default as "<option> (default)".
 							defaultValue={cfgStr(def) || undefined}
 							options={
@@ -983,6 +988,14 @@ export default function Inspector({
 							}
 							onChange={(v) => setConfig(f.key, v)}
 							aria-label={f.label}
+						/>
+					) : f.kind === 'text' && f.multiline ? (
+						<textarea
+							className="cfg-expr"
+							rows={6}
+							spellCheck={false}
+							value={cfgStr(w.config[f.key])}
+							onInput={(e) => setConfig(f.key, e.currentTarget.value || undefined, true)}
 						/>
 					) : f.kind === 'expr' ? (
 						<textarea
@@ -1912,6 +1925,11 @@ export default function Inspector({
 								</summary>
 								<TokenFields
 									values={tokenValues}
+									onApply={(tokens) =>
+										widget
+											? op({ op: 'patchWidget', id: tokenTargetId, patch: { tokens } })
+											: op({ op: 'patchGroup', id: tokenTargetId, patch: { tokens } })
+									}
 									baseValues={(widget ? baseWidget?.tokens : baseGroup?.tokens) ?? null}
 									labelClassName="full"
 									onSet={(key, value) =>

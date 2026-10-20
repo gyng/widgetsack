@@ -25,6 +25,10 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 	let overlayEdit = false; // backend-owned overlay edit state (the mock has no overlays to notify)
 	const handleCommand: Parameters<typeof mockIPC>[0] = (cmd, args) => {
 		switch (cmd) {
+			case COMMANDS.registerCustomHtml:
+				return null; // browser preview uses the isolated srcdoc fallback
+			case COMMANDS.releaseCustomHtml:
+				return undefined;
 			case COMMANDS.readAiUsage:
 				return {
 					version: 1,
@@ -139,6 +143,7 @@ export function installDevMock(opts: { layout?: string } = {}): void {
 				// llmSynthesize) instead of pretending an install/check/fetch succeeded.
 				throw new Error('no network in dev mock');
 			case COMMANDS.removePluginPackage:
+			case COMMANDS.logClient:
 				return undefined;
 			case COMMANDS.listThemes:
 			case COMMANDS.listSacks:

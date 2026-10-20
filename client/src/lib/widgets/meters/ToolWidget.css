@@ -4,22 +4,21 @@
 	box-sizing: border-box;
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
-	padding: 10px;
+	gap: var(--np-row-gap, 8px);
+	padding: var(--np-gap, 10px);
 	color: var(--np-fg, #eee);
-	background: var(--np-bg, rgba(20, 20, 24, 0.9));
-	font:
-		12px/1.5 system-ui,
-		sans-serif;
-	border: 1px solid rgba(128, 128, 128, 0.35);
-	border-radius: 6px;
+	/* WidgetHost owns the surface: a second translucent fill would darken Instrument/Soft. */
+	background: transparent;
+	font: var(--np-text-body, 14px)/var(--np-line-body, 20px) var(--np-font, sans-serif);
+	border: 0;
+	border-radius: var(--np-radius, 6px);
 	overflow: hidden;
 }
 .np-tool-widget header,
 .np-tool-widget form {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: var(--np-gap, 8px);
 	flex: none;
 }
 .np-tool-widget header strong {
@@ -38,10 +37,12 @@
 }
 .np-tool-widget :is(input, button) {
 	font: inherit;
+	min-height: var(--np-control-size, 28px);
+	box-sizing: border-box;
 	color: inherit;
 	background: transparent;
 	border: 1px solid currentColor;
-	border-radius: 4px;
+	border-radius: var(--np-radius, 4px);
 	padding: 4px 8px;
 }
 .np-tool-widget input {
@@ -63,8 +64,8 @@
 .np-tool-widget :is(.tool-hint, small) {
 	opacity: 0.7;
 }
-.np-tool-widget .tool-error {
-	color: var(--ui-danger-fg, #e6a0a0);
+.np-tool-widget :is(.tool-error, [role='alert']) {
+	color: var(--np-danger, #e6a0a0);
 }
 .np-tool-widget .chat-turn {
 	padding: 4px 0;

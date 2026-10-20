@@ -3,6 +3,40 @@ import { afterEach, expect, it } from 'vitest';
 import AiUsage from './AiUsage';
 import { defaultUsageProviders, usageSourceKey, type UsageMetric } from '../../core/aiUsage';
 afterEach(cleanup);
+
+it('keeps quota sparklines on the percentage scale instead of stretching low usage to full height', () => {
+	const provider = { ...defaultUsageProviders()[0], graph: true };
+	const metric: UsageMetric = {
+		id: 'week',
+		label: 'Week',
+		kind: 'quota',
+		unit: '%',
+		used: 5,
+		limit: 100,
+		period: 'week',
+		scope: 'account'
+	};
+	const view = render(
+		<AiUsage
+			providers={[provider]}
+			graphMetric="quota"
+			readings={{
+				[usageSourceKey(provider)]: {
+					snapshot: { version: 1, metrics: [metric] },
+					history: [
+						{ at: 0, metrics: [metric] },
+						{ at: 300000, metrics: [metric] }
+					],
+					at: 300000,
+					error: '',
+					busy: false
+				}
+			}}
+			now={300000}
+		/>
+	);
+	expect(view.container.querySelector('path')!.getAttribute('d')).toMatch(/,41(?:\s|$)/);
+});
 it('fits both default providers into two single-line rows without a heading', () => {
 	const providers = defaultUsageProviders();
 	const readings = Object.fromEntries(
@@ -46,8 +80,32 @@ it('fits both default providers into two single-line rows without a heading', ()
 		<AiUsage providers={providers} readings={readings} now={1000} remaining showHeader />
 	);
 	expect(screen.getAllByText('2%')).toHaveLength(2);
+	expect(screen.queryByText('left')).toBeNull();
+	view.rerender(
+		<AiUsage
+			providers={providers.map((p) => ({
+				...p,
+				settings: { ...p.settings, week: { showMode: true } }
+			}))}
+			readings={readings}
+			now={1000}
+			remaining
+			showHeader
+		/>
+	);
 	expect(screen.getAllByText('left')).toHaveLength(2);
 	expect(screen.getByText('Left')).toBeVisible();
+	view.rerender(
+		<AiUsage
+			providers={providers.map((p) => ({
+				...p,
+				settings: { ...p.settings, week: { showMode: true, remaining: false } }
+			}))}
+			readings={readings}
+			now={1000}
+		/>
+	);
+	expect(screen.getAllByText('used')).toHaveLength(2);
 });
 
 it('minimal can omit every label or show provider icons, with inline graphs', () => {
@@ -89,7 +147,14 @@ it('minimal can omit every label or show provider icons, with inline graphs', ()
 		])
 	);
 	const view = render(
-		<AiUsage minimal providers={providers} readings={readings} now={300000} graphMetric="quota" />
+		<AiUsage
+			layout="minimal"
+			compact={false}
+			providers={providers}
+			readings={readings}
+			now={300000}
+			graphMetric="quota"
+		/>
 	);
 	expect(screen.queryByText('Codex')).toBeNull();
 	expect(screen.queryByText('Used')).toBeNull();

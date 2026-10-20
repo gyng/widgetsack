@@ -211,6 +211,7 @@ export function useLayoutSession({
 				: patch.globalTheme;
 			if (patch.selectedTheme !== stateThemeRef.current) nextTheme = patch.selectedTheme;
 			patch.tokenOverrides = valid?.tokens ?? {};
+			logClient('info', 'layout', 'saved layout loaded', { monitor: myMon, result: decoded.kind });
 		} catch (err) {
 			if (!isCurrent()) return true; // superseded by a newer load, not this load's failure
 			logClient('error', 'layout', `load_layout failed; keeping the current edits: ${String(err)}`);

@@ -57,6 +57,8 @@ export const COMMANDS = {
 	setMicrophoneMute: 'set_microphone_mute',
 	checkServiceHealth: 'check_service_health',
 	runWidgetCommand: 'run_widget_command',
+	registerCustomHtml: 'register_custom_html',
+	releaseCustomHtml: 'release_custom_html',
 	readAiUsage: 'read_ai_usage',
 	// media / now-playing (command/sessions.rs, media.rs)
 	getInitialSessions: 'get_initial_sessions',

@@ -65,7 +65,7 @@ test('System monitor and Network offer smooth charts on insertion', async ({ pag
 		await expect(option).toContainText('On');
 		await page
 			.locator('.tpl-opts')
-			.filter({ has: page.locator('.tpl-opts-name', { hasText: name }) })
+			.filter({ has: page.locator('.tpl-opts-name', { hasText: new RegExp(`^${name}$`) }) })
 			.locator('.tpl-opts-insert')
 			.click();
 		await expect(page.locator('.inspector .node-hd')).toHaveText(name);

@@ -11,6 +11,7 @@ import { pingSensors } from './ping';
 import { procWatchSensors } from './procWatch';
 import { dashboardMetas } from './dashboardMetas';
 import { aiUsageMeta } from './aiUsageMeta';
+import { customHtmlMeta } from './customHtmlMeta';
 
 // A typed config field, so the inspector can render a real input instead of raw JSON. `help` is a
 // one-line description surfaced in the inspector; `default` is the field's own reset value (falls
@@ -40,7 +41,7 @@ export type ConfigField =
 			max?: number;
 			step?: number;
 	  } & FieldMeta)
-	| ({ key: string; label: string; kind: 'text' } & FieldMeta)
+	| ({ key: string; label: string; kind: 'text'; multiline?: boolean } & FieldMeta)
 	| ({ key: string; label: string; kind: 'color' } & FieldMeta)
 	| ({ key: string; label: string; kind: 'toggle' } & FieldMeta)
 	// `catalog` names a runtime-populated option set (e.g. 'audioOutputs') the inspector fills from a
@@ -354,15 +355,22 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		category: 'Meters',
 		defaultSensor: 'cpu.total',
 		defaultSize: { w: 140, h: 30 },
-		defaultConfig: { seconds: 60, barGap: 0.2, axis: true, smooth: false },
+		defaultConfig: { seconds: 60, barGap: 0.2, axis: true, smooth: false, smoothDelay: 1.5 },
 		configFields: [
 			{
 				key: 'smooth',
 				label: 'Smooth charts',
 				kind: 'toggle',
 				group: LOOK,
-				help: 'Blend chart changes between readings. Charts do not animate when reduced motion is on. Recorded values stay unchanged.'
+				help: 'Play buffered recorded samples smoothly. Respects reduced motion; recorded values stay unchanged.'
 			},
+			num('smoothDelay', 'smooth delay (s)', {
+				min: 1,
+				max: 10,
+				step: 0.5,
+				group: LOOK,
+				help: 'Playback delay for smooth charts. Buffers recorded samples so the right edge has known data. History duration stays unchanged.'
+			}),
 			num('seconds', 'history (s)', {
 				min: 5,
 				step: 5,
@@ -409,25 +417,87 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 	{
 		type: 'text',
 		description:
-			'Show a formatted sensor value with an optional label. Formats include percentages, rates, bytes, durations, and integers.',
+			'Show a formatted sensor value with an optional label and inline history sparkline. Formats include percentages, rates, bytes, durations, and integers.',
 		binds: 'scalar',
 		label: 'Text',
 		category: 'Meters',
 		intrinsic: true, // text meter → basis:'content' shrink-wraps to the rendered value
 		defaultSensor: 'net.down',
 		defaultSize: { w: 100, h: 18 },
-		defaultConfig: { format: 'rate', label: '↓' },
+		defaultConfig: {
+			format: 'rate',
+			label: '↓',
+			showSparkline: false,
+			sparklineSeconds: 60,
+			sparklineWidth: 40,
+			sparklineStretch: false,
+			sparklineSmooth: true,
+			sparklineDelay: 1.5,
+			sparklineScale: 'auto'
+		},
 		configFields: [
 			text('label', 'label', { group: DATA, help: 'prefix shown before the value' }),
 			text('format', 'format', {
 				group: DATA,
-				help: 'percent | rate (bytes/s) | bytes (e.g. 16.0 GiB) | duration (uptime) | integer; else raw'
+				help: 'percent | rate (binary bytes/s) | rate-short (one decimal / three significant figures, e.g. 1.2M/s) | bytes | duration | integer; else raw'
 			}),
 			expr('value', 'value (formula)', 'text', {
 				group: DATA,
 				help: 'template: text + {expressions}, e.g. CPU {round(cpu.total)}% · {bytes(mem.used.bytes)}'
 			}),
-			color('color', 'colour', { group: LOOK, help: 'text colour (blank = theme)' })
+			color('color', 'colour', {
+				group: LOOK,
+				help: 'text and inline graph colour (blank = theme)'
+			}),
+			{
+				key: 'showSparkline',
+				label: 'show sparkline',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'Show the bound sensor history beside its current value.'
+			},
+			num('sparklineSeconds', 'sparkline seconds', {
+				min: 5,
+				max: 600,
+				group: LOOK,
+				help: 'History window for the inline graph, in seconds.'
+			}),
+			num('sparklineWidth', 'sparkline width', {
+				min: 24,
+				max: 160,
+				step: 4,
+				group: LOOK,
+				help: 'Inline graph width in pixels.'
+			}),
+			{
+				key: 'sparklineStretch',
+				label: 'stretch sparkline',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'Expand the inline graph to fill the space beside the value instead of using a fixed width.'
+			},
+			{
+				key: 'sparklineSmooth',
+				label: 'smooth sparkline',
+				kind: 'toggle',
+				group: LOOK,
+				help: 'Scroll recorded samples left between readings. Enabled by default; respects reduced motion.'
+			},
+			num('sparklineDelay', 'sparkline delay (s)', {
+				min: 1,
+				max: 10,
+				step: 0.5,
+				group: LOOK,
+				help: 'Smooth playback delay. Buffers recorded data; does not shorten the selected history window.'
+			}),
+			{
+				key: 'sparklineScale',
+				label: 'sparkline scale',
+				kind: 'select',
+				options: ['auto', 'percent'],
+				group: LOOK,
+				help: 'Auto for rates and unbounded values; percent fixes the graph to 0–100 for percentage readings.'
+			}
 		]
 	},
 	{
@@ -615,15 +685,22 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		label: 'CPU',
 		category: 'Meters',
 		defaultSize: { w: 160, h: 90 },
-		defaultConfig: { mode: 'cores', cols: 8, seconds: 30, smooth: false },
+		defaultConfig: { mode: 'cores', cols: 8, seconds: 30, smooth: false, smoothDelay: 1.5 },
 		configFields: [
 			{
 				key: 'smooth',
 				label: 'Smooth charts',
 				kind: 'toggle',
 				group: LOOK,
-				help: 'animate between telemetry ticks; respects reduced motion'
+				help: 'Play buffered per-core samples smoothly; respects reduced motion.'
 			},
+			num('smoothDelay', 'smooth delay (s)', {
+				min: 1,
+				max: 10,
+				step: 0.5,
+				group: LOOK,
+				help: 'Playback delay for smooth charts. Buffers recorded samples so the right edge has known data. History duration stays unchanged.'
+			}),
 			{
 				key: 'mode',
 				label: 'mode',
@@ -1374,7 +1451,8 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		]
 	},
 	...dashboardMetas,
-	aiUsageMeta
+	aiUsageMeta,
+	customHtmlMeta
 ];
 
 // The defaultConfig keys with no matching ConfigField — i.e. config a user could only reach via the

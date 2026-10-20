@@ -133,7 +133,14 @@ describe('AI usage meter', () => {
 		];
 		const view = render(
 			<AiUsage
-				providers={[{ ...p, graph: true, compact: 'detailed' }]}
+				providers={[
+					{
+						...p,
+						graph: true,
+						compact: 'detailed',
+						settings: { ...p.settings, week: { showMode: true } }
+					}
+				]}
 				readings={reading([balance, tokens], { history })}
 				now={now}
 				graphMetric="credits"
@@ -228,7 +235,14 @@ describe('AI usage meter', () => {
 		];
 		const view = render(
 			<AiUsage
-				providers={[{ ...p, graph: true, compact: 'detailed' }]}
+				providers={[
+					{
+						...p,
+						graph: true,
+						compact: 'detailed',
+						settings: { ...p.settings, week: { showMode: true } }
+					}
+				]}
 				readings={reading([quota, credits], { history })}
 				now={now}
 				remaining
@@ -237,8 +251,23 @@ describe('AI usage meter', () => {
 			/>
 		);
 		expect(screen.getByText('2% left')).toBeVisible();
+
 		expect(screen.getByText('$24.80')).toBeVisible();
 		expect(screen.getByRole('img')).toBeVisible();
+		view.rerender(
+			<AiUsage
+				providers={[
+					{
+						...p,
+						compact: 'detailed',
+						settings: { ...p.settings, week: { showMode: true, remaining: false } }
+					}
+				]}
+				readings={reading([quota])}
+				now={now}
+			/>
+		);
+		expect(screen.getByText('98% used')).toBeVisible();
 		view.rerender(
 			<AiUsage
 				providers={[{ ...p, graph: true }]}

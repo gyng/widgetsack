@@ -120,6 +120,8 @@ it('edits settings beside each selected row with independent provider overrides'
 	fireEvent.click(within(codex).getByRole('button', { name: 'Settings for Codex week' }));
 	let options = screen.getByRole('group', { name: 'Codex week settings' });
 	expect(within(options).getByLabelText('Display')).toHaveValue('left');
+	expect(within(options).getByLabelText('Show left / used suffix')).not.toBeChecked();
+	fireEvent.click(within(options).getByLabelText('Show left / used suffix'));
 	fireEvent.change(within(options).getByLabelText('Display'), { target: { value: 'used' } });
 
 	fireEvent.change(within(options).getByLabelText('Warning used %'), { target: { value: '70' } });
@@ -144,4 +146,5 @@ it('edits settings beside each selected row with independent provider overrides'
 	options = screen.getByRole('group', { name: 'Codex week settings' });
 	expect(within(options).getByLabelText('Display')).toHaveValue('used');
 	expect(within(options).getByLabelText('Warning used %')).toHaveValue(70);
+	expect(within(options).getByLabelText('Show left / used suffix')).toBeChecked();
 });

@@ -455,7 +455,7 @@ export function packageTemplateThreats(manifest: PluginPackageManifest): TreeThr
  * so an unchanged package doesn't re-prompt but ANY new/changed capability invalidates consent. */
 export function templateThreatFingerprint(threats: readonly TreeThreat[]): string {
 	return threats
-		.map((t) => `${t.kind}:${t.id}:${t.detail}`)
+		.map((t) => `${t.kind}:${t.id}:${t.detail}${t.content === undefined ? '' : `:${t.content}`}`)
 		.sort()
 		.join('\n');
 }

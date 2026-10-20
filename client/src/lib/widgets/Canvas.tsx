@@ -1,3 +1,4 @@
+import { DESIGN_STYLES, DESIGN_DENSITIES } from '../core/designPresets';
 import Icon from './Icon';
 import { useCanvasDrag } from './canvas/useCanvasDrag';
 import { editingDefinitionId, definitionBaseline, previewDefinition } from '../core/editorMode';
@@ -1043,6 +1044,8 @@ export default function Canvas({ studio = false }: Props) {
 			monitor: monitorRef.current,
 			library,
 			widgetTypes: widgetTypes.map((item) => getMeta(item.type)),
+			designPresets: { styles: DESIGN_STYLES, densities: DESIGN_DENSITIES },
+			tokenOverrides,
 			sensorIds: [...new Set([...hub.sensorIds(), ...sourceCatalogIds()])]
 		}),
 		[
@@ -1050,6 +1053,7 @@ export default function Canvas({ studio = false }: Props) {
 			monitorRef,
 			library,
 			widgetTypes,
+			tokenOverrides,
 			hub,
 			designing,
 			previewing,
@@ -3242,6 +3246,7 @@ export default function Canvas({ studio = false }: Props) {
 											)}
 											<TokenFields
 												values={tokenOverrides}
+												onApply={(tokens) => handleOp({ op: 'setTokens', tokens })}
 												onSet={(key, value) => handleOp({ op: 'setToken', key, value })}
 												onClear={() => handleOp({ op: 'clearTokens' })}
 												clearTitle="Remove every token override and fall back to the selected theme"

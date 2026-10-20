@@ -3,6 +3,7 @@ import { fireEvent, render, screen, within } from '@testing-library/react';
 import Inspector from './Inspector';
 import { container, group, leaf, type Group, type WidgetDef } from '../core/layoutTree';
 import type { LayoutOp } from './ops';
+import { createWidget } from '../core/widget';
 
 // The hover-preview popover renders real meters; the panel tests never touch it.
 vi.mock('./WidgetPreview', () => ({ default: () => null }));
@@ -13,6 +14,29 @@ const lastOp = (onOp: ReturnType<typeof vi.fn>, op: string): LayoutOp | undefine
 		.map((c) => c[0] as LayoutOp)
 		.reverse()
 		.find((o) => o.op === op);
+
+it('applies a design preset to a widget or group as one scoped token edit', () => {
+	for (const kind of ['widget', 'group']) {
+		const onOp = vi.fn();
+		const widget = createWidget('clock', 'clock');
+		widget.tokens = { '--np-text-caption': '18px' };
+		const cluster = group('cluster', { w: 100, h: 100 }, leaf(createWidget('text', 'inside')));
+		cluster.tokens = { '--np-text-caption': '18px' };
+		const view = render(
+			<Inspector
+				widget={kind === 'widget' ? widget : undefined}
+				groupUnit={kind === 'group' ? cluster : undefined}
+				onOp={onOp}
+			/>
+		);
+		fireEvent.click(screen.getByRole('button', { name: 'Apply design preset' }));
+		expect(lastOp(onOp, kind === 'widget' ? 'patchWidget' : 'patchGroup')).toMatchObject({
+			id: kind === 'widget' ? 'clock' : 'cluster',
+			patch: { tokens: { '--np-text-body': '20px', '--np-design-style': 'transparent' } }
+		});
+		view.unmount();
+	}
+});
 
 describe('Inspector container property panel', () => {
 	it('shows the "<Kind> container" header (id in the tooltip) and emits patchContainer on a kind change', () => {

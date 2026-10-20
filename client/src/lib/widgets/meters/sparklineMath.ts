@@ -3,16 +3,6 @@
 
 export type Point = [number, number];
 
-/** Blend display snapshots in right-aligned slots. This never changes recorded telemetry. */
-export function interpolateHistory(from: number[], to: number[], progress: number): number[] {
-	const t = Math.max(0, Math.min(1, progress));
-	const offset = from.length - to.length;
-	return to.map((value, i) => {
-		const start = from[i + offset] ?? value;
-		return start + (value - start) * t;
-	});
-}
-
 /** Resolve the value range, falling back to data bounds where min/max aren't pinned. */
 export function sparklineRange(
 	history: number[],
@@ -33,7 +23,8 @@ export type Bar = { x: number; y: number; w: number; h: number };
  * `window > 0` fixes the x-axis to that many slots and RIGHT-ANCHORS the data: the newest sample
  * sits at the rightmost slot and earlier (not-yet-recorded) slots are simply omitted — the chart
  * fills in from the right as history accumulates instead of stretching a few samples full width.
- * `window = 0` keeps the legacy behaviour (one slot per sample). */
+ * `window = 0` keeps the legacy behaviour (one slot per sample). `scroll` shifts the viewport
+ * left by a fraction of one sample slot without changing any recorded heights. */
 export function sparklineBars(
 	history: number[],
 	width: number,
@@ -41,21 +32,25 @@ export function sparklineBars(
 	min: number | null = null,
 	max: number | null = null,
 	gap = 0.2,
-	window = 0
+	window = 0,
+	scroll = 0,
+	delay = 0
 ): Bar[] {
 	if (history.length === 0) return [];
-	const recent = window > 0 ? history.slice(-window) : history;
+	const recent =
+		window > 0 ? history.slice(-(window + (delay > 0 ? Math.ceil(delay) + 1 : 0))) : history;
 	const lo = min ?? 0;
 	const hi = max ?? Math.max(...recent);
 	const span = hi - lo || 1;
 	const slots = window > 0 ? window : recent.length;
 	const offset = slots - recent.length; // blank slots on the left (no data yet)
 	const slot = width / slots;
+	const shift = (Math.max(-1, Math.min(1, scroll)) - (delay > 0 ? delay + 0.5 : 0)) * slot;
 	const w = slot * (1 - gap);
 	return recent.map((v, i) => {
 		const frac = Math.max(0, Math.min(1, (v - lo) / span));
 		const barH = frac * height;
-		return { x: (offset + i) * slot + (slot - w) / 2, y: height - barH, w, h: barH };
+		return { x: (offset + i) * slot + (slot - w) / 2 - shift, y: height - barH, w, h: barH };
 	});
 }
 
@@ -68,18 +63,21 @@ export function sparklinePoints(
 	height: number,
 	min: number | null = null,
 	max: number | null = null,
-	window = 0
+	window = 0,
+	scroll = 0,
+	delay = 0
 ): Point[] {
 	if (history.length === 0) return [];
 	if (window > 0) {
-		const recent = history.slice(-window);
+		const recent = history.slice(-(window + (delay > 0 ? Math.ceil(delay) + 1 : 0)));
 		const [lo, hi] = sparklineRange(recent, min, max);
 		const span = hi - lo;
 		const slot = width / window;
+		const shift = (Math.max(-1, Math.min(1, scroll)) - (delay > 0 ? delay + 0.5 : 0)) * slot;
 		const offset = window - recent.length;
 		return recent.map((v, i) => {
 			const frac = span === 0 ? 0.5 : (v - lo) / span;
-			return [(offset + i) * slot + slot / 2, height - frac * height];
+			return [(offset + i) * slot + slot / 2 - shift, height - frac * height];
 		});
 	}
 	const [lo, hi] = sparklineRange(history, min, max);

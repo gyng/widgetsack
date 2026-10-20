@@ -84,7 +84,7 @@
         },
         "enable": true
       },
-      "csp": "default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; img-src 'self' asset: http://asset.localhost http://art.localhost blob: data: https:; media-src 'self' asset: http://asset.localhost blob: data:; font-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; script-src 'self' 'wasm-unsafe-eval'; frame-src 'self' https:"
+      "csp": "default-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'; img-src 'self' asset: http://asset.localhost http://art.localhost blob: data: https:; media-src 'self' asset: http://asset.localhost blob: data:; font-src 'self' asset: http://asset.localhost; style-src 'self' 'unsafe-inline'; connect-src 'self' ipc: http://ipc.localhost; script-src 'self' 'wasm-unsafe-eval'; frame-src 'self' https: http://customhtml.localhost"
     }
   }
 }

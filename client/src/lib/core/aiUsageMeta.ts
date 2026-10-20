@@ -18,8 +18,7 @@ export const aiUsageMeta: WidgetMeta = {
 			other: false,
 			eta: false
 		})),
-		compact: true,
-		minimal: false,
+		layout: 'compact',
 		minimalIcons: false,
 		providerIcons: true,
 		interval: 900,
@@ -34,11 +33,13 @@ export const aiUsageMeta: WidgetMeta = {
 			help: 'Monochrome provider marks replace names in Compact and accompany names in Detailed. Choose each mark in the provider row.'
 		},
 		{
-			key: 'minimal',
-			label: 'minimal layout',
-			kind: 'toggle',
+			key: 'layout',
+			label: 'layout',
+			kind: 'select',
+			options: ['detailed', 'compact', 'minimal'],
+			default: 'compact',
 			group: 'Appearance',
-			help: 'Values only, one line per provider. Overrides provider density.'
+			help: 'Detailed shows full readings; Compact wraps readings by provider; Minimal hides reading labels. Provider rows can override Detailed or Compact.'
 		},
 		{
 			key: 'minimalIcons',
@@ -79,13 +80,6 @@ export const aiUsageMeta: WidgetMeta = {
 			max: 60,
 			group: 'Behaviour',
 			help: 'Maximum duration of each provider refresh.'
-		},
-		{
-			key: 'compact',
-			label: 'compact layout',
-			kind: 'toggle',
-			group: 'Appearance',
-			help: 'One line per provider with optional inline sparklines. Detailed layout includes estimates and full graph captions.'
 		}
 	]
 };

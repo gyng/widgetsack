@@ -130,7 +130,7 @@ export function createTelemetryHub(historyLen = 600): TelemetryHub {
 		activeListeners.forEach((cb) => cb());
 	};
 
-	const ingest = (sample: SensorSample, historyOnly = false): void => {
+	const ingest = (sample: SensorSample, historyOnly = false, notify = true): void => {
 		states.set(
 			sample.sensor,
 			appendSample(stateOf(sample.sensor), sample, historyLen, historyOnly)
@@ -138,12 +138,19 @@ export function createTelemetryHub(historyLen = 600): TelemetryHub {
 		const ts = Math.max(sample.ts_ms, lastTs.get(sample.sensor) ?? -Infinity);
 		lastTs.set(sample.sensor, ts);
 		if (ts > newestTs) newestTs = ts;
-		listeners.get(sample.sensor)?.forEach((cb) => cb());
+		if (notify) listeners.get(sample.sensor)?.forEach((cb) => cb());
 	};
 
 	return {
 		ingest: (sample) => ingest(sample),
-		ingestBatch: (batch, opts) => batch.forEach((sample) => ingest(sample, opts?.historyOnly)),
+		ingestBatch: (batch, opts) => {
+			// Readers such as CPU discover several sensors in one callback. Publish only after
+			// every value is current, rather than exposing a mixture of the old and new tick.
+			batch.forEach((sample) => ingest(sample, opts?.historyOnly, false));
+			new Set(batch.map((sample) => sample.sensor)).forEach((id) =>
+				listeners.get(id)?.forEach((cb) => cb())
+			);
+		},
 		sensorIds: (opts) => {
 			const fresh = opts?.freshWithinMs;
 			if (fresh === undefined) return Array.from(states.keys());

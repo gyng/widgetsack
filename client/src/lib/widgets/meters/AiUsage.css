@@ -99,15 +99,44 @@
 }
 
 .np-ai-usage .usage-provider.usage-compact-row {
+	position: relative;
 	display: flex;
 	align-items: center;
 	gap: 4px;
-	height: 22px;
+	flex-wrap: wrap;
+	min-height: 1.4em;
+	line-height: 1.4;
+	height: auto;
 	white-space: nowrap;
 	overflow: hidden;
 	border: 0;
 	margin: 0;
 	padding: 0;
+}
+
+/* Keep continuation lines under their readings, leaving the provider identity in a gutter. */
+.np-ai-usage .usage-compact-row:has(> .usage-provider-icon) {
+	padding-inline-start: calc(var(--usage-provider-icon-size, 1em) + var(--usage-column-gap, 4px));
+}
+
+.np-ai-usage .usage-compact-row > .usage-provider-icon {
+	position: absolute;
+	inset-inline-start: 0;
+	top: calc((1.4em - var(--usage-provider-icon-size, 1em)) / 2);
+}
+
+.np-ai-usage .usage-compact-row:has(> strong) {
+	padding-inline-start: 48px;
+}
+
+.np-ai-usage .usage-compact-row > strong {
+	position: absolute;
+	inset-inline-start: 0;
+	top: 0;
+}
+
+.np-ai-usage .usage-provider.usage-compact-row + .usage-provider.usage-compact-row {
+	margin-top: 0.2em;
 }
 
 .np-ai-usage .usage-inline-metric > span {
@@ -116,8 +145,8 @@
 
 .np-ai-usage .usage-provider-icon {
 	display: inline-flex;
-	width: 16px;
-	height: 16px;
+	width: var(--usage-provider-icon-size, 1em);
+	height: var(--usage-provider-icon-size, 1em);
 	flex-shrink: 0;
 	background: currentColor;
 	mask-size: contain;
@@ -143,9 +172,23 @@
 }
 
 .np-ai-usage .usage-inline-metric[data-kind='quota'] > b {
-	min-width: 4ch;
+	display: inline-grid;
+	flex: 0 0 auto;
+	min-width: 0;
 	text-align: right;
 	font-variant-numeric: tabular-nums;
+}
+
+/* Measure the actual percentage glyphs in the active font. Only the number reserves space;
+   labels and the optional left/used suffix contribute their width when present. */
+.np-ai-usage .usage-inline-metric[data-kind='quota'] > b::before {
+	content: '100%';
+	visibility: hidden;
+	grid-area: 1 / 1;
+}
+
+.np-ai-usage .usage-inline-metric[data-kind='quota'] > b > span {
+	grid-area: 1 / 1;
 }
 
 .np-ai-usage .usage-metric > .usage-row {
@@ -198,12 +241,17 @@
 	white-space: nowrap;
 	display: inline-flex;
 	align-items: baseline;
-	justify-content: flex-end;
+	justify-content: flex-start;
 	gap: 2px;
 }
 
 .np-ai-usage .usage-inline-metric[data-kind='quota'] {
-	flex: 0 0 5em;
+	flex: 0 0 auto;
+	min-width: var(--usage-quota-width, 0px);
+}
+
+.np-ai-usage .usage-inline-metric[data-kind='quota'] > .usage-metric-label {
+	min-width: 1em;
 }
 
 .np-ai-usage .usage-value-mode {

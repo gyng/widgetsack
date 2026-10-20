@@ -26,6 +26,7 @@ import { normalizeMacro } from './macro';
 import { usageProviders } from './aiUsage';
 
 export type TreeThreatKind =
+	| 'custom-html' // isolated inline HTML/JavaScript, still active imported content
 	| 'iframe' // an embedded web page (its URL)
 	| 'iframe-unsandboxed' // `sandbox: false` — the page runs same-origin-capable, can open popups
 	| 'iframe-interactive' // `interact: true` — the frame catches clicks on the passive overlay
@@ -43,6 +44,8 @@ export type TreeThreat = {
 	id: string;
 	/** A human-readable, already-truncated description for a confirm() dialog. */
 	detail: string;
+	/** Exact executable/config source for change-sensitive consent; never shown as dialog prose. */
+	content?: string;
 };
 
 /** What `scanTreeThreats` accepts: a bare layout node, a library def, or a whole monitor layout. */
@@ -77,11 +80,11 @@ function isMonitor(x: ScannableTree): x is MonitorLayout {
 export function scanTreeThreats(input: ScannableTree): TreeThreat[] {
 	const seen = new Set<string>();
 	const out: TreeThreat[] = [];
-	const add = (kind: TreeThreatKind, id: string, detail: string): void => {
-		const key = `${kind}:${id}:${detail}`;
+	const add = (kind: TreeThreatKind, id: string, detail: string, content?: string): void => {
+		const key = `${kind}:${id}:${detail}:${content ?? ''}`;
 		if (seen.has(key)) return;
 		seen.add(key);
-		out.push({ kind, id, detail });
+		out.push({ kind, id, detail, ...(content === undefined ? {} : { content }) });
 	};
 	const addCss = (id: string, threats: CssThreat[]): void => {
 		for (const t of threats) add('css', id, `${t.kind}: ${t.detail}`);
@@ -118,6 +121,16 @@ export function scanTreeThreats(input: ScannableTree): TreeThreat[] {
 				'shell-command',
 				unit.id,
 				typeof cfg.command === 'string' ? cfg.command : '(not configured)'
+			);
+		} else if (unit.type === 'customhtml') {
+			const source = ['html', 'css', 'javascript', 'sensorIds'].map((key) =>
+				typeof cfg[key] === 'string' ? cfg[key] : ''
+			);
+			add(
+				'custom-html',
+				unit.id,
+				'isolated inline HTML/JavaScript with selected sensor access',
+				JSON.stringify([...source, cfg.interact === true])
 			);
 		} else if (unit.type === 'iframe') {
 			add('iframe', unit.id, snippet(typeof cfg.url === 'string' ? cfg.url : '(no url)'));
@@ -204,6 +217,15 @@ export function treeThreatSummary(threats: readonly TreeThreat[]): string {
 	const plural = (count: number, one: string, many: string) =>
 		`${count} ${count === 1 ? one : many}`;
 	const bits: string[] = [];
+	const customHtml = n('custom-html');
+	if (customHtml)
+		bits.push(
+			plural(
+				customHtml,
+				'custom HTML widget that runs isolated code',
+				'custom HTML widgets that run isolated code'
+			)
+		);
 	const iframes = n('iframe');
 	if (iframes) {
 		const extras: string[] = [];

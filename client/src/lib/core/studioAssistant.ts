@@ -19,12 +19,26 @@ import { findNode, removeNode, updateNode } from './layoutEdit';
 import { resolveGroup } from './solve';
 import { cssBraceImbalance } from './style';
 import { scanCssThreats } from './cssThreats';
+import {
+	DESIGN_STYLES,
+	DESIGN_DENSITIES,
+	applyDesignPreset,
+	type DesignStyle,
+	type DesignDensity
+} from './designPresets';
 
 export type StudioOp =
 	| AssistantOp
 	| { op: 'moveWidget'; id: string; rect: { x: number; y: number; w: number; h: number } }
 	| { op: 'setStyle'; id: string; css: string }
-	| { op: 'setLayout'; id: string; gap: number };
+	| { op: 'setLayout'; id: string; gap: number }
+	| {
+			op: 'applyDesignPreset';
+			id: string;
+			style: DesignStyle;
+			density: DesignDensity;
+			replace?: boolean;
+	  };
 
 const record = (value: unknown): value is Record<string, unknown> =>
 	!!value && typeof value === 'object' && !Array.isArray(value);
@@ -41,6 +55,15 @@ export function decodeStudioOps(value: unknown): StudioOp[] {
 		const parent = item.parent === undefined || text(item.parent);
 		const config = item.config === undefined || record(item.config);
 		switch (item.op) {
+			case 'applyDesignPreset':
+				if (
+					validId &&
+					DESIGN_STYLES.some((p) => p.id === item.style) &&
+					DESIGN_DENSITIES.some((p) => p.id === item.density) &&
+					(item.replace === undefined || typeof item.replace === 'boolean')
+				)
+					return item as StudioOp;
+				break;
 			case 'clear':
 				return { op: 'clear' };
 			case 'addWidget':
@@ -155,12 +178,25 @@ export function applyStudioOps(
 	};
 
 	for (const op of ops) {
-		if ('id' in op && (op.id.includes('/') || op.op === 'setLayout')) {
+		if (
+			'id' in op &&
+			(op.id.includes('/') || op.op === 'setLayout' || op.op === 'applyDesignPreset')
+		) {
 			let found = false;
 			let accepted = false;
 			let refused = false;
 			const change = (node: LayoutNode): LayoutNode => {
 				found = true;
+				if (op.op === 'applyDesignPreset' && isLeaf(node)) {
+					accepted = true;
+					return {
+						...node,
+						unit: {
+							...node.unit,
+							tokens: applyDesignPreset(node.unit.tokens ?? {}, op.style, op.density, op.replace)
+						}
+					};
+				}
 				if (op.op === 'setLayout' && isContainer(node)) {
 					accepted = true;
 					return { ...node, gap: op.gap };
@@ -250,6 +286,7 @@ studio_apply accepts {"ops":[...]} with up to 32 actions:
 addWidget {widgetType,sensor?,config?,parent?} (parent "floating" makes a floating widget),
 addContainer {kind:"row"|"col"|"grid",parent?}, removeWidget {id}, setConfig {id,config}, setSensor {id,sensor},
 moveWidget {id,rect:{x,y,w,h}} (floats and resizes), setStyle {id,css}, setLayout {id,gap} (container spacing), clear {}.
+applyDesignPreset {id,style:"transparent"|"instrument"|"soft",density:"compact"|"comfortable"|"large",replace?:boolean} applies scoped tokens to a widget/group; preserves manual overrides unless replace is true. Read the designPresets catalog first. Explicit widget CSS wins; verify sizes after changing density.
 Use namespaced IDs for setConfig, setSensor, setStyle and setLayout inside grouped widgets. Editing a library instance does not change its siblings.
 Each action also needs its "op" name. Each batch is undoable. Use returned addedIds for later edits.
 Never execute shell commands, edit files, or use other tools. Command, embedded web page (iframe), remote image and service-check widgets are refused; use local content only.

@@ -21,6 +21,6 @@
 }
 
 .np-clock .label {
-	font-size: 11px;
+	font-size: var(--np-text-caption, 11px);
 	opacity: 0.7;
 }

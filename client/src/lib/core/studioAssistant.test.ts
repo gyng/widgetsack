@@ -5,6 +5,38 @@ import { emptyMonitorLayout as emptyMonitor, leaf, group, container } from './la
 import { createWidget } from './widget';
 
 describe('studio assistant actions', () => {
+	it('validates and applies scoped design presets while preserving manual overrides and sibling widgets', () => {
+		const op = { op: 'applyDesignPreset', id: 'clock', style: 'soft', density: 'large' } as const;
+		expect(decodeStudioOps([op, { ...op, replace: true }])).toEqual([op, { ...op, replace: true }]);
+		for (const patch of [{ id: '' }, { style: 'bad' }, { density: 'bad' }, { replace: 'yes' }])
+			expect(() => decodeStudioOps([{ ...op, ...patch }])).toThrow();
+		const monitor = emptyMonitor();
+		const clock = createWidget('clock', 'clock');
+		clock.tokens = { '--np-text-body': '22px' };
+		monitor.root.children = [
+			leaf(clock),
+			leaf(group('cluster', { w: 100, h: 100 }, leaf(createWidget('text', 'inside'))))
+		];
+		monitor.floating = [leaf(createWidget('text', 'floating'))];
+		const result = applyStudioOps(
+			monitor,
+			[
+				op,
+				{ ...op, id: 'cluster', replace: false },
+				{ ...op, id: 'cluster/inside' },
+				{ ...op, id: 'floating' }
+			],
+			() => 'unused'
+		);
+		expect(result.applied).toBe(4);
+		expect((result.monitor.root.children[0] as Leaf).unit.tokens).toMatchObject({
+			'--np-text-body': '22px',
+			'--np-radius': '12px'
+		});
+		expect(result.monitor.floating[0].unit.tokens).toMatchObject({ '--np-text-body': '20px' });
+		expect(monitor.floating[0].unit.tokens).toBeUndefined();
+		expect(applyStudioOps(monitor, [{ ...op, id: 'root' }], () => 'unused').errors).toHaveLength(1);
+	});
 	it('moves reusable groups using their floating anchor and keeps their contents intact', () => {
 		const monitor = emptyMonitor();
 		monitor.root.children = [

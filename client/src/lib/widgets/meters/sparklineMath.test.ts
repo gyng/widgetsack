@@ -12,6 +12,43 @@ describe('sparklineRange', () => {
 });
 
 describe('sparklinePoints', () => {
+	it('plays known buffered data through the right edge without shortening the visible history window', () => {
+		expect(sparklinePoints([0, 20, 40], 100, 50, 0, 100, 2, 0, 1)).toEqual([
+			[50, 50],
+			[100, 40],
+			[150, 30]
+		]);
+		expect(sparklinePoints([0, 20, 40], 100, 50, 0, 100, 2, 0.5, 1)).toEqual([
+			[25, 50],
+			[75, 40],
+			[125, 30]
+		]);
+		expect(sparklinePoints([0, 20, 40], 100, 50, 0, 100, 2, 1, 1)[2]).toEqual([100, 30]);
+		expect(sparklinePoints([20, 40, 60], 100, 50, 0, 100, 2, 0, 1)[1]).toEqual([100, 30]);
+		expect(sparklineBars([0, 20, 40], 100, 50, 0, 100, 0, 2, 0, 1).map((b) => b.x)).toEqual([
+			25, 75, 125
+		]);
+	});
+	it('scrolls recorded samples horizontally without morphing their values', () => {
+		const history = [20, 40];
+		expect(sparklinePoints(history, 100, 50, 0, 100, 2, 0.5)).toEqual([
+			[0, 40],
+			[50, 30]
+		]);
+		expect(sparklinePoints(history, 100, 50, 0, 100, 2, -1)).toEqual([
+			[75, 40],
+			[125, 30]
+		]);
+		expect(sparklinePoints(history, 100, 50, 0, 100, 2, 2)).toEqual([
+			[-25, 40],
+			[25, 30]
+		]);
+		expect(sparklineBars(history, 100, 50, 0, 100, 0, 2, 0.5)).toEqual([
+			{ x: -25, y: 40, w: 50, h: 10 },
+			{ x: 25, y: 30, w: 50, h: 20 }
+		]);
+		expect(history).toEqual([20, 40]);
+	});
 	it('maps values across the width with inverted y', () => {
 		expect(sparklinePoints([0, 50, 100], 100, 10, 0, 100)).toEqual([
 			[0, 10],
@@ -91,24 +128,5 @@ describe('sparklineBars', () => {
 		const bars = sparklineBars([5, 10], 100, 20);
 		expect(bars[0].h).toBe(10); // 5 / (data max 10) of 20
 		expect(bars[1].h).toBe(20);
-	});
-});
-import { interpolateHistory } from './sparklineMath';
-
-describe('history transitions', () => {
-	it('blends values and clamps progress without changing the input snapshots', () => {
-		const from = [10, 40];
-		const to = [30, 20];
-		expect(interpolateHistory(from, to, -1)).toEqual(from);
-		expect(interpolateHistory(from, to, 0.5)).toEqual([20, 30]);
-		expect(interpolateHistory(from, to, 2)).toEqual(to);
-		expect(from).toEqual([10, 40]);
-		expect(to).toEqual([30, 20]);
-	});
-	it('right-aligns partial buffers and uses new values for unrecorded slots', () => {
-		expect(interpolateHistory([20], [10, 40], 0.5)).toEqual([10, 30]);
-		expect(interpolateHistory([10, 20, 30], [40, 50], 0.5)).toEqual([30, 40]);
-		expect(interpolateHistory([], [20], 0.5)).toEqual([20]);
-		expect(interpolateHistory([20], [], 0.5)).toEqual([]);
 	});
 });

@@ -26,6 +26,7 @@ pub mod bridge;
 pub mod clickthrough;
 pub mod command;
 pub mod control;
+pub mod custom_html;
 pub mod ddc;
 pub mod diag;
 pub mod display;
@@ -299,6 +300,7 @@ async fn main() -> Result<(), ()> {
         // Album-art store: covers are served to the webview over the `art` URI scheme (below)
         // instead of being shipped as JSON byte arrays. See art.rs.
         .manage(art::ArtState::default())
+        .manage(custom_html::CustomHtmlState::default())
         .manage(clickthrough::InteractiveRects::default())
         .manage(command::windows::OverlayEditState::default())
         .manage(hotkey::EditHotkeyState::default())
@@ -321,6 +323,9 @@ async fn main() -> Result<(), ()> {
         // Available to every webview (all overlays + the studio); keep the CSP `img-src` token in
         // tauri.conf.json in sync. The closure just forwards to the tested handler in art.rs.
         .register_uri_scheme_protocol("art", |ctx, request| art::serve_art(ctx, request))
+        .register_uri_scheme_protocol("customhtml", |ctx, request| {
+            custom_html::serve(ctx, request)
+        })
         .invoke_handler(tauri::generate_handler![
             get_initial_sessions,
             studio_agent::studio_agent_status,
@@ -328,6 +333,8 @@ async fn main() -> Result<(), ()> {
             studio_agent::studio_agent_reply,
             studio_agent::studio_agent_cancel,
             command::runner::run_widget_command,
+            custom_html::register_custom_html,
+            custom_html::release_custom_html,
             command::ai_usage::read_ai_usage,
             is_dev_instance,
             command::layouts::load_layout,

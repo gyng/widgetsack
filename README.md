@@ -21,6 +21,7 @@ buttons and controls.
 - **Controls:** media playback, volume, audio outputs, monitor inputs, and Home Assistant devices.
 - **Layouts:** arrange widgets in rows, columns, grids, or free positions. Each monitor has its own layout.
 - **Themes:** change fonts, colors, and spacing. Apply one theme to all monitors or select a theme for each monitor.
+- **Agent-assisted design:** ask your agent to build and refine widgets from the built-in meters, live sensors, and CSS.
 - **Window zones:** define regions where you can place app windows.
 
 GPU readings currently support NVIDIA GPUs. Media controls work with apps that support Windows media sessions.
@@ -93,14 +94,31 @@ The widget designer lets you save groups as reusable widgets.
 
 See the [theme guide](docs/theming.md) and [templates and formulas](docs/templating.md) for examples.
 
-## AI assistance
+## Build widgets with your agent
 
-Select **Assistant** in the Studio toolbar to request layout or widget changes.
-The assistant requires an installed and signed-in Pi, Codex, or Claude agent.
-Select an agent in the sidebar. Review its changes before you select **Save**.
-Use **Undo** to reverse a batch of edits.
+Describe the widget you want in plain language. Your agent can combine built-in meters,
+bind available sensors, and adjust layout, labels, and CSS in Studio.
 
-To connect an external agent, open **Settings → MCP** and follow the [setup instructions](docs/mcp.md).
+1. Open **Assistant** in the Studio toolbar.
+2. Select an installed and signed-in Pi, Codex, or Claude agent.
+3. Describe the content, size, and appearance you want. For example:
+
+   > Build a compact CPU and memory row with percentages and sparklines. Match my theme,
+   > use readable text, and keep it within a 360 px sidebar. Check for clipping afterward.
+
+4. Review the result. Use **Undo** to reverse a batch or **Save** to keep it.
+
+Use the widget designer to save a group as a reusable widget.
+Configure service connections and commands yourself in Studio. The layout tools work with
+existing widget types. For a fully custom renderer, add **Custom HTML** and let your agent
+write portable HTML/CSS/JavaScript with selected sensors, theme tokens and responsive sizing.
+See the [Custom HTML guide](docs/custom-html.md). Adding a new sensor source requires development.
+
+You can also use an external agent through **Settings → MCP**. Follow the
+[connection guide](docs/mcp.md), then ask it to read, edit, verify, and screenshot your layout.
+Keep Studio open. MCP edits are undoable and remain unsaved until you select **Save**.
+
+Choose reusable [widget design presets](docs/design-presets.md): Transparent, Instrument, or Soft, with Compact, Comfortable, or Large typography. Apply them globally or to one widget/group; manual overrides are preserved by default.
 
 ## Settings and troubleshooting
 

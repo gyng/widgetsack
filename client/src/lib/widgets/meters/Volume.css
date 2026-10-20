@@ -76,7 +76,7 @@
 	flex: 0 0 auto;
 	min-width: 2.6em;
 	text-align: right;
-	font-size: var(--vol-pct-size, 0.8em);
+	font-size: var(--vol-pct-size, var(--np-text-caption, 12px));
 	font-variant-numeric: tabular-nums;
 	color: var(--np-label, rgba(255, 255, 255, 0.7));
 }
