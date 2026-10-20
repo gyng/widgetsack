@@ -73,13 +73,13 @@ fn request_valid(
 
 // Kill the entire child tree when a request ends, including npm CLI wrappers.
 #[cfg(windows)]
-struct ProcessJob(windows::Win32::Foundation::HANDLE);
+pub(crate) struct ProcessJob(windows::Win32::Foundation::HANDLE);
 #[cfg(windows)]
 // Windows job handles are transferable kernel handles; each job has one owner.
 unsafe impl Send for ProcessJob {}
 #[cfg(windows)]
 impl ProcessJob {
-    fn attach(pid: u32) -> Result<Self, String> {
+    pub(crate) fn attach(pid: u32) -> Result<Self, String> {
         use windows::Win32::{
             Foundation::CloseHandle,
             System::{JobObjects::*, Threading::*},

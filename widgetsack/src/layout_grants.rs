@@ -15,9 +15,14 @@ use std::collections::{HashMap, HashSet};
 pub struct LayoutGrants {
     commands: HashSet<String>,
     health_urls: HashSet<String>,
+    usage_sources: HashSet<(String, String, String)>,
 }
 
 impl LayoutGrants {
+    pub fn allows_usage_source(&self, source: &str, env: &str, account: &str) -> bool {
+        self.usage_sources
+            .contains(&(source.into(), env.into(), account.into()))
+    }
     /// Exact match: the command string is run verbatim, so nothing is normalized.
     pub fn allows_command(&self, command: &str) -> bool {
         self.commands.contains(command)
@@ -103,6 +108,45 @@ pub fn grants_from_layout(contents: &str) -> Option<LayoutGrants> {
                     Some("command") => {
                         if let Some(c) = config_str(obj, "command") {
                             grants.commands.insert(c.to_string());
+                        }
+                    }
+                    Some("aiusage") => {
+                        if let Some(providers) = obj
+                            .get("config")
+                            .and_then(|c| c.get("providers"))
+                            .and_then(Value::as_array)
+                        {
+                            for provider in providers {
+                                if let Some(source) = provider.get("source").and_then(Value::as_str)
+                                {
+                                    grants.usage_sources.insert((
+                                        source.to_string(),
+                                        provider
+                                            .get("env")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("OPENROUTER_API_KEY")
+                                            .into(),
+                                        provider
+                                            .get("account")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("")
+                                            .into(),
+                                    ));
+                                }
+                                if let Some(command) =
+                                    provider.get("command").and_then(Value::as_str)
+                                {
+                                    grants.commands.insert(command.to_string());
+                                }
+                            }
+                        } else {
+                            for source in ["codex", "claude"] {
+                                grants.usage_sources.insert((
+                                    source.into(),
+                                    "OPENROUTER_API_KEY".into(),
+                                    String::new(),
+                                ));
+                            }
                         }
                     }
                     Some("servicehealth") => {
@@ -192,6 +236,18 @@ pub async fn authorize_saved<R: tauri::Runtime>(
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn usage_widgets_grant_only_their_exact_configured_commands() {
+        let g = grants(
+            json!({"widgets":[{"type":"aiusage","config":{"providers":[{"source":"codex"},{"source":"command","command":"Get-Usage"}]}}]}),
+        );
+        assert!(g.allows_command("Get-Usage"));
+        assert!(!g.allows_command("Get-Usage; Write-Output hacked"));
+        assert!(g.allows_usage_source("codex", "OPENROUTER_API_KEY", ""));
+        assert!(!g.allows_usage_source("openrouter", "OTHER_SECRET", ""));
+        let defaults = grants(json!({"widgets":[{"type":"aiusage","config":{}}]}));
+        assert!(defaults.allows_usage_source("claude", "OPENROUTER_API_KEY", ""));
+    }
 
     fn grants(doc: Value) -> LayoutGrants {
         grants_from_layout(&doc.to_string()).unwrap()

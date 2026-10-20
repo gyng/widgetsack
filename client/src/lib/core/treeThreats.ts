@@ -23,6 +23,7 @@ import {
 } from './layoutTree';
 import { isRemoteTarget, scanCssThreats, type CssThreat } from './cssThreats';
 import { normalizeMacro } from './macro';
+import { usageProviders } from './aiUsage';
 
 export type TreeThreatKind =
 	| 'iframe' // an embedded web page (its URL)
@@ -108,7 +109,11 @@ export function scanTreeThreats(input: ScannableTree): TreeThreat[] {
 			return;
 		}
 		const cfg = (unit.config ?? {}) as Record<string, unknown>;
-		if (unit.type === 'command') {
+		if (unit.type === 'aiusage') {
+			for (const provider of usageProviders(cfg.providers)) {
+				if (provider.command) add('shell-command', unit.id, snippet(provider.command));
+			}
+		} else if (unit.type === 'command') {
 			add(
 				'shell-command',
 				unit.id,

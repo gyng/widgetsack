@@ -57,6 +57,7 @@ export const COMMANDS = {
 	setMicrophoneMute: 'set_microphone_mute',
 	checkServiceHealth: 'check_service_health',
 	runWidgetCommand: 'run_widget_command',
+	readAiUsage: 'read_ai_usage',
 	// media / now-playing (command/sessions.rs, media.rs)
 	getInitialSessions: 'get_initial_sessions',
 	// dev/extra-instance flag (main.rs) — drives the studio's "dev" badge

@@ -51,6 +51,7 @@ describe('templates', () => {
 			'history',
 			'aichat',
 			'command',
+			'aiusage',
 			'clock',
 			'text',
 			'sparkline',

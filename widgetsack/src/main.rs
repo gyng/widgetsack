@@ -328,6 +328,7 @@ async fn main() -> Result<(), ()> {
             studio_agent::studio_agent_reply,
             studio_agent::studio_agent_cancel,
             command::runner::run_widget_command,
+            command::ai_usage::read_ai_usage,
             is_dev_instance,
             command::layouts::load_layout,
             command::layouts::save_layout,
