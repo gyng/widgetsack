@@ -114,6 +114,14 @@ cargo test live_usage_read_smoke -- --ignored --nocapture
 **Compact** defaults to 265 × 44: one 22px row per provider, short session/week captions, aligned
 percentages and optional inline sparklines. **Minimal quotas** uses 180 × 44, hides item captions
 and optionally shows provider icons. A custom item label overrides the hidden caption in Minimal.
+
+Compact uses monochrome provider icons by default; turn off **provider icons** to show names.
+Detailed shows icons beside names. Each provider has an **Icon** picker with Automatic, No icon,
+and sixteen bundled marks, including Claude, Codex, OpenAI, DeepSeek, Gemini, Qwen, Grok,
+Mistral, Meta, Ollama, OpenRouter, Perplexity, Cohere, Copilot, Anthropic and Moonshot/Kimi.
+Automatic uses the built-in source or detects a known name in a custom command label / OMP account.
+Unknown command providers use a terminal glyph. Icons follow the theme foreground and require no
+network requests. Assets are from Lobe Icons under MIT; the license ships in `licenses/lobe-icons.txt`.
 **Detailed activity** includes scopes, full graph captions and separate rate/reset sections.
 All layouts use the widget theme's foreground, muted, accent and warning colours on a transparent
 surface. The heading is optional and hidden initially.

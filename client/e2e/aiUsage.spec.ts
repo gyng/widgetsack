@@ -8,8 +8,31 @@ test('AI Usage defaults to Codex and Claude and exposes provider options', async
 	const editor = page.locator('.usage-providers-editor');
 	await expect(meter.getByRole('region', { name: 'Codex usage' })).toBeVisible();
 	await expect(meter).toContainText('58%');
-	await expect(meter).toContainText('Claude');
+	await expect(meter.locator('[data-provider-icon="claude"]')).toBeVisible();
+	await expect(meter.locator('[data-provider-icon="codex"]')).toBeVisible();
+	const icon = editor
+		.getByRole('group', { name: 'Codex', exact: true })
+		.getByLabel('Icon', { exact: true });
+	await icon.selectOption('deepseek');
+	await expect(meter.locator('[data-provider-icon="deepseek"]')).toBeVisible();
+	await icon.selectOption('auto');
+	await expect(meter.locator('[data-provider-icon="codex"]')).toHaveCSS(
+		'background-color',
+		'rgb(255, 255, 255)'
+	);
+	await page.getByLabel('provider icons', { exact: true }).uncheck();
+	await expect(meter.getByRole('region', { name: 'Codex usage' })).toContainText('Codex');
+	await page.getByLabel('provider icons', { exact: true }).check();
 	await expect(meter.locator('header')).toHaveCount(0);
+	await expect(meter).toHaveCSS('font-size', '14px');
+	await expect(meter.locator('.usage-value-mode').first()).toHaveCSS('font-size', '12px');
+	await editor
+		.getByRole('group', { name: 'Codex', exact: true })
+		.getByLabel('Rate / ETA', { exact: true })
+		.check();
+	await expect(meter.locator('.usage-inline-rate').first()).toHaveCSS('font-size', '12px');
+	expect((await meter.locator('.usage-inline-rate').first().boundingBox())!.width).toBeLessThan(85);
+	await expect(meter.locator('.usage-inline-rate .usage-item-caption')).toHaveCount(0);
 	await editor
 		.getByRole('group', { name: 'Codex', exact: true })
 		.getByRole('button', { name: 'Settings for Codex week' })

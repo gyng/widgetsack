@@ -3,6 +3,15 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.67
+
+### Changed
+
+- AI Usage uses theme-native 14 px body and 12 px caption text, with narrower rate/ETA columns.
+- Compact provider rows use monochrome icons by default. Choose from sixteen bundled provider
+  marks, including Claude, Codex, OpenAI and DeepSeek, or switch back to provider names.
+- Custom command and OMP rows can select an icon explicitly or detect it from their provider name.
+
 ## 0.0.66
 
 ### Added

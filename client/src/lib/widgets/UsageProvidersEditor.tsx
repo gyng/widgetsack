@@ -11,6 +11,7 @@ import { readAiUsage } from './plugins/ai-usage-commands';
 import { approveUsageCommand } from './plugins/ai-usage-source';
 import './UsageProvidersEditor.css';
 import UsageItemSettingsEditor from './UsageItemSettingsEditor';
+import { providerIcons, type ProviderIconChoice } from '../core/providerIcons';
 import {
 	readUsageSettings,
 	resolveUsageSettings,
@@ -118,6 +119,22 @@ export default function UsageProvidersEditor({
 					<label>
 						Label
 						<input value={p.label} onChange={(e) => edit(i, { label: e.target.value })} />
+					</label>
+					<label>
+						Icon
+						<select
+							aria-label="Icon"
+							value={p.icon}
+							onChange={(e) => edit(i, { icon: e.target.value as ProviderIconChoice })}
+						>
+							<option value="auto">Automatic</option>
+							<option value="none">No icon</option>
+							{Object.entries(providerIcons).map(([id, label]) => (
+								<option key={id} value={id}>
+									{label}
+								</option>
+							))}
+						</select>
 					</label>
 					<label>
 						Source

@@ -101,7 +101,7 @@
 .np-ai-usage .usage-provider.usage-compact-row {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 4px;
 	height: 22px;
 	white-space: nowrap;
 	overflow: hidden;
@@ -115,9 +115,24 @@
 }
 
 .np-ai-usage .usage-provider-icon {
-	width: 14px;
-	height: 14px;
+	display: inline-flex;
+	width: 16px;
+	height: 16px;
 	flex-shrink: 0;
+	background: currentColor;
+	mask-size: contain;
+	mask-repeat: no-repeat;
+	mask-position: center;
+}
+
+.np-ai-usage .usage-provider-icon:has(svg) {
+	background: none;
+}
+
+.np-ai-usage .usage-provider-heading {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
 }
 
 .np-ai-usage .usage-compact-row > strong {
@@ -188,12 +203,11 @@
 }
 
 .np-ai-usage .usage-inline-metric[data-kind='quota'] {
-	flex: 0 0 52px;
-	flex-basis: 60px;
+	flex: 0 0 5em;
 }
 
 .np-ai-usage .usage-value-mode {
-	font-size: 9px;
+	font-size: var(--np-text-caption, 12px);
 	flex-shrink: 0;
 	min-width: 3ch;
 }
@@ -204,7 +218,7 @@
 	min-width: 3ch;
 	margin: 0 0 0 2px;
 	padding: 0;
-	font-size: 10px;
+	font-size: var(--np-text-caption, 12px);
 	line-height: 1;
 	text-align: right;
 }
@@ -214,7 +228,7 @@
 }
 
 .np-ai-usage .usage-inline-rate small {
-	font-size: 10px;
+	font-size: inherit;
 	white-space: nowrap;
 }
 
@@ -227,15 +241,15 @@
 
 .np-ai-usage .usage-inline-resets {
 	flex: 0 0 auto;
-	font-size: 10px;
+	font-size: var(--np-text-caption, 12px);
 }
 
 .np-ai-usage .usage-inline-rate {
 	display: inline-flex;
 	gap: 3px;
-	font-size: 10px;
-	flex: 0 0 var(--usage-rate-width, 96px);
-	width: var(--usage-rate-width, 96px);
+	font-size: var(--np-text-caption, 12px);
+	flex: 0 0 var(--usage-rate-width, calc(11ch + 4px));
+	width: var(--usage-rate-width, calc(11ch + 4px));
 	min-width: 0;
 	overflow: hidden;
 }
@@ -313,7 +327,7 @@
 	padding: var(--usage-pad, 0);
 	color: var(--np-fg, #ffffff);
 	background: var(--usage-bg, transparent);
-	font: var(--np-text-caption, 12px)/1.5 var(--np-font, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	font: var(--np-text-body, 14px)/1.5 var(--np-font, 'Bahnschrift', 'Arial Narrow', sans-serif);
 	border-radius: var(--np-radius, 2px);
 	scrollbar-width: thin;
 	scrollbar-color: transparent transparent;

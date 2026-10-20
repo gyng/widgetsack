@@ -18,6 +18,12 @@ describe('usage provider configuration', () => {
 	it('edits labels, visibility, ordering and per-provider layout', () => {
 		render(<Editor />);
 		const codex = screen.getByRole('group', { name: 'Codex' });
+		const icon = within(codex).getByLabelText('Icon');
+		fireEvent.change(icon, { target: { value: 'deepseek' } });
+		expect(icon).toHaveValue('deepseek');
+		expect(
+			within(screen.getByRole('group', { name: 'Claude' })).getByLabelText('Icon')
+		).toHaveValue('auto');
 		fireEvent.change(within(codex).getByLabelText('Label'), { target: { value: 'Work' } });
 		fireEvent.change(within(codex).getByLabelText('Layout'), { target: { value: 'detailed' } });
 		fireEvent.click(within(codex).getByLabelText('Enabled'));

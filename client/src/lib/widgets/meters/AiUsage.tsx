@@ -9,6 +9,7 @@ import {
 	type UsageSnapshot
 } from '../../core/aiUsage';
 import './AiUsage.css';
+import ProviderIcon from '../ProviderIcon';
 import {
 	resolveUsageSettings,
 	usageResetText,
@@ -27,6 +28,7 @@ export type AiUsageOptions = {
 	showResets?: boolean;
 	minimal?: boolean;
 	minimalIcons?: boolean;
+	providerIcons?: boolean;
 	compact?: boolean;
 	remaining?: boolean;
 	resetDisplay?: UsageSettings['resetDisplay'];
@@ -36,8 +38,8 @@ export type AiUsageOptions = {
 	warning?: number;
 	critical?: number;
 };
-const number = (v: number) =>
-	new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 2 }).format(v);
+const number = (v: number, maximumFractionDigits = 2) =>
+	new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits }).format(v);
 const duration = (hours: number) => usageResetText(Math.max(60000, hours * 3600000), 0);
 function valueText(m: UsageMetric, remaining: boolean, dense = false): string {
 	const value =
@@ -63,6 +65,7 @@ export default function AiUsage({
 	showResets = false,
 	minimal = false,
 	minimalIcons = false,
+	providerIcons = true,
 	compact = true,
 	remaining = true,
 	resetDisplay = 'countdown',
@@ -149,7 +152,7 @@ export default function AiUsage({
 							return (
 								<span className="usage-rate-values" title={`${m.label}: ${trend.rate} ${m.unit}/h`}>
 									<span>
-										{number(trend.rate!)}
+										{number(trend.rate!, 1)}
 										{m.unit === '%' ? '%' : ''}/h
 									</span>
 									<span className="usage-eta">
@@ -199,28 +202,10 @@ export default function AiUsage({
 								aria-label={`${p.label} usage`}
 								title={reading?.error || (stale ? 'Stale' : p.label)}
 							>
-								{!minimal ? (
-									<strong>{p.label}</strong>
+								{(minimal ? minimalIcons : providerIcons) ? (
+									<ProviderIcon provider={p} />
 								) : (
-									minimalIcons && (
-										<svg
-											className="usage-provider-icon"
-											viewBox="0 0 16 16"
-											role="img"
-											aria-label={p.label}
-										>
-											<path
-												d={
-													p.source === 'claude'
-														? 'M8 0v16M0 8h16M2 2l12 12M2 14L14 2'
-														: 'M2 4l4 4-4 4M8 12h6'
-												}
-												fill="none"
-												stroke="currentColor"
-												strokeWidth="1.5"
-											/>
-										</svg>
-									)
+									!minimal && <strong>{p.label}</strong>
 								)}
 
 								{metrics.map((m) => {
@@ -262,10 +247,11 @@ export default function AiUsage({
 								{p.eta && !stale && metrics.length > 0 && (
 									<span
 										className="usage-inline-rate"
+										aria-label="Rate / ETA"
 										style={{ order: p.order.indexOf('eta') + 1 }}
 										title={metrics[0].label}
 									>
-										<span className="usage-item-caption">{p.labels.eta ?? 'Rate'}</span>{' '}
+										{p.labels.eta && <span className="usage-item-caption">{p.labels.eta}</span>}
 										{renderRate(metrics[0], true)}
 									</span>
 								)}
@@ -306,7 +292,10 @@ export default function AiUsage({
 					return (
 						<section key={p.id} className="usage-provider" aria-label={`${p.label} usage`}>
 							<div className="usage-row">
-								<strong>{p.label}</strong>
+								<strong className="usage-provider-heading">
+									{providerIcons && <ProviderIcon provider={p} />}
+									{p.label}
+								</strong>
 								<small>
 									{reading?.busy
 										? 'Refreshing…'
