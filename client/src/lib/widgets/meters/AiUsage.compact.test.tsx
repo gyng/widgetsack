@@ -105,10 +105,34 @@ it('minimal can omit every label or show provider icons, with inline graphs', ()
 			graphMetric="quota"
 		/>
 	);
-	expect(screen.getByRole('img', { name: 'Codex' })).toBeVisible();
-	expect(screen.getByRole('img', { name: 'Claude' })).toBeVisible();
+	expect(
+		screen
+			.getByRole('region', { name: 'Codex usage' })
+			.querySelector('[data-provider-icon="codex"]')
+	).toBeVisible();
+	expect(
+		screen
+			.getByRole('region', { name: 'Claude usage' })
+			.querySelector('[data-provider-icon="claude"]')
+	).toBeVisible();
 	view.rerender(
-		<AiUsage providers={providers} readings={readings} now={300000} graphMetric="quota" />
+		<AiUsage
+			minimal
+			minimalIcons
+			providers={providers.map((p) => ({ ...p, icon: 'none' }))}
+			readings={readings}
+			now={300000}
+		/>
+	);
+	expect(view.container.querySelectorAll('.usage-provider-icon')).toHaveLength(0);
+	view.rerender(
+		<AiUsage
+			providerIcons={false}
+			providers={providers}
+			readings={readings}
+			now={300000}
+			graphMetric="quota"
+		/>
 	);
 	expect(screen.getByText('Codex')).toBeVisible();
 	expect(screen.getAllByText('S')).toHaveLength(2);

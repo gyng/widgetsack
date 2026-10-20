@@ -1,4 +1,5 @@
 import { readUsageSettings, type UsageSettings } from './aiUsageSettings';
+import { readProviderIcon, type ProviderIconChoice } from './providerIcons';
 // Provider-independent usage contract. No credentials or IO belong in this module.
 export type UsageSource = 'codex' | 'claude' | 'openrouter' | 'omp' | 'command';
 export const usageItems = [
@@ -14,6 +15,7 @@ export const usageItems = [
 ] as const;
 export type UsageItem = (typeof usageItems)[number];
 export type UsageProvider = {
+	icon?: ProviderIconChoice;
 	order: UsageItem[];
 	settings: Record<UsageItem | 'eta', Partial<UsageSettings>>;
 	labels: Partial<Record<UsageItem, string>>;
@@ -65,6 +67,7 @@ export function usageProviders(value: unknown): UsageProvider[] {
 		const source = p.source as UsageSource;
 		return [
 			{
+				icon: readProviderIcon(p.icon),
 				settings: Object.fromEntries(
 					usageItems.map((key) => [key, readUsageSettings(record(p.settings)[key])])
 				) as UsageProvider['settings'],

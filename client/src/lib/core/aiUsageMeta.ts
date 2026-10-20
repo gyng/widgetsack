@@ -21,10 +21,18 @@ export const aiUsageMeta: WidgetMeta = {
 		compact: true,
 		minimal: false,
 		minimalIcons: false,
+		providerIcons: true,
 		interval: 900,
 		timeout: 20
 	},
 	configFields: [
+		{
+			key: 'providerIcons',
+			label: 'provider icons',
+			kind: 'toggle',
+			group: 'Appearance',
+			help: 'Monochrome provider marks replace names in Compact and accompany names in Detailed. Choose each mark in the provider row.'
+		},
 		{
 			key: 'minimal',
 			label: 'minimal layout',

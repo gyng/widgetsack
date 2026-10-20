@@ -58,10 +58,18 @@ describe('AI usage contracts', () => {
 			bankedResets: { expiresAt: 12 }
 		});
 		const providers = usageProviders([
-			{ source: 'omp', compact: 'compact', env: 'KEY', account: 'a', enabled: false },
+			{
+				source: 'omp',
+				compact: 'compact',
+				env: 'KEY',
+				account: 'a',
+				enabled: false,
+				icon: 'deepseek'
+			},
 			{ source: 'command', compact: 'detailed', graph: true, credits: false }
 		]);
 		expect(providers[0]).toMatchObject({ id: 'omp-0', label: 'omp', enabled: false });
+		expect(providers[0].icon).toBe('deepseek');
 		expect(providers[1].compact).toBe('detailed');
 		expect(visibleUsageMetrics([{ ...base, kind: 'credits' }], providers[1])).toEqual([]);
 	});
