@@ -40,8 +40,10 @@ describe('Calendar meter', () => {
 	it('starts the week on Monday when configured', () => {
 		const { container } = render(<Calendar firstDay="Monday" />);
 		const heads = container.querySelectorAll('.cal-head .cal-wd');
-		expect(heads[0].textContent).toBe('Mon');
-		expect(heads[6].textContent).toBe('Sun');
+		expect(heads[0].textContent).toBe('Mo');
+		expect(heads[0]).toHaveAttribute('aria-label', 'Mon');
+		expect(heads[6].textContent).toBe('Su');
+		expect(heads[6]).toHaveAttribute('aria-label', 'Sun');
 	});
 
 	it('continuous mode renders more weeks than the default month view', () => {

@@ -8,9 +8,9 @@ test('tool widgets are discoverable and preview without executing commands', asy
 	await expect(page.locator('.np-ai-chat')).toContainText('Configure it in Settings');
 	await page.screenshot({ path: 'test-results/ai-assistant-preview.png' });
 	await previewTemplate(page, 'CLI Command');
-	await expect(page.locator('.np-command')).toBeVisible();
+	await expect(page.locator('.world .np-command')).toBeVisible();
 	await expect(
-		page.locator('.np-command').getByRole('button', { name: 'Run', exact: true })
+		page.locator('.world .np-command').getByRole('button', { name: 'Run', exact: true })
 	).toBeDisabled();
 	const list = page.locator('.designer-list');
 	await expect(list).toHaveCSS('scrollbar-width', 'thin');
@@ -45,8 +45,8 @@ test('CLI template accepts a command without running it on insertion', async ({ 
 		.filter({ hasText: 'CLI Command' })
 		.getByRole('button', { name: 'Add to layout', exact: true })
 		.click();
-	await expect(page.locator('.np-command code')).toHaveText('Get-Date');
-	await expect(page.locator('.np-command')).not.toContainText('Mock command output');
+	await expect(page.locator('.world .np-command code')).toHaveText('Get-Date');
+	await expect(page.locator('.world .np-command')).not.toContainText('Mock command output');
 	expect(log.errors).toEqual([]);
 	expect(log.mockWarns).toEqual([]);
 });

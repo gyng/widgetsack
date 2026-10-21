@@ -34,6 +34,7 @@ Notable changes per release. Older releases are described by their auto-generate
 - Recover saved layouts more reliably after interrupted writes and dev reloads.
 - Keep Studio chrome and its status bar stable during pane changes and assistant loading.
 - Keep monitor menus inside the window and show matching friendly monitor names.
+- Keep narrow calendars within their bounds with wider fallback fonts.
 - Fix unreadable Build catalog text, saved-row action overlap and stretched single preview cards.
 
 ## 0.0.67
