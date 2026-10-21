@@ -46,6 +46,8 @@ test('Custom editing hides monitor navigation and keeps the definition banner cl
 	await gotoStudio(page);
 	await page.locator('[data-section="widget-designer"]').click();
 	await page.getByRole('button', { name: /New custom widget/ }).click();
+	await page.getByRole('dialog').getByText('Advanced', { exact: true }).click();
+	await page.getByRole('button', { name: 'Create blank widget' }).click();
 	await expect(page.locator('.def-banner')).toContainText('Editing');
 	await expect(page.getByRole('combobox', { name: 'Canvas monitor', exact: true })).toHaveCount(0);
 	const banner = await page.locator('.def-banner').boundingBox();
@@ -124,7 +126,7 @@ test('properties separate content, layout and appearance without losing field ed
 	await expect(inspector.getByRole('combobox', { name: 'layout', exact: true })).toBeVisible();
 	await inspector.getByRole('tab', { name: 'Layout', exact: true }).click();
 	await expect(inspector.getByLabel('w', { exact: true })).toBeVisible();
-	await inspector.getByRole('tab', { name: 'JSON', exact: true }).click();
+	await inspector.getByRole('tab', { name: 'Advanced', exact: true }).click();
 	await expect(inspector.getByLabel('Node JSON')).toBeVisible();
 });
 

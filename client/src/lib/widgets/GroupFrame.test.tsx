@@ -309,3 +309,18 @@ it.each([false, true])(
 		expect(commit).toHaveBeenCalledTimes(moved ? 1 : 0);
 	}
 );
+
+it('captures Ctrl, Meta and Shift when selecting a group, including deferred selection on release', () => {
+	for (const modifier of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }])
+		for (const selected of [false, true]) {
+			const onSelect = vi.fn();
+			const view = render(
+				<GroupFrame id="grp-1" rect={rect} editMode selected={selected} onSelect={onSelect} />
+			);
+			const target = overlay(view.container);
+			fireEvent.pointerDown(target, { button: 0, pointerId: 1, ...modifier });
+			fireEvent.pointerUp(target, { button: 0, pointerId: 1 });
+			expect(onSelect).toHaveBeenCalledWith({ id: 'grp-1', additive: true });
+			view.unmount();
+		}
+});

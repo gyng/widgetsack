@@ -673,6 +673,30 @@ export function floatNode(
 export function makeWidget(s: EditorState, id: string): Patch {
 	const node = lookup(id, s.monitor);
 	if (!node) return {};
+	if (isLeaf(node) && isGroup(node.unit)) {
+		const original = node.unit;
+		if (original.def && s.library?.defs.some((def) => def.id === original.def)) return {};
+		const definition: WidgetDef = {
+			id: `def-${rand()}`,
+			name: original.name || 'Custom panel',
+			size: { ...original.size },
+			child: clone(original.child),
+			...(original.css ? { css: original.css } : {})
+		};
+		const replacement: Leaf = {
+			...node,
+			unit: { ...original, def: definition.id, name: definition.name, css: undefined }
+		};
+		return {
+			library: { version: s.library?.version ?? 1, defs: [...(s.library?.defs ?? []), definition] },
+			monitor: {
+				...s.monitor,
+				root: updateNode(s.monitor.root, id, () => replacement),
+				floating: s.monitor.floating.map((item) => (item.id === id ? replacement : item))
+			},
+			selectedId: id
+		};
+	}
 	const sz = intrinsicSize(node, s.library);
 	const size = {
 		w: Math.max(40, Math.round(sz.w) || 120),

@@ -1023,3 +1023,113 @@
 	background: var(--ui-accent-fg);
 	color: var(--ui-bg);
 }
+
+.inspector .editing-context {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1);
+	font-size: var(--text-sm);
+	color: var(--ui-fg-muted);
+	line-height: var(--line-caption);
+}
+.inspector .editing-context button {
+	display: inline;
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--ui-accent-fg);
+	font: inherit;
+	text-align: left;
+}
+
+.inspector .reuse-card {
+	padding: var(--space-3);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-panel);
+	background: var(--ui-raised);
+}
+.inspector .reuse-card p {
+	margin-block: var(--space-2);
+	color: var(--ui-fg-muted);
+	line-height: var(--line-body);
+}
+.inspector .reuse-card details {
+	margin-block: var(--space-3);
+}
+.inspector .shared-settings .row2 {
+	margin-top: var(--space-3);
+}
+.canvas .def-banner .scope-usage {
+	display: block;
+	color: var(--ui-fg-muted);
+	font-size: var(--text-sm);
+	margin-top: var(--space-1);
+}
+
+.presentation-options {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+	gap: var(--space-2);
+}
+.inspector .presentation-option,
+.presentation-option {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	padding: var(--space-3);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+	background: var(--ui-bg);
+	color: var(--ui-fg);
+	font: inherit;
+	cursor: pointer;
+	text-align: left;
+}
+.presentation-option[aria-pressed='true'] {
+	border-color: var(--ui-accent-fg);
+}
+.presentation-option small {
+	color: var(--ui-fg-muted);
+	line-height: var(--line-caption);
+	font-size: var(--text-sm);
+}
+.presentation-specimen {
+	display: block;
+	width: 100%;
+	min-height: 40px;
+	font-size: var(--text-md);
+}
+.presentation-extra {
+	display: block;
+	margin-top: var(--space-1);
+}
+
+.widget-start-dialog h2 {
+	margin: 0;
+	font-size: var(--text-xl);
+}
+.widget-start-dialog p {
+	color: var(--ui-fg-muted);
+	line-height: var(--line-body);
+	margin-block: var(--space-2);
+}
+.inspector.widget-start-dialog .widget-start-choice {
+	display: flex;
+	gap: var(--space-3);
+	align-items: flex-start;
+	text-align: left;
+	min-height: 64px;
+	width: 100%;
+	padding: var(--space-3);
+}
+.widget-start-choice > span {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+.widget-start-choice small {
+	font-size: var(--text-sm);
+	color: var(--ui-fg-muted);
+	line-height: var(--line-caption);
+}

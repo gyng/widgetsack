@@ -1,3 +1,4 @@
+import { getMeta, registerMeta } from '../core/widget';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 
@@ -210,7 +211,7 @@ describe('DesignerListPanel library list', () => {
 			<DesignerListPanel {...baseProps()} library={{ version: 1, defs: [] }} editingDefId="gone" />
 		);
 		expect(getByText(/No custom widgets yet/)).toBeTruthy();
-		expect(getByText('My widgets')).toBeTruthy();
+		expect(document.querySelector('[aria-label="Catalog section"]')).toBeTruthy();
 		expect(queryByLabelText('Custom widget name')).toBeNull();
 		rerender(<DesignerListPanel {...baseProps()} library={undefined} />);
 		expect(getByText(/No custom widgets yet/)).toBeVisible();
@@ -219,11 +220,12 @@ describe('DesignerListPanel library list', () => {
 
 describe('DesignerListPanel template groups', () => {
 	it('renders the built-in Templates group with the preset rows', () => {
-		const { getByText } = render(<DesignerListPanel {...baseProps()} />);
-		expect(getByText('Templates')).toBeTruthy();
+		const view = render(<DesignerListPanel {...baseProps()} />);
+		const { getByRole } = view;
+		expect(view.container.querySelector('summary .palette-section-name')?.textContent).toBeTruthy();
 		// The built-in template names (core/templates.ts TEMPLATES).
-		expect(getByText('System monitor')).toBeTruthy();
-		expect(getByText('Now playing')).toBeTruthy();
+		expect(getByRole('button', { name: 'System monitor' })).toBeTruthy();
+		expect(getByRole('button', { name: 'Now playing' })).toBeTruthy();
 	});
 
 	it('clicking a template name previews it (read-only)', () => {
@@ -235,15 +237,19 @@ describe('DesignerListPanel template groups', () => {
 
 	it('the template clone icon clones it into a new library widget', () => {
 		const props = baseProps();
-		const { getByText } = render(<DesignerListPanel {...props} />);
-		const row = within(getByText('Network').closest('.dl-item')! as HTMLElement);
+		const view = render(<DesignerListPanel {...props} />);
+		const row = within(
+			view.getByRole('button', { name: 'Network' }).closest('.dl-item')! as HTMLElement
+		);
 		fireEvent.click(row.getByRole('button', { name: 'Use Network template' }));
 		expect(props.actions.newFromTemplate).toHaveBeenCalledWith('network');
 	});
 
 	it('highlights the previewed template row by name', () => {
-		const { getByText } = render(<DesignerListPanel {...baseProps()} previewName="Network" />);
-		expect(getByText('Network').closest('.dl-item')!.className).toContain('cur');
+		const view = render(<DesignerListPanel {...baseProps()} previewName="Network" />);
+		expect(view.getByRole('button', { name: 'Network' }).closest('.dl-item')!.className).toContain(
+			'cur'
+		);
 	});
 
 	it('labels a plugin template group "Templates · <group>" (built-ins stay plain "Templates")', () => {
@@ -254,7 +260,9 @@ describe('DesignerListPanel template groups', () => {
 			const view = render(<DesignerListPanel {...baseProps()} />);
 			unmount = view.unmount;
 			const { getByText } = view;
-			expect(getByText('Templates')).toBeTruthy();
+			expect(
+				view.container.querySelector('summary .palette-section-name')?.textContent
+			).toBeTruthy();
 			expect(getByText('Templates · My Pack')).toBeTruthy();
 			expect(getByText('Pack System')).toBeTruthy();
 		} finally {
@@ -282,6 +290,8 @@ describe('DesignerListPanel header actions', () => {
 		const props = baseProps();
 		const { getByRole } = render(<DesignerListPanel {...props} />);
 		fireEvent.click(getByRole('button', { name: 'New custom widget' }));
+		fireEvent.click(document.querySelector('.widget-start-dialog summary')!);
+		fireEvent.click(getByRole('button', { name: 'Create blank widget' }));
 		expect(props.actions.startNewWidget).toHaveBeenCalledTimes(1);
 	});
 
@@ -307,21 +317,21 @@ describe('DesignerListPanel header actions', () => {
 describe('DesignerListPanel empty-state explainer', () => {
 	it('shows the "Widget designer" explainer when not designing', () => {
 		const { getByText } = render(<DesignerListPanel {...baseProps()} designing={false} />);
-		expect(getByText('Widget designer')).toBeTruthy();
+		expect(getByText('Build your widget')).toBeTruthy();
 	});
 
 	it('hides the explainer once a def/preview is open', () => {
 		const { queryByText } = render(<DesignerListPanel {...baseProps()} designing />);
-		expect(queryByText('Widget designer')).toBeNull();
+		expect(queryByText('Build your widget')).toBeNull();
 	});
 });
 
 it('persists preview cards for saved widgets and templates while retaining actions', () => {
-	localStorage.removeItem('widgetsack.designer.view');
+	localStorage.removeItem('widgetsack.palette.view');
 	const props = baseProps();
 	const view = render(<DesignerListPanel {...props} />);
 	fireEvent.click(view.getByRole('button', { name: 'Previews' }));
-	expect(localStorage.getItem('widgetsack.designer.view')).toBe('tiles');
+	expect(localStorage.getItem('widgetsack.palette.view')).toBe('tiles');
 	expect(view.container.querySelectorAll('.preview-tiles .catalog-preview').length).toBeGreaterThan(
 		2
 	);
@@ -335,7 +345,7 @@ it('persists preview cards for saved widgets and templates while retaining actio
 	);
 	fireEvent.click(restored.getByRole('button', { name: 'List' }));
 	expect(restored.container.querySelector('.catalog-preview')).toBeNull();
-	expect(localStorage.getItem('widgetsack.designer.view')).toBe('rows');
+	expect(localStorage.getItem('widgetsack.palette.view')).toBe('rows');
 });
 it('keeps the catalog usable when view preferences cannot be read or saved', () => {
 	const read = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
@@ -352,5 +362,39 @@ it('keeps the catalog usable when view preferences cannot be read or saved', () 
 	} finally {
 		read.mockRestore();
 		write.mockRestore();
+	}
+});
+
+it('can choose a useful starting point, cancel the chooser, and clear a stale catalog search', () => {
+	const props = baseProps();
+	const onNewFromWidget = vi.fn();
+	const view = render(<DesignerListPanel {...props} onNewFromWidget={onNewFromWidget} />);
+	fireEvent.change(view.getByRole('searchbox'), { target: { value: 'nothing matches' } });
+	fireEvent.click(view.getByRole('button', { name: 'New custom widget' }));
+	fireEvent.click(view.getByRole('button', { name: 'Start with a built-in widget' }));
+	expect(view.getByRole('searchbox')).toHaveValue('');
+	expect(view.getByRole('combobox', { name: 'Catalog section' })).toHaveTextContent('Widgets');
+	fireEvent.click(view.getByRole('button', { name: /^Clock —/ }));
+	expect(onNewFromWidget).toHaveBeenCalledWith('clock');
+	fireEvent.click(view.getByRole('button', { name: 'New custom widget' }));
+	fireEvent.click(view.getByRole('button', { name: 'Cancel' }));
+	expect(view.queryByRole('dialog')).toBeNull();
+	expect(props.actions.startNewWidget).not.toHaveBeenCalled();
+});
+
+it('opens the starting chooser from the empty canvas action', () => {
+	const view = render(<DesignerListPanel {...baseProps()} designing={false} />);
+	fireEvent.click(view.getByRole('button', { name: 'Create a custom widget' }));
+	expect(view.getByRole('dialog', { name: 'Start a widget' })).toBeVisible();
+});
+
+it('keeps provider widgets without a friendly label discoverable by their type', () => {
+	const meta = getMeta('clock')!;
+	registerMeta({ ...meta, label: undefined });
+	try {
+		const view = render(<DesignerListPanel {...baseProps()} />);
+		expect(view.getByRole('button', { name: /^clock —/ })).toBeVisible();
+	} finally {
+		registerMeta(meta);
 	}
 });

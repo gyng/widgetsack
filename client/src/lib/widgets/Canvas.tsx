@@ -1,8 +1,21 @@
+import SharedWidgetEditDialog from './SharedWidgetEditDialog';
+import { makeIndependentCopy } from './canvas/widgetReuse';
+import { canSaveSelectionWidget } from './canvas/selectionWidget';
+import ArrangeSelectionDialog from './ArrangeSelectionDialog';
+import { measureContent } from './canvas/measureContent';
+import { useDefinitionUsage } from './canvas/useDefinitionUsage';
+import { selectionBreadcrumb } from '../core/widgetContext';
 import { DESIGN_STYLES, DESIGN_DENSITIES } from '../core/designPresets';
 import Icon from './Icon';
 import StudioStageToolbar from './StudioStageToolbar';
 import { useCanvasDrag } from './canvas/useCanvasDrag';
-import { editingDefinitionId, definitionBaseline, previewDefinition } from '../core/editorMode';
+import {
+	editingDefinitionId,
+	definitionBaseline,
+	previewDefinition,
+	desktopMonitor,
+	editedLibrary
+} from '../core/editorMode';
 // Canvas (organism): owns the telemetry hub, wires the backend source, and lays out this
 // monitor's widgets. Holds the versioned v2 MonitorLayout (an in-flow root tree + a floating
 // layer) in the editor model (useEditorModel); persists/loads widgets.json as v2 via parseLayoutAny.
@@ -326,6 +339,11 @@ export default function Canvas({ studio = false }: Props) {
 
 	// Studio left-rail nav: which section's panel is showing. Transient UI — never in EditorState, so
 	// it doesn't touch undo/redo or the dirty diff.
+	const [sharedEditRequest, setSharedEditRequest] = useState<string | null>(null);
+	const [arrangementNatural, setArrangementNatural] = useState<ReadonlyMap<string, Rect>>(
+		() => new Map()
+	);
+	const [arrangementOpen, setArrangementOpen] = useState(false);
 	const [navSection, setNavSection] = useState<SectionId>('layouts');
 	const [assistantOpen, setAssistantOpen] = useState(false);
 	const [assistantMounted, setAssistantMounted] = useState(false);
@@ -528,8 +546,17 @@ export default function Canvas({ studio = false }: Props) {
 		}
 		return m;
 	}, [measuredDom, monitor.floating, floatingGroupBox]);
+	const openArrangement = useCallback(() => {
+		const ids = selectedIds.length ? selectedIds : selectedId ? [selectedId] : [];
+		setArrangementNatural(measureContent(monitor, ids, combinedSolved));
+		setArrangementOpen(true);
+	}, [monitor, selectedIds, selectedId, combinedSolved]);
 	const handleOp = useCallback(
 		(op: LayoutOp) => {
+			if (op.op === 'editDef' && studio) {
+				setSharedEditRequest(op.defId);
+				return;
+			}
 			if (op.op === 'select' && studio) {
 				setRightPane('configure');
 				setAssistantOpen(false);
@@ -738,6 +765,13 @@ export default function Canvas({ studio = false }: Props) {
 		: editingDefId && library
 			? (library.defs.find((d) => d.id === editingDefId)?.name ?? editingDefId)
 			: '';
+	const usage = useDefinitionUsage(
+		studio ? (sharedEditRequest ?? editingDefId ?? selectedDef?.id ?? null) : null,
+		myMonitor,
+		desktopMonitor(state),
+		editedLibrary(state),
+		state.pendingExtras
+	);
 
 	const placement = useMemo<'flow' | 'floating' | null>(() => {
 		if (selectedId === null) return null;
@@ -1413,20 +1447,20 @@ export default function Canvas({ studio = false }: Props) {
 		commitOp
 	});
 
-	// Entering a def edit (from anywhere) switches to the Widget designer section, where its
-	// widget-sized design canvas is revealed. Done during render (store-previous pattern) so it isn't
-	// a post-commit setState cascade; fires on the transition of editingDefId to a non-null value.
-	const [prevEditingDefId, setPrevEditingDefId] = useState(editingDefId);
-	if (editingDefId !== prevEditingDefId) {
-		setPrevEditingDefId(editingDefId);
-		if (studio && editingDefId != null) setNavSection('widget-designer');
-	}
+	// Remember the workspace and placement before scoping the canvas to a reusable widget.
+	const definitionOrigin = useRef<{ section: SectionId; selectedId: string | null }>({
+		section: 'layouts',
+		selectedId: null
+	});
+	useEffect(() => {
+		if (!designing) definitionOrigin.current = { section: navSection, selectedId };
+	}, [designing, navSection, selectedId]);
 
 	// Settings: remove all widgets on this monitor (undoable; Save to apply).
 	const clearMonitor = useCallback(() => {
 		if (
 			!window.confirm(
-				'Remove all widgets on this monitor?\n\nThe desktop overlay changes immediately. Press Ctrl+Z to undo before you open the widget designer or reload the layout.'
+				'Remove all widgets on this monitor?\n\nThe desktop overlay changes immediately. Press Ctrl+Z to undo before you open the widget editor or reload the layout.'
 			)
 		)
 			return;
@@ -1473,6 +1507,7 @@ export default function Canvas({ studio = false }: Props) {
 	const {
 		foldOpenDef,
 		startNewWidget,
+		newFromWidget,
 		openExistingDef,
 		cloneDefToEdit,
 		newFromTemplate,
@@ -1482,6 +1517,16 @@ export default function Canvas({ studio = false }: Props) {
 		renameWidget,
 		deleteWidget
 	} = useDefEditor({ editingDefId, previewing, stateRef, dispatch, handleOp, myMonitor });
+	const finishWidgetEditing = useCallback(
+		(backToLayout = false) => {
+			const origin = definitionOrigin.current;
+			foldOpenDef();
+			setNavSection(backToLayout ? 'layouts' : origin.section);
+			if (origin.selectedId) dispatch({ type: 'select', id: origin.selectedId });
+		},
+		[foldOpenDef, dispatch]
+	);
+
 	// Pick a studio section from the nav rail. While a widget def is open the rail used to be a dead
 	// modal (clicks no-opped, which reads as broken); instead a click now leaves the designer. An
 	// edited def asks first (Done saves it); a read-only/unedited def leaves silently. foldOpenDef does
@@ -1564,12 +1609,12 @@ export default function Canvas({ studio = false }: Props) {
 	});
 
 	const onSelect = useCallback(
-		(e: { id: string }) => {
+		(e: { id: string; additive?: boolean }) => {
 			if (studio) {
 				setRightPane('configure');
 				setAssistantOpen(false);
 			}
-			dispatch({ type: 'selectClick', id: e.id });
+			dispatch({ type: 'selectClick', ...e });
 		},
 		[dispatch, studio]
 	);
@@ -3024,7 +3069,8 @@ export default function Canvas({ studio = false }: Props) {
 						{editingDefId &&
 							(previewing ? (
 								<div className="def-banner preview">
-									Previewing: {editingDefName} (read-only) · {stageSize.w}×{stageSize.h}
+									{monName || myMonitor} › Previewing: {editingDefName} (read-only) · {stageSize.w}×
+									{stageSize.h}
 									<button type="button" onClick={clonePreview}>
 										Clone to edit
 									</button>
@@ -3034,10 +3080,19 @@ export default function Canvas({ studio = false }: Props) {
 								</div>
 							) : (
 								<div className="def-banner">
+									<button type="button" onClick={() => finishWidgetEditing(true)}>
+										Back to layout
+									</button>
 									<span>
-										Editing: {editingDefName} · {stageSize.w}×{stageSize.h}
+										<span className="scope-breadcrumb">
+											{monName || myMonitor} › Editing: {editingDefName}
+										</span>
+										<small className="scope-usage">
+											{usage.label} · Changes update linked copies
+										</small>{' '}
+										· {stageSize.w}×{stageSize.h}
 									</span>
-									<button type="button" onClick={() => handleOp({ op: 'endDefEdit' })}>
+									<button type="button" onClick={() => finishWidgetEditing()}>
 										Done
 									</button>
 								</div>
@@ -3080,6 +3135,52 @@ export default function Canvas({ studio = false }: Props) {
 							<>
 								<Suspense fallback={null}>
 									<NavRail active={navSection} onSelect={navToSection} />
+									{sharedEditRequest &&
+										library?.defs.find((def) => def.id === sharedEditRequest) && (
+											<SharedWidgetEditDialog
+												name={library.defs.find((def) => def.id === sharedEditRequest)!.name}
+												usage={usage.label}
+												locations={usage.locations.map((location) => ({
+													...location,
+													key:
+														monitorOptions.find((option) => option.key === location.key)?.label ??
+														location.key
+												}))}
+												loading={usage.loading}
+												placement={selectedGroup?.def === sharedEditRequest}
+												onClose={() => setSharedEditRequest(null)}
+												onEdit={() => {
+													openExistingDef(sharedEditRequest);
+													setSharedEditRequest(null);
+												}}
+												onCopy={() => {
+													if (selectedGroup?.def === sharedEditRequest) {
+														const newId = `def-${crypto.randomUUID()}`;
+														commitOp((current) =>
+															makeIndependentCopy(current, selectedGroup.id, newId)
+														);
+														foldOpenDef();
+														dispatch({ type: 'enterDefEdit', defId: newId });
+													} else cloneDefToEdit(sharedEditRequest);
+													setSharedEditRequest(null);
+												}}
+											/>
+										)}
+									{arrangementOpen && (
+										<ArrangeSelectionDialog
+											monitor={monitor}
+											library={library}
+											ids={selectedIds.length ? selectedIds : selectedId ? [selectedId] : []}
+											measured={combinedSolved}
+											natural={arrangementNatural}
+											onClose={() => setArrangementOpen(false)}
+											onApply={(source, next) => {
+												if (stateRef.current.monitor !== source) return false;
+												commitOp(() => ({ monitor: next }));
+												return true;
+											}}
+										/>
+									)}
 								</Suspense>
 								<Suspense
 									fallback={
@@ -3162,18 +3263,19 @@ export default function Canvas({ studio = false }: Props) {
 									)}
 									{navSection === 'widget-designer' && (
 										<ErrorBoundary
-											label="Widget designer"
+											label="Widget builder"
 											resetKey={navSection}
 											onCopy={copyToClipboard}
 										>
 											<DesignerListPanel
+												onNewFromWidget={newFromWidget}
 												library={library}
 												editingDefId={editingDefId}
 												previewName={previewDef?.name ?? null}
 												designing={designing}
 												actions={{
 													startNewWidget,
-													openExistingDef,
+													openExistingDef: setSharedEditRequest,
 													renameWidget,
 													cloneDefToEdit,
 													deleteWidget,
@@ -3282,6 +3384,9 @@ export default function Canvas({ studio = false }: Props) {
 													</div>
 												)}
 												<TokenFields
+													onApplyPresentation={(presentation, tokens) =>
+														handleOp({ op: 'applyWidgetDesign', ids: null, presentation, tokens })
+													}
 													values={tokenOverrides}
 													onApply={(tokens) => handleOp({ op: 'setTokens', tokens })}
 													onSet={(key, value) => handleOp({ op: 'setToken', key, value })}
@@ -3543,6 +3648,8 @@ export default function Canvas({ studio = false }: Props) {
 								>
 									{multiSelected && rightPane === 'configure' && !assistantOpen ? (
 										<MultiInspector
+											canSaveSelection={canSaveSelectionWidget(monitor, selectedIds)}
+											onArrange={openArrangement}
 											items={multiItems}
 											fields={multiFields}
 											basis={multiBasis}
@@ -3556,8 +3663,18 @@ export default function Canvas({ studio = false }: Props) {
 										/>
 									) : (
 										<Inspector
+											onEditDefinition={setSharedEditRequest}
+											onArrange={openArrangement}
 											pane={studio ? (assistantOpen ? 'hidden' : rightPane) : undefined}
 											workspace={studio}
+											definitionUsageLabel={usage.label}
+											definitionLocations={usage.locations}
+											onRefreshUsage={usage.refresh}
+											contextLabels={[
+												{ id: '', label: monName || myMonitor },
+												...(designing ? [{ id: '', label: editingDefName }] : []),
+												...selectionBreadcrumb(monitor, selectedId)
+											]}
 											addRequest={addRequest}
 											widget={selectedWidget}
 											container={selectedContainer}

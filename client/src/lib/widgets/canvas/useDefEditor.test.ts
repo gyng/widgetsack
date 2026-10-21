@@ -296,3 +296,9 @@ describe('callback stability', () => {
 		}
 	});
 });
+
+it('can start from a built-in widget after folding the current editor', () => {
+	const { result, dispatch } = setup();
+	act(() => result.current.newFromWidget('clock'));
+	expect(dispatch).toHaveBeenCalledWith({ type: 'newFromWidget', widgetType: 'clock' });
+});

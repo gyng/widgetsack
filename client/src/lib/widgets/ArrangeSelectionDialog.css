@@ -1,0 +1,51 @@
+.inspector.arrangement-dialog {
+	width: min(720px, calc(100vw - 32px));
+}
+.arrangement-dialog h2 {
+	margin: 0;
+	font-size: var(--text-xl);
+}
+.arrangement-dialog p {
+	margin-block: var(--space-2);
+	color: var(--ui-fg-muted);
+	line-height: var(--line-body);
+}
+.arrangement-options {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+}
+.inspector.arrangement-dialog button[aria-pressed='true'] {
+	border-color: var(--ui-accent-fg);
+	color: var(--ui-accent-fg);
+}
+.arrangement-previews {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--space-4);
+}
+.arrangement-previews figure {
+	margin: 0;
+	min-width: 0;
+	padding: var(--space-3);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+}
+.arrangement-previews figcaption {
+	margin-bottom: var(--space-3);
+	color: var(--ui-fg-muted);
+}
+.arrangement-previews svg {
+	display: block;
+	width: 100%;
+	height: 180px;
+}
+.arrangement-previews rect {
+	fill: rgba(var(--ui-accent-rgb), 0.12);
+	stroke: var(--ui-accent-fg);
+	stroke-width: 1;
+	vector-effect: non-scaling-stroke;
+}
+.arrangement-previews text {
+	fill: var(--ui-fg);
+}

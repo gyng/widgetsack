@@ -99,7 +99,7 @@ it('keeps the Add pane available for repeated insertion and names the Configure 
 	view.rerender(
 		<Inspector workspace pane="configure" widget={flowWidget} node={node} onOp={onOp} />
 	);
-	for (const name of ['Layout', 'Appearance', 'JSON', 'Content'])
+	for (const name of ['Layout', 'Appearance', 'Advanced', 'Content'])
 		fireEvent.click(screen.getByRole('tab', { name }));
 	expect(view.container.querySelector('.inspector')).toHaveAttribute(
 		'aria-labelledby',
@@ -330,8 +330,8 @@ describe('Inspector group + def params block', () => {
 		fireEvent.input(defH, { target: { value: '80' } });
 		expect(lastOp((o) => o.op === 'setDefSize' && o.h === 80)).toBeTruthy();
 
-		// Edit custom widget…
-		fireEvent.click(getByText('Edit custom widget…'));
+		// Edit shared widget…
+		fireEvent.click(getByText('Edit shared widget…'));
 		expect(lastOp((o) => o.op === 'editDef')).toMatchObject({ op: 'editDef', defId: 'd1' });
 
 		// A text param writes the override into group.params.

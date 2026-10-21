@@ -1,3 +1,6 @@
+import { saveSelectionWidget } from './selectionWidget';
+import { applyWidgetDesign } from './widgetDesign';
+import { makeIndependentCopy } from './widgetReuse';
 import { editorReducer, initialEditorState } from '../../core/editorReducer';
 export { COALESCE_MS } from '../../core/editorReducer';
 import { prepareEditorAction, type EditorAction } from './editorActions';
@@ -192,8 +195,16 @@ export function useEditorModel(studio: boolean, seedFloating: Leaf[]): EditorMod
 				case 'float':
 					commitOp((s) => floatNode(s, op.id, undefined, geometry?.solved));
 					return;
+				case 'saveSelectionWidget':
+					commitOp((state) =>
+						saveSelectionWidget(state, op.ids, `grp-${rand()}`, `def-${rand()}`, geometry?.solved)
+					);
+					return;
 				case 'makeWidget':
 					commitOp((s) => makeWidget(s, op.id));
+					return;
+				case 'makeIndependentCopy':
+					commitOp((s) => makeIndependentCopy(s, op.id, `def-${rand()}`));
 					return;
 				case 'ungroup':
 					commitOp((s) => ungroupSelected(s, op.id));
@@ -227,6 +238,9 @@ export function useEditorModel(studio: boolean, seedFloating: Leaf[]): EditorMod
 					return;
 				case 'setDefCss':
 					commitOp((s) => setDefCss(s, op.defId, op.css));
+					return;
+				case 'applyWidgetDesign':
+					commitOp((state) => applyWidgetDesign(state, op.ids, op.presentation, op.tokens));
 					return;
 				case 'setToken':
 					commitOp((s) => setToken(s, op.key, op.value));

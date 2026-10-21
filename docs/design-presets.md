@@ -1,8 +1,8 @@
 # Widget design presets
 
-Choose a **Style** and a **Density** in **Themes → Tokens**, then select **Apply design preset**.
+Choose a **Minimal / Compact / Detailed** presentation, a **Style** and a **Density** in **Themes → Tokens**, then select **Apply design preset**.
 The same picker is available under a selected widget or group's **Override theme** controls.
-Global presets affect widgets that inherit those tokens; a widget or group preset affects its own scope.
+Layout-wide presets update presentation and inherited tokens; a widget or group preset affects its own placement. Shared groups retain their source link.
 Each application is one undoable edit. Save to keep it.
 
 | Style       | Use                                                        |
@@ -17,7 +17,7 @@ Each application is one undoable edit. Save to keep it.
 | Comfortable | 16 px    | 14 px    | 24 px     | 32 px          |
 | Large       | 20 px    | 18 px    | 32 px     | 44 px          |
 
-Style and density are independent of the colour theme and the widget's Compact/Minimal content layout.
+Presentation controls supported labels, charts and secondary readings. Style and density are independent of presentation and the colour theme. Clock time formats retain their 12/24-hour convention; date-only formats keep their purpose.
 Use Transparent + Large for readable, unframed meter rows. A clock or other display reading can keep its larger size.
 
 Manual token overrides are kept by default. Values managed by a previous preset update when you choose another preset.

@@ -30,9 +30,10 @@ it('applies a design preset to a widget or group as one scoped token edit', () =
 			/>
 		);
 		fireEvent.click(screen.getByRole('button', { name: 'Apply design preset' }));
-		expect(lastOp(onOp, kind === 'widget' ? 'patchWidget' : 'patchGroup')).toMatchObject({
-			id: kind === 'widget' ? 'clock' : 'cluster',
-			patch: { tokens: { '--np-text-body': '20px', '--np-design-style': 'transparent' } }
+		expect(lastOp(onOp, 'applyWidgetDesign')).toMatchObject({
+			ids: [kind === 'widget' ? 'clock' : 'cluster'],
+			presentation: 'compact',
+			tokens: { '--np-text-body': '20px', '--np-design-style': 'transparent' }
 		});
 		view.unmount();
 	}
@@ -207,7 +208,7 @@ describe('Inspector group property panel', () => {
 		render(<Inspector groupUnit={groupUnit({ def: 'def1' })} def={def} onOp={onOp} />);
 		fireEvent.input(screen.getByDisplayValue('Lib Widget'), { target: { value: 'New Name' } });
 		expect(lastOp(onOp, 'renameDef')).toEqual({ op: 'renameDef', defId: 'def1', name: 'New Name' });
-		fireEvent.click(screen.getByRole('button', { name: 'Edit custom widget…' }));
+		fireEvent.click(screen.getByRole('button', { name: 'Edit shared widget…' }));
 		expect(lastOp(onOp, 'editDef')).toEqual({ op: 'editDef', defId: 'def1' });
 	});
 
@@ -388,4 +389,51 @@ describe('Inspector container: properties first + "Add into this container"', ()
 		);
 		expect(screen.getByText('＋ Add widget · into this row')).toBeTruthy();
 	});
+});
+
+it('exposes editing context, arrangement, explicit shared editing and an independent placement', () => {
+	const onOp = vi.fn();
+	const onArrange = vi.fn();
+	const onEditDefinition = vi.fn();
+	const onRefreshUsage = vi.fn();
+	const widget = createWidget('clock', 'inside');
+	const definition = {
+		id: 'shared',
+		name: 'Shared clock',
+		size: { w: 140, h: 40 },
+		child: leaf(widget)
+	};
+	const cluster = group('cluster', definition.size, definition.child, { def: definition.id });
+	const view = render(
+		<Inspector
+			workspace
+			groupUnit={cluster}
+			node={leaf(cluster)}
+			def={definition}
+			onOp={onOp}
+			onArrange={onArrange}
+			onEditDefinition={onEditDefinition}
+			contextLabels={[
+				{ id: '', label: 'Monitor' },
+				{ id: 'parent', label: 'Panel' }
+			]}
+			definitionUsageLabel="Used in 1 layout · 2 placements"
+			definitionLocations={[{ key: 'Monitor', count: 2 }]}
+			onRefreshUsage={onRefreshUsage}
+		/>
+	);
+	fireEvent.click(view.getByRole('button', { name: 'Panel' }));
+	expect(onOp).toHaveBeenCalledWith({ op: 'select', id: 'parent' });
+	fireEvent.click(view.getByRole('button', { name: 'Arrange…' }));
+	expect(onArrange).toHaveBeenCalledOnce();
+	fireEvent.click(view.getByText('Used in 1 layout · 2 placements'));
+	fireEvent.click(view.getByRole('button', { name: 'Refresh usage' }));
+	expect(onRefreshUsage).toHaveBeenCalledOnce();
+	fireEvent.click(view.getByRole('button', { name: 'Edit shared widget…' }));
+	expect(onEditDefinition).toHaveBeenCalledWith('shared');
+	fireEvent.click(view.getByRole('button', { name: 'Make independent copy' }));
+	expect(onOp).toHaveBeenCalledWith({ op: 'makeIndependentCopy', id: cluster.id });
+	view.rerender(<Inspector groupUnit={{ ...cluster, def: undefined }} onOp={onOp} />);
+	fireEvent.click(view.getByRole('button', { name: 'Save as custom widget' }));
+	expect(onOp).toHaveBeenCalledWith({ op: 'makeWidget', id: cluster.id });
 });

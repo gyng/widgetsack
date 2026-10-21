@@ -46,7 +46,7 @@ Only enable packages from sources you trust.
 
 ## Use a package
 
-Enabled templates appear in **Layout → Add** and the widget designer.
+Enabled templates appear in **Layout → Add** and **Build**.
 Insert a template to create a copy in your layout.
 Package sensors appear in **Sensors** with IDs that start with `pkg.`.
 

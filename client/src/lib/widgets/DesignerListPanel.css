@@ -161,7 +161,7 @@
 }
 .canvas .designer-list .preview-tiles .dl-items {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+	grid-template-columns: minmax(0, 1fr);
 }
 .canvas .designer-list .preview-tiles .dl-item {
 	display: grid;
@@ -231,45 +231,60 @@
 	width: 0;
 }
 
-/* Saved rows reveal their tools on hover/focus, keeping the full name readable at rest. */
-.canvas .designer-list .palette-section:not(.preview-tiles) .dl-item:not(:has(.dl-use)) {
-	position: relative;
-}
+/* Actions occupy their own hit areas when revealed; the primary label stays clickable. */
 .canvas .designer-list .palette-section:not(.preview-tiles) .dl-item:not(:has(.dl-use)) .dl-icon {
-	position: absolute;
-	top: 50%;
-	right: var(--space-1);
-	transform: translateY(-50%);
-	width: 24px;
-	opacity: 0;
-	pointer-events: none;
-}
-.canvas
-	.designer-list
-	.palette-section:not(.preview-tiles)
-	.dl-item:not(:has(.dl-use))
-	.dl-icon:nth-last-child(2) {
-	right: 28px;
-}
-.canvas
-	.designer-list
-	.palette-section:not(.preview-tiles)
-	.dl-item:not(:has(.dl-use))
-	.dl-icon:nth-last-child(3) {
-	right: 54px;
+	display: none;
 }
 .canvas
 	.designer-list
 	.palette-section:not(.preview-tiles)
 	.dl-item:not(:has(.dl-use)):is(:hover, :focus-within)
 	.dl-icon {
-	opacity: 1;
-	pointer-events: auto;
+	display: inline-flex;
 }
-.canvas
-	.designer-list
-	.palette-section:not(.preview-tiles)
-	.dl-item:not(:has(.dl-use)):is(:hover, :focus-within)
-	.dl-label {
-	padding-right: 80px;
+.canvas .designer-list .palette-section:not(.preview-tiles) .dl-item:not(:has(.dl-use)) .dl-label {
+	width: 0;
+	min-width: 0;
+}
+
+.canvas .designer-list .widget-catalog .catalog-tools {
+	top: 0;
+}
+.canvas .designer-list .widget-catalog .palette-section:not(.preview-tiles) .palette {
+	grid-template-columns: minmax(0, 1fr);
+}
+.canvas .designer-list .widget-catalog .preview-tiles .palette {
+	grid-template-columns: minmax(0, 1fr);
+}
+
+.canvas .designer-list .dl-tools {
+	position: static;
+	border-bottom: 0;
+	margin-bottom: 0;
+}
+.widget-catalog .catalog-tools {
+	background: var(--ui-bg);
+	top: 0;
+}
+.widget-catalog .catalog-section-select {
+	flex: 1;
+	min-width: 0;
+}
+.widget-catalog .catalog-section-select .np-select {
+	width: 100%;
+	min-width: 0;
+}
+.widget-catalog .catalog-section-select + .catalog-view-row {
+	margin-left: 0;
+}
+
+@container (min-width: 350px) {
+	.canvas .designer-list .widget-catalog .preview-tiles .palette {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+}
+@container (min-width: 560px) {
+	.canvas .designer-list .widget-catalog .preview-tiles .palette {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
 }

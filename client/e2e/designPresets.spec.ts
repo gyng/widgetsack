@@ -78,3 +78,36 @@ test('design presets apply to global or widget tokens in one undoable edit', asy
 	await page.keyboard.press('Control+z');
 	await expect(widget).toHaveCSS('--np-text-body', original);
 });
+
+test('presentation presets affect one placement or the layout without changing reusable definitions', async ({
+	page
+}) => {
+	await gotoStudio(page);
+	await addWidget(page, 'Clock');
+	await page.getByRole('button', { name: 'Save as custom widget', exact: true }).click();
+	const group = page.locator('.world .widget.selected[data-group]');
+	const groupId = await group.getAttribute('data-id');
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
+	await page.locator('.inspector details.tokens > summary').click();
+	const options = page.getByRole('group', { name: 'Widget presentation' });
+	await options.getByRole('button', { name: /Minimal/ }).click();
+	await page.getByRole('button', { name: 'Apply design preset', exact: true }).click();
+	await expect(group).toHaveCSS('--np-presentation-mode', 'minimal');
+	await page.keyboard.press('Control+z');
+	await expect(group).not.toHaveCSS('--np-presentation-mode', 'minimal');
+	await openSection(page, 'themes');
+	await page
+		.getByRole('group', { name: 'Widget presentation' })
+		.getByRole('button', { name: /Detailed/ })
+		.click();
+	await page.getByRole('button', { name: 'Apply design preset', exact: true }).click();
+	await expect(page.locator(`.world [data-id="${groupId}"][data-group]`)).toHaveCSS(
+		'--np-presentation-mode',
+		'detailed'
+	);
+	await page.keyboard.press('Control+z');
+	await expect(page.locator(`.world [data-id="${groupId}"][data-group]`)).not.toHaveCSS(
+		'--np-presentation-mode',
+		'detailed'
+	);
+});

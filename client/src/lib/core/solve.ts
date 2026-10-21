@@ -1,3 +1,4 @@
+import { applyPresentation, isPresentation } from './widgetPresentation';
 import { gridDimensions } from './gridDimensions';
 // Pure layout UTILITIES that the CSS-rendered editor/overlay leans on (the recursive
 // solver engine that once lived here is gone — native CSS now positions the flow tree).
@@ -416,12 +417,20 @@ export function resolveGroup(grp: Group, library?: Library): ResolvedGroup {
 		grp.def && library ? library.defs.find((d) => d.id === grp.def) : undefined;
 
 	const baseChild: LayoutNode | undefined = def ? def.child : grp.child;
-	const size: Size = def ? def.size : (grp.size ?? { w: 0, h: 0 });
+	const baseSize: Size = def ? def.size : (grp.size ?? { w: 0, h: 0 });
+	const width = grp.config?.w;
+	const height = grp.config?.h;
+	const size: Size = {
+		w: typeof width === 'number' && Number.isFinite(width) && width > 0 ? width : baseSize.w,
+		h: typeof height === 'number' && Number.isFinite(height) && height > 0 ? height : baseSize.h
+	};
 
 	if (!baseChild) return { child: emptyContainer(grp.id + ':empty'), size };
 
 	let child = cloneNode(baseChild);
 	if (grp.params) child = applyParams(child, def?.params, grp.params);
+	if (isPresentation(grp.config?.presentation))
+		child = applyPresentation(child, grp.config.presentation);
 	if (!safeGroupReferences(child, library, def ? [def.id] : []))
 		return { child: emptyContainer(grp.id + ':empty'), size, unsafe: true };
 	return { child, size };

@@ -1,3 +1,4 @@
+import type { Presentation } from '../core/widgetPresentation';
 // The friendly theme-token editor (molecule): renders the common TOKEN_FIELDS by `kind` — a colour
 // swatch+text (ColorField), a font picker (text + datalist), or a plain text field (radius/gap) — and
 // a "Clear N overrides" reset. ONE component, two call sites: the Themes section edits the GLOBAL
@@ -28,6 +29,7 @@ const COMMON_FONTS = [
 ];
 
 type Props = {
+	onApplyPresentation?: (mode: Presentation, tokens: Record<string, string>) => void;
 	values: Record<string, string>;
 	baseValues?: Record<string, string> | null; // last-saved values → per-field dirty flag
 	onSet: (key: string, value: string) => void;
@@ -38,6 +40,7 @@ type Props = {
 };
 
 export default function TokenFields({
+	onApplyPresentation,
 	values,
 	baseValues,
 	onSet,
@@ -55,7 +58,13 @@ export default function TokenFields({
 
 	return (
 		<>
-			{onApply && <DesignPresets values={values} onApply={onApply} />}
+			{(onApply || onApplyPresentation) && (
+				<DesignPresets
+					values={values}
+					onApply={onApply}
+					onApplyPresentation={onApplyPresentation}
+				/>
+			)}
 			{TOKEN_FIELDS.map((t) => {
 				const v = values[t.key] ?? '';
 				const dirty = baseValues ? (baseValues[t.key] ?? '') !== v : false;

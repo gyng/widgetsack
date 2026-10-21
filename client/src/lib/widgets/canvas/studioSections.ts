@@ -31,8 +31,8 @@ export const SECTIONS: Section[] = [
 	{ id: 'layouts', label: 'Layout', short: 'Layout', icon: 'zone', group: 'main' },
 	{
 		id: 'widget-designer',
-		label: 'Widget designer',
-		short: 'Custom',
+		label: 'Widget builder',
+		short: 'Build',
 		icon: 'group',
 		group: 'main'
 	},

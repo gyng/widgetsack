@@ -44,7 +44,7 @@ export default function InspectorViewTabs({
 						panelId ??
 						(palette
 							? undefined
-							: value === 'JSON'
+							: value === 'JSON' || value === 'Advanced'
 								? 'inspector-panel-data'
 								: 'inspector-panel-form')
 					}

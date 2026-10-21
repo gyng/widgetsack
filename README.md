@@ -90,7 +90,7 @@ Use **Check updates** to check a package for updates.
 
 Use **Themes** to edit a theme. You can also add CSS to an individual widget in the Inspector.
 Use formulas to calculate values or combine sensor readings.
-The widget designer lets you save groups as reusable widgets.
+Layout arranges your desktop; Build creates reusable widgets in My widgets. Both share the same catalog and favourites. See [Layout and Build](docs/studio-workflows.md) for starting points, shared edits and arrangement previews.
 
 See the [theme guide](docs/theming.md) and [templates and formulas](docs/templating.md) for examples.
 
@@ -108,7 +108,7 @@ bind available sensors, and adjust layout, labels, and CSS in Studio.
 
 4. Review the result. Use **Undo** to reverse a batch or **Save** to keep it.
 
-Use the widget designer to save a group as a reusable widget.
+Use Build, or save a selection from Layout, to create a reusable widget.
 Agents can configure Home Assistant, AI providers and other integrations through MCP after you request setup. Saved credentials remain write-only; integration settings save immediately outside layout Undo. Commands still require local activation. The layout tools work with
 existing widget types. For a fully custom renderer, add **Custom HTML** and let your agent
 write portable HTML/CSS/JavaScript with selected sensors, theme tokens and responsive sizing.

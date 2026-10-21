@@ -136,7 +136,7 @@ describe('Inspector add-palette — templates', () => {
 		render(<Inspector onOp={vi.fn()} onPreviewTemplate={onPreviewTemplate} />);
 		// The 👁 button next to "System monitor" jumps to the designer's read-only preview.
 		fireEvent.click(
-			within(palette()).getByLabelText('Preview System monitor in the widget designer')
+			within(palette()).getByLabelText('Preview System monitor in the widget builder')
 		);
 		expect(onPreviewTemplate).toHaveBeenCalledWith('system');
 	});

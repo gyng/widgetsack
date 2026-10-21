@@ -267,3 +267,21 @@ describe('MultiInspector align / distribute (floating widgets)', () => {
 		expect(onOp).toHaveBeenLastCalledWith({ op: 'distributeSelected', ids, axis: 'vertical' });
 	});
 });
+
+it('offers arrangement and a reusable widget for a valid multi-selection', () => {
+	const onArrange = vi.fn();
+	const onOp = vi.fn();
+	const view = render(
+		<MultiInspector {...baseProps} onArrange={onArrange} onOp={onOp} canSaveSelection />
+	);
+	fireEvent.click(view.getByRole('button', { name: 'Arrange…' }));
+	expect(onArrange).toHaveBeenCalledOnce();
+	fireEvent.click(view.getByRole('button', { name: 'Save selection as widget' }));
+	expect(onOp).toHaveBeenCalledWith({ op: 'saveSelectionWidget', ids: ['w1', 'w2'] });
+	view.rerender(
+		<MultiInspector {...baseProps} fields={[field(textField, 'label')]} onArrange={onArrange} />
+	);
+	fireEvent.click(view.getByRole('button', { name: 'Arrange…' }));
+	expect(onArrange).toHaveBeenCalledTimes(2);
+	expect(view.getByRole('button', { name: 'Save selection as widget' })).toBeDisabled();
+});

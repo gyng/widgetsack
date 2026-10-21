@@ -1467,3 +1467,7 @@
 	bottom: var(--space-4);
 	width: 240px;
 }
+
+.canvas .widget[data-presentation='minimal'] [data-part='label'] {
+	display: none;
+}

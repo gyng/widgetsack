@@ -1,3 +1,4 @@
+import { PRESENTATIONS, type Presentation } from '../core/widgetPresentation';
 import { useState, type CSSProperties } from 'react';
 import {
 	DESIGN_STYLES,
@@ -11,11 +12,14 @@ import Select from './Select';
 
 export default function DesignPresets({
 	values,
-	onApply
+	onApply,
+	onApplyPresentation
 }: {
+	onApplyPresentation?: (mode: Presentation, tokens: Tokens) => void;
 	values: Tokens;
-	onApply: (tokens: Tokens) => void;
+	onApply?: (tokens: Tokens) => void;
 }) {
+	const [presentation, setPresentation] = useState<Presentation>('compact');
 	const [style, setStyle] = useState<DesignStyle>('transparent');
 	const [density, setDensity] = useState<DesignDensity>('large');
 	const [replace, setReplace] = useState(false);
@@ -23,6 +27,28 @@ export default function DesignPresets({
 	return (
 		<fieldset className="design-presets">
 			<legend>Widget design preset</legend>
+			<div className="presentation-options" role="group" aria-label="Widget presentation">
+				{PRESENTATIONS.map((mode) => (
+					<button
+						type="button"
+						className="presentation-option"
+						key={mode.id}
+						aria-pressed={presentation === mode.id}
+						onClick={() => setPresentation(mode.id)}
+					>
+						<span className="presentation-specimen" aria-hidden="true">
+							{mode.id !== 'minimal' && <small>CPU </small>}
+							<strong>37%</strong>
+							{mode.id !== 'minimal' && <span> ▁▂▅▃▆</span>}
+							{mode.id === 'detailed' && (
+								<small className="presentation-extra">8 cores · 4.2 GHz</small>
+							)}
+						</span>
+						<span>{mode.name}</span>
+						<small>{mode.description}</small>
+					</button>
+				))}
+			</div>
 			<label>
 				Style
 				<Select
@@ -83,7 +109,12 @@ export default function DesignPresets({
 				Manual overrides are kept by default. Applying changes this token scope in one undoable
 				edit.
 			</p>
-			<button type="button" onClick={() => onApply(tokens)}>
+			<button
+				type="button"
+				onClick={() =>
+					onApplyPresentation ? onApplyPresentation(presentation, tokens) : onApply!(tokens)
+				}
+			>
 				Apply design preset
 			</button>
 		</fieldset>

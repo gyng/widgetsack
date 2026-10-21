@@ -579,7 +579,7 @@ export default function StudioSettingsPanel({
 							<h2 className="pl-title set-danger-title">Danger zone</h2>
 							<div className="pl-desc">
 								Clear this monitor’s layout. Press Ctrl+Z to undo it before you open the widget
-								designer or reload the layout.
+								builder or reload the layout.
 							</div>
 							<button type="button" className="rp-danger" onClick={clearMonitor}>
 								✕ Clear this monitor

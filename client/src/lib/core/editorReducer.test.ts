@@ -419,3 +419,15 @@ describe('undo coalescing across a save', () => {
 		expect(result.current.state.savedBaseline?.tokens).toEqual({ note: 'ab' });
 	});
 });
+
+it('modifier-click selects several items and toggles one out while preserving a valid primary', () => {
+	const { result } = createModel();
+	act(() => result.current.dispatch({ type: 'selectClick', id: 'a' }));
+	act(() => result.current.dispatch({ type: 'selectClick', id: 'b', additive: true }));
+	expect(result.current.state.selectedIds).toEqual(['a', 'b']);
+	act(() => result.current.dispatch({ type: 'selectClick', id: 'b', additive: true }));
+	expect(result.current.state.selectedId).toBe('a');
+	act(() => result.current.dispatch({ type: 'selectClick', id: 'a', additive: true }));
+	expect(result.current.state.selectedIds).toEqual([]);
+	expect(result.current.state.selectedId).toBeNull();
+});

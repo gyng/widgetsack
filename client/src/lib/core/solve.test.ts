@@ -882,3 +882,23 @@ it('preserves boolean parameter types for saved instances and string-based selec
 		expect((child.unit as WidgetInstance).config.smooth).toBe(expected);
 	}
 });
+
+it('respects valid per-placement group sizes and ignores invalid overrides', () => {
+	const child = leaf(prim('sized', 40, 20));
+	const def = { id: 'shared-size', name: 'Shared', size: { w: 100, h: 60 }, child };
+	for (const value of [-1, 0, NaN, Infinity, '50']) {
+		expect(
+			resolveGroup(group('one', def.size, child, { def: def.id, config: { w: value, h: value } }), {
+				version: 1,
+				defs: [def]
+			}).size
+		).toEqual(def.size);
+	}
+	expect(
+		resolveGroup(group('one', def.size, child, { def: def.id, config: { w: 80, h: 28 } }), {
+			version: 1,
+			defs: [def]
+		}).size
+	).toEqual({ w: 80, h: 28 });
+	expect(def.size).toEqual({ w: 100, h: 60 });
+});

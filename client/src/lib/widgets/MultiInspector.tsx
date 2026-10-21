@@ -25,6 +25,8 @@ const DISTRIBUTE_BUTTONS: { axis: DistributeAxis; glyph: string; label: string }
 ];
 
 type Props = {
+	canSaveSelection?: boolean;
+	onArrange?: () => void;
 	items: { id: string; label: string }[]; // every selected node (click to focus just it)
 	fields: MergedField[]; // config fields shared across the selected WIDGETS
 	basis: BasisSummary | null; // shared sizing of the selected flow leaves, or null if not all flow
@@ -46,6 +48,8 @@ const num = (v: unknown): number => {
 const str = (v: unknown): string => (v === undefined || v === null ? '' : String(v));
 
 export default function MultiInspector({
+	canSaveSelection = false,
+	onArrange,
 	items,
 	fields,
 	basis,
@@ -126,11 +130,21 @@ export default function MultiInspector({
 
 				{fields.length > 0 ? (
 					<>
+						{onArrange && (
+							<button type="button" onClick={onArrange}>
+								Arrange…
+							</button>
+						)}
 						<span className="hd">Common properties</span>
 						{fields.map(renderField)}
 					</>
 				) : (
 					<div className="multi-note">
+						{onArrange && (
+							<button type="button" onClick={onArrange}>
+								Arrange…
+							</button>
+						)}
 						No shared editable properties — click an item to edit it.
 					</div>
 				)}
@@ -188,6 +202,18 @@ export default function MultiInspector({
 					</label>
 				)}
 
+				<button
+					type="button"
+					disabled={!canSaveSelection}
+					title={
+						canSaveSelection
+							? 'Save these items as one reusable widget'
+							: 'Select floating widgets or items in the same container'
+					}
+					onClick={() => onOp?.({ op: 'saveSelectionWidget', ids: items.map((item) => item.id) })}
+				>
+					Save selection as widget
+				</button>
 				<button type="button" className="multi-delete" onClick={onDelete}>
 					✕ Delete {items.length}
 				</button>

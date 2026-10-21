@@ -32,3 +32,22 @@ it('previews style and density choices, preserves overrides, and applies the sel
 		expect.objectContaining({ '--np-text-body': '20px', '--np-accent': 'orange' })
 	);
 });
+
+it('applies presentation, style and density in a single callback', () => {
+	const onApply = vi.fn();
+	const onApplyPresentation = vi.fn();
+	const view = render(
+		<DesignPresets values={{}} onApply={onApply} onApplyPresentation={onApplyPresentation} />
+	);
+	for (const mode of ['Minimal', 'Detailed', 'Compact']) {
+		const choice = view.getByRole('button', { name: new RegExp(mode) });
+		fireEvent.click(choice);
+		expect(choice).toHaveAttribute('aria-pressed', 'true');
+		fireEvent.click(view.getByRole('button', { name: 'Apply design preset' }));
+		expect(onApplyPresentation).toHaveBeenLastCalledWith(
+			mode.toLowerCase(),
+			expect.objectContaining({ '--np-design-density': 'large' })
+		);
+	}
+	expect(onApply).not.toHaveBeenCalled();
+});

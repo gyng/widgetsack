@@ -1,31 +1,16 @@
-import CatalogViewToggle from './CatalogViewToggle';
+import WidgetCatalog from './WidgetCatalog';
 import {
 	MAX_GRID_TRACKS,
 	normalizeGridTrackCount,
 	validGridTrackCount
 } from '../core/gridDimensions';
-import Icon from './Icon';
 import AddPaletteFrame from './AddPaletteFrame';
-import PaletteSection from './PaletteSection';
-import PalettePreview from './PalettePreview';
-import { usePalettePreview, type PalettePreviewSpec } from './usePalettePreview';
-import CatalogEntryButton from './CatalogEntryButton';
 import InspectorViewTabs from './InspectorViewTabs';
-import { createPortal } from 'react-dom';
-import { useFocusTrap } from './canvas/useFocusTrap';
 // Editor inspector (edit mode): a palette to add widgets, plus a properties panel for
 // the selected node — widget props (sensor / rect / config / dock·float) or container
 // props (kind / cols / gap / pad / align / justify / grow). Emits a single `op` event;
 // all state + persistence lives in Canvas.
-import {
-	useEffect,
-	useMemo,
-	useId,
-	useRef,
-	useState,
-	type DragEvent as ReactDragEvent,
-	type ReactNode
-} from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type {
 	Align,
 	AlignH,
@@ -40,7 +25,6 @@ import type {
 	WidgetDef,
 	WidgetInstance
 } from '../core/layoutTree';
-import { definitionReaches } from '../core/groupReferences';
 import { fieldGroups, getMeta } from '../core/widget';
 import type { ConfigField } from '../core/widget';
 import { readOverlayPrefs } from './canvas/overlayPrefs';
@@ -54,8 +38,6 @@ import CssEditor from './CssEditor';
 import BoxField from './BoxField';
 import ColorField from './ColorField';
 import Select, { type SelectOption } from './Select';
-import { BUILTIN_TEMPLATE_GROUP, resolveTemplateOptions, type Template } from '../core/templates';
-import { useTemplateGroups } from './useTemplateGroups';
 import { exprRefs, templateRefs } from '../core/textTemplate';
 import type { LayoutOp } from './ops';
 import { clampSpacing, maxGap, maxPad } from './canvas/spacingGuard';
@@ -63,30 +45,17 @@ import { containerAlignControls, LEAF_H_OPTIONS, LEAF_V_OPTIONS } from './canvas
 import TokenFields from './TokenFields';
 import ConditionEditor from './ConditionEditor';
 import './Inspector.css';
-import WidgetIcon from './WidgetIcon';
 import GroupChartOptions from './GroupChartOptions';
 
-// Group palette entries by `category` in first-seen order, uncategorized last under "Other".
-// Pure (exported for tests): order within a group is registration order, same as before grouping.
-export type PaletteEntry = { type: string; label: string; category?: string };
-export function groupPalette(items: PaletteEntry[]): { category: string; items: PaletteEntry[] }[] {
-	const groups = new Map<string, PaletteEntry[]>();
-	for (const it of items) {
-		const category = it.category ?? 'Other';
-		const key = category === 'Utility' ? 'Utilities' : category === 'System' ? 'Tools' : category;
-		const list = groups.get(key);
-		if (list) list.push(it);
-		else groups.set(key, [it]);
-	}
-	const ordered = Array.from(groups.entries()).map(([category, list]) => ({
-		category,
-		items: list
-	}));
-	// "Other" sinks to the end regardless of when the first uncategorized entry appeared.
-	return ordered.sort((a, b) => Number(a.category === 'Other') - Number(b.category === 'Other'));
-}
+export { groupPalette } from './WidgetCatalog';
 
 type Props = {
+	onEditDefinition?: (id: string) => void;
+	onArrange?: () => void;
+	definitionUsageLabel?: string;
+	definitionLocations?: { key: string; count: number }[];
+	onRefreshUsage?: () => void;
+	contextLabels?: { id: string; label: string }[];
 	widget?: WidgetInstance | null;
 	container?: Container | null;
 	groupUnit?: Group | null;
@@ -280,150 +249,13 @@ const KIND_LABEL: Record<Container['kind'], string> = { row: 'Row', col: 'Column
 // Whether a basis means "grow/stretch along the parent's main axis" (an `fr` length).
 const isFrBasis = (b?: Length): boolean => typeof b === 'object' && b !== null && 'fr' in b;
 
-// A small "jump to the designer's read-only preview" affordance next to a template entry. The
-// preview itself is the existing previewTemplate path (useDefEditor → the design canvas); this is
-// just the door to it from the Add palette.
-function TemplatePreviewButton({ t, onPreview }: { t: Template; onPreview: (id: string) => void }) {
-	return (
-		<button
-			type="button"
-			className="tpl-preview"
-			title={`Preview ${t.name} in the widget designer (read-only)`}
-			aria-label={`Preview ${t.name} in the widget designer`}
-			onClick={() => onPreview(t.id)}
-		>
-			<Icon name="eye" />
-		</button>
-	);
-}
-
-// Templates share one catalog card. ParamSpecs open in a focused setup dialog; drafts
-// survive cancellation, and insertion uses the same params as a cloned definition.
-function TemplateOptionsForm({
-	t,
-	onInsert,
-	onPreview,
-	showPreview,
-	hidePreview,
-	tiles = false
-}: {
-	tiles?: boolean;
-	t: Template;
-	onInsert: (options: Record<string, string>) => void;
-	onPreview?: (templateId: string) => void;
-	showPreview: (spec: PalettePreviewSpec, el: HTMLElement) => void;
-	hidePreview: () => void;
-}) {
-	const [opts, setOpts] = useState<Record<string, string>>(() => resolveTemplateOptions(t));
-	const [open, setOpen] = useState(false);
-	const trigger = useRef<HTMLButtonElement>(null);
-	const dialog = useRef<HTMLDivElement>(null);
-	const titleId = useId();
-	const { onKeyDown } = useFocusTrap(dialog, open);
-	useEffect(() => {
-		if (!open) return;
-		dialog.current!.querySelector<HTMLElement>('input, [role="combobox"]')!.focus();
-		const button = trigger.current!;
-		return () => button.focus();
-	}, [open]);
-	return (
-		<span className="libitem catalog-entry template-options-card">
-			{tiles && <PalettePreview node={t.tree()} size={t.size} />}
-			<CatalogEntryButton
-				buttonRef={trigger}
-				hasPopup="dialog"
-				ariaLabel={`Set up ${t.name}`}
-				spec={{
-					label: t.name,
-					desc: t.description,
-					hint: 'Click to set up this template',
-					node: t.tree(),
-					size: t.size
-				}}
-				showPreview={showPreview}
-				hidePreview={hidePreview}
-				onActivate={() => setOpen(true)}
-			/>
-			{onPreview && <TemplatePreviewButton t={t} onPreview={onPreview} />}
-			{open &&
-				createPortal(
-					<div className="template-setup-backdrop">
-						<div
-							ref={dialog}
-							className="inspector template-setup"
-							role="dialog"
-							aria-modal="true"
-							aria-labelledby={titleId}
-							onKeyDown={(event) => {
-								if (event.key === 'Escape' && !event.defaultPrevented) {
-									event.preventDefault();
-									event.stopPropagation();
-									setOpen(false);
-								} else onKeyDown(event);
-							}}
-						>
-							<div className="tpl-opts">
-								<span className="tpl-opts-head" id={titleId}>
-									<span className="tpl-opts-name catalog-item-name">
-										<WidgetIcon type="group" />
-										Set up {t.name}
-									</span>
-								</span>
-								<p className="template-setup-description">{t.description}</p>
-								<div className="tpl-opts-fields">
-									{/* All registered templates normalize params to an array. */}
-									{t.params!.map((p) => (
-										<label key={p.key}>
-											{p.label ?? p.key}
-											{p.choices ? (
-												<Select
-													value={opts[p.key]}
-													options={p.choices}
-													onChange={(v) => setOpts((prev) => ({ ...prev, [p.key]: v }))}
-													aria-label={t.name + ' — ' + (p.label ?? p.key)}
-												/>
-											) : (
-												<input
-													value={opts[p.key]}
-													onChange={(e) => {
-														const value = e.currentTarget.value;
-														setOpts((prev) => ({ ...prev, [p.key]: value }));
-													}}
-													aria-label={t.name + ' — ' + (p.label ?? p.key)}
-												/>
-											)}
-										</label>
-									))}
-								</div>
-								<p className="template-setup-description">
-									Adds a standalone copy. You can change these options later.
-								</p>
-								<div className="template-setup-actions">
-									<button type="button" onClick={() => setOpen(false)}>
-										Cancel
-									</button>
-									<button
-										type="button"
-										className="tpl-opts-insert"
-										title={`${t.description} — inserts a standalone copy onto the canvas (not saved as a custom widget)`}
-										onClick={() => {
-											onInsert(opts);
-											setOpen(false);
-										}}
-									>
-										Add to layout
-									</button>
-								</div>
-							</div>
-						</div>
-					</div>,
-					document.body
-				)}
-		</span>
-	);
-}
-
 export default function Inspector({
+	onEditDefinition,
+	onArrange,
+	definitionUsageLabel = 'Linked copies share this widget.',
+	definitionLocations = [],
+	onRefreshUsage,
+	contextLabels = [],
 	widget = null,
 	container = null,
 	groupUnit = null,
@@ -481,14 +313,6 @@ export default function Inspector({
 	// still user-toggleable in between, and re-opens when nothing is selected (the primary add affordance).
 	const hasSelection = !!(widget || container || groupUnit);
 	const [addOpen, setAddOpen] = useState(workspace || !hasSelection);
-	const [paletteTab, setPaletteTab] = useState('Widgets');
-	const [paletteTiles, setPaletteTiles] = useState(() => {
-		try {
-			return localStorage.getItem('widgetsack.palette.view') === 'tiles';
-		} catch {
-			return false;
-		}
-	});
 	const [propertyTab, setPropertyTab] = useState('Content');
 	const activeProperty = widget
 		? propertyTab
@@ -511,28 +335,6 @@ export default function Inspector({
 		setPrevHasSelection(hasSelection);
 		setAddOpen(workspace || !hasSelection);
 	}
-
-	const { palettePreview, showPreview, hidePreview } = usePalettePreview();
-	// Built-ins + one group per enabled plugin package (re-renders on package toggle).
-	const templateGroups = useTemplateGroups();
-
-	// Add-palette filter: one search box narrows widgets + templates + library by name/type/description.
-	const [paletteFilter, setPaletteFilter] = useState('');
-	const pq = paletteFilter.trim().toLowerCase();
-	const pmatch = (...parts: (string | undefined)[]): boolean =>
-		!pq || parts.some((p) => p?.toLowerCase().includes(pq));
-	const fWidgetGroups = groupPalette(
-		widgetTypes.filter((w) => pmatch(w.label, w.type, getMeta(w.type)?.description))
-	);
-	const fDefs = defs.filter(
-		(d) =>
-			pmatch(d.name) &&
-			!(editingDefId && definitionReaches({ version: 1, defs }, d.id, editingDefId))
-	);
-	const fTemplateGroups = templateGroups
-		.map((g) => ({ ...g, templates: g.templates.filter((t) => pmatch(t.name, t.description)) }))
-		.filter((g) => g.templates.length);
-	const paletteEmpty = !fWidgetGroups.length && !fDefs.length && !fTemplateGroups.length;
 
 	// HA entity ids (e.g. "light.kitchen") for the macro editor's entity picker — from the json
 	// `ha.<id>` catalog entries (not the `.state` scalars, nor the `ha.status` connection sensor).
@@ -749,7 +551,8 @@ export default function Inspector({
 			patch: { config: { ...groupUnit.config, [k]: v } }
 		});
 	const renameDefName = (name: string) => def && op({ op: 'renameDef', defId: def.id, name });
-	const editDef = () => def && op({ op: 'editDef', defId: def.id });
+	const editDef = () =>
+		def && (onEditDefinition ? onEditDefinition(def.id) : op({ op: 'editDef', defId: def.id }));
 	const setDefW = (w: number) => def && op({ op: 'setDefSize', defId: def.id, w, h: def.size.h });
 	const setDefH = (h: number) => def && op({ op: 'setDefSize', defId: def.id, w: def.size.w, h });
 	const setWidgetCss = (css: string) =>
@@ -1093,237 +896,57 @@ export default function Inspector({
 				.filter(Boolean)
 				.join(' ')}
 		>
-			{palettePreview}
 			<AddPaletteFrame open={addOpen} destination={addDest} onToggle={setAddOpen}>
-				<div className="catalog-tools">
-					<div className="catalog-tab-row">
-						{workspace && (
-							<InspectorViewTabs
-								palette
-								panelId="catalog-results"
-								values={['Widgets', 'Templates', 'My widgets']}
-								active={paletteTab}
-								onSelect={setPaletteTab}
-							/>
-						)}
-
-						<div className="catalog-view-row">
-							<CatalogViewToggle
-								tiles={paletteTiles}
-								onChange={(tiles) => {
-									setPaletteTiles(tiles);
-									try {
-										localStorage.setItem('widgetsack.palette.view', tiles ? 'tiles' : 'rows');
-									} catch {
-										/* Keep this session usable. */
-									}
-								}}
-							/>
-						</div>
-					</div>
-					{addTargetName ? (
-						<span className="add-target-chip">
-							Adding into: {addTargetName}
-							<button
-								type="button"
-								className="x"
-								title="Stop adding into this container"
-								aria-label="Clear add target"
-								onClick={() => onClearAddTarget?.()}
-							>
-								✕
-							</button>
-						</span>
-					) : null}
-					{/* One search box narrows widgets + templates + My widgets at once — ~20 widgets plus
-				    templates + custom widgets made find-by-scan slow. */}
-					<input
-						className="palette-filter"
-						type="search"
-						placeholder="Filter widgets, templates, my widgets…"
-						value={paletteFilter}
-						onChange={(e) => setPaletteFilter(e.currentTarget.value)}
-						aria-label="Filter the add palette"
-					/>
-					{workspace && (
-						<small className="catalog-destination">Drag to place · Click adds {addDest}</small>
-					)}
-				</div>
-				<div
-					className="catalog-results"
-					id="catalog-results"
-					role={workspace ? 'tabpanel' : undefined}
-					aria-labelledby={
-						workspace ? `inspector-tab-${encodeURIComponent(paletteTab)}` : undefined
-					}
-				>
-					{/* Widgets, grouped by meta.category (first-seen order; uncategorized falls into "Other"). */}
-					{(!workspace || paletteTab === 'Widgets' || !!pq) &&
-						fWidgetGroups.map((g) => (
-							<PaletteSection
-								tiles={paletteTiles}
-								key={g.category}
-								id={`widgets:${g.category}`}
-								label={g.category}
-								count={g.items.length}
-								searching={!!pq}
-								setup={paletteSetup[g.category]}
-							>
-								{g.items.map((w) => (
-									<span key={w.type} className="catalog-widget-item">
-										{paletteTiles && <PalettePreview type={w.type} />}
-										<button
-											key={w.type}
-											type="button"
-											draggable
-											// No native `title` tooltip — the hover preview popover is the richer replacement
-											// (both at once was redundant). The description stays as the aria-label for a11y.
-											aria-label={[w.label, getMeta(w.type)?.description]
-												.filter(Boolean)
-												.join(' — ')}
-											onClick={() => {
-												hidePreview();
-												op({ op: 'addWidget', widgetType: w.type });
-											}}
-											onMouseEnter={(e) =>
-												showPreview(
-													{
-														label: w.label,
-														desc: getMeta(w.type)?.description,
-														hint: addInto
-															? `Click to add into ${addInto} · drag to place`
-															: 'Click to add · drag to place',
-														type: w.type
-													},
-													e.currentTarget
-												)
-											}
-											onMouseLeave={hidePreview}
-											onDragStart={(e: ReactDragEvent) => {
-												hidePreview();
-												e.dataTransfer?.setData('text/x-widget-type', w.type);
-											}}
-										>
-											<span className="catalog-item-name">
-												<WidgetIcon type={w.type} />
-												{w.label}
-											</span>
-										</button>
-									</span>
-								))}
-							</PaletteSection>
-						))}
-
-					{/* Templates: insert a STANDALONE inline copy (the designer rail's ⎘ clones one into an
-				    editable custom widget instead). Preview opens to the designer's read-only preview. Groups
-				    come from the registry: built-ins first, then one per enabled plugin package. */}
-					{(!workspace || paletteTab === 'Templates' || !!pq) &&
-						fTemplateGroups.map((g) => (
-							<PaletteSection
-								tiles={paletteTiles}
-								key={g.group}
-								id={`templates:${g.group}`}
-								label={g.group === BUILTIN_TEMPLATE_GROUP ? 'Templates' : `Templates · ${g.group}`}
-								count={g.templates.length}
-								searching={!!pq}
-							>
-								{g.templates.map((t) =>
-									t.params?.length ? (
-										<TemplateOptionsForm
-											showPreview={showPreview}
-											hidePreview={hidePreview}
-											tiles={paletteTiles}
-											key={t.id}
-											t={t}
-											onInsert={(options) =>
-												op({ op: 'insertTemplate', templateId: t.id, options })
-											}
-											onPreview={onPreviewTemplate}
-										/>
-									) : (
-										<span key={t.id} className="libitem catalog-entry">
-											{paletteTiles && <PalettePreview node={t.tree()} size={t.size} />}
-											<CatalogEntryButton
-												ariaLabel={[t.name, t.description].filter(Boolean).join(' — ')}
-												spec={{
-													label: t.name,
-													desc: t.description,
-													hint: 'Click to insert a standalone copy',
-													node: t.tree(),
-													size: t.size
-												}}
-												showPreview={showPreview}
-												hidePreview={hidePreview}
-												onActivate={() => op({ op: 'insertTemplate', templateId: t.id })}
-											/>
-											{onPreviewTemplate && (
-												<TemplatePreviewButton t={t} onPreview={onPreviewTemplate} />
-											)}
-										</span>
-									)
-								)}
-							</PaletteSection>
-						))}
-
-					{/* My widgets: your saved custom widgets (insert a copy linked to the custom widget). */}
-					{fDefs.length && (!workspace || paletteTab === 'My widgets' || !!pq) ? (
-						<PaletteSection
-							tiles={paletteTiles}
-							id="my-widgets"
-							label="My widgets"
-							count={fDefs.length}
-							searching={!!pq}
-						>
-							{fDefs.map((d) => (
-								<span key={d.id} className="libitem catalog-entry">
-									{paletteTiles && <PalettePreview node={d.child} size={d.size} />}
-									<CatalogEntryButton
-										ariaLabel={d.name}
-										spec={{ label: d.name, hint: 'Click to insert', node: d.child, size: d.size }}
-										showPreview={showPreview}
-										hidePreview={hidePreview}
-										onActivate={() => op({ op: 'insertWidget', defId: d.id })}
-									/>
-									<button
-										type="button"
-										className="x"
-										title="Delete this custom widget (only if unused)"
-										aria-label={`Delete ${d.name} from My widgets`}
-										onClick={() =>
-											onDeleteDef ? onDeleteDef(d.id, d.name) : op({ op: 'deleteDef', defId: d.id })
-										}
-									>
-										✕
-									</button>
-								</span>
-							))}
-						</PaletteSection>
-					) : null}
-
-					{paletteEmpty ? (
-						<div className="palette-empty">No matches for “{paletteFilter}”.</div>
-					) : null}
-					{workspace && paletteTab === 'My widgets' && !fDefs.length && !pq && (
-						<p className="palette-empty">
-							No saved widgets yet. Save a group as a custom widget to reuse it here.
-						</p>
-					)}
-				</div>
+				<WidgetCatalog
+					widgetTypes={widgetTypes}
+					defs={defs}
+					editingDefId={editingDefId}
+					workspace={workspace}
+					paletteSetup={paletteSetup}
+					addInto={addInto}
+					addTargetName={addTargetName}
+					addDest={addDest}
+					onClearAddTarget={onClearAddTarget}
+					onOp={onOp}
+					onDeleteDef={onDeleteDef}
+					onPreviewTemplate={onPreviewTemplate}
+				/>
 			</AddPaletteFrame>
 
+			{workspace && contextLabels.length > 0 && (
+				<nav className="editing-context" aria-label="Editing context">
+					{contextLabels.map((entry, index) => (
+						<span key={`${index}:${entry.id}`}>
+							{index > 0 && <span aria-hidden="true"> › </span>}
+							{entry.id ? (
+								<button type="button" onClick={() => op({ op: 'select', id: entry.id })}>
+									{entry.label}
+								</button>
+							) : (
+								entry.label
+							)}
+						</span>
+					))}
+				</nav>
+			)}
+			{workspace && node && onArrange && (
+				<button type="button" className="arrange-selection" onClick={onArrange}>
+					Arrange…
+				</button>
+			)}
 			{workspace && node && (
 				<InspectorViewTabs
 					values={
 						widget
-							? ['Content', 'Layout', 'Appearance', 'JSON']
+							? ['Content', 'Layout', 'Appearance', 'Advanced']
 							: groupUnit
-								? ['Layout', 'Appearance', 'JSON']
-								: ['Layout', 'JSON']
+								? ['Layout', 'Appearance', 'Advanced']
+								: ['Layout', 'Advanced']
 					}
-					active={detailTab === 'data' ? 'JSON' : activeProperty}
+					active={detailTab === 'data' ? 'Advanced' : activeProperty}
 					onSelect={(tab) => {
-						setDetailTab(tab === 'JSON' ? 'data' : 'form');
-						if (tab !== 'JSON') setPropertyTab(tab);
+						setDetailTab(tab === 'Advanced' ? 'data' : 'form');
+						if (tab !== 'Advanced') setPropertyTab(tab);
 					}}
 				/>
 			)}
@@ -1770,8 +1393,11 @@ export default function Inspector({
 										aria-label="size along the row / column"
 									/>
 								</label>
-								{leafAlignControls(widget.id)}
-								{leafBoxControls(widget.id)}
+								<details className="adv">
+									<summary>Advanced layout</summary>
+									{leafAlignControls(widget.id)}
+									{leafBoxControls(widget.id)}
+								</details>
 							</>
 						)}{' '}
 					</div>
@@ -1784,7 +1410,15 @@ export default function Inspector({
 							hidden={!propertyVisible(g.group === 'Appearance' ? 'Appearance' : 'Content')}
 						>
 							<span className="hd cfg-group-hd">{g.group}</span>
-							{g.fields.map((f) => renderConfigField(widget, f))}
+							{g.fields.filter((f) => f.kind !== 'expr').map((f) => renderConfigField(widget, f))}
+							{g.fields.some((f) => f.kind === 'expr') && (
+								<details className="adv">
+									<summary>Advanced expressions</summary>
+									{g.fields
+										.filter((f) => f.kind === 'expr')
+										.map((f) => renderConfigField(widget, f))}
+								</details>
+							)}
 						</div>
 					))}
 					{/* The raw-JSON + CSS escape hatches are expert-rare — collapsed by default (progressive
@@ -1900,30 +1534,62 @@ export default function Inspector({
 					)}
 					{def ? (
 						<>
-							<label className="full">
-								custom widget name
-								<input value={def.name} onInput={(e) => renameDefName(e.currentTarget.value)} />
-							</label>
-							<div className="row2">
-								<label>
-									custom widget w
-									<input
-										type="number"
-										value={def.size.w}
-										onInput={(e) => setDefW(Number(e.currentTarget.value))}
-									/>
-								</label>
-								<label>
-									custom widget h
-									<input
-										type="number"
-										value={def.size.h}
-										onInput={(e) => setDefH(Number(e.currentTarget.value))}
-									/>
-								</label>
+							<div className="reuse-card">
+								<strong>This placement</strong>
+								<p>
+									Parameters and appearance below affect this placement. Shared edits update every
+									linked copy.
+								</p>
+								<details>
+									<summary>{definitionUsageLabel}</summary>
+									<ul>
+										{definitionLocations.map((location) => (
+											<li key={location.key}>
+												{location.key} · {location.count}
+											</li>
+										))}
+									</ul>
+									{onRefreshUsage && (
+										<button type="button" onClick={onRefreshUsage}>
+											Refresh usage
+										</button>
+									)}
+								</details>
+								<button
+									type="button"
+									onClick={() => op({ op: 'makeIndependentCopy', id: groupUnit.id })}
+								>
+									Make independent copy
+								</button>
 							</div>
+							<details className="adv shared-settings">
+								<summary>Shared widget settings · affects all linked copies</summary>
+
+								<label className="full">
+									custom widget name
+									<input value={def.name} onInput={(e) => renameDefName(e.currentTarget.value)} />
+								</label>
+								<div className="row2">
+									<label>
+										custom widget w
+										<input
+											type="number"
+											value={def.size.w}
+											onInput={(e) => setDefW(Number(e.currentTarget.value))}
+										/>
+									</label>
+									<label>
+										custom widget h
+										<input
+											type="number"
+											value={def.size.h}
+											onInput={(e) => setDefH(Number(e.currentTarget.value))}
+										/>
+									</label>
+								</div>
+							</details>
 							<button type="button" onClick={editDef}>
-								Edit custom widget…
+								Edit shared widget…
 							</button>
 							{def.params?.length ? (
 								<>
@@ -1961,34 +1627,37 @@ export default function Inspector({
 									))}
 								</>
 							) : null}
-							<p className="meta">Expose a setting that each copy of this widget can change.</p>
-							<div className="row2">
-								<input
-									aria-label="Parameter key"
-									placeholder="param key"
-									value={paramKey}
-									onChange={(e) => setParamKey(e.currentTarget.value)}
-								/>
-								<input
-									aria-label="Parameter target path"
-									placeholder="path, e.g. unit.sensor"
-									value={paramTarget}
-									onChange={(e) => setParamTarget(e.currentTarget.value)}
-								/>
-							</div>
-							<button type="button" onClick={addParam}>
-								Add parameter
-							</button>
-							<label className="full">
-								custom widget css
-								<CssEditor
-									key={def.id}
-									value={def.css ?? ''}
-									onBlur={setDefCss}
-									placeholder="color: red;  .value …"
-									ariaLabel="custom widget css"
-								/>
-							</label>
+							<details className="adv">
+								<summary>Advanced · shared parameters and CSS</summary>
+								<p className="meta">Expose a setting that each copy of this widget can change.</p>
+								<div className="row2">
+									<input
+										aria-label="Parameter key"
+										placeholder="param key"
+										value={paramKey}
+										onChange={(e) => setParamKey(e.currentTarget.value)}
+									/>
+									<input
+										aria-label="Parameter target path"
+										placeholder="path, e.g. unit.sensor"
+										value={paramTarget}
+										onChange={(e) => setParamTarget(e.currentTarget.value)}
+									/>
+								</div>
+								<button type="button" onClick={addParam}>
+									Add parameter
+								</button>
+								<label className="full">
+									custom widget css
+									<CssEditor
+										key={def.id}
+										value={def.css ?? ''}
+										onBlur={setDefCss}
+										placeholder="color: red;  .value …"
+										ariaLabel="custom widget css"
+									/>
+								</label>
+							</details>
 						</>
 					) : (
 						<div className="meta">
@@ -2010,6 +1679,11 @@ export default function Inspector({
 						/>
 					</label>
 					<div className="actions">
+						{!def && (
+							<button type="button" onClick={() => op({ op: 'makeWidget', id: groupUnit.id })}>
+								Save as custom widget
+							</button>
+						)}
 						<button
 							type="button"
 							onClick={ungroupGroup}
@@ -2048,12 +1722,10 @@ export default function Inspector({
 									Override theme for this widget{overrideCount > 0 ? ` · ${overrideCount} set` : ''}
 								</summary>
 								<TokenFields
-									values={tokenValues}
-									onApply={(tokens) =>
-										widget
-											? op({ op: 'patchWidget', id: tokenTargetId, patch: { tokens } })
-											: op({ op: 'patchGroup', id: tokenTargetId, patch: { tokens } })
+									onApplyPresentation={(presentation, tokens) =>
+										op({ op: 'applyWidgetDesign', ids: [tokenTargetId], presentation, tokens })
 									}
+									values={tokenValues}
 									baseValues={(widget ? baseWidget?.tokens : baseGroup?.tokens) ?? null}
 									labelClassName="full"
 									onSet={(key, value) =>

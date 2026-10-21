@@ -85,7 +85,7 @@ test('a slow Custom library uses only its own rail and leaves Layout reachable',
 	try {
 		await gotoStudio(page);
 		await page.locator('[data-section="widget-designer"]').click();
-		const loading = page.getByText('Loading Widget designer…', { exact: true });
+		const loading = page.getByText('Loading Widget builder…', { exact: true });
 		await expect(loading).toBeVisible();
 		const bounds = await loading.boundingBox();
 		const nav = await page.locator('.nav-rail').boundingBox();
