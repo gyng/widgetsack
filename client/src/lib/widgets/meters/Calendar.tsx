@@ -60,8 +60,8 @@ export default function Calendar({
 				{headers && (
 					<div className="cal-row cal-head" role="row">
 						{headers.map((name, i) => (
-							<span key={i} className="cal-wd" role="columnheader">
-								{name}
+							<span key={i} className="cal-wd" role="columnheader" aria-label={name}>
+								{name.slice(0, 2)}
 							</span>
 						))}
 					</div>

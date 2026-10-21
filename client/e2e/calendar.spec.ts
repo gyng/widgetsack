@@ -14,6 +14,8 @@ test('calendar weekday headers align with dates and today stays legible on weeke
 	for (const width of [220, 180]) {
 		await calendar.evaluate((node, size) => {
 			node.style.width = `${size}px`;
+			// Exercise the wider fallback used when Bahnschrift is unavailable.
+			node.style.fontFamily = 'Arial, sans-serif';
 		}, width);
 		const columns = await calendar.evaluate((node) => {
 			const centers = (selector: string) =>
