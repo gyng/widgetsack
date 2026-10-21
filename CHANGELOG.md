@@ -3,6 +3,39 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.68
+
+### Added
+
+- Widget design presets with Minimal, Compact and Detailed presentations, surface styles and
+  readable densities. Apply them to a widget, group or whole layout.
+- Custom HTML widgets with isolated rendering, selected sensor inputs, theme and size updates.
+- Shared Layout and Build catalogs with search, persistent favourites and list or preview cards.
+- Widget creation from templates, built-in widgets, saved copies or a selection. Blank creation
+  is available under Advanced.
+- Arrangement previews for rows, stacks, equal spacing and fitting content, with one-step undo.
+- Reusable-widget usage across monitors and saved layouts, with independent copies before editing.
+- MCP setup for integrations, including Home Assistant and AI providers, and a copyable agent setup prompt.
+
+### Changed
+
+- Edit reusable widgets from Layout with monitor and selection breadcrumbs, Done and Back to layout.
+- Organize Studio's right pane into Add, Configure and Assistant tabs. Keep catalog tools sticky and
+  sections collapsible, and adapt preview grids to wider panes.
+- Separate AI Chat from scheduled AI Prompt widgets. Refine the built-in assistant and Your agent setup.
+- Use common design-system typography, controls, tooltips and spacing throughout Studio and its catalogs.
+- Refine CPU, network, clock and AI Usage sizing, alignment and spacing. Add configurable sparklines,
+  stable network columns, concise rates and smaller provider icons.
+- Improve sparkline scrolling and per-core chart stability. Percentage charts keep their 0–100 scale.
+- Refresh widget, dashboard, Layout and Build screenshots and their guides.
+
+### Fixed
+
+- Recover saved layouts more reliably after interrupted writes and dev reloads.
+- Keep Studio chrome and its status bar stable during pane changes and assistant loading.
+- Keep monitor menus inside the window and show matching friendly monitor names.
+- Fix unreadable Build catalog text, saved-row action overlap and stretched single preview cards.
+
 ## 0.0.67
 
 ### Changed

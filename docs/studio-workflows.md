@@ -19,6 +19,8 @@ Open **Build → New widget** and choose a starting point:
 - **Copy from My widgets:** use the copy action beside a saved widget to keep the original intact.
 - **Advanced → Create blank widget:** start from individual meters and containers.
 
+![Build with a clock template, shared catalog previews and editing context](img/build.png)
+
 Name the widget in Build. Done keeps it in My widgets. Add it to a monitor from Layout → Add → My widgets.
 
 You can also select a widget, inline group or container in Layout and choose **Save as custom widget**. For multiple items, choose **Save selection as widget**. Floating widgets form one panel; flow items must share a parent container. The original pieces are replaced by one linked placement in the same undoable edit.

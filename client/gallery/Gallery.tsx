@@ -199,7 +199,8 @@ const DEMO: WidgetInstance[] = [
 	}),
 	buildInstance('ha.climate', 'd-ha-climate', {
 		rect: { x: 748, y: 204, w: 128, h: 82 },
-		sensor: 'demo.climate'
+		sensor: 'demo.climate',
+		config: { label: 'HVAC' }
 	}),
 	buildInstance('ha.light', 'd-ha-light', {
 		rect: { x: 748, y: 300, w: 128, h: 48 },

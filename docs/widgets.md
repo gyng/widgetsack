@@ -590,6 +590,8 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ### AI Usage — `aiusage`
 
+![AI Usage widget](img/widgets/aiusage.png)
+
 Claude and Codex quotas, token activity, credit balances and banked resets, with optional local history graphs and consumption estimates. Add OpenRouter, OMP or custom JSON commands.
 
 - **Default size:** 265×44
@@ -606,6 +608,8 @@ Claude and Codex quotas, token activity, credit balances and banked resets, with
 | `timeout` | number | 20 | min 5, max 60 | Maximum duration of each provider refresh. |
 
 ### Custom HTML — `customhtml`
+
+![Custom HTML widget](img/widgets/customhtml.png)
 
 Build a portable isolated widget with HTML, CSS, JavaScript, theme tokens and selected sensors.
 
