@@ -120,6 +120,12 @@ it('binds HA samples and gives unregistered types a bounded fallback size', () =
 	const unknown = render(<WidgetPreview type="unknown" w={120} h={90} />);
 	expect(stage(unknown.container)?.style.width).toBe('120px');
 });
+
+it('gives the spacer specimen a readable preview area rather than its invisible native width', () => {
+	const view = render(<WidgetPreview type="spacer" />);
+	expect(stage(view.container)).toHaveStyle({ width: '240px', height: '100px' });
+	expect(view.getByText('A flexible gap between widgets.')).toBeVisible();
+});
 it('scopes authored preview styles so they cannot restyle the canvas', () => {
 	const widget = createWidget('text', 'shared');
 	widget.css = 'color: lime;';

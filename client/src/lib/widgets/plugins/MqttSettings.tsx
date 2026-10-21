@@ -51,6 +51,7 @@ export default function MqttSettings() {
 				setHost(s.host);
 				setPort(s.port);
 				setUsername(s.username);
+				setClientId(s.client_id);
 				setTopics(s.topics);
 				setTls(s.tls);
 				setInsecure(s.insecure);

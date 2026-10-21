@@ -610,6 +610,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 			showTicks: false,
 			showNumbers: false,
 			showCap: false,
+			lineWidth: 0,
 			updateMs: 1000
 		},
 		configFields: [
@@ -644,6 +645,13 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 			color('color', 'hands/ticks', { group: LOOK, help: 'hour + minute hands, ticks, ring' }),
 			color('accent', 'second hand', { group: LOOK, help: 'second hand colour' }),
 			color('face', 'face', { group: LOOK, help: 'face fill (default transparent)' }),
+			num('lineWidth', 'line thickness (px)', {
+				min: 0,
+				max: 6,
+				step: 0.25,
+				group: LOOK,
+				help: 'ring and hand thickness in pixels; 0 scales with the dial size'
+			}),
 			num('updateMs', 'update (ms)', {
 				min: 16,
 				step: 50,
@@ -784,7 +792,7 @@ export const BUILTIN_METAS: WidgetMeta[] = [
 		}),
 		label: 'GPU',
 		category: 'Meters',
-		defaultSize: { w: 200, h: 96 },
+		defaultSize: { w: 260, h: 144 },
 		defaultConfig: { showName: true },
 		configFields: [
 			text('label', 'name override', { group: DATA, help: 'replace the detected card name' }),

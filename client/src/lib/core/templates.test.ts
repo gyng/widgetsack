@@ -43,6 +43,17 @@ function treeOf(id: string): LayoutNode {
 }
 
 describe('templates', () => {
+	it('offers distinct saved-prompt and conversation templates with stable chat identity', () => {
+		const chat = getTemplate('ai-assistant')!;
+		expect(chat.name).toBe('AI Chat');
+		expect(leaves(chat.tree())[0]).toMatchObject({ type: 'aichat', config: { label: 'AI Chat' } });
+		const prompt = getTemplate('ai-prompt')!;
+		expect(prompt.name).toBe('AI Prompt');
+		expect(leaves(prompt.tree())[0]).toMatchObject({
+			type: 'assistant',
+			config: { schedule: '10m', sensors: 'auto', speak: false }
+		});
+	});
 	it('offers only the three distinct AI layouts and uses the live sidebar for Compact', () => {
 		expect(TEMPLATES.filter((t) => t.name.startsWith('AI Usage')).map((t) => t.id)).toEqual([
 			'ai-usage-minimal',
@@ -130,6 +141,7 @@ describe('templates', () => {
 			'checklist',
 			'history',
 			'aichat',
+			'assistant',
 			'command',
 			'aiusage',
 			'clock',

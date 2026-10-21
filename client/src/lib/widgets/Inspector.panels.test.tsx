@@ -227,7 +227,7 @@ describe('Inspector group property panel', () => {
 		fireEvent.change(screen.getByPlaceholderText('path, e.g. unit.sensor'), {
 			target: { value: 'unit.sensor' }
 		});
-		fireEvent.click(screen.getByRole('button', { name: 'Add param' }));
+		fireEvent.click(screen.getByRole('button', { name: 'Add parameter' }));
 		expect(lastOp(onOp, 'addDefParam')).toEqual({
 			op: 'addDefParam',
 			defId: 'def1',

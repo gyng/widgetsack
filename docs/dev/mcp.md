@@ -54,3 +54,9 @@ Use `/json/list` to select the intended target.
 Other local processes can access this port while it is enabled.
 
 See [the user guide](../mcp.md) for connection steps.
+
+## Integration configuration
+
+`studio_integrations`, `studio_configure_integration` and `studio_test_integration` share `llm/studioIntegrationTools.ts` between MCP and the built-in CLI assistant. Requests use `{integration, settings}`. A whitelist validates fields before invoking the existing Studio-only settings commands. Status responses project declared non-secret fields and sanitize URL credentials. Native save commands retain credential ownership and reject unsafe reuse after target changes.
+
+A shared queue serializes settings operations across both clients. It preserves ordering until an issued save and worker restart finish even if the initiating client cancels. Omitted patch fields are read fresh inside the queue. Configuration writes are immediate, separate from editor revisions, layout Save and Undo.

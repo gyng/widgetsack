@@ -8,14 +8,14 @@
 	justify-content: center;
 	width: 100%;
 	height: 100%;
-	/* 2px label↔value gap — the HA family's shared rhythm (matches HaLight's label/state pair). */
-	gap: 2px;
+	/* Share the HA family's density-aware rhythm. */
+	gap: var(--ha-gap, var(--np-gap, 4px));
 	color: var(--np-fg, #fff);
 	font-family: var(--np-font, 'Bahnschrift', 'Arial Narrow', sans-serif);
 }
 
 .np-ha-sensor .label {
-	font-size: 10px;
+	font-size: var(--ha-caption-size, var(--np-text-caption, 12px));
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
 	color: var(--np-label, rgb(218, 237, 226));
@@ -23,5 +23,5 @@
 }
 
 .np-ha-sensor .value {
-	font-size: 17px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
 }

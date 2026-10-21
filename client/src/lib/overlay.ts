@@ -683,7 +683,7 @@ export async function copyToClipboard(text: string): Promise<boolean> {
  * key the overlays use (the primary monitor → `default`, others → their index). Lets the
  * studio edit any monitor's layout from one window (5s multi-monitor). */
 export async function studioMonitorOptions(): Promise<
-	{ key: string; label: string; name: string; w: number; h: number }[]
+	{ key: string; label: string; name: string; friendly?: string; w: number; h: number }[]
 > {
 	const [all, primary, ids] = await displayIdsCache.snapshot(() =>
 		Promise.all([availableMonitors(), primaryMonitor(), displayIds()])
@@ -718,6 +718,7 @@ export async function studioMonitorOptions(): Promise<
 				y: m.position.y
 			}),
 			name,
+			friendly,
 			w,
 			h
 		};

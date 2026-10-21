@@ -10,6 +10,10 @@ test('AI Usage defaults to Codex and Claude and exposes provider options', async
 	await expect(meter).toContainText('58%');
 	await expect(meter.locator('[data-provider-icon="claude"]')).toBeVisible();
 	await expect(meter.locator('[data-provider-icon="codex"]')).toBeVisible();
+	await editor
+		.getByRole('group', { name: 'Codex', exact: true })
+		.locator('.usage-connection > summary')
+		.click();
 	const icon = editor
 		.getByRole('group', { name: 'Codex', exact: true })
 		.getByLabel('Icon', { exact: true });
@@ -20,12 +24,14 @@ test('AI Usage defaults to Codex and Claude and exposes provider options', async
 		'background-color',
 		'rgb(255, 255, 255)'
 	);
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
 	await page.getByLabel('provider icons', { exact: true }).uncheck();
 	await expect(meter.getByRole('region', { name: 'Codex usage' })).toContainText('Codex');
 	await page.getByLabel('provider icons', { exact: true }).check();
 	await expect(meter.locator('header')).toHaveCount(0);
 	await expect(meter).toHaveCSS('font-size', '14px');
 	await expect(meter.locator('.usage-value-mode')).toHaveCount(0);
+	await page.locator('.inspector').getByRole('tab', { name: 'Content', exact: true }).click();
 	await editor
 		.getByRole('group', { name: 'Codex', exact: true })
 		.getByLabel('Rate / ETA', { exact: true })
@@ -47,11 +53,13 @@ test('AI Usage defaults to Codex and Claude and exposes provider options', async
 		.getByRole('combobox', { name: 'Display', exact: true })
 		.selectOption('left');
 	await expect(meter).toContainText('58%');
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
 	await page.getByLabel('layout', { exact: true }).click();
 	await page
 		.locator('.np-select-menu')
 		.getByRole('option', { name: 'detailed', exact: true })
 		.click();
+	await page.locator('.inspector').getByRole('tab', { name: 'Content', exact: true }).click();
 	await expect(editor.getByRole('group', { name: 'Codex', exact: true })).toBeVisible();
 	await editor
 		.getByRole('group', { name: 'Codex', exact: true })

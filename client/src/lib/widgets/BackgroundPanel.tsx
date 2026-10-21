@@ -6,7 +6,7 @@ import Icon from './Icon';
 // the only module call it makes itself is the stateless open-folder helper. Lazy-loaded like the
 // other studio panels (Canvas's lazy() block), so the overlay never fetches it.
 import { BACKGROUND_FITS, BACKGROUND_KINDS, isMediaKind } from '../core/background';
-import type { BackgroundKind, BackgroundSpec } from '../core/layoutTree';
+import type { BackgroundFit, BackgroundKind, BackgroundSpec } from '../core/layoutTree';
 import type { AutoTheme } from './canvas/useAutoTheme';
 import { openWallpapersDir } from '../overlay';
 
@@ -23,6 +23,20 @@ type Props = {
 	onClearTokens?: () => void;
 };
 
+const KIND_LABELS: Record<BackgroundKind, string> = {
+	color: 'Colour',
+	image: 'Image',
+	video: 'Video',
+	web: 'Web page'
+};
+const FIT_LABELS: Record<BackgroundFit, string> = {
+	cover: 'Cover',
+	contain: 'Contain',
+	fill: 'Stretch',
+	center: 'Centre',
+	tile: 'Tile'
+};
+
 export default function BackgroundPanel({
 	bg,
 	wallpaperFiles,
@@ -35,7 +49,7 @@ export default function BackgroundPanel({
 }: Props) {
 	return (
 		<div className="rail-panel bg-panel">
-			<div className="rp-hd">Background</div>
+			<h2 className="rp-hd">Background</h2>
 			<div className="rp-stub">
 				A full-screen effect behind this monitor’s widgets. It shows on the desktop when the overlay
 				sits below windows (Settings → Overlay → window layer); the studio always previews it.
@@ -54,7 +68,7 @@ export default function BackgroundPanel({
 					<option value="none">None</option>
 					{BACKGROUND_KINDS.map((k) => (
 						<option key={k} value={k}>
-							{k}
+							{KIND_LABELS[k]}
 						</option>
 					))}
 				</select>
@@ -116,9 +130,7 @@ export default function BackgroundPanel({
 							))}
 						</div>
 					) : (
-						<div className="rp-stub">
-							No files yet — click ⊞ Folder and drop an image or video in.
-						</div>
+						<div className="rp-stub">No files yet. Open the folder and add an image or video.</div>
 					)}
 				</>
 			)}
@@ -132,7 +144,7 @@ export default function BackgroundPanel({
 					>
 						{BACKGROUND_FITS.map((f) => (
 							<option key={f} value={f}>
-								{f}
+								{FIT_LABELS[f]}
 							</option>
 						))}
 					</select>

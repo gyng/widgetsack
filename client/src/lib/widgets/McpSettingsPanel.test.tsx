@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, expect, it, vi } from 'vitest';
 import McpSettingsPanel from './McpSettingsPanel';
 import { mcpStatus, mcpSetPreferences, type McpStatus } from '../bridge/mcp';
@@ -13,9 +13,58 @@ const off: McpStatus = {
 	browserUrl: null,
 	config: { mcpServers: { widgetsack: { command: 'widgetsack.exe', args: ['--mcp'] } } }
 };
+
+it('offers a compact stdio connection guide without browser debugging controls', async () => {
+	render(<McpSettingsPanel connectionOnly />);
+	expect(await screen.findByText('Use your existing agent')).toBeVisible();
+	expect(screen.getByText(/Model Context Protocol/)).toBeVisible();
+	expect(screen.queryByRole('checkbox', { name: 'Allow browser tools' })).toBeNull();
+	const connection = screen.getByRole('region', { name: 'MCP connection' });
+	expect(within(connection).getByRole('checkbox', { name: 'Enable MCP' })).toBeVisible();
+	expect(within(connection).getByRole('status')).toHaveTextContent('MCP is off.');
+	expect(screen.getByRole('tab', { name: 'Setup prompt' })).toHaveAttribute(
+		'aria-selected',
+		'true'
+	);
+	expect(screen.getByLabelText('MCP client configuration')).not.toBeVisible();
+	fireEvent.click(screen.getByRole('tab', { name: 'Manual setup' }));
+	await waitFor(() =>
+		expect(
+			(screen.getByLabelText('MCP client configuration') as HTMLTextAreaElement).value
+		).toContain('--mcp')
+	);
+});
 beforeEach(() => {
 	vi.resetAllMocks();
 	vi.mocked(mcpStatus).mockResolvedValue(off);
+});
+it('copies a setup prompt containing the native server configuration and handles clipboard feedback safely', async () => {
+	const view = render(<McpSettingsPanel connectionOnly />);
+	await waitFor(() => expect(screen.getByRole('checkbox', { name: 'Enable MCP' })).toBeEnabled());
+	const copy = screen.getByRole('button', { name: 'Copy setup prompt' });
+	vi.mocked(copyToClipboard).mockResolvedValueOnce(true);
+	fireEvent.click(copy);
+	await screen.findByText('Setup prompt copied.');
+	expect(copyToClipboard).toHaveBeenLastCalledWith(expect.stringContaining('studio_read'));
+	expect(vi.mocked(copyToClipboard).mock.calls.at(-1)![0]).toContain(
+		JSON.stringify(off.config, null, 2)
+	);
+	expect(vi.mocked(copyToClipboard).mock.calls.at(-1)![0]).toContain(
+		'Preserve all other servers and settings'
+	);
+	vi.mocked(copyToClipboard).mockResolvedValueOnce(false);
+	fireEvent.click(copy);
+	await screen.findByText('Could not copy the setup prompt.');
+	let finish!: (ok: boolean) => void;
+	vi.mocked(copyToClipboard).mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				finish = resolve;
+			})
+	);
+	fireEvent.click(copy);
+	view.unmount();
+	await act(async () => finish(true));
 });
 it('keeps MCP and browser access off by default and copies native stdio configuration after enabling', async () => {
 	const { unmount } = render(<McpSettingsPanel />);
@@ -31,8 +80,11 @@ it('keeps MCP and browser access off by default and copies native stdio configur
 	});
 	fireEvent.click(enabled);
 	await waitFor(() => expect(enabled).toBeChecked());
+	expect(screen.getByText('MCP settings saved.')).toBeVisible();
+	expect(screen.queryByText(/Restart Widgetsack to apply changes/)).toBeNull();
 	expect(mcpSetPreferences).toHaveBeenCalledWith(true, false);
 	vi.mocked(copyToClipboard).mockResolvedValue(true);
+	fireEvent.click(screen.getByRole('tab', { name: 'Manual setup' }));
 	fireEvent.click(screen.getByText('Copy MCP configuration'));
 	await screen.findByText('MCP configuration copied.');
 	expect(copyToClipboard).toHaveBeenCalledWith(JSON.stringify(off.config, null, 2));
@@ -122,6 +174,7 @@ it('ignores late error and clipboard feedback after unmount', async () => {
 			})
 	);
 	const c = render(<McpSettingsPanel />);
+	fireEvent.click(screen.getByRole('tab', { name: 'Manual setup' }));
 	await waitFor(() => expect(screen.getByText('Copy MCP configuration')).toBeEnabled());
 	fireEvent.click(screen.getByText('Copy MCP configuration'));
 	c.unmount();

@@ -171,6 +171,7 @@ Show the time on an analog clock with hour, minute, and second hands.
 | `color` | color |  |  | hour + minute hands, ticks, ring |
 | `accent` | color |  |  | second hand colour |
 | `face` | color |  |  | face fill (default transparent) |
+| `lineWidth` | number | 0 | min 0, max 6, step 0.25 | ring and hand thickness in pixels; 0 scales with the dial size |
 | `updateMs` | number | 1000 | min 16, step 50 | redraw interval; lower = smoother second hand, higher = lighter |
 
 ### Button / Macro — `button`
@@ -226,7 +227,7 @@ Show battery charge and charging status or remaining time. A computer without a 
 
 Show NVIDIA GPU usage and available temperature, memory, power, clock, and fan readings. Unavailable readings show “—”.
 
-- **Default size:** 200×96
+- **Default size:** 260×144
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -647,7 +648,7 @@ Build a portable isolated widget with HTML, CSS, JavaScript, theme tokens and se
 ![HA Light widget](img/widgets/ha.light.png)
 
 - **Data:** Structured sensor data.
-- **Default size:** 120×48
+- **Default size:** 120×56
 - **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
@@ -751,7 +752,7 @@ Build a portable isolated widget with HTML, CSS, JavaScript, theme tokens and se
 ![HA Media Player widget](img/widgets/ha.media_player.png)
 
 - **Data:** Structured sensor data.
-- **Default size:** 180×92
+- **Default size:** 240×120
 - **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
@@ -855,7 +856,7 @@ Show upcoming events from the configured ICS calendar feed.
 | `maxRows` | number | 6 | min 1, max 20, step 1 | how many upcoming events to show |
 | `color` | color |  |  | time / timeline colour (blank = theme accent) |
 
-### AI Assistant — `aichat`
+### AI Chat — `aichat`
 
 An interactive chat with your configured AI provider. Send messages, stop a reply, or clear the conversation. Chat is shared within each window.
 
@@ -864,11 +865,11 @@ An interactive chat with your configured AI provider. Send messages, stop a repl
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text | "AI Assistant" |  | Header displayed above the conversation. |
+| `label` | text | "AI Chat" |  | Header displayed above the conversation. |
 
-### AI Briefing — `assistant`
+### AI Prompt — `assistant`
 
-Generate a briefing from sensor readings with the configured AI Provider. Set an interval or cron schedule. Use manual refresh in Studio.
+Run a saved prompt with live sensor readings, manually or on an interval or cron schedule. Displays the latest response; use AI Chat for conversations.
 
 - **Default size:** 280×96
 - **Controls:** available on the desktop.
@@ -876,10 +877,10 @@ Generate a briefing from sensor readings with the configured AI Provider. Set an
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `prompt` | text | "Summarize my system status in one short, friendly sentence." |  | what to ask the AI (your live sensors are included automatically) |
-| `schedule` | text | "10m" |  | how often to refresh: an interval (30s, 5m, 2h), a cron expr (e.g. 0 9 * * *), or "manual" |
+| `schedule` | text | "10m" |  | Interval: 30s, 5m, 2h (15s minimum). Cron: minute hour day month weekday, e.g. 0 9 * * * for 09:00 local time. Blank or manual disables automatic runs. Runs while the overlay is open; Studio refreshes manually. |
 | `sensors` | text | "auto" |  | comma-separated sensor ids to feed the prompt, or "auto" |
 | `speak` | toggle | false |  | speak each update (TTS) |
-| `label` | text | "AI" |  | header text |
+| `label` | text | "AI Prompt" |  | header text |
 | `color` | color | "" |  | text colour (blank = theme) |
 
 ### Transcribe / Translate — `transcribe`

@@ -80,7 +80,7 @@ function clockTree(): Container {
 				prim(
 					'dt-icon',
 					'analogclock',
-					{ showSeconds: true, showTicks: false, showNumbers: false, showCap: false },
+					{ showSeconds: true, showTicks: false, showNumbers: false, showCap: false, lineWidth: 2 },
 					{ w: 30, h: 30 }
 				),
 				'content',
@@ -296,7 +296,9 @@ function inlineNetworkTree(): Container {
 					},
 					{ sensor: 'net.down', w: 174, h: 28, css }
 				),
-				{ fr: 1 }
+				{ fr: 1 },
+				undefined,
+				{ margin: { t: 0, r: 18, b: 0, l: 0 } }
 			),
 			lf(
 				prim(
@@ -315,9 +317,13 @@ function inlineNetworkTree(): Container {
 					},
 					{ sensor: 'net.up', w: 174, h: 28, css }
 				),
-				{ fr: 1 }
+				{ fr: 1 },
+				undefined,
+				{ margin: { t: 0, r: 0, b: 0, l: 18 } }
 			)
 		],
+		// 48px between readings: 12px row gap + balanced 18px inner margins.
+		// Keep the gap below the short-row spacing guard without increasing its height.
 		{ gap: 12, align: 'center' }
 	);
 }
@@ -413,10 +419,31 @@ export const TEMPLATES: Template[] = [
 	})),
 	{
 		id: 'ai-assistant',
-		name: 'AI Assistant',
+		name: 'AI Chat',
 		description: 'Chat with your configured AI provider',
 		size: { w: 360, h: 300 },
-		tree: () => leaf(prim('ai-chat', 'aichat', { label: 'AI Assistant' }, { w: 360, h: 300 }))
+		tree: () => leaf(prim('ai-chat', 'aichat', { label: 'AI Chat' }, { w: 360, h: 300 }))
+	},
+	{
+		id: 'ai-prompt',
+		name: 'AI Prompt',
+		description: 'A saved sensor prompt refreshed every 10 minutes; supports cron or manual runs',
+		size: { w: 280, h: 96 },
+		tree: () =>
+			leaf(
+				prim(
+					'ai-prompt',
+					'assistant',
+					{
+						prompt: 'Summarize my system status in one short, friendly sentence.',
+						schedule: '10m',
+						sensors: 'auto',
+						speak: false,
+						label: 'AI Prompt'
+					},
+					{ w: 280, h: 96 }
+				)
+			)
 	},
 	{
 		id: 'cli-command',

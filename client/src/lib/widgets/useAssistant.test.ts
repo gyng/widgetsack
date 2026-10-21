@@ -146,6 +146,28 @@ describe('useAssistant', () => {
 		expect(llmComplete).toHaveBeenCalledTimes(2);
 	});
 
+	it.each(['manual', '', 'invalid schedule'])(
+		'keeps %j manual until explicitly refreshed',
+		async (schedule) => {
+			const { result } = renderHook(() => useAssistant(cfg({ schedule })), { wrapper });
+			await act(async () => vi.advanceTimersByTimeAsync(120_000));
+			expect(llmComplete).not.toHaveBeenCalled();
+			await act(async () => result.current.refresh());
+			expect(llmComplete).toHaveBeenCalledOnce();
+		}
+	);
+
+	it('does not run a daily cron on startup before its matching local minute', async () => {
+		vi.setSystemTime(new Date(2026, 0, 5, 8, 59, 0));
+		renderHook(() => useAssistant(cfg({ schedule: '0 9 * * *' })), { wrapper });
+		await act(async () => vi.advanceTimersByTimeAsync(59_999));
+		expect(llmComplete).not.toHaveBeenCalled();
+		await act(async () => vi.advanceTimersByTimeAsync(1));
+		expect(llmComplete).toHaveBeenCalledOnce();
+		await act(async () => vi.advanceTimersByTimeAsync(30_000));
+		expect(llmComplete).toHaveBeenCalledOnce();
+	});
+
 	it('floors a too-fast interval to the minimum (no API hammering)', async () => {
 		renderHook(() => useAssistant(cfg({ schedule: '1s' })), { wrapper });
 		await act(async () => {
@@ -232,8 +254,7 @@ describe('useAssistant', () => {
 	});
 
 	it('fires a cron schedule once per matching minute', async () => {
-		// Pin "now" to a minute boundary so the cron "* * * * *" (every minute) matches deterministically.
-		vi.setSystemTime(new Date('2026-06-19T10:00:30Z'));
+		vi.setSystemTime(new Date(2026, 5, 19, 10, 0, 0));
 		renderHook(() => useAssistant(cfg({ schedule: '* * * * *' })), { wrapper });
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(3000); // first-delay run
@@ -243,12 +264,21 @@ describe('useAssistant', () => {
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(30_000);
 		});
-		const afterSameMinute = llmComplete.mock.calls.length;
-		// Cross into the next minute → exactly one more fire.
+		expect(llmComplete).toHaveBeenCalledTimes(1);
 		await act(async () => {
 			await vi.advanceTimersByTimeAsync(60_000);
 		});
-		expect(llmComplete.mock.calls.length).toBeGreaterThan(afterSameMinute);
+		expect(llmComplete).toHaveBeenCalledTimes(2);
+	});
+
+	it('runs a daily cron again on a later day at the same local clock time', async () => {
+		vi.setSystemTime(new Date(2026, 0, 5, 9, 0, 0));
+		renderHook(() => useAssistant(cfg({ schedule: '0 9 * * *' })), { wrapper });
+		await act(async () => vi.advanceTimersByTimeAsync(3000));
+		expect(llmComplete).toHaveBeenCalledOnce();
+		vi.setSystemTime(new Date(2026, 0, 6, 9, 0, 0));
+		await act(async () => vi.advanceTimersByTimeAsync(30_000));
+		expect(llmComplete).toHaveBeenCalledTimes(2);
 	});
 });
 

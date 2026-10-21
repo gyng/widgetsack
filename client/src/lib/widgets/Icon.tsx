@@ -1,5 +1,14 @@
 // Shared stroke icons. The accessible name belongs to the enclosing control.
 const paths = {
+	plus: 'M10 3v14M3 10h14',
+	undo: 'M7 3L3 7l4 4M3 7h9a5 5 0 0 1 0 10H8',
+	redo: 'M13 3l4 4-4 4M17 7H8a5 5 0 0 0 0 10h4',
+	focus: 'M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4M7 10h6M10 7v6',
+	more: 'M4 10h.01M10 10h.01M16 10h.01',
+	save: 'M3 3h11l3 3v11H3zM6 3v5h7V3M6 17v-5h8v5',
+	load: 'M10 2v11M6 9l4 4 4-4M3 13v4h14v-4',
+	copy: 'M7 7h10v10H7zM3 13V3h10',
+	edit: 'M3 14l9-9 3 3-9 9H3zM12 5l2-2 3 3-2 2',
 	external: 'M8 3h9v9M17 3l-9 9M5 5H3v12h12v-2',
 	refresh: 'M17 7a7 7 0 1 0 0 6M17 2v5h-5',
 	storm: 'M5 7a5 5 0 0 1 10 0 3 3 0 0 1 0 6H5a3 3 0 1 1 0-6M11 11l-4 5h4l-1 3 5-5h-4z',

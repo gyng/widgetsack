@@ -2,7 +2,7 @@
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
-pub const ADAPTER_INSTRUCTIONS: &str = "You are a studio adapter. Do not call native tools. Reply ONLY with one JSON object: {\"tool\":\"studio_read\",\"args\":{}} or {\"tool\":\"studio_apply\",\"args\":{\"ops\":[...]}} or {\"tool\":\"studio_verify\",\"args\":{}} or {\"message\":\"reply to the user\"}.";
+pub const ADAPTER_INSTRUCTIONS: &str = "You are a studio adapter. Do not call native tools. Additional allowed JSON tools are studio_integrations with args {}, studio_configure_integration and studio_test_integration with args {integration: string, settings: object}. Use studio_integrations to discover fields. Configuration persists immediately outside layout Undo. Reply ONLY with one JSON object: {\"tool\":\"studio_read\",\"args\":{}} or {\"tool\":\"studio_apply\",\"args\":{\"ops\":[...]}} or {\"tool\":\"studio_verify\",\"args\":{}} or {\"message\":\"reply to the user\"}.";
 
 #[derive(Clone, Debug)]
 pub struct AgentCommand {
@@ -195,7 +195,14 @@ pub fn reply(backend: &str, output: &str) -> Result<Value, String> {
     if let Ok(value) = serde_json::from_str::<Value>(payload) {
         if matches!(
             value["tool"].as_str(),
-            Some("studio_read" | "studio_apply" | "studio_verify")
+            Some(
+                "studio_read"
+                    | "studio_apply"
+                    | "studio_verify"
+                    | "studio_integrations"
+                    | "studio_configure_integration"
+                    | "studio_test_integration"
+            )
         ) && value["args"].is_object()
         {
             return Ok(value);
@@ -210,6 +217,29 @@ pub fn reply(backend: &str, output: &str) -> Result<Value, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn integration_tools_are_available_to_every_installed_agent_adapter() {
+        for name in [
+            "studio_integrations",
+            "studio_configure_integration",
+            "studio_test_integration",
+        ] {
+            let action = json!({"tool":name,"args":{"integration":"home-assistant","settings":{}}});
+            for backend in ["pi", "codex", "claude"] {
+                let output = match backend {
+                    "pi" => {
+                        json!({"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":action.to_string()}]}})
+                    }
+                    "codex" => {
+                        json!({"type":"item.completed","item":{"type":"agent_message","text":action.to_string()}})
+                    }
+                    _ => json!({"result":action.to_string()}),
+                };
+                assert_eq!(reply(backend, &output.to_string()).unwrap(), action);
+            }
+        }
+    }
     #[test]
     fn discovers_native_and_npm_agents_without_a_shell_or_bundled_runtime() {
         let directory = std::env::temp_dir().join(format!(

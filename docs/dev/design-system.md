@@ -61,6 +61,17 @@ existing 44px widget touch-target option.
 
 Use 4px control corners and 6px panel/menu corners. Avoid enclosing every row in a card. Keep the current theme colors and visible keyboard focus.
 
+Studio shell actions use the shared stroke icons, control corners and selected-state colours.
+Panel titles use sentence case at 20/26 with weight 600; section headings use 16/22.
+Settings uses a compact navigation column. Integration navigation can grow with its pane.
+Forms and shortcut rows must wrap inside the available detail column, including beside Assistant.
+Keep simple Background, Share and Saved layouts forms within 640px; browsing grids can use the full pane.
+Shared setup flows, such as MCP, keep the same tabs, controls and cards wherever they appear.
+Layout and Custom catalogs share their List/Previews toggle, primary row buttons and delayed sample-preview tooltip.
+Tooltips declare Studio typography and colours explicitly, including outside the Inspector.
+Keep full navigation labels readable and reserve the footer row across sections. Replace canvas
+hints with section status when the canvas is hidden; navigation must not jump vertically.
+
 ## Alignment and widget sizing
 
 - Use a shared grid for repeated rows. Names, values, and actions keep the same columns.

@@ -1030,7 +1030,9 @@ pub async fn save_llm_config(
         file.agent_control = a;
     }
     let txt = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
-    crate::secure_config::write(&path, &txt)
+    crate::secure_config::write(&path, &txt)?;
+    let _ = app.emit(crate::bridge::LLM_CONFIG_CHANGED_EVENT, ());
+    Ok(())
 }
 
 /// Forget `provider`'s saved API key, keeping the rest of its entry (URL / model / audio) and every
@@ -1063,7 +1065,9 @@ pub async fn llm_clear_key(
         return Ok(());
     }
     let txt = serde_json::to_string_pretty(&file).map_err(|e| e.to_string())?;
-    crate::secure_config::write(&llm_config_path(&app)?, &txt)
+    crate::secure_config::write(&llm_config_path(&app)?, &txt)?;
+    let _ = app.emit(crate::bridge::LLM_CONFIG_CHANGED_EVENT, ());
+    Ok(())
 }
 
 /// The (non-secret) config for EVERY configured provider + the active selection — never any api_key,

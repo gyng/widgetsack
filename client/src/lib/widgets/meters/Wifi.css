@@ -1,10 +1,12 @@
 /* Wi-Fi — a signal-bar icon + SSID, with an optional detail line. The accent shifts with signal
    strength (data-level). Themeable via --np-* / --wf-* tokens. */
 .wifi {
+	font-size: var(--np-text-body, 14px);
+	line-height: var(--np-line-body, 20px);
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
-	gap: var(--wf-gap, 3px);
+	gap: var(--wf-gap, var(--np-gap, 4px));
 	width: 100%;
 	height: 100%;
 	box-sizing: border-box;
@@ -16,7 +18,7 @@
 .wf-main {
 	display: flex;
 	align-items: center;
-	gap: var(--wf-gap, 8px);
+	gap: var(--wf-gap, calc(var(--np-gap, 4px) * 2));
 	min-width: 0;
 }
 
@@ -58,7 +60,8 @@
 
 .wf-ssid {
 	min-width: 0;
-	font-size: var(--wf-ssid-size, 1.05em);
+	font-size: var(--wf-ssid-size, var(--np-text-body, 14px));
+	line-height: var(--np-line-body, 20px);
 	font-weight: 600;
 	white-space: nowrap;
 	overflow: hidden;
@@ -68,7 +71,8 @@
 .wf-detail {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 2px 10px;
-	font-size: var(--wf-detail-size, 0.68em);
+	gap: var(--np-gap, 4px) calc(var(--np-gap, 4px) * 2);
+	font-size: var(--wf-detail-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	color: var(--np-label, rgba(255, 255, 255, 0.55));
 }

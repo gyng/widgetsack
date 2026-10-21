@@ -1,5 +1,6 @@
 import { DESIGN_STYLES, DESIGN_DENSITIES } from '../core/designPresets';
 import Icon from './Icon';
+import StudioStageToolbar from './StudioStageToolbar';
 import { useCanvasDrag } from './canvas/useCanvasDrag';
 import { editingDefinitionId, definitionBaseline, previewDefinition } from '../core/editorMode';
 // Canvas (organism): owns the telemetry hub, wires the backend source, and lays out this
@@ -167,9 +168,9 @@ registerBuiltinPlugins();
 // bundle. The PASSIVE overlay (not in edit mode) renders none of these, so it never loads them — that
 // is the memory win. Most are studio-only; Inspector/Outline/MultiInspector ALSO render on an overlay
 // IN EDIT MODE (Ctrl+E / tray "Edit layout"), so they load when edit mode is first entered — under the
-// local <Suspense> wrapping the `{editMode && (…)}` block below, which keeps the desktop widgets visible
-// while a chunk loads. The studio warms ALL of these on mount (effect below) so section-switching never
-// suspends. StyleLayer is NOT lazy — both roles render it on every paint.
+// pane-local <Suspense> boundaries below, which keep the desktop widgets and Studio chrome visible
+// while a chunk loads. The studio also warms these on mount (effect below) to reduce loading waits.
+// StyleLayer is NOT lazy — both roles render it on every paint.
 const Inspector = lazy(() => import('./Inspector'));
 const ThemePreview = lazy(() => import('./ThemePreview'));
 const TokenFields = lazy(() => import('./TokenFields'));
@@ -327,6 +328,12 @@ export default function Canvas({ studio = false }: Props) {
 	// it doesn't touch undo/redo or the dirty diff.
 	const [navSection, setNavSection] = useState<SectionId>('layouts');
 	const [assistantOpen, setAssistantOpen] = useState(false);
+	const [assistantMounted, setAssistantMounted] = useState(false);
+	const [rightPane, setRightPane] = useState<'add' | 'configure'>('add');
+	useEffect(() => {
+		if (assistantOpen) setAssistantMounted(true);
+	}, [assistantOpen]);
+	const [addRequest, setAddRequest] = useState(0);
 	// The top-bar overflow (≡) menu: quick global access to the otherwise section-buried actions.
 	const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
 	// id → plugin name for the Sensors browser's "from X" badges. Built only while that section is
@@ -369,6 +376,8 @@ export default function Canvas({ studio = false }: Props) {
 		overlayDirty,
 		savedFlash,
 		layoutBackup,
+		layoutReadFailed,
+		retryLayout,
 		externalChange,
 		reloadLayout,
 		commitSave,
@@ -407,7 +416,7 @@ export default function Canvas({ studio = false }: Props) {
 		() => (monSel ? { w: monSel.w, h: monSel.h } : { w: 1920, h: 1080 }),
 		[monSel]
 	);
-	const monName = monSel?.name ?? '';
+	const monName = monSel?.friendly || monSel?.name || '';
 
 	// While designing a widget def, the stage is sized to the DEF (a widget-sized design canvas),
 	// not the monitor — so the Widget designer is its own canvas in the window, not the monitor
@@ -521,12 +530,16 @@ export default function Canvas({ studio = false }: Props) {
 	}, [measuredDom, monitor.floating, floatingGroupBox]);
 	const handleOp = useCallback(
 		(op: LayoutOp) => {
+			if (op.op === 'select' && studio) {
+				setRightPane('configure');
+				setAssistantOpen(false);
+			}
 			dispatchOp(op, {
 				solved: combinedSolved,
 				bounds: workArea.w > 0 && workArea.h > 0 ? workArea : { x: 0, y: 0, w: 1920, h: 1080 }
 			});
 		},
-		[dispatchOp, combinedSolved, workArea]
+		[dispatchOp, combinedSolved, workArea, studio]
 	);
 	// The sticky add target (the container the last palette add went into): its node, for the chip in
 	// the stage subbar ("Adding into ▦ row · ✕") and for the Inspector's palette heading.
@@ -1178,10 +1191,9 @@ export default function Canvas({ studio = false }: Props) {
 		};
 	}, [studio]);
 
-	// Warm the lazy panel chunks once on the studio so navigating between sections never suspends
-	// mid-session. The passive OVERLAY skips this and stays lean; on an overlay these chunks load only
-	// if/when edit mode is entered, under the local <Suspense> around the {editMode} block. The studio's
-	// first paint may briefly suspend on a panel, but the window is just appearing so it is hidden.
+	// Warm studio panels opportunistically. Each pane also owns its loading boundary: a cold or slow
+	// chunk must never hide the title bar, navigation, sibling panes or the Assistant conversation.
+	// The passive overlay stays lean and loads editor panels only when edit mode is entered.
 	useEffect(() => {
 		if (!studio) return;
 		void Promise.all([
@@ -1217,6 +1229,7 @@ export default function Canvas({ studio = false }: Props) {
 		hub,
 		updateWorkArea,
 		reloadLayout,
+		retryLayout,
 		reloadControls,
 		editMode: () => editModeRef.current,
 		syncRects,
@@ -1551,8 +1564,14 @@ export default function Canvas({ studio = false }: Props) {
 	});
 
 	const onSelect = useCallback(
-		(e: { id: string }) => dispatch({ type: 'selectClick', id: e.id }),
-		[dispatch]
+		(e: { id: string }) => {
+			if (studio) {
+				setRightPane('configure');
+				setAssistantOpen(false);
+			}
+			dispatch({ type: 'selectClick', id: e.id });
+		},
+		[dispatch, studio]
 	);
 
 	// A widget asked to actuate (HA light toggle, now-playing transport, or a button's macro).
@@ -1607,10 +1626,8 @@ export default function Canvas({ studio = false }: Props) {
 	// right/bottom edges. We render at the cursor first, then measure the box and shift it back in a
 	// layout effect (runs before paint → no visible jump).
 	const ctxRef = useRef<HTMLDivElement | null>(null);
-	// The menu element as STATE too (via a callback ref): the menu sits under the edit-chrome
-	// <Suspense>, so right after boot (or on an overlay's first Ctrl+E) it can mount a commit LATER
-	// than `menu` was set — a `[menu]`-keyed effect alone then measured nothing and never clamped,
-	// leaving a bottom-of-screen menu's last items below the viewport edge.
+	// Track the mounted menu as state too: it can appear after `menu` was set. Measuring only on a
+	// `[menu]` change can miss that commit and leave bottom-of-screen actions below the viewport.
 	const [ctxEl, setCtxEl] = useState<HTMLDivElement | null>(null);
 	const ctxRefCb = useCallback((el: HTMLDivElement | null) => {
 		ctxRef.current = el;
@@ -2196,6 +2213,11 @@ export default function Canvas({ studio = false }: Props) {
 	// + focusing the filter is a DOM nudge, not state, so it stays independent of the Inspector's own
 	// open/closed bookkeeping.
 	const focusAddPalette = useCallback(() => {
+		if (studio) {
+			setAddRequest((request) => request + 1);
+			setRightPane('add');
+			setAssistantOpen(false);
+		}
 		// The Inspector is lazy-loaded: a click before it arrives waits for the palette (≈3 s max)
 		// instead of doing nothing.
 		let frames = 0;
@@ -2209,7 +2231,7 @@ export default function Canvas({ studio = false }: Props) {
 			document.querySelector<HTMLInputElement>('.inspector .palette-filter')?.focus();
 		};
 		open();
-	}, []);
+	}, [studio]);
 
 	// =========================================================================================
 	// Render.
@@ -2328,6 +2350,23 @@ export default function Canvas({ studio = false }: Props) {
 				onDrop={onCanvasDrop}
 			>
 				<StyleLayer css={styleCss} />
+				{layoutReadFailed && (studio || editMode) && (
+					<div className="layout-read-status" role="alert">
+						<span>
+							{savedBaseline
+								? 'Saved layout temporarily unavailable. Your current layout and edits are preserved.'
+								: 'Waiting for widgets.json. Saving is paused until the layout loads.'}
+						</span>
+						<button
+							type="button"
+							onClick={() => {
+								void retryLayout();
+							}}
+						>
+							Retry
+						</button>
+					</div>
+				)}
 				{/* The stage: one boundary around the whole world so a render fault in the layout tree
 				    degrades to a fallback (with Reload / Copy error) instead of a blank window; per-widget
 				    faults are caught closer, by WidgetHost's own boundary. */}
@@ -2584,12 +2623,7 @@ export default function Canvas({ studio = false }: Props) {
 				)}
 
 				{editMode && (
-					// Local Suspense boundary for the lazy studio/edit-mode panels (declared at the top of this
-					// file). It wraps ONLY the edit-mode chrome — the canvas widgets render earlier in `.world`,
-					// OUTSIDE this block — so a panel chunk loading (e.g. first time the overlay enters edit mode
-					// via Ctrl+E and Inspector/Outline/MultiInspector fetch) shows a brief empty chrome area but
-					// NEVER blanks the desktop widgets. fallback={null}: the panels just pop in a frame later.
-					<Suspense fallback={null}>
+					<>
 						{studio && (
 							<>
 								{/* Primary bar (always): identity, current monitor, persistence. The canvas-only
@@ -2682,6 +2716,11 @@ export default function Canvas({ studio = false }: Props) {
 										<span className="save-hint" role="status">
 											Changes are live on your desktop · Save to keep · Cancel to revert
 										</span>
+									)}
+									{showSubbar && (
+										<button type="button" aria-label="Add widget" onClick={focusAddPalette}>
+											<Icon name="plus" /> Add widget
+										</button>
 									)}
 									<button
 										type="button"
@@ -2843,83 +2882,61 @@ export default function Canvas({ studio = false }: Props) {
 								    the Layouts / Widget-designer stage — irrelevant on Themes / Sensors / Settings. */}
 								{showSubbar && (
 									<div className="studio-bar studio-subbar">
-										<span className="lbl">Edit</span>
-										<button type="button" title="Undo (Ctrl+Z)" disabled={!canUndo} onClick={undo}>
-											↶ Undo
-										</button>
-										<button type="button" title="Redo (Ctrl+Y)" disabled={!canRedo} onClick={redo}>
-											↷ Redo
-										</button>
-										<span className="lbl">Drop</span>
-										<label
-											className="chk"
-											title="Let a dragged floating widget dock into the flow / grids"
-										>
-											<input
-												type="checkbox"
-												checked={dropIntoFlow}
-												onChange={(e) => setDropIntoFlow(e.currentTarget.checked)}
-											/>{' '}
-											into grids
-										</label>
-										<label
-											className="chk"
-											title="Drop into an occupied grid cell's interior (vs before/after)"
-										>
-											<input
-												type="checkbox"
-												checked={dropIntoCells}
-												onChange={(e) => setDropIntoCells(e.currentTarget.checked)}
-											/>{' '}
-											into cells
-										</label>
-										<span className="lbl">Zoom</span>
-										<button type="button" title="Fit the whole monitor in the stage" onClick={fit}>
-											Fit
-										</button>
-										<button
-											type="button"
-											title="Zoom to the selection — or, with nothing selected, to everything on this monitor"
-											onClick={zoomToContent}
-										>
-											Zoom to content
-										</button>
-										<span className="zlevel">{Math.round(zoom * 100)}%</span>
-										{developerMode && (
-											<>
-												<span className="lbl">Debug</span>
-												<button
-													type="button"
-													title="Copy a debug snapshot (tree + solved boxes + flagged issues) to the clipboard"
-													onClick={copyDebug}
-												>
-													⧉ Copy debug
-												</button>
-											</>
-										)}
+										<StudioStageToolbar
+											canUndo={canUndo}
+											canRedo={canRedo}
+											undo={undo}
+											redo={redo}
+											fit={fit}
+											focus={zoomToContent}
+											zoom={zoom}
+											dropIntoFlow={dropIntoFlow}
+											dropIntoCells={dropIntoCells}
+											onDropIntoFlow={setDropIntoFlow}
+											onDropIntoCells={setDropIntoCells}
+											developer={developerMode}
+											copyDebug={copyDebug}
+										/>
 									</div>
 								)}
-								<div className="monitor-badge">▦ {monName}</div>
-								{/* The powerline hint bar advertises CANVAS gestures (click/drag/marquee/pan/nudge…),
-								    so it belongs only on an edit stage — the Layouts section or while designing a
-								    widget def, never in read-only preview or the off-stage sections (Themes / Sensors
-								    / …) where those gestures don't apply. Same gate as the contextual subbar; --bar-b
-								    collapses with it so the rails/panels reclaim the bottom row (Canvas.css). */}
-								{showSubbar && (
-									<div className="powerbar" aria-label="Keyboard and pointer shortcuts">
-										{savedFlash && (
-											<span className="seg flash" key="saved-flash">
-												<span className="lbl">✓ saved</span>
-											</span>
-										)}
-										{hints.map((h, i) => (
+								{!designing && (
+									<div className="monitor-badge monitor-switcher">
+										<Select
+											menuMinWidth={480}
+											wrapOptions
+											value={myMonitor}
+											options={monitorOptions.map((o) => ({ value: o.key, label: o.label }))}
+											onChange={switchMonitor}
+											aria-label="Canvas monitor"
+											title={monSel?.label || 'Switch the monitor shown on this canvas'}
+										/>
+									</div>
+								)}
+								<div
+									className="powerbar"
+									aria-label={showSubbar ? 'Keyboard and pointer shortcuts' : 'Studio status'}
+								>
+									{savedFlash && (
+										<span className="seg flash" key="saved-flash">
+											<span className="lbl">✓ saved</span>
+										</span>
+									)}
+									{showSubbar ? (
+										hints.map((h, i) => (
 											<span className="seg" key={i}>
 												<kbd>{h.key}</kbd>
 												<span className="lbl">{h.label}</span>
 											</span>
-										))}
-									</div>
-								)}
+										))
+									) : (
+										<span className="seg">
+											<span className="lbl">
+												{RAIL_ORDER.find((section) => section.id === navSection)!.label}
+											</span>
+										</span>
+									)}
+								</div>
+
 								{/* Draggable pane dividers (widths persist to localStorage). Each only renders where its
 								    panel actually exists — the full-width section panels (sensors/plugins/themes/…)
 								    have nothing to resize, so no handle floats over them. */}
@@ -3017,7 +3034,9 @@ export default function Canvas({ studio = false }: Props) {
 								</div>
 							) : (
 								<div className="def-banner">
-									Designing custom widget: {editingDefName} · {stageSize.w}×{stageSize.h}
+									<span>
+										Editing: {editingDefName} · {stageSize.w}×{stageSize.h}
+									</span>
 									<button type="button" onClick={() => handleOp({ op: 'endDefEdit' })}>
 										Done
 									</button>
@@ -3059,440 +3078,549 @@ export default function Canvas({ studio = false }: Props) {
 						)}
 						{studio ? (
 							<>
-								<NavRail active={navSection} onSelect={navToSection} />
-								{(navSection === 'layouts' || designing) && !previewing && (
-									<ErrorBoundary label="Layout tree" resetKey={navSection} onCopy={copyToClipboard}>
-										<Outline
-											header={
-												!designing && (
-													<div className="layout-monitor-picker">
-														<span className="lbl">Monitor</span>
-														<div className="monitor-picker">
-															<Select
-																className="sb-select"
-																value={myMonitor}
-																placeholder="Current monitor"
-																options={monitorOptions.map((o) => ({
-																	value: o.key,
-																	label: o.label
-																}))}
-																disabled={designing}
-																title={
-																	designing
-																		? 'Finish the widget (Done) to switch monitor'
-																		: undefined
-																}
-																onChange={switchMonitor}
-																aria-label="Monitor"
-															/>
-															{firstRun &&
-																!designing &&
-																navSection === 'layouts' &&
-																!assistantOpen && (
-																	<div
-																		className="monitor-onboarding"
-																		role="note"
-																		aria-label="Monitor tip"
-																	>
-																		<span>
-																			<strong>Switch monitor</strong>
-																			<br />
-																			Choose which screen’s widgets you’re editing.
-																		</span>
-																		<button
-																			type="button"
-																			aria-label="Dismiss monitor tip"
-																			title="Got it"
-																			onClick={dismissMonitorHint}
-																		>
-																			✕
-																		</button>
-																	</div>
-																)}
-														</div>
-													</div>
-												)
-											}
-											root={monitor.root}
-											floating={monitor.floating}
-											selectedId={selectedId}
-											hoverId={hoverId}
-											onHover={setHoverId}
-											docked
-											scopeLabel={designing ? editingDefName : undefined}
-											onOp={handleOp}
-											onNodeContextMenu={previewing ? undefined : onOutlineContextMenu}
-										/>
-									</ErrorBoundary>
-								)}
-								{navSection === 'widget-designer' && (
-									<ErrorBoundary
-										label="Widget designer"
-										resetKey={navSection}
-										onCopy={copyToClipboard}
-									>
-										<DesignerListPanel
-											library={library}
-											editingDefId={editingDefId}
-											previewName={previewDef?.name ?? null}
-											designing={designing}
-											actions={{
-												startNewWidget,
-												openExistingDef,
-												renameWidget,
-												cloneDefToEdit,
-												deleteWidget,
-												previewTemplate,
-												newFromTemplate
-											}}
-										/>
-									</ErrorBoundary>
-								)}
-								{navSection === 'sensors' && !designing && (
-									<ErrorBoundary label="Sensors" resetKey={navSection} onCopy={copyToClipboard}>
-										<div className="rail-panel">
-											<div className="rp-hd">Sensors &amp; live values</div>
-											<SensorList
-												hub={hub}
-												ids={sensorCatalog([...hub.sensorIds(), ...sourceCatalogIds()])}
-												filter
-												groupFor={(id) => pluginSensorNameMap.get(id) ?? SYSTEM_GROUP}
-												activityFor={sensorActivityFor}
-											/>
+								<Suspense fallback={null}>
+									<NavRail active={navSection} onSelect={navToSection} />
+								</Suspense>
+								<Suspense
+									fallback={
+										<div className="studio-panel-loading" data-pane={navSection} role="status">
+											Loading {RAIL_ORDER.find((section) => section.id === navSection)!.label}…
 										</div>
-									</ErrorBoundary>
-								)}
-								{navSection === 'plugins' && !designing && (
-									<ErrorBoundary label="Plugins" resetKey={navSection} onCopy={copyToClipboard}>
-										<PluginsPanel
-											hub={hub}
-											plugins={pluginList}
-											selectedId={selectedPluginId}
-											onSelect={setSelectedPluginId}
-										/>
-									</ErrorBoundary>
-								)}
-								{navSection === 'themes' && !designing && (
-									<ErrorBoundary label="Themes" resetKey={navSection} onCopy={copyToClipboard}>
-										<div className="rail-panel">
-											<div className="rp-hd">Theme</div>
-											{/* Built-in presets (grouped Classic / Light / Dark / Fun) are immutable — they offer
+									}
+								>
+									{(navSection === 'layouts' || designing) && !previewing && (
+										<ErrorBoundary
+											label="Layout tree"
+											resetKey={navSection}
+											onCopy={copyToClipboard}
+										>
+											<Outline
+												showIds={showIds}
+												header={
+													!designing && (
+														<div className="layout-monitor-picker">
+															<span className="lbl">Monitor</span>
+															<div className="monitor-picker">
+																<Select
+																	className="sb-select"
+																	menuMinWidth={480}
+																	wrapOptions
+																	value={myMonitor}
+																	placeholder="Current monitor"
+																	options={monitorOptions.map((o) => ({
+																		value: o.key,
+																		label: o.label
+																	}))}
+																	disabled={designing}
+																	title={
+																		designing
+																			? 'Finish the widget (Done) to switch monitor'
+																			: undefined
+																	}
+																	onChange={switchMonitor}
+																	aria-label="Monitor"
+																/>
+																{firstRun &&
+																	!designing &&
+																	navSection === 'layouts' &&
+																	!assistantOpen && (
+																		<div
+																			className="monitor-onboarding"
+																			role="note"
+																			aria-label="Monitor tip"
+																		>
+																			<span>
+																				<strong>Switch monitor</strong>
+																				<br />
+																				Choose which screen’s widgets you’re editing.
+																			</span>
+																			<button
+																				type="button"
+																				aria-label="Dismiss monitor tip"
+																				title="Got it"
+																				onClick={dismissMonitorHint}
+																			>
+																				✕
+																			</button>
+																		</div>
+																	)}
+															</div>
+														</div>
+													)
+												}
+												root={monitor.root}
+												floating={monitor.floating}
+												selectedId={selectedId}
+												hoverId={hoverId}
+												onHover={setHoverId}
+												docked
+												scopeLabel={designing ? editingDefName : undefined}
+												onOp={handleOp}
+												onNodeContextMenu={previewing ? undefined : onOutlineContextMenu}
+											/>
+										</ErrorBoundary>
+									)}
+									{navSection === 'widget-designer' && (
+										<ErrorBoundary
+											label="Widget designer"
+											resetKey={navSection}
+											onCopy={copyToClipboard}
+										>
+											<DesignerListPanel
+												library={library}
+												editingDefId={editingDefId}
+												previewName={previewDef?.name ?? null}
+												designing={designing}
+												actions={{
+													startNewWidget,
+													openExistingDef,
+													renameWidget,
+													cloneDefToEdit,
+													deleteWidget,
+													previewTemplate,
+													newFromTemplate
+												}}
+											/>
+										</ErrorBoundary>
+									)}
+									{navSection === 'sensors' && !designing && (
+										<ErrorBoundary label="Sensors" resetKey={navSection} onCopy={copyToClipboard}>
+											<div className="rail-panel">
+												<h2 className="rp-hd">Sensors &amp; live values</h2>
+												<SensorList
+													hub={hub}
+													ids={sensorCatalog([...hub.sensorIds(), ...sourceCatalogIds()])}
+													filter
+													groupFor={(id) => pluginSensorNameMap.get(id) ?? SYSTEM_GROUP}
+													activityFor={sensorActivityFor}
+												/>
+											</div>
+										</ErrorBoundary>
+									)}
+									{navSection === 'plugins' && !designing && (
+										<ErrorBoundary label="Plugins" resetKey={navSection} onCopy={copyToClipboard}>
+											<PluginsPanel
+												hub={hub}
+												plugins={pluginList}
+												selectedId={selectedPluginId}
+												onSelect={setSelectedPluginId}
+											/>
+										</ErrorBoundary>
+									)}
+									{navSection === 'themes' && !designing && (
+										<ErrorBoundary label="Themes" resetKey={navSection} onCopy={copyToClipboard}>
+											<div className="rail-panel">
+												<h2 className="rp-hd">Themes</h2>
+												{/* Built-in presets (grouped Classic / Light / Dark / Fun) are immutable — they offer
 										    "duplicate to edit" (⎘) only. Your own themes get raw-CSS edit (✎), duplicate (⎘),
 										    and delete (✕); "(default)" stays a plain reset. */}
-											<ThemeList
-												groups={builtinGroups().map((g) => ({
-													key: g.group,
-													label: g.group[0].toUpperCase() + g.group.slice(1),
-													items: g.themes.map((t) => ({
-														value: builtinName(t.id),
-														label: t.name,
-														swatch: t.swatch
-													}))
-												}))}
-												userThemes={themeList.map((n) => ({
-													value: n,
-													label: n,
-													swatch: userThemeSwatches[n]
-												}))}
-												active={selectedTheme}
-												onPick={setTheme}
-												onEdit={openThemeEditor}
-												onDuplicate={duplicateTheme}
-												onDelete={deleteTheme}
-											/>
-											<button type="button" onClick={() => openThemeEditor()}>
-												{selectedTheme
-													? `Edit theme CSS (${themeLabel(selectedTheme)})…`
-													: '＋ New theme CSS…'}
-											</button>
-											{/* Live preview: representative meters under the same global token CSS the overlay
+												<ThemeList
+													groups={builtinGroups().map((g) => ({
+														key: g.group,
+														label: g.group[0].toUpperCase() + g.group.slice(1),
+														items: g.themes.map((t) => ({
+															value: builtinName(t.id),
+															label: t.name,
+															swatch: t.swatch
+														}))
+													}))}
+													userThemes={themeList.map((n) => ({
+														value: n,
+														label: n,
+														swatch: userThemeSwatches[n]
+													}))}
+													active={selectedTheme}
+													onPick={setTheme}
+													onEdit={openThemeEditor}
+													onDuplicate={duplicateTheme}
+													onDelete={deleteTheme}
+												/>
+												<button type="button" onClick={() => openThemeEditor()}>
+													{selectedTheme
+														? `Edit theme CSS (${themeLabel(selectedTheme)})…`
+														: '＋ New theme CSS…'}
+												</button>
+												{/* Live preview: representative meters under the same global token CSS the overlay
 										    gets, so the theme + the overrides below restyle them as you edit. */}
-											<div className="rp-hd">Preview</div>
-											<ThemePreview />
-											{/* The friendly token overrides, colocated with the theme picker (they also appear in
+												<div className="rp-hd">Preview</div>
+												<ThemePreview />
+												{/* The friendly token overrides, colocated with the theme picker (they also appear in
 										    the Inspector for per-widget tweaks). These override on top of the selected theme,
 										    persist across theme switches, and win until cleared. */}
-											<div className="rp-hd">Tokens (override this theme)</div>
-											{/* Auto theme from the wallpaper (issue #15): fills these overrides with a readable
+												<div className="rp-hd">Tokens (override this theme)</div>
+												{/* Auto theme from the wallpaper (issue #15): fills these overrides with a readable
 										    palette derived from the current image wallpaper. Same action as the Background
 										    panel's button; shown here because it WRITES these token overrides. */}
-											{autoTheme.canAuto ? (
-												<div className="theme-auto">
-													<button
-														type="button"
-														onClick={() => void autoTheme.run()}
-														disabled={autoTheme.busy}
-														aria-busy={autoTheme.busy}
-														title="Derive a readable accent + text colours from your wallpaper"
+												{autoTheme.canAuto ? (
+													<div className="theme-auto">
+														<button
+															type="button"
+															onClick={() => void autoTheme.run()}
+															disabled={autoTheme.busy}
+															aria-busy={autoTheme.busy}
+															title="Derive a readable accent + text colours from your wallpaper"
+														>
+															{autoTheme.busy ? (
+																'Reading…'
+															) : (
+																<>
+																	<Icon name="palette" /> From wallpaper
+																</>
+															)}
+														</button>
+														{autoTheme.status === 'done' && (
+															<span className="rp-id">applied ✓</span>
+														)}
+														{autoTheme.status === 'fail' && (
+															<span className="rp-id">couldn’t read the image</span>
+														)}
+													</div>
+												) : (
+													<div className="rp-stub">
+														Tip: set an <strong>image</strong> Background to auto-derive colours
+														from your wallpaper.
+													</div>
+												)}
+												<TokenFields
+													values={tokenOverrides}
+													onApply={(tokens) => handleOp({ op: 'setTokens', tokens })}
+													onSet={(key, value) => handleOp({ op: 'setToken', key, value })}
+													onClear={() => handleOp({ op: 'clearTokens' })}
+													clearTitle="Remove every token override and fall back to the selected theme"
+												/>
+											</div>
+										</ErrorBoundary>
+									)}
+									{navSection === 'background' && !designing && (
+										<ErrorBoundary
+											label="Background"
+											resetKey={navSection}
+											onCopy={copyToClipboard}
+										>
+											<BackgroundPanel
+												bg={bg}
+												wallpaperFiles={wallpaperFiles}
+												refreshWallpapers={refreshWallpapers}
+												patchBg={patchBg}
+												setBgKind={setBgKind}
+												clearBg={clearBg}
+												autoTheme={autoTheme}
+												onClearTokens={() => handleOp({ op: 'clearTokens' })}
+											/>
+										</ErrorBoundary>
+									)}
+									{navSection === 'sacks' && !designing && (
+										<ErrorBoundary label="Sacks" resetKey={navSection} onCopy={copyToClipboard}>
+											<div className="rail-panel share-panel">
+												<h2 className="rp-hd">Share</h2>
+												<div className="rp-stub">
+													Export your widgets, theme and colours as a sack to share your setup.
+													Importing adds its contents to your library and keeps your existing
+													widgets.
+												</div>
+												{/* Inline name + Export (no prompt()): validated live against the backend's
+										    filename rule; the outcome line (path / failure) renders right under it. */}
+												<form
+													className="sack-export"
+													onSubmit={(e) => {
+														e.preventDefault();
+														void exportSack();
+													}}
+												>
+													<input
+														type="text"
+														value={exportName}
+														placeholder="Sack name"
+														aria-label="Sack name"
+														aria-invalid={exportNameError !== null}
+														spellCheck={false}
+														onChange={(e) => setExportName(e.currentTarget.value)}
+													/>
+													<button type="submit" disabled={exportNameError !== null}>
+														<Icon name="share" /> Export
+													</button>
+												</form>
+												{exportNameError && exportName.trim() !== '' && (
+													<div className="rp-stub sack-status sack-status--err" role="alert">
+														{exportNameError}
+													</div>
+												)}
+												{sackNotice && (
+													<div
+														className={
+															sackNotice.tone === 'error'
+																? 'rp-stub sack-status sack-status--err'
+																: 'rp-stub sack-status'
+														}
+														role={sackNotice.tone === 'error' ? 'alert' : 'status'}
 													>
-														{autoTheme.busy ? (
-															'Reading…'
-														) : (
+														{sackNotice.text}
+														{sackNotice.path && (
 															<>
-																<Icon name="palette" /> From wallpaper
+																{' · '}
+																<code>{sackNotice.path}</code>{' '}
+																<button type="button" onClick={() => void revealSacksDir()}>
+																	Open sacks folder
+																</button>
 															</>
 														)}
-													</button>
-													{autoTheme.status === 'done' && <span className="rp-id">applied ✓</span>}
-													{autoTheme.status === 'fail' && (
-														<span className="rp-id">couldn’t read the image</span>
-													)}
-												</div>
-											) : (
-												<div className="rp-stub">
-													Tip: set an <strong>image</strong> Background to auto-derive colours from
-													your wallpaper.
-												</div>
-											)}
-											<TokenFields
-												values={tokenOverrides}
-												onApply={(tokens) => handleOp({ op: 'setTokens', tokens })}
-												onSet={(key, value) => handleOp({ op: 'setToken', key, value })}
-												onClear={() => handleOp({ op: 'clearTokens' })}
-												clearTitle="Remove every token override and fall back to the selected theme"
-											/>
-										</div>
-									</ErrorBoundary>
-								)}
-								{navSection === 'background' && !designing && (
-									<ErrorBoundary label="Background" resetKey={navSection} onCopy={copyToClipboard}>
-										<BackgroundPanel
-											bg={bg}
-											wallpaperFiles={wallpaperFiles}
-											refreshWallpapers={refreshWallpapers}
-											patchBg={patchBg}
-											setBgKind={setBgKind}
-											clearBg={clearBg}
-											autoTheme={autoTheme}
-											onClearTokens={() => handleOp({ op: 'clearTokens' })}
-										/>
-									</ErrorBoundary>
-								)}
-								{navSection === 'sacks' && !designing && (
-									<ErrorBoundary label="Sacks" resetKey={navSection} onCopy={copyToClipboard}>
-										<div className="rail-panel">
-											<div className="rp-hd">Sacks</div>
-											<div className="rp-stub">
-												A sack bundles your custom widgets, the active theme’s CSS, and your token
-												overrides into one shareable file —{' '}
-												<code>sacks/&lt;name&gt;.sack.json</code> in the app config folder. Send the
-												file to share your setup; importing merges (it never overwrites your own
-												widgets or themes).
-											</div>
-											{/* Inline name + Export (no prompt()): validated live against the backend's
-										    filename rule; the outcome line (path / failure) renders right under it. */}
-											<form
-												className="sack-export"
-												onSubmit={(e) => {
-													e.preventDefault();
-													void exportSack();
-												}}
-											>
-												<input
-													type="text"
-													value={exportName}
-													placeholder="Sack name"
-													aria-label="Sack name"
-													aria-invalid={exportNameError !== null}
-													spellCheck={false}
-													onChange={(e) => setExportName(e.currentTarget.value)}
-												/>
-												<button type="submit" disabled={exportNameError !== null}>
-													⤓ Export
-												</button>
-											</form>
-											{exportNameError && exportName.trim() !== '' && (
-												<div className="rp-stub sack-status sack-status--err" role="alert">
-													{exportNameError} (letters, numbers, spaces, _ -)
-												</div>
-											)}
-											{sackNotice && (
-												<div
-													className={
-														sackNotice.tone === 'error'
-															? 'rp-stub sack-status sack-status--err'
-															: 'rp-stub sack-status'
-													}
-													role={sackNotice.tone === 'error' ? 'alert' : 'status'}
-												>
-													{sackNotice.text}
-													{sackNotice.path && (
-														<>
-															{' · '}
-															<code>{sackNotice.path}</code>{' '}
-															<button type="button" onClick={() => void revealSacksDir()}>
-																Open sacks folder
+													</div>
+												)}
+												<div className="rp-hd">Import</div>
+												{sackInfos.length ? (
+													<div className="rp-list">
+														{sackInfos.map((s) => (
+															<button
+																key={s.name}
+																type="button"
+																className="sack-item"
+																title="Merge this sack's widgets + theme into the studio"
+																onClick={() => importSack(s.name)}
+															>
+																<span className="sack-name">⤒ {s.name}</span>
+																<span className="sack-sub">{sackSummary(s)}</span>
 															</button>
-														</>
-													)}
-												</div>
-											)}
-											<div className="rp-hd">Import</div>
-											{sackInfos.length ? (
-												<div className="rp-list">
-													{sackInfos.map((s) => (
-														<button
-															key={s.name}
-															type="button"
-															className="sack-item"
-															title="Merge this sack's widgets + theme into the studio"
-															onClick={() => importSack(s.name)}
-														>
-															<span className="sack-name">⤒ {s.name}</span>
-															<span className="sack-sub">{sackSummary(s)}</span>
-														</button>
-													))}
-												</div>
-											) : (
-												<div className="rp-stub">No sacks yet — export one above.</div>
-											)}
-										</div>
-									</ErrorBoundary>
-								)}
-								{navSection === 'saved-layouts' && !designing && (
-									<ErrorBoundary label="Presets" resetKey={navSection} onCopy={copyToClipboard}>
-										<SavedLayoutsPanel
-											layoutNames={layoutNames ?? []}
-											status={presetStatus}
-											onSave={(n) => void saveCurrentLayout(n)}
-											onLoad={(n) => void loadSavedLayout(n)}
-											onDelete={(n) => void deleteSavedLayout(n)}
-										/>
-									</ErrorBoundary>
-								)}
-								{navSection === 'settings' && !designing && (
-									<ErrorBoundary label="Settings" resetKey={navSection} onCopy={copyToClipboard}>
-										<StudioSettingsPanel
-											tab={settingsTab}
-											onTab={setSettingsTab}
-											display={{
-												monName,
-												monSize,
-												workArea,
-												multiMonitor: monitorOptions.length > 1,
-												zoom,
-												fit
-											}}
-											theme={{
-												options: themeOptions,
-												selected: selectedTheme,
-												setTheme,
-												lock: themeLock,
-												setLock: setThemeLock
-											}}
-											overlay={{ prefs: overlayPrefs, setPrefs: setOverlayPrefs, layerStatus }}
-											controls={{
-												overrides,
-												onRebind: (id, trigger) =>
-													controls.setOverride(id, { triggers: [trigger] }),
-												onReset: controls.resetOverride,
-												onResetAll: controls.resetAll
-											}}
-											appVersion={appVersion}
-											clearMonitor={clearMonitor}
-										/>
-									</ErrorBoundary>
-								)}
+														))}
+													</div>
+												) : (
+													<div className="rp-stub">No sacks yet — export one above.</div>
+												)}
+											</div>
+										</ErrorBoundary>
+									)}
+									{navSection === 'saved-layouts' && !designing && (
+										<ErrorBoundary label="Presets" resetKey={navSection} onCopy={copyToClipboard}>
+											<SavedLayoutsPanel
+												layoutNames={layoutNames ?? []}
+												status={presetStatus}
+												onSave={(n) => void saveCurrentLayout(n)}
+												onLoad={(n) => void loadSavedLayout(n)}
+												onDelete={(n) => void deleteSavedLayout(n)}
+											/>
+										</ErrorBoundary>
+									)}
+									{navSection === 'settings' && !designing && (
+										<ErrorBoundary label="Settings" resetKey={navSection} onCopy={copyToClipboard}>
+											<StudioSettingsPanel
+												tab={settingsTab}
+												onTab={setSettingsTab}
+												display={{
+													monName,
+													monSize,
+													workArea,
+													multiMonitor: monitorOptions.length > 1,
+													zoom,
+													fit
+												}}
+												theme={{
+													options: themeOptions,
+													selected: selectedTheme,
+													setTheme,
+													lock: themeLock,
+													setLock: setThemeLock
+												}}
+												overlay={{ prefs: overlayPrefs, setPrefs: setOverlayPrefs, layerStatus }}
+												controls={{
+													overrides,
+													onRebind: (id, trigger) =>
+														controls.setOverride(id, { triggers: [trigger] }),
+													onReset: controls.resetOverride,
+													onResetAll: controls.resetAll
+												}}
+												appVersion={appVersion}
+												clearMonitor={clearMonitor}
+											/>
+										</ErrorBoundary>
+									)}
+								</Suspense>
 							</>
 						) : (
-							<Outline
-								root={monitor.root}
-								floating={monitor.floating}
-								selectedId={selectedId}
-								hoverId={hoverId}
-								onHover={setHoverId}
-								onOp={handleOp}
-								onNodeContextMenu={previewing ? undefined : onOutlineContextMenu}
-							/>
-						)}
-						{studio && assistantOpen && (
-							<ErrorBoundary label="Studio assistant" onCopy={copyToClipboard}>
-								<StudioAssistantSidebar
-									read={readAgentStudio}
-									verify={verifyAgentStudio}
-									apply={applyAgentStudio}
-									onClose={() => setAssistantOpen(false)}
+							<Suspense fallback={null}>
+								<Outline
+									showIds={showIds}
+									root={monitor.root}
+									floating={monitor.floating}
+									selectedId={selectedId}
+									hoverId={hoverId}
+									onHover={setHoverId}
+									onOp={handleOp}
+									onNodeContextMenu={previewing ? undefined : onOutlineContextMenu}
 								/>
+							</Suspense>
+						)}
+						{studio && (navSection === 'layouts' || designing || assistantOpen) && !previewing && (
+							<div
+								className="right-pane-tabs"
+								role="tablist"
+								aria-label="Workspace pane"
+								onKeyDown={(event) => {
+									if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+									const tabs = Array.from(
+										event.currentTarget.querySelectorAll<HTMLButtonElement>('[role=tab]')
+									);
+									const current = tabs.findIndex(
+										(tab) => tab.getAttribute('aria-selected') === 'true'
+									);
+									const next =
+										event.key === 'Home'
+											? 0
+											: event.key === 'End'
+												? 2
+												: (current + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
+									event.preventDefault();
+									event.stopPropagation();
+									tabs[next].click();
+									tabs[next].focus();
+								}}
+							>
+								{(['add', 'configure', 'assistant'] as const).map((tab) => (
+									<button
+										type="button"
+										role="tab"
+										key={tab}
+										id={`workspace-tab-${tab}`}
+										aria-controls={
+											tab === 'assistant'
+												? 'workspace-panel-assistant'
+												: 'workspace-panel-inspector'
+										}
+										tabIndex={tab === (assistantOpen ? 'assistant' : rightPane) ? 0 : -1}
+										aria-selected={tab === (assistantOpen ? 'assistant' : rightPane)}
+										onClick={() => {
+											if (tab === 'assistant') {
+												setAssistantOpen(true);
+												return;
+											}
+											if (!designing) navToSection('layouts');
+											setAssistantOpen(false);
+											setRightPane(tab);
+											if (tab === 'add') setAddRequest((request) => request + 1);
+										}}
+									>
+										{tab === 'add' ? 'Add' : tab === 'configure' ? 'Configure' : 'Assistant'}
+									</button>
+								))}
+							</div>
+						)}
+						{studio && (assistantOpen || assistantMounted) && (
+							<ErrorBoundary label="Studio assistant" onCopy={copyToClipboard}>
+								<div
+									role="tabpanel"
+									id="workspace-panel-assistant"
+									aria-labelledby="workspace-tab-assistant"
+									hidden={!assistantOpen}
+								>
+									<Suspense
+										fallback={
+											<aside className="assistant-loading" aria-label="Studio AI assistant">
+												<p role="status">Loading assistant…</p>
+											</aside>
+										}
+									>
+										<StudioAssistantSidebar
+											hidden={!assistantOpen}
+											read={readAgentStudio}
+											verify={verifyAgentStudio}
+											apply={applyAgentStudio}
+										/>
+									</Suspense>
+								</div>
 							</ErrorBoundary>
 						)}
 						{(!studio || navSection === 'layouts' || designing) && !previewing && (
 							<ErrorBoundary label="Details" resetKey={selectedId} onCopy={copyToClipboard}>
-								{multiSelected ? (
-									<MultiInspector
-										items={multiItems}
-										fields={multiFields}
-										basis={multiBasis}
-										onFocus={focusOne}
-										onPatchConfig={patchSelectedConfig}
-										onSetBasis={setSelectedBasisAll}
-										onDelete={deleteSelected}
-										docked={studio}
-										floatingIds={floatingSelectedIds}
-										onOp={handleOp}
-									/>
-								) : (
-									<Inspector
-										widget={selectedWidget}
-										container={selectedContainer}
-										groupUnit={selectedGroup}
-										def={selectedDef}
-										defs={library?.defs ?? []}
-										editingDefId={editingDefId}
-										tokens={tokenOverrides}
-										baseWidget={baseWidget}
-										baseContainer={baseContainer}
-										baseGroup={baseGroup}
-										baseTokens={savedBaseline?.tokens ?? null}
-										nodeIsNew={nodeIsNew}
-										isGridCell={isGridCell}
-										containerBox={selectedContainerBox}
-										placement={placement}
-										widgetBasis={selectedLeafBasis}
-										widgetHalign={selectedLeafHalign}
-										widgetValign={selectedLeafValign}
-										widgetTypes={widgetTypes}
-										paletteSetup={
-											studio
-												? Object.fromEntries(
-														pluginList
-															.filter((plugin) =>
-																['home-assistant', 'ai-provider'].includes(plugin.id)
-															)
-															.map((plugin) => [
-																plugin.name,
-																<PalettePluginSetup
-																	key={plugin.id}
-																	hub={hub}
-																	id={plugin.id}
-																	name={plugin.name}
-																	sensor={plugin.statusSensor ?? ''}
-																	onConfigure={(id) => {
-																		setSelectedPluginId(id);
-																		navToSection('plugins');
-																	}}
-																/>
-															])
-													)
-												: undefined
-										}
-										configFields={configFields}
-										sensors={sensors}
-										sensorMeta={sensorMeta}
-										audioOutputs={audioOutputs}
-										microphones={microphones}
-										displayNames={displayNames}
-										docked={studio}
-										onOp={handleOp}
-										onDeleteDef={studio ? deleteWidget : undefined}
-										onPreviewTemplate={studio ? previewTemplate : undefined}
-										node={selectedNode}
-										onCopy={(t) => copyToClipboard(t)}
-										addTarget={addTargetContainer?.id ?? null}
-										addTargetLabel={addTargetLabel}
-										onSetAddTarget={setAddTarget}
-										onClearAddTarget={clearAddTarget}
-									/>
-								)}
+								<Suspense
+									fallback={
+										<aside
+											className="studio-panel-loading"
+											data-pane="details"
+											hidden={assistantOpen}
+											role="status"
+										>
+											Loading details…
+										</aside>
+									}
+								>
+									{multiSelected && rightPane === 'configure' && !assistantOpen ? (
+										<MultiInspector
+											items={multiItems}
+											fields={multiFields}
+											basis={multiBasis}
+											onFocus={focusOne}
+											onPatchConfig={patchSelectedConfig}
+											onSetBasis={setSelectedBasisAll}
+											onDelete={deleteSelected}
+											docked={studio}
+											floatingIds={floatingSelectedIds}
+											onOp={handleOp}
+										/>
+									) : (
+										<Inspector
+											pane={studio ? (assistantOpen ? 'hidden' : rightPane) : undefined}
+											workspace={studio}
+											addRequest={addRequest}
+											widget={selectedWidget}
+											container={selectedContainer}
+											groupUnit={selectedGroup}
+											def={selectedDef}
+											defs={library?.defs ?? []}
+											editingDefId={editingDefId}
+											tokens={tokenOverrides}
+											baseWidget={baseWidget}
+											baseContainer={baseContainer}
+											baseGroup={baseGroup}
+											baseTokens={savedBaseline?.tokens ?? null}
+											nodeIsNew={nodeIsNew}
+											isGridCell={isGridCell}
+											containerBox={selectedContainerBox}
+											placement={placement}
+											widgetBasis={selectedLeafBasis}
+											widgetHalign={selectedLeafHalign}
+											widgetValign={selectedLeafValign}
+											widgetTypes={widgetTypes}
+											paletteSetup={
+												studio
+													? Object.fromEntries(
+															pluginList
+																.filter((plugin) =>
+																	['home-assistant', 'ai-provider'].includes(plugin.id)
+																)
+																.map((plugin) => [
+																	plugin.name,
+																	<PalettePluginSetup
+																		key={plugin.id}
+																		hub={hub}
+																		id={plugin.id}
+																		name={plugin.name}
+																		sensor={plugin.statusSensor ?? ''}
+																		onConfigure={(id) => {
+																			setSelectedPluginId(id);
+																			navToSection('plugins');
+																		}}
+																	/>
+																])
+														)
+													: undefined
+											}
+											configFields={configFields}
+											sensors={sensors}
+											sensorMeta={sensorMeta}
+											audioOutputs={audioOutputs}
+											microphones={microphones}
+											displayNames={displayNames}
+											docked={studio}
+											onOp={handleOp}
+											onDeleteDef={studio ? deleteWidget : undefined}
+											onPreviewTemplate={studio ? previewTemplate : undefined}
+											node={selectedNode}
+											onCopy={(t) => copyToClipboard(t)}
+											addTarget={addTargetContainer?.id ?? null}
+											addTargetLabel={addTargetLabel}
+											onSetAddTarget={setAddTarget}
+											onClearAddTarget={clearAddTarget}
+										/>
+									)}
+								</Suspense>
 							</ErrorBoundary>
 						)}
 						{menu && menuNode && (
@@ -3823,7 +3951,7 @@ export default function Canvas({ studio = false }: Props) {
 								</div>
 							</>
 						)}
-					</Suspense>
+					</>
 				)}
 			</div>
 		</TelemetryHubContext.Provider>

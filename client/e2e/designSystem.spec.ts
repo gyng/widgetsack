@@ -21,13 +21,15 @@ test('Studio uses readable local typography while widget theme fonts remain inde
 			)
 		)
 	).toBe(true);
-	const control = page.getByRole('combobox', { name: 'orientation' });
+
 	expect(
 		await page
 			.locator('.inspector textarea.cfg-expr')
 			.first()
 			.evaluate((node) => getComputedStyle(node).fontFamily)
 	).toContain('Consolas');
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
+	const control = page.getByRole('combobox', { name: 'orientation' });
 	expect((await control.boundingBox())!.height).toBeGreaterThanOrEqual(32);
 	expect(
 		await widget.evaluate((node) => getComputedStyle(node).getPropertyValue('--np-font'))
@@ -38,6 +40,7 @@ test('Studio uses readable local typography while widget theme fonts remain inde
 		await openSection(page, 'settings');
 		await expect(page.getByRole('button', { name: 'About', exact: true })).toBeVisible();
 		await openSection(page, 'layouts');
+		await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
 	}
 	await page.evaluate(() => {
 		document.documentElement.style.zoom = '1.25';

@@ -18,10 +18,10 @@ import { readJson, writeJson } from '../../../stores/persist';
 export type Edge = 'left' | 'right' | 'tree';
 export type PaneSizes = { railL: number; railR: number; treeW: number };
 
-export const PANE_DEFAULTS: PaneSizes = { railL: 250, railR: 360, treeW: 200 };
+export const PANE_DEFAULTS: PaneSizes = { railL: 274, railR: 360, treeW: 200 };
 const LIMITS: Record<Edge, [number, number]> = {
 	left: [180, 520],
-	right: [180, 520],
+	right: [280, 800],
 	tree: [120, 460]
 };
 const KEY = 'widgetsack.studio.panes';
@@ -83,7 +83,7 @@ export function usePaneSizes(studio: boolean): PaneSizing {
 	const vars: CSSProperties = studio
 		? ({
 				'--rail-l': `${sizes.railL}px`,
-				'--rail-r': `${sizes.railR}px`,
+				'--rail-r': `min(${sizes.railR}px, max(280px, calc(100vw - var(--rail-l) - var(--assistant-w) - var(--tree-inset, 0px) - 400px)))`,
 				'--tree-w': `${sizes.treeW}px`
 			} as CSSProperties)
 		: {};

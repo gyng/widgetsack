@@ -29,8 +29,7 @@ export const registerHomeAssistantPlugin = (): void =>
 	registerPlugin({
 		id: 'home-assistant',
 		name: 'Home Assistant',
-		description:
-			'Sensors, lights and climate from Home Assistant. Configured server-side via plugins/ha.json.',
+		description: 'Show sensors and control lights, climate and other Home Assistant devices.',
 		sources: [haSource],
 		settings: HaSettings,
 		statusSensor: 'ha.status',
@@ -106,7 +105,7 @@ export const registerHomeAssistantPlugin = (): void =>
 					label: 'HA Light',
 					category: 'Home Assistant',
 					interactive: true,
-					defaultSize: { w: 120, h: 48 },
+					defaultSize: { w: 120, h: 56 },
 					defaultConfig: { showBrightness: true },
 					configFields: [
 						{
@@ -330,7 +329,7 @@ export const registerHomeAssistantPlugin = (): void =>
 					label: 'HA Media Player',
 					category: 'Home Assistant',
 					interactive: true,
-					defaultSize: { w: 180, h: 92 },
+					defaultSize: { w: 240, h: 120 },
 					defaultConfig: { showTransport: true, showVolume: true },
 					configFields: [
 						{

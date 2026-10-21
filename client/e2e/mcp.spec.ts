@@ -127,6 +127,7 @@ test('assistant model typeahead filters suggestions and accepts a custom model',
 				: invoke(command, args);
 	});
 	await page.getByRole('button', { name: 'Studio AI assistant', exact: true }).click();
+	await page.getByRole('tab', { name: 'Built-in', exact: true }).click();
 	const model = page.getByRole('combobox', { name: 'Agent model', exact: true });
 	await expect(model).toBeEnabled();
 	await model.fill('sample-fast');

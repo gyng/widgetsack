@@ -36,6 +36,24 @@ function stage() {
 }
 
 describe('isEmptyStagePress', () => {
+	it.each([
+		'right-pane-tabs',
+		'studio-assistant',
+		'monitor-switcher',
+		'pane-resize',
+		'layout-read-status',
+		'studio-panel-loading',
+		'assistant-loading'
+	])('preserves selection when pressing %s chrome', (className) => {
+		const s = stage();
+		const panel = document.createElement('div');
+		panel.className = className;
+		const button = document.createElement('button');
+		panel.append(button);
+		s.canvas.append(panel);
+		expect(isEmptyStagePress(button)).toBe(false);
+		s.canvas.remove();
+	});
 	it('is on-canvas for the stage, the world, the flow frame and the root FlowNode div', () => {
 		const s = stage();
 		// The root FlowNode div + the flow frame cover the whole monitor: a press INSIDE the monitor

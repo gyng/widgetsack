@@ -246,6 +246,9 @@ pub fn tools() -> Value {
     {"name":"studio_read","description":"Read the active editor target, layout, catalog, sensor IDs and revision. Studio must be open; the assistant sidebar can stay closed.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
     {"name":"studio_apply","description":"Apply one undoable edit batch against the revision returned by studio_read. Use studio_verify afterward. Does not save automatically.","inputSchema":{"type":"object","properties":{"revision":{"type":"string"},"ops":{"type":"array","maxItems":32,"items":{"type":"object"}}},"required":["revision","ops"],"additionalProperties":false}},
     {"name":"studio_verify","description":"Measure the rendered layout after edits. Reports missing, collapsed, hidden, overflowing and failed widgets. Geometry does not replace visual review.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}},
+    {"name":"studio_integrations","description":"List configurable integrations, field schemas and redacted saved settings. Secrets are write-only.","inputSchema":{"type":"object","properties":{},"additionalProperties":false},"annotations":{"readOnlyHint":true}},
+    {"name":"studio_configure_integration","description":"Patch and persist authorized integration settings immediately, then restart its worker. Omitted settings and saved credentials are preserved. Not part of layout Undo/Save. Read studio_integrations first.","inputSchema":{"type":"object","properties":{"integration":{"type":"string","enum":["home-assistant","ai-provider","mqtt","stocks","weather","rss","agenda"]},"settings":{"type":"object"}},"required":["integration","settings"],"additionalProperties":false},"annotations":{"readOnlyHint":false}},
+    {"name":"studio_test_integration","description":"Test saved or proposed Home Assistant/AI connection settings without saving. Blank credentials reuse the saved credential for the same target. An AI test sends a small prompt.","inputSchema":{"type":"object","properties":{"integration":{"type":"string","enum":["home-assistant","ai-provider"]},"settings":{"type":"object"}},"required":["integration"],"additionalProperties":false},"annotations":{"readOnlyHint":false}},
     {"name":"studio_screenshot","description":"Capture only the current Studio webview as a PNG for visual review. Restore Studio if minimized.","inputSchema":{"type":"object","properties":{},"additionalProperties":false}}
     ]})
 }
@@ -414,6 +417,9 @@ async fn serve_connection<F, Fut>(
                 "studio_read",
                 "studio_apply",
                 "studio_verify",
+                "studio_integrations",
+                "studio_configure_integration",
+                "studio_test_integration",
             ]
             .contains(&name)
                 && args.is_object()
@@ -1704,7 +1710,7 @@ mod tests {
         );
         let result = static_rpc(&json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}})).unwrap();
         assert_eq!(result["result"]["protocolVersion"], "2025-06-18");
-        assert_eq!(tools()["tools"].as_array().unwrap().len(), 4);
+        assert_eq!(tools()["tools"].as_array().unwrap().len(), 7);
         assert_eq!(
             static_rpc(&json!({"jsonrpc":"2.0","id":"x","method":"ping"})).unwrap()["result"],
             json!({})

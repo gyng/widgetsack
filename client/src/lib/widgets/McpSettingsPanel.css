@@ -1,0 +1,105 @@
+.canvas .mcp-settings .mcp-connection-card {
+	display: grid;
+	gap: var(--space-3);
+	padding: var(--space-4);
+	border: 1px solid var(--ui-border-strong);
+	border-radius: var(--radius-panel);
+	background: var(--ui-surface);
+}
+.canvas .mcp-settings .mcp-connection-card .set-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-4);
+	margin: 0;
+	font-weight: 600;
+}
+.canvas .mcp-settings .mcp-connection-card p {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.canvas .mcp-settings {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+}
+.canvas .mcp-settings [hidden] {
+	display: none !important;
+}
+.canvas .mcp-settings p {
+	margin: 0;
+}
+.canvas .mcp-setup {
+	display: grid;
+	gap: var(--space-3);
+	padding: var(--space-4);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-panel);
+	background: var(--ui-surface);
+}
+.canvas .mcp-method {
+	display: grid;
+	gap: var(--space-4);
+}
+.canvas .mcp-setup h4 {
+	margin: 0;
+	font: inherit;
+	font-weight: 600;
+}
+.canvas .mcp-setup summary {
+	cursor: pointer;
+	color: var(--ui-fg-muted);
+}
+.canvas .mcp-setup-text {
+	white-space: pre-wrap;
+	font-size: var(--text-sm);
+	line-height: var(--line-body);
+}
+.canvas .mcp-settings .set-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-4);
+}
+.canvas .mcp-config {
+	width: 100%;
+	box-sizing: border-box;
+	font: var(--text-sm)/var(--line-body) var(--ui-font-mono);
+	resize: vertical;
+}
+.canvas .mcp-settings .set-help-list {
+	padding-left: 20px;
+	margin-block: 0;
+	color: var(--ui-fg-muted);
+}
+.canvas .mcp-settings .set-help-list li + li {
+	margin-top: var(--space-3);
+}
+
+.canvas .mcp-settings input[type='checkbox'] {
+	width: 16px;
+	min-height: 16px;
+	padding: 0;
+	flex: none;
+}
+.canvas .mcp-settings .detail-tabs {
+	display: flex;
+	gap: var(--space-3);
+	border-bottom: 1px solid var(--ui-border);
+}
+.canvas .mcp-settings .detail-tabs button {
+	flex: 1;
+	margin: 0;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	background: transparent;
+	color: var(--ui-fg-muted);
+	font: inherit;
+	min-height: var(--control-h);
+}
+.canvas .mcp-settings .detail-tabs button.active {
+	color: var(--ui-accent-fg);
+	border-bottom-color: var(--ui-accent-fg);
+}

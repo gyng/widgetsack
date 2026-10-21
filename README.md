@@ -100,7 +100,7 @@ Describe the widget you want in plain language. Your agent can combine built-in 
 bind available sensors, and adjust layout, labels, and CSS in Studio.
 
 1. Open **Assistant** in the Studio toolbar.
-2. Select an installed and signed-in Pi, Codex, or Claude agent.
+2. Use **Your agent** for stdio MCP setup, or select **Built-in** and choose an installed and signed-in Pi, Codex, or Claude agent.
 3. Describe the content, size, and appearance you want. For example:
 
    > Build a compact CPU and memory row with percentages and sparklines. Match my theme,
@@ -109,14 +109,16 @@ bind available sensors, and adjust layout, labels, and CSS in Studio.
 4. Review the result. Use **Undo** to reverse a batch or **Save** to keep it.
 
 Use the widget designer to save a group as a reusable widget.
-Configure service connections and commands yourself in Studio. The layout tools work with
+Agents can configure Home Assistant, AI providers and other integrations through MCP after you request setup. Saved credentials remain write-only; integration settings save immediately outside layout Undo. Commands still require local activation. The layout tools work with
 existing widget types. For a fully custom renderer, add **Custom HTML** and let your agent
 write portable HTML/CSS/JavaScript with selected sensors, theme tokens and responsive sizing.
 See the [Custom HTML guide](docs/custom-html.md). Adding a new sensor source requires development.
 
 You can also use an external agent through **Settings → MCP**. Follow the
 [connection guide](docs/mcp.md), then ask it to read, edit, verify, and screenshot your layout.
-Keep Studio open. MCP edits are undoable and remain unsaved until you select **Save**.
+For scheduled prompts and interactive chat widgets, see [AI widgets](docs/ai-widgets.md).
+
+Keep Studio open. MCP layout edits are undoable and remain unsaved until you select **Save**.
 
 Choose reusable [widget design presets](docs/design-presets.md): Transparent, Instrument, or Soft, with Compact, Comfortable, or Large typography. Apply them globally or to one widget/group; manual overrides are preserved by default.
 

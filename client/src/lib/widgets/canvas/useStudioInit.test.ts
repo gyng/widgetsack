@@ -350,7 +350,7 @@ describe('useStudioInit layout_changed routing', () => {
 });
 
 describe('useStudioInit initial layout load', () => {
-	it('retries a failed initial load, then surfaces the failure in the studio', async () => {
+	it('keeps retrying after the initial backoff without a blocking alert', async () => {
 		vi.useFakeTimers({ toFake: ['setTimeout'] });
 		const alert = vi.spyOn(window, 'alert').mockImplementation(() => undefined);
 		try {
@@ -362,12 +362,11 @@ describe('useStudioInit initial layout load', () => {
 			expect(alert).not.toHaveBeenCalled();
 			await vi.advanceTimersByTimeAsync(3000);
 			expect(deps.reloadLayout).toHaveBeenCalledTimes(3);
-			expect(alert).toHaveBeenCalledTimes(1);
-			expect(logClient).toHaveBeenCalledWith(
-				'error',
-				'layout',
-				'initial layout load failed; edits will not be saved'
-			);
+			expect(alert).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(10_000);
+			expect(deps.reloadLayout).toHaveBeenCalledTimes(4);
+			await vi.advanceTimersByTimeAsync(60_000);
+			expect(deps.reloadLayout).toHaveBeenCalledTimes(6);
 		} finally {
 			alert.mockRestore();
 			vi.useRealTimers();

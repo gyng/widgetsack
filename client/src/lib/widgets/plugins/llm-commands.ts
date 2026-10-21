@@ -4,7 +4,8 @@
 // returned (see llm-types.ts). Arg keys are camelCase on the JS side → snake_case Rust params.
 
 import { invoke } from '@tauri-apps/api/core';
-import { COMMANDS } from '../../bridge/contract';
+import { listen } from '@tauri-apps/api/event';
+import { COMMANDS, EVENTS } from '../../bridge/contract';
 import type { ChatMessage } from '../../core/llm';
 import type { LlmAudio, LlmModel, LlmStatus, LlmTestResult } from './llm-types';
 
@@ -109,3 +110,7 @@ export const llmTranscribe = (
 		model: opts?.model?.trim() || null,
 		language: opts?.language?.trim() || null
 	});
+
+/** Re-read readiness after any Studio caller changes provider settings (including MCP). */
+export const onLlmConfigChanged = (changed: () => void): Promise<() => void> =>
+	listen(EVENTS.llmConfigChanged, changed);

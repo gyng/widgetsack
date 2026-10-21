@@ -136,7 +136,7 @@ export function useSacks({
 	// The inline export name: seeded from the active theme's label (what the old prompt defaulted to)
 	// until the user types their own (null = untouched → use the seed).
 	const [exportNameRaw, setExportName] = useState<string | null>(null);
-	const exportName = exportNameRaw ?? (themeLabel(selectedTheme) || 'my-sack');
+	const exportName = exportNameRaw ?? safeFileStem(themeLabel(selectedTheme), 'my-sack');
 	const exportNameError = sackNameError(exportName);
 
 	// Names + a peek inside each (count of defs, theme name, override count) so the Import list can

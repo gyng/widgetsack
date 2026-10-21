@@ -40,6 +40,7 @@ type Props = {
 	// In the studio this panel docks as the full-height left rail (vs a floating box on an
 	// overlay). The rail size + bar height come from the canvas's shared custom properties.
 	docked?: boolean;
+	showIds?: boolean;
 	// When set (e.g. the custom widget being designed), appended to the header so the user can tell
 	// the tree is scoped to that custom widget, not the monitor layout.
 	scopeLabel?: string;
@@ -71,6 +72,7 @@ function Outline({
 	hoverId = null,
 	onHover,
 	docked = false,
+	showIds = false,
 	scopeLabel,
 	onOp,
 	onNodeContextMenu
@@ -237,12 +239,13 @@ function Outline({
 	// same-type siblings: a user label, the bound sensor, or a group name) — five "Sparkline" rows
 	// are indistinguishable without it.
 	function rowParts(node: LayoutNode): { primary: string; hint: string } {
-		if (isContainer(node)) return { primary: `▦ ${node.kind}`, hint: node.id };
+		if (isContainer(node)) return { primary: `▦ ${node.kind}`, hint: showIds ? node.id : '' };
 		if (isGroup(node.unit))
-			return { primary: 'group', hint: node.unit.name ?? node.unit.def ?? node.id };
+			return { primary: node.unit.name ?? node.unit.def ?? 'Group', hint: showIds ? node.id : '' };
 		const label = node.unit.config?.label;
-		const hint = (typeof label === 'string' && label) || node.unit.sensor || '';
-		return { primary: getMeta(node.unit.type)?.label ?? node.unit.type, hint };
+		const primary =
+			(typeof label === 'string' && label) || getMeta(node.unit.type)?.label || node.unit.type;
+		return { primary, hint: showIds ? node.id : (node.unit.sensor ?? '') };
 	}
 
 	const rowLabel = (node: LayoutNode) => {
@@ -259,6 +262,14 @@ function Outline({
 			</>
 		);
 	};
+	const breadcrumbs: LayoutNode[] = [];
+	let crumb = selectedId === root.id ? root : byId.get(selectedId ?? '')?.node;
+	while (crumb) {
+		breadcrumbs.unshift(crumb);
+		if (crumb.id === root.id) break;
+		const parent = byId.get(crumb.id)!.parentId;
+		crumb = parent === root.id ? root : byId.get(parent)?.node;
+	}
 
 	// Drag-and-drop into the tree (no canvas coords): drag a row (or a palette widget from the
 	// inspector) onto a CONTAINER row to nest it there. Containers are the only drop targets;
@@ -394,6 +405,20 @@ function Outline({
 	return (
 		<div className={outlineCls.join(' ')}>
 			{header}
+			{breadcrumbs.length > 0 && (
+				<nav className="outline-breadcrumb" aria-label="Selection path">
+					{breadcrumbs.map((node) => (
+						<button
+							type="button"
+							key={node.id}
+							title={rowParts(node).primary}
+							onClick={() => op({ op: 'select', id: node.id })}
+						>
+							{node.id === root.id ? 'Layout' : rowParts(node).primary}
+						</button>
+					))}
+				</nav>
+			)}
 			<div className="hd">
 				<span>Outline{scopeLabel ? ` · ${scopeLabel}` : ''}</span>
 				<span className="add">
@@ -489,6 +514,7 @@ function Outline({
 							<button
 								type="button"
 								className="label"
+								title={rowParts(r.node).primary}
 								tabIndex={-1}
 								onClick={() => op({ op: 'select', id: r.node.id })}
 							>

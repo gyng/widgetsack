@@ -26,7 +26,7 @@ describe('applyDelta', () => {
 
 	it('widens the RIGHT rail as its divider moves LEFT (-dx grows it)', () => {
 		expect(applyDelta(PANE_DEFAULTS, 'right', 264, -50).railR).toBe(314);
-		expect(applyDelta(PANE_DEFAULTS, 'right', 264, 50).railR).toBe(214);
+		expect(applyDelta(PANE_DEFAULTS, 'right', 264, 50).railR).toBe(280);
 	});
 
 	it('only touches the dragged edge', () => {
@@ -57,8 +57,9 @@ describe('usePaneSizes', () => {
 	it('studio role seeds from defaults and exposes inline CSS vars', () => {
 		const { result } = renderHook(() => usePaneSizes(true));
 		expect(result.current.vars).toEqual({
-			'--rail-l': '250px',
-			'--rail-r': '360px',
+			'--rail-l': '274px',
+			'--rail-r':
+				'min(360px, max(280px, calc(100vw - var(--rail-l) - var(--assistant-w) - var(--tree-inset, 0px) - 400px)))',
 			'--tree-w': '200px'
 		});
 	});
@@ -71,7 +72,8 @@ describe('usePaneSizes', () => {
 		const { result } = renderHook(() => usePaneSizes(true));
 		expect(result.current.vars).toEqual({
 			'--rail-l': '520px', // clamped to max
-			'--rail-r': '360px', // non-number → default
+			'--rail-r':
+				'min(360px, max(280px, calc(100vw - var(--rail-l) - var(--assistant-w) - var(--tree-inset, 0px) - 400px)))', // non-number → default
 			'--tree-w': '150px'
 		});
 	});
@@ -81,7 +83,8 @@ describe('usePaneSizes', () => {
 		const { result } = renderHook(() => usePaneSizes(true));
 		expect(result.current.vars).toEqual({
 			'--rail-l': '300px',
-			'--rail-r': '320px',
+			'--rail-r':
+				'min(320px, max(280px, calc(100vw - var(--rail-l) - var(--assistant-w) - var(--tree-inset, 0px) - 400px)))',
 			'--tree-w': '160px'
 		});
 	});
@@ -90,8 +93,9 @@ describe('usePaneSizes', () => {
 		localStorage.setItem(KEY, JSON.stringify({ railR: 300 })); // railL + treeW absent → defaults
 		const { result } = renderHook(() => usePaneSizes(true));
 		expect(result.current.vars).toEqual({
-			'--rail-l': '250px',
-			'--rail-r': '300px',
+			'--rail-l': '274px',
+			'--rail-r':
+				'min(300px, max(280px, calc(100vw - var(--rail-l) - var(--assistant-w) - var(--tree-inset, 0px) - 400px)))',
 			'--tree-w': '200px'
 		});
 	});
@@ -103,20 +107,20 @@ describe('usePaneSizes', () => {
 		act(() => {
 			window.dispatchEvent(new MouseEvent('pointermove', { clientX: 140 }));
 		});
-		// 250 (start) + 40 (dx) = 290.
-		expect(result.current.vars['--rail-l' as keyof typeof result.current.vars]).toBe('290px');
+		// 274 (start) + 40 (dx) = 314.
+		expect(result.current.vars['--rail-l' as keyof typeof result.current.vars]).toBe('314px');
 
 		act(() => {
 			window.dispatchEvent(new MouseEvent('pointerup'));
 		});
 		// Persisted on release.
-		expect(JSON.parse(localStorage.getItem(KEY)!).railL).toBe(290);
+		expect(JSON.parse(localStorage.getItem(KEY)!).railL).toBe(314);
 
 		// Listeners removed: a further move after pointerup does nothing.
 		act(() => {
 			window.dispatchEvent(new MouseEvent('pointermove', { clientX: 999 }));
 		});
-		expect(result.current.vars['--rail-l' as keyof typeof result.current.vars]).toBe('290px');
+		expect(result.current.vars['--rail-l' as keyof typeof result.current.vars]).toBe('314px');
 	});
 
 	it('the right rail grows as its divider moves left (-dx)', () => {
@@ -126,7 +130,9 @@ describe('usePaneSizes', () => {
 			window.dispatchEvent(new MouseEvent('pointermove', { clientX: 150 })); // dx -50
 		});
 		// Right grows by -dx: 360 + 50 = 410.
-		expect(result.current.vars['--rail-r' as keyof typeof result.current.vars]).toBe('410px');
+		expect(result.current.vars['--rail-r' as keyof typeof result.current.vars]).toBe(
+			'min(410px, max(280px, calc(100vw - var(--rail-l) - var(--assistant-w) - var(--tree-inset, 0px) - 400px)))'
+		);
 	});
 
 	it('drags the tree column too (covers the tree startVal branch)', () => {

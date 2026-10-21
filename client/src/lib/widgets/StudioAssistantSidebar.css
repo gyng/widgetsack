@@ -1,9 +1,9 @@
 .canvas.studio .studio-assistant {
 	position: fixed;
-	top: var(--bar-h);
+	top: calc(var(--bar-h) + 40px);
 	right: 0;
 	bottom: var(--bar-b);
-	width: var(--assistant-w, 320px);
+	width: calc(var(--rail-r, 360px) - var(--pane-gap, 6px));
 	box-sizing: border-box;
 	padding: var(--space-5);
 	display: flex;
@@ -16,7 +16,8 @@
 	pointer-events: auto;
 	user-select: text;
 	z-index: 7;
-	overflow: auto;
+	overflow: hidden;
+	container: assistant / inline-size;
 }
 .studio-assistant :is(button, input, select, textarea) {
 	font: inherit;
@@ -41,20 +42,63 @@
 	opacity: 0.55;
 	cursor: default;
 }
-.studio-assistant header,
 .assistant-actions {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
 	gap: 8px;
 }
-.studio-assistant header strong {
-	font-size: var(--text-lg);
-}
 .studio-assistant .assistant-options {
 	display: grid;
 	grid-template-columns: 1fr;
-	gap: 8px;
+	gap: var(--space-3);
+	padding: var(--space-4);
+	background: var(--ui-surface);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-panel);
+}
+.assistant-intro h3,
+.studio-assistant .mcp-settings h3 {
+	font-size: var(--text-lg);
+	line-height: var(--line-caption);
+	margin: 0 0 var(--space-2);
+	font-weight: 600;
+}
+.assistant-intro {
+	border-bottom: 1px solid var(--ui-border);
+	padding-bottom: var(--space-3);
+}
+.assistant-intro summary {
+	cursor: pointer;
+	color: var(--ui-fg);
+	font-weight: 600;
+}
+.assistant-intro[open] .assistant-hint {
+	margin-top: var(--space-3);
+}
+.assistant-intro .assistant-options {
+	margin-top: var(--space-3);
+}
+.assistant-spinner {
+	display: inline-block;
+	width: 0.8em;
+	height: 0.8em;
+	border: 2px solid var(--ui-border);
+	border-top-color: var(--ui-accent-fg);
+	border-radius: 50%;
+	margin-right: var(--space-2);
+	vertical-align: -0.1em;
+	animation: assistant-responding 0.8s linear infinite;
+}
+@keyframes assistant-responding {
+	to {
+		transform: rotate(360deg);
+	}
+}
+@media (prefers-reduced-motion: reduce) {
+	.assistant-spinner {
+		animation: none;
+	}
 }
 .studio-assistant label {
 	display: grid;
@@ -74,8 +118,8 @@
 	gap: 8px;
 }
 .assistant-transcript {
-	flex: 1;
-	min-height: 80px;
+	flex: 1 0 160px;
+	min-height: 160px;
 	overflow: auto;
 	overflow-wrap: anywhere;
 }
@@ -86,7 +130,7 @@
 	white-space: pre-wrap;
 }
 .assistant-transcript article[data-role='user'] strong {
-	color: var(--ui-accent);
+	color: var(--ui-accent-fg);
 }
 .studio-assistant .assistant-hint,
 .assistant-action {
@@ -116,7 +160,7 @@
 }
 .studio-assistant [role='alert'] {
 	margin: 0;
-	color: var(--ui-danger, #f68b8b);
+	color: var(--ui-danger-fg);
 	overflow-wrap: anywhere;
 }
 
@@ -128,4 +172,70 @@
 }
 .studio-assistant .np-select-caret {
 	padding: 0 var(--space-2);
+}
+
+.studio-assistant [hidden] {
+	display: none !important;
+}
+.assistant-built-in {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-4);
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+}
+.studio-assistant > [role='tabpanel']:not(.assistant-built-in) {
+	min-height: 0;
+	overflow: auto;
+}
+.studio-assistant form {
+	position: sticky;
+	bottom: 0;
+	background: var(--ui-bg);
+	padding-top: var(--space-3);
+	border-top: 1px solid var(--ui-border);
+}
+.studio-assistant .assistant-actions button[type='submit'] {
+	background: var(--ui-accent-fg);
+	color: var(--ui-bg);
+	border-color: var(--ui-accent-fg);
+}
+.studio-assistant .assistant-capabilities {
+	border-top: 1px solid var(--ui-border);
+	padding-top: var(--space-4);
+}
+.studio-assistant .assistant-capabilities summary {
+	cursor: pointer;
+	color: var(--ui-fg);
+}
+.studio-assistant .assistant-capabilities[open] > :not(summary) {
+	margin-top: var(--space-3);
+}
+@container assistant (min-width: 440px) {
+	.studio-assistant .assistant-options {
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+	}
+	.studio-assistant .assistant-options > button {
+		grid-column: 1 / -1;
+		justify-self: start;
+	}
+}
+.studio-assistant .detail-tabs {
+	display: flex;
+	border-bottom: 1px solid var(--ui-border);
+	gap: var(--space-3);
+	flex: none;
+}
+.studio-assistant .detail-tabs button {
+	flex: 1;
+	background: transparent;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	color: var(--ui-fg-muted);
+}
+.studio-assistant .detail-tabs button.active {
+	color: var(--ui-accent-fg);
+	border-bottom-color: var(--ui-accent-fg);
 }

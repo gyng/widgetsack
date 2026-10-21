@@ -9,6 +9,7 @@ export const EVENTS = {
 	telemetry: 'telemetry',
 	mcpStudioRequest: 'mcp_studio_request',
 	llmDelta: 'llm_delta',
+	llmConfigChanged: 'llm_config_changed',
 	log: 'log',
 	// media session deltas (state.rs::updater kinds → event.rs::emit_to_bridge)
 	sessionCreate: 'session_create',

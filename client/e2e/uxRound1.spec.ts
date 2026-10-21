@@ -44,7 +44,8 @@ test('sticky add target: Outline "+ Row" → Gauge, Bar, Text all land in the ro
 
 	// ✕ on the palette chip drops the target: the next add floats instead.
 	const summary = page.locator('.inspector .add-panel > summary');
-	if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
+	await page.getByRole('tab', { name: 'Add', exact: true }).click();
+	await expect(page.locator('.inspector .add-panel')).toHaveAttribute('open', '');
 	await page.locator('.inspector .add-target-chip button').click();
 	await expect(summary).not.toContainText('into row');
 	await addWidget(page, 'Gauge');

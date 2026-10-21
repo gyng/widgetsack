@@ -58,6 +58,7 @@ test('sensor field accepts a free-typed custom id (allowCustom commits once, on 
 test('a closed listbox select (Bar orientation) opens and applies the choice', async ({ page }) => {
 	await gotoStudio(page);
 	const bar = await addWidget(page, 'Bar');
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
 	const orient = page.getByRole('combobox', { name: 'orientation' });
 	const before = ((await orient.textContent()) ?? '').trim();
 	const target = before === 'vertical' ? 'horizontal' : 'vertical';

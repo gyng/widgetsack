@@ -39,10 +39,10 @@ describe('studio nav SECTIONS', () => {
 			short: 'Share',
 			title: 'Sacks — export/import'
 		});
-		expect(byId['saved-layouts']).toMatchObject({ label: 'Presets', short: 'Presets' });
+		expect(byId['saved-layouts']).toMatchObject({ label: 'Saved layouts', short: 'Saved' });
 		// The words that must NOT leak into the rail (renamed by the vocabulary sweep).
 		for (const s of SECTIONS) {
-			expect(`${s.label} ${s.short}`).not.toMatch(/(Defs|Backdrop|Saved layouts|Sacks)/);
+			expect(`${s.label} ${s.short}`).not.toMatch(/(Defs|Backdrop|Sacks)/);
 		}
 	});
 

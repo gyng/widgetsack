@@ -65,6 +65,7 @@ test('design presets apply to global or widget tokens in one undoable edit', asy
 	await page.keyboard.press('Control+z');
 	await expect.poll(rootBody).toBe(original);
 	const widget = await addWidget(page, 'Text');
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
 	await page.locator('.inspector details.tokens > summary').click();
 	await page.getByRole('combobox', { name: 'Design density', exact: true }).click();
 	await page

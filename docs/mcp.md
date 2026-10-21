@@ -1,15 +1,20 @@
 # MCP
 
-Connect an external agent to Studio to edit and check layouts.
+Connect an external agent to Studio to build widgets, check layouts, and configure integrations.
 
 ## Connect
 
 1. Open Studio.
-2. Open **Settings → MCP**.
+2. Open **Assistant → Your agent** (or **Settings → MCP**).
 3. Turn on **Enable MCP**.
 4. Select **Copy MCP configuration**.
 5. Add the configuration to your agent's MCP server settings.
 6. Keep Widgetsack running and Studio open.
+The **Setup prompt** tab opens by default. Select **Copy setup prompt** and paste it into your agent's chat to ask
+the agent to register the MCP server for you. It includes this app's executable and arguments,
+preserves other MCP settings, and asks the agent to check the connection. **Preview prompt**
+shows the text before copying. Use **Manual setup** for the configuration JSON instead.
+The **Enable MCP** card and connection status stay above both tabs.
 
 ## Tools
 
@@ -19,6 +24,24 @@ Connect an external agent to Studio to edit and check layouts.
 | `studio_apply`      | Apply up to 32 edits against a revision returned by `studio_read`. Each batch is undoable.                                           |
 | `studio_verify`     | Measure the rendered layout. Find missing nodes, zero-size boxes, overflow, hidden content, unknown widget types, and render errors. |
 | `studio_screenshot` | Return a PNG of the current Studio webview for a vision-capable agent. Restore Studio if minimized.                                  |
+
+| `studio_integrations` | Discover supported integrations, fields and redacted saved settings. |
+| `studio_configure_integration` | Patch authorized settings, persist them immediately, and restart the integration worker. |
+| `studio_test_integration` | Test a Home Assistant or AI connection without saving. AI tests send a small prompt. |
+
+### Configure integrations
+
+Agents can configure **Home Assistant, AI providers, MQTT, stocks, weather, RSS and agenda** through the same Studio settings commands. The built-in Studio assistant supports these tools too.
+
+Start with `studio_integrations`. It describes the available fields and which credentials are already configured. Pass only fields to change:
+
+```json
+{"integration":"ai-provider","settings":{"provider":"openai","model":"your-model"}}
+```
+
+Omitted settings are preserved. API keys, passwords, Home Assistant tokens and private calendar feed URLs are write-only; agents can supply new values but cannot retrieve stored secrets. A blank credential reuses a saved credential only for the same target, subject to the backend's target and TLS checks. Changing servers may require a new credential. URLs returned in status omit user information, query strings and fragments.
+
+Configuration saves immediately and is **outside layout Undo/Save**. Cancelling stops queued work; an already-issued save and its worker restart can finish. Results distinguish a failed save from a successful save whose restart failed. Reconnecting requests a worker restart; use its status telemetry to confirm readiness. Direct connection tests currently cover Home Assistant and AI only. These tools cannot enable MCP, browser debugging or the agent-control server.
 
 Use this workflow:
 

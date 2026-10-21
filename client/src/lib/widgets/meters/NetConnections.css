@@ -1,9 +1,11 @@
 /* Network connections — a header summary + one row per process (name · public/established/listening
    badges). Per-row accent keyed off data-level (public talkers stand out). Themeable via --np-*. */
 .netconn {
+	font-size: var(--np-text-body, 14px);
+	line-height: var(--np-line-body, 20px);
 	display: flex;
 	flex-direction: column;
-	gap: var(--nc-gap, 4px);
+	gap: var(--nc-gap, var(--np-gap, 4px));
 	width: 100%;
 	height: 100%;
 	box-sizing: border-box;
@@ -14,19 +16,22 @@
 
 .nc-head {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: baseline;
 	justify-content: space-between;
-	gap: 8px;
+	gap: calc(var(--np-gap, 4px) * 2);
 	flex: 0 0 auto;
 }
 .nc-title {
-	font-size: var(--nc-title-size, 0.7em);
+	font-size: var(--nc-title-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 	color: var(--np-label, rgba(255, 255, 255, 0.5));
 }
 .nc-summary {
-	font-size: var(--nc-summary-size, 0.72em);
+	font-size: var(--nc-summary-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	color: var(--np-label, rgba(255, 255, 255, 0.6));
 	white-space: nowrap;
 }
@@ -41,17 +46,20 @@
 .nc-list {
 	display: flex;
 	flex-direction: column;
-	gap: var(--nc-row-gap, 2px);
+	gap: var(--nc-row-gap, var(--np-gap, 4px));
 	min-height: 0;
-	overflow: hidden;
+	overflow: auto;
+	scrollbar-width: thin;
+	scrollbar-color: var(--np-border, #ffffff2e) transparent;
 }
 .nc-row {
+	flex-shrink: 0;
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
-	gap: 8px;
-	font-size: var(--nc-row-size, 0.86em);
-	line-height: 1.3;
+	gap: calc(var(--np-gap, 4px) * 2);
+	font-size: var(--nc-row-size, var(--np-text-body, 14px));
+	line-height: var(--np-line-body, 20px);
 }
 .nc-proc {
 	min-width: 0;
@@ -72,7 +80,7 @@
 	flex: 0 0 auto;
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: var(--np-gap, 4px);
 	font-variant-numeric: tabular-nums;
 }
 .nc-pub {
@@ -88,5 +96,6 @@
 
 .nc-empty {
 	color: var(--np-label, rgba(255, 255, 255, 0.4));
-	font-size: 0.9em;
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
 }

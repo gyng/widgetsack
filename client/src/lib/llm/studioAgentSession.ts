@@ -1,3 +1,4 @@
+import { studioIntegrationTool } from './studioIntegrationTools';
 import { decodeStudioOps, STUDIO_AGENT_INSTRUCTIONS, type StudioOp } from '../core/studioAssistant';
 import type { StudioVerification } from '../core/studioVerification';
 import type { MonitorLayout } from '../core/layoutTree';
@@ -46,12 +47,18 @@ export function createStudioAgentSession(
 		read(): StudioSnapshot;
 		apply(ops: StudioOp[], expected: StudioSnapshot): StudioApplyResult;
 		verify?(expected: StudioSnapshot): Promise<StudioVerification>;
+		integrationTool?: typeof studioIntegrationTool;
 	},
 	publish: (state: AgentState) => void,
 	makeId: () => string
 ) {
 	let state = emptyAgentState();
-	let active: { id: string; target: string; expected: StudioSnapshot | null } | null = null;
+	let active: {
+		id: string;
+		target: string;
+		expected: StudioSnapshot | null;
+		controller: AbortController;
+	} | null = null;
 	let disposed = false;
 	let stopping: Promise<void> | null = null;
 	let stopRevision = 0;
@@ -63,7 +70,10 @@ export function createStudioAgentSession(
 		stopRevision++;
 		const run = active;
 		active = null;
-		if (run) stopping = ports.cancel(run.id).catch(() => {});
+		if (run) {
+			run.controller.abort();
+			stopping = ports.cancel(run.id).catch(() => {});
+		}
 		update({ busy: false });
 	};
 	const send = async (text: string, backend: string, model: string) => {
@@ -77,7 +87,8 @@ export function createStudioAgentSession(
 		const run = {
 			id: makeId(),
 			target: snapshot.editorTarget ?? snapshot.monitorKey,
-			expected: null as StudioSnapshot | null
+			expected: null as StudioSnapshot | null,
+			controller: new AbortController()
 		};
 		active = run;
 		const history = state.messages.slice(-12);
@@ -147,6 +158,30 @@ export function createStudioAgentSession(
 								}
 							});
 						return;
+					} else if (
+						[
+							'studio_integrations',
+							'studio_configure_integration',
+							'studio_test_integration'
+						].includes(event.name)
+					) {
+						void (studio.integrationTool ?? studioIntegrationTool)(
+							event.name,
+							event.args,
+							run.controller.signal
+						)
+							.then((result) => {
+								if (active === run) return ports.reply(run.id, event.id, result);
+							})
+							.catch(() => {
+								if (active === run) {
+									update({ error: 'Integration request failed.' });
+									void ports
+										.reply(run.id, event.id, { error: 'Integration request failed.' })
+										.catch(() => {});
+								}
+							});
+						return;
 					} else throw new Error('Unknown studio tool');
 				} catch (error) {
 					result = { error: String(error) };
@@ -176,6 +211,7 @@ export function createStudioAgentSession(
 			if (active === run) update({ error: String(error) });
 		} finally {
 			if (active === run) {
+				run.controller.abort();
 				active = null;
 				update({ busy: false });
 			}

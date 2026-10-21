@@ -27,7 +27,12 @@
 	position: relative;
 	flex: 0 0 auto;
 	align-self: baseline;
-	height: var(--text-sparkline-height, 1em);
+	/* Share the reading's font metrics: 100 meets the numeral cap and 0 its baseline.
+	   An em box rises above the digits, especially at the larger desktop densities. */
+	font-size: var(--np-text-body, 15px);
+	height: var(--text-sparkline-height, 1cap);
+	/* Adds to the reading row's existing column gap (normally 4px). */
+	margin-inline-start: var(--text-sparkline-gap, 2px);
 	overflow: hidden;
 	max-width: 100%;
 }
@@ -39,14 +44,18 @@
 
 .np-text .text-sparkline.stretch {
 	flex: 1 1 0;
-	width: 100%;
+	width: auto;
 	min-width: 24px;
 }
 
 /* Rate values share a narrow two-column row in the Network widget. Keep a long formatted value
    on one line inside its authored height instead of wrapping below the widget's clipped bottom. */
-.np-text.rate .value {
+.np-text.rate .value,
+.np-text.rate .text-sparkline {
 	font-size: var(--np-text-body, 12px);
+}
+
+.np-text.rate .value {
 	white-space: nowrap;
 }
 

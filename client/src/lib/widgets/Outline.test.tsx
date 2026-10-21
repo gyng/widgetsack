@@ -27,6 +27,27 @@ function tree(): Container {
 }
 
 describe('Outline ARIA tree semantics', () => {
+	it('keeps IDs in Developer mode and lets breadcrumbs select ancestors', () => {
+		const onOp = vi.fn();
+		const root = labelledRoot();
+		root.children.push(
+			leaf(
+				group('named-group', { w: 100, h: 100 }, leaf(prim('inner', 'text')), {
+					name: 'Named group'
+				})
+			)
+		);
+		const view = render(<Outline showIds root={root} selectedId="a-text" onOp={onOp} />);
+		expect(within(view.getByRole('tree')).getByText('a-text')).toBeVisible();
+		expect(view.getByText('named-group')).toBeVisible();
+		expect(view.getByText('rowA')).toBeVisible();
+		fireEvent.click(
+			within(view.getByRole('navigation', { name: 'Selection path' })).getByRole('button', {
+				name: '▦ row'
+			})
+		);
+		expect(onOp).toHaveBeenCalledWith({ op: 'select', id: 'rowA' });
+	});
 	it('exposes a tree with treeitems carrying level / selection', () => {
 		const { getByRole, getAllByRole } = render(
 			<Outline root={tree()} selectedId="a" onOp={() => undefined} />
@@ -146,7 +167,7 @@ describe('Outline row labels + hints', () => {
 		const { getByText } = render(<Outline root={labelledRoot()} />);
 		expect(getByText('▦ root (col)')).toBeTruthy();
 		expect(getByText('▦ row')).toBeTruthy();
-		expect(getByText('Text')).toBeTruthy();
+		expect(getByText('Hello')).toBeTruthy();
 		expect(getByText('Gauge')).toBeTruthy();
 		expect(getByText('Clock')).toBeTruthy();
 		// hints: text leaf surfaces config.label, gauge surfaces its bound sensor.
@@ -158,7 +179,7 @@ describe('Outline row labels + hints', () => {
 		const g = group('g1', { w: 50, h: 50 }, leaf(prim('inner', 'text')), { name: 'My Widget' });
 		const root = container('root', 'col', [leaf(g)]);
 		const { getByText } = render(<Outline root={root} />);
-		expect(getByText('group')).toBeTruthy();
+		expect(() => getByText('group')).toThrow();
 		expect(getByText('My Widget')).toBeTruthy();
 	});
 
@@ -174,7 +195,7 @@ describe('Outline row labels + hints', () => {
 		// No name AND no def → the node id is the last-resort hint.
 		const bare = group('g-bare', { w: 50, h: 50 }, leaf(prim('inner', 'text')));
 		const r2 = container('root', 'col', [leaf(bare)]);
-		expect(render(<Outline root={r2} />).getByText('g-bare')).toBeTruthy();
+		expect(render(<Outline root={r2} />).getByText('Group')).toBeTruthy();
 	});
 
 	it('appends the scopeLabel to the header when given', () => {
@@ -187,7 +208,7 @@ describe('Outline select + structural ops', () => {
 	it('clicking a row label emits a select op for that node', () => {
 		const onOp = vi.fn();
 		const { getByText } = render(<Outline root={labelledRoot()} onOp={onOp} />);
-		fireEvent.click(getByText('Text'));
+		fireEvent.click(getByText('Hello'));
 		expect(onOp).toHaveBeenCalledWith({ op: 'select', id: 'a-text' });
 	});
 
@@ -250,7 +271,7 @@ describe('Outline select + structural ops', () => {
 
 	it('marks the selected node row with the .sel class', () => {
 		const { getByText } = render(<Outline root={labelledRoot()} selectedId="b-clock" />);
-		expect(getByText('Clock').closest('.row')!.className).toContain('sel');
+		expect(getByText('Clock', { selector: '.label' }).closest('.row')!.className).toContain('sel');
 	});
 });
 

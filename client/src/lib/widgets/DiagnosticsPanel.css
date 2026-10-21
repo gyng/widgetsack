@@ -41,6 +41,7 @@
 
 .diag-win-hd {
 	display: flex;
+	flex-wrap: wrap;
 	justify-content: space-between;
 	align-items: baseline;
 	gap: var(--space-4);
@@ -82,6 +83,7 @@
 
 .diag-actions {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: var(--space-5);
 	margin-top: var(--space-1);
@@ -128,7 +130,7 @@
 }
 .diag-cost-row {
 	display: grid;
-	grid-template-columns: 1fr auto auto auto;
+	grid-template-columns: minmax(0, 1fr) auto auto auto;
 	gap: var(--space-3);
 	align-items: baseline;
 }

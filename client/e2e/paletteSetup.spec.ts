@@ -5,8 +5,8 @@ test('palette setup links open the matching integration and use vector icons', a
 	const log = watchConsole(page);
 	await gotoStudio(page);
 	await addWidget(page, 'Clock');
-	const summary = page.locator('.inspector .add-panel > summary');
-	if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
+	await page.getByRole('tab', { name: 'Add', exact: true }).click();
+	await expect(page.locator('.inspector .add-panel')).toHaveAttribute('open', '');
 	await expect(page.locator('.nav-icon svg')).toHaveCount(9);
 	for (const name of ['Home Assistant', 'AI Provider']) {
 		await page.getByRole('button', { name: `Configure ${name}`, exact: true }).click();
@@ -16,7 +16,8 @@ test('palette setup links open the matching integration and use vector icons', a
 		);
 		await expect(page.locator('.pl-item.cur')).toContainText(name);
 		await openSection(page, 'layouts');
-		if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
+		await page.getByRole('tab', { name: 'Add', exact: true }).click();
+		await expect(page.locator('.inspector .add-panel')).toHaveAttribute('open', '');
 	}
 	await page.screenshot({ path: 'test-results/palette-setup-icons.png' });
 	expect(log.errors).toEqual([]);
@@ -31,7 +32,7 @@ test('built-in local preset loads onto the selected monitor and discovers hardwa
 	page.on('dialog', (dialog) => dialog.accept());
 	await openSection(page, 'saved-layouts');
 	await expect(
-		page.getByRole('button', { name: 'Delete preset Built-in: Local desktop' })
+		page.getByRole('button', { name: 'Delete saved layout Built-in: Local desktop' })
 	).toHaveCount(0);
 	await page.getByRole('button', { name: /Built-in: Local desktop/ }).click();
 	await openSection(page, 'layouts');

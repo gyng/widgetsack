@@ -30,7 +30,7 @@ import type { MonitorOption } from './types';
 import { isForeignWriter } from './externalChange';
 
 // Backoff for re-reading widgets.json after a failed initial load (see retryInitialLoad).
-const INITIAL_LOAD_RETRY_MS = [1000, 3000];
+const INITIAL_LOAD_RETRY_MS = [1000, 3000, 10_000, 30_000];
 // Main's stable-tick reconcile runs every Nth display poll (~4 s each): it only catches a monitor
 // that woke without a topology change, so a minute's latency is fine and the pass isn't free.
 const MAIN_RECONCILE_EVERY_TICKS = 15;
@@ -48,6 +48,8 @@ export type StudioInitDeps = {
 	updateWorkArea: () => Promise<void>;
 	/** Resolves `false` when widgets.json could not be read (the editor keeps its seed state). */
 	reloadLayout: () => Promise<boolean | void>;
+	/** Recovery never replaces local edits made before the first successful read. */
+	retryLayout?: () => Promise<boolean | void>;
 	reloadControls: () => Promise<void>; // load control remaps (startup + controls_changed)
 	editMode: () => boolean; // for the layout_changed guard
 	syncRects: () => void;
@@ -132,19 +134,29 @@ export function useStudioInit(deps: StudioInitDeps): void {
 				refit().catch((err) => logClient('error', 'overlay', `refit failed: ${String(err)}`));
 			};
 			const retryInitialLoad = async (): Promise<void> => {
-				for (const delay of INITIAL_LOAD_RETRY_MS) {
-					await new Promise((r) => setTimeout(r, delay));
+				let attempt = 0;
+				let timer: ReturnType<typeof setTimeout>;
+				let release: () => void = () => {};
+				scope.add(() => {
+					clearTimeout(timer);
+					release();
+				});
+				while (!scope.disposed) {
+					const delay =
+						INITIAL_LOAD_RETRY_MS[Math.min(attempt++, INITIAL_LOAD_RETRY_MS.length - 1)];
+					await new Promise<void>((resolve) => {
+						release = resolve;
+						timer = setTimeout(resolve, delay);
+					});
 					if (scope.disposed) return;
-					if ((await d.current.reloadLayout()) !== false) return;
+					if ((await (d.current.retryLayout ?? d.current.reloadLayout)()) !== false) {
+						d.current.syncRects();
+						if (!dep.studio && !ownKey) await d.current.syncPrimaryOverlays();
+						return;
+					}
 				}
-				if (scope.disposed) return;
-				logClient('error', 'layout', 'initial layout load failed; edits will not be saved');
-				if (dep.studio)
-					window.alert(
-						'Could not read the saved layout (widgets.json). Edits will not be saved until it ' +
-							'loads — reopen the studio to try again.'
-					);
 			};
+
 			// A secondary overlay (?monitor=<key>) fits + reveals ITSELF before anything else, through
 			// the same single-flight so no later trigger can interleave with it. (The spawn side no
 			// longer fits: it lived in the creating window's JS context and died with an empty-primary

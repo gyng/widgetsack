@@ -1,3 +1,4 @@
+import { selectMenuPlacement } from './selectMenuPlacement';
 // One shared dropdown control for the whole studio, built on Downshift (headless → themed with the
 // studio's own CSS, accessible WAI-ARIA combobox/listbox, keyboard nav). Two internal variants behind
 // one <Select>:
@@ -24,6 +25,8 @@ import './Select.css';
 export type { SelectOption };
 
 type CommonProps = {
+	menuMinWidth?: number;
+	wrapOptions?: boolean;
 	value: string;
 	options: SelectOption[];
 	onChange: (value: string) => void;
@@ -91,15 +94,12 @@ function useAnchoredRect(ref: RefObject<HTMLElement | null>, open: boolean): DOM
 	return rect;
 }
 
-function menuStyle(rect: DOMRect | null): CSSProperties {
+function menuStyle(rect: DOMRect | null, minWidth?: number): CSSProperties {
 	if (!rect) return { display: 'none' };
-	const below = window.innerHeight - rect.bottom;
-	const flipUp = below < 200 && rect.top > below;
 	return {
 		position: 'fixed',
-		left: rect.left,
-		width: rect.width,
-		...(flipUp ? { bottom: window.innerHeight - rect.top + 2 } : { top: rect.bottom + 2 })
+		boxSizing: 'border-box',
+		...selectMenuPlacement(rect, { w: window.innerWidth, h: window.innerHeight }, minWidth)
 	};
 }
 
@@ -112,7 +112,9 @@ function SelectListbox({
 	className,
 	title,
 	defaultValue,
-	'aria-label': ariaLabel
+	'aria-label': ariaLabel,
+	menuMinWidth,
+	wrapOptions
 }: CommonProps) {
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	// An unset value shows its effective default as the selection (labelled "(default)").
@@ -154,8 +156,8 @@ function SelectListbox({
 			</button>
 			{createPortal(
 				<ul
-					className="np-select-menu"
-					style={isOpen ? menuStyle(rect) : { display: 'none' }}
+					className={wrapOptions ? 'np-select-menu wrap-options' : 'np-select-menu'}
+					style={isOpen ? menuStyle(rect, menuMinWidth) : { display: 'none' }}
 					{...getMenuProps()}
 				>
 					{isOpen &&
@@ -190,7 +192,9 @@ function SelectCombobox({
 	allowCustom,
 	commitOn = 'input',
 	selectAllOnFocus,
-	'aria-label': ariaLabel
+	'aria-label': ariaLabel,
+	menuMinWidth,
+	wrapOptions
 }: CommonProps & Pick<Props, 'allowCustom' | 'commitOn' | 'selectAllOnFocus'>) {
 	const wrapRef = useRef<HTMLDivElement | null>(null);
 	const selectedItem = optionFor(options, value);
@@ -341,8 +345,8 @@ function SelectCombobox({
 			</div>
 			{createPortal(
 				<ul
-					className="np-select-menu"
-					style={isOpen ? menuStyle(rect) : { display: 'none' }}
+					className={wrapOptions ? 'np-select-menu wrap-options' : 'np-select-menu'}
+					style={isOpen ? menuStyle(rect, menuMinWidth) : { display: 'none' }}
 					{...getMenuProps()}
 				>
 					{isOpen &&

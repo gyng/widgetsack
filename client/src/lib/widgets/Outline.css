@@ -94,8 +94,29 @@
 }
 .outline .lane {
 	position: relative;
-	flex: 0 0 13px;
+	flex: 0 0 8px;
 	align-self: stretch;
+}
+
+.outline-breadcrumb {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 3px;
+	margin-bottom: 8px;
+	padding-bottom: 8px;
+	border-bottom: 1px solid var(--ui-border);
+}
+.outline-breadcrumb button {
+	padding: 2px 4px;
+	font-size: var(--text-sm);
+	max-width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+.outline-breadcrumb button + button::before {
+	content: '› ';
+	color: var(--ui-fg-muted);
 }
 /* Shared vertical stroke for both a continuing ancestor lane (.v) and a node's own elbow. */
 .outline .lane.v::before,

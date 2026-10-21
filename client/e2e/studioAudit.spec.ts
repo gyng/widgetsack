@@ -16,10 +16,9 @@ test('outline guides connect between rows and widget previews have balanced inse
 		expect(Math.abs(guide!.y - row!.y)).toBeLessThanOrEqual(1);
 		expect(Math.abs(guide!.y + guide!.height - row!.y - row!.height)).toBeLessThanOrEqual(1);
 	}
-	if (!(await page.locator('.inspector .add-panel[open]').count())) {
-		await page.locator('.inspector .add-panel > summary').click();
-	}
-	const palette = page.locator('.inspector .palette button:has(> .widget-icon)');
+	await page.getByRole('tab', { name: 'Add', exact: true }).click();
+	await expect(page.locator('.inspector .add-panel')).toHaveAttribute('open', '');
+	const palette = page.locator('.inspector .palette button:has(.catalog-item-name)');
 	expect(await palette.count()).toBeGreaterThan(30);
 	await palette.first().hover();
 	const tooltip = page.getByRole('tooltip');

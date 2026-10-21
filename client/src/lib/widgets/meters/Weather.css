@@ -1,13 +1,15 @@
 /* Weather — condition icon + temperature + label, optional high/low and a detail line. Themeable via
-   --np-* tokens; --wx-* overrides. Sizes em-relative so it scales with the widget box. */
+   --np-* tokens; --wx-* overrides. Text and spacing follow density. */
 .weather {
+	font-size: var(--np-text-body, 14px);
+	line-height: var(--np-line-body, 20px);
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
 	width: 100%;
 	height: 100%;
 	box-sizing: border-box;
-	gap: var(--wx-gap, 4px);
+	gap: var(--wx-gap, var(--np-gap, 4px));
 	overflow: hidden;
 	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
 	color: var(--np-fg, rgb(255, 255, 255));
@@ -16,14 +18,14 @@
 /* No reading yet ("Set your location in Plugins → Weather" / loading / error): a quiet wrapping
    note in place of the icon + temperature block. */
 .wx-empty {
-	font-size: var(--wx-cond-size, 0.72em);
-	line-height: 1.3;
+	font-size: var(--wx-cond-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	color: var(--np-label, rgba(255, 255, 255, 0.65));
 }
 .wx-main {
 	display: flex;
 	align-items: center;
-	gap: var(--wx-gap, 10px);
+	gap: var(--wx-gap, calc(var(--np-gap, 4px) * 2));
 	min-width: 0;
 }
 .wx-icon {
@@ -42,7 +44,8 @@
 	font-weight: 700;
 }
 .wx-cond {
-	font-size: var(--wx-cond-size, 0.72em);
+	font-size: var(--wx-cond-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	color: var(--np-label, rgba(255, 255, 255, 0.65));
 	white-space: nowrap;
 	overflow: hidden;
@@ -51,8 +54,9 @@
 
 .wx-hilo {
 	display: flex;
-	gap: 12px;
-	font-size: var(--wx-hilo-size, 0.78em);
+	gap: calc(var(--np-gap, 4px) * 2);
+	font-size: var(--wx-hilo-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 }
 .wx-hi {
 	color: var(--wx-accent, var(--np-accent, rgb(119, 196, 211)));
@@ -64,15 +68,16 @@
 .wx-detail {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 4px 12px;
-	font-size: var(--wx-detail-size, 0.7em);
+	gap: var(--np-gap, 4px) calc(var(--np-gap, 4px) * 2);
+	font-size: var(--wx-detail-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	color: var(--np-label, rgba(255, 255, 255, 0.55));
 }
 
 /* Multi-day forecast strip: one equal column per day (label / icon / hi·lo). */
 .wx-forecast {
 	display: flex;
-	gap: var(--wx-forecast-gap, 4px);
+	gap: var(--wx-forecast-gap, var(--np-gap, 4px));
 	margin-top: 2px;
 	min-width: 0;
 }
@@ -82,11 +87,12 @@
 	display: flex;
 	flex-direction: column;
 	align-items: center;
-	gap: 1px;
+	gap: var(--np-gap, 4px);
 	text-align: center;
 }
 .wx-day-label {
-	font-size: var(--wx-day-label-size, 0.62em);
+	font-size: var(--wx-day-label-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	text-transform: uppercase;
 	letter-spacing: 0.03em;
 	color: var(--np-label, rgba(255, 255, 255, 0.55));
@@ -97,8 +103,11 @@
 }
 .wx-day-hilo {
 	display: flex;
-	gap: 4px;
-	font-size: var(--wx-day-hilo-size, 0.64em);
+	flex-wrap: wrap;
+	justify-content: center;
+	gap: var(--np-gap, 4px);
+	font-size: var(--wx-day-hilo-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	font-variant-numeric: tabular-nums;
 }
 .wx-day-hi {

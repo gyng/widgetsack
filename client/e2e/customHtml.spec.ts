@@ -25,7 +25,9 @@ test('custom HTML executes in isolation, receives selected sensors/theme/size an
 		(element as HTMLElement).style.setProperty('--np-fg', 'rgb(1, 2, 3)');
 	});
 	await expect(frame.locator('#result')).toContainText('"foreground":"rgb(1, 2, 3)"');
+	await page.locator('.inspector').getByRole('tab', { name: 'Layout', exact: true }).click();
 	await page.getByRole('spinbutton', { name: 'w', exact: true }).fill('400');
+	await page.locator('.inspector').getByRole('tab', { name: 'Content', exact: true }).click();
 	await expect(frame.locator('#result')).toContainText('"width":400');
 	await page.getByRole('textbox', { name: 'Sensor IDs', exact: true }).fill('mem.used');
 	await expect(frame.locator('#result')).toContainText('"sensors":["mem.used"]');

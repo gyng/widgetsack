@@ -121,7 +121,7 @@ export function useLayoutSession({
 	// While the "Layout changed on disk" banner is up, edits stay in memory: a preview write would
 	// overwrite the external change before the user chose Reload or Keep mine.
 	const holdPreview = useRef(false);
-	const unsavedWarned = useRef(false);
+	const [layoutReadFailed, setLayoutReadFailed] = useState(false);
 	useEffect(() => {
 		if (firstSave.current) {
 			firstSave.current = false;
@@ -130,17 +130,7 @@ export function useLayoutSession({
 		if (holdPreview.current) return;
 		// No layout has loaded yet (the initial load failed): the editor still holds the seed tree,
 		// and writing it would replace this monitor and drop the file's library/theme/tokens.
-		if (!stateRef.current.savedBaseline) {
-			// The studio says so when the load retries give up; an overlay in edit mode says so on
-			// its first held edit.
-			if (!studio && !unsavedWarned.current) {
-				unsavedWarned.current = true;
-				window.alert(
-					'Could not read the saved layout (widgets.json), so edits here are not being saved.'
-				);
-			}
-			return;
-		}
+		if (!stateRef.current.savedBaseline) return;
 		schedulePreviewWrite();
 	}, [saveSeq, schedulePreviewWrite, studio]);
 
@@ -215,10 +205,12 @@ export function useLayoutSession({
 		} catch (err) {
 			if (!isCurrent()) return true; // superseded by a newer load, not this load's failure
 			logClient('error', 'layout', `load_layout failed; keeping the current edits: ${String(err)}`);
+			setLayoutReadFailed(true);
 			return false;
 		}
 		// historyReady=false during the load + interim awaits; clear pendingExtras; reset history;
 		// set baseline — all folded into one dispatch so the loaded layout is the committed baseline.
+		setLayoutReadFailed(false);
 		dispatch({ type: 'load', patch: { ...patch, historyReady: false, pendingExtras: [] } });
 		// Write the loaded monitor into the ref synchronously so syncPrimaryOverlays (called right after
 		// reloadLayout during init, before React commits the dispatch) decides primary-window
@@ -518,7 +510,27 @@ export function useLayoutSession({
 		reloadExternalRef.current = reloadExternal;
 		switchUiRef.current = onMonitorSwitch;
 	});
+	const retryLayout = useCallback(async () => {
+		const current = stateRef.current;
+		// A recovery probe must never replace a loaded layout or discard a draft on the seed layout.
+		if (current.savedBaseline || current.saveSeq > 0) {
+			try {
+				const raw = await invoke<string | null>(COMMANDS.loadLayout);
+				if (decodeLayoutDocument(raw).kind === 'corrupt') return false;
+				if (current.savedBaseline) {
+					setLayoutReadFailed(false);
+					return true;
+				}
+			} catch {
+				return false;
+			}
+			return false;
+		}
+		return reloadLayout();
+	}, [reloadLayout]);
 	return {
+		layoutReadFailed,
+		retryLayout,
 		dismissLayoutBackup: () => setLayoutBackup(null),
 		dirty,
 		overlayDirty,

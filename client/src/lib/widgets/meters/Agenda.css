@@ -1,8 +1,10 @@
 /* Day headings and a quiet timeline keep dense calendars easy to scan. */
 .agenda {
+	font-size: var(--np-text-body, 14px);
+	line-height: var(--np-line-body, 20px);
 	display: flex;
 	flex-direction: column;
-	gap: var(--ag-gap, 10px);
+	gap: var(--ag-gap, calc(var(--np-gap, 4px) * 2));
 	width: 100%;
 	height: 100%;
 	min-width: 0;
@@ -28,7 +30,7 @@
 	padding: 0 3px 0 0;
 	display: flex;
 	flex-direction: column;
-	gap: var(--ag-row-gap, 8px);
+	gap: var(--ag-row-gap, calc(var(--np-gap, 4px) * 2));
 	min-height: 0;
 	overflow: auto;
 	scrollbar-width: thin;
@@ -57,8 +59,8 @@
 	display: grid;
 	grid-template-columns: var(--ag-when-w, 3.8em) minmax(0, 1fr);
 	align-items: start;
-	column-gap: 10px;
-	row-gap: 2px;
+	column-gap: calc(var(--np-gap, 4px) * 2);
+	row-gap: var(--np-gap, 4px);
 	border-left: 2px solid var(--ag-accent, var(--np-accent, rgb(119, 196, 211)));
 	padding-left: 8px;
 }
@@ -94,11 +96,13 @@
 .ag-empty {
 	padding: 12px 0;
 	color: var(--np-label, rgba(255, 255, 255, 0.6));
-	font-size: 0.86em;
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
 }
 .ag-more {
 	flex: 0 0 auto;
-	font-size: 0.72em;
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
 	color: var(--np-label, rgba(255, 255, 255, 0.6));
 }
 

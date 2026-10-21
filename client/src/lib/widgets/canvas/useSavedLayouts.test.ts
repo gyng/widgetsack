@@ -121,7 +121,7 @@ describe('saveCurrentLayout', () => {
 		expect(saveLayoutAs).not.toHaveBeenCalled();
 		expect(result.current.status).toEqual({
 			kind: 'error',
-			message: 'Enter a name for the preset.'
+			message: 'Enter a name for the saved layout.'
 		});
 	});
 
@@ -142,7 +142,7 @@ describe('saveCurrentLayout', () => {
 		await waitFor(() => expect(result.current.layoutNames).toEqual(['Gaming']));
 		expect(result.current.status).toEqual({
 			kind: 'ok',
-			message: 'Saved preset Gaming · 1 preset'
+			message: 'Saved layout Gaming · 1 layout'
 		});
 	});
 
@@ -175,7 +175,7 @@ describe('saveCurrentLayout', () => {
 		await act(async () => {
 			await result.current.saveCurrentLayout('Home');
 		});
-		expect(confirm).toHaveBeenCalledWith('Overwrite the preset “Home”?');
+		expect(confirm).toHaveBeenCalledWith('Overwrite the saved layout “Home”?');
 		expect(saveLayoutAs).not.toHaveBeenCalled();
 	});
 
@@ -187,7 +187,7 @@ describe('saveCurrentLayout', () => {
 			await result.current.saveCurrentLayout('Home');
 		});
 		expect(saveLayoutAs).toHaveBeenCalledWith('Home', expect.any(String), true);
-		expect(result.current.status).toEqual({ kind: 'ok', message: 'Saved preset Home · 2 presets' });
+		expect(result.current.status).toEqual({ kind: 'ok', message: 'Saved layout Home · 2 layouts' });
 	});
 
 	it('reports a rejected save (saveLayoutAs returned null) in the status', async () => {
@@ -224,7 +224,7 @@ describe('loadSavedLayout', () => {
 		});
 		expect(result.current.status).toEqual({
 			kind: 'error',
-			message: 'Could not read the preset “Home”.'
+			message: 'Could not read the saved layout “Home”.'
 		});
 		expect(commitOp).not.toHaveBeenCalled();
 	});
@@ -310,7 +310,7 @@ describe('loadSavedLayout', () => {
 			await result.current.loadSavedLayout('Home');
 		});
 		expect(confirm.mock.calls[0][0]).toMatch(
-			/Replace this monitor’s layout with the preset “Home”/
+			/Replace this monitor’s layout with the saved layout “Home”/
 		);
 		expect(commitOp).not.toHaveBeenCalled();
 	});
@@ -331,7 +331,7 @@ describe('loadSavedLayout', () => {
 		expect(patch.selectedIds).toEqual([]);
 		expect(result.current.status).toEqual({
 			kind: 'ok',
-			message: 'Loaded preset Home — Ctrl+Z restores the previous layout.'
+			message: 'Loaded layout Home — Ctrl+Z restores the previous layout.'
 		});
 	});
 });
@@ -343,11 +343,11 @@ describe('deleteSavedLayout', () => {
 		await act(async () => {
 			await result.current.deleteSavedLayout('Home');
 		});
-		expect(confirm).toHaveBeenCalledWith('Delete the preset “Home”?');
+		expect(confirm).toHaveBeenCalledWith('Delete the saved layout “Home”?');
 		expect(deleteLayout).not.toHaveBeenCalled();
 	});
 
-	it('reports a failed removal without claiming that the preset was deleted', async () => {
+	it('reports a failed removal without claiming that the saved layout was deleted', async () => {
 		vi.spyOn(window, 'confirm').mockReturnValue(true);
 		deleteLayout.mockResolvedValue(false);
 		const { result } = setup({ navSection: 'settings' });
@@ -369,13 +369,13 @@ describe('deleteSavedLayout', () => {
 		await waitFor(() => expect(result.current.layoutNames).toEqual(['Work']));
 		expect(result.current.status).toEqual({
 			kind: 'ok',
-			message: 'Deleted preset Home · 1 preset'
+			message: 'Deleted layout Home · 1 layout'
 		});
 		// The last one gone → the plural form.
 		listLayouts.mockResolvedValue([]);
 		await act(async () => {
 			await result.current.deleteSavedLayout('Work');
 		});
-		expect(result.current.status?.message).toBe('Deleted preset Work · 0 presets');
+		expect(result.current.status?.message).toBe('Deleted layout Work · 0 layouts');
 	});
 });

@@ -1,0 +1,275 @@
+.canvas .designer-list {
+	border-right-color: var(--ui-border);
+}
+.canvas .designer-list .dl-tools {
+	position: sticky;
+	top: calc(-1 * var(--space-4));
+	z-index: 3;
+	display: grid;
+	gap: var(--space-3);
+	padding-block: var(--space-3);
+	margin-bottom: var(--space-3);
+	background: var(--ui-bg);
+	border-bottom: 1px solid var(--ui-border);
+}
+.canvas .designer-list .dl-toolbar {
+	display: flex;
+	gap: var(--space-2);
+}
+.canvas .designer-list .dl-toolbar button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	min-height: var(--control-h);
+	margin: 0;
+	font-size: var(--text-md);
+	border-radius: var(--radius-control);
+}
+.canvas .designer-list .dl-toolbar .dl-new {
+	flex: 1;
+	min-width: 0;
+	width: auto;
+	white-space: nowrap;
+	padding-inline: var(--space-2);
+}
+.canvas .designer-list .dl-ref {
+	flex: none;
+	width: var(--control-h);
+	padding: var(--space-2);
+}
+.canvas .designer-list .dl-tools input {
+	min-width: 0;
+	width: 100%;
+	box-sizing: border-box;
+	font: inherit;
+	color: var(--ui-fg);
+	background: var(--ui-raised);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+	padding: var(--space-3);
+}
+.canvas .designer-list .dl-editing {
+	display: grid;
+	gap: var(--space-2);
+	margin: 0;
+}
+.canvas .designer-list .dl-editing .rp-sub {
+	color: var(--ui-fg-muted);
+	font-size: var(--text-sm);
+}
+.canvas .designer-list .dl-items {
+	gap: var(--space-2);
+}
+.canvas .designer-list .dl-item {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	gap: var(--space-1);
+	padding: 0;
+	border: 0;
+	border-radius: var(--radius-control);
+}
+.canvas .designer-list .dl-label,
+.canvas .designer-list .dl-name-input {
+	grid-column: 1 / -1;
+}
+.canvas .designer-list .dl-label {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	white-space: normal;
+	overflow-wrap: anywhere;
+	min-height: 36px;
+	line-height: var(--line-caption);
+	padding: var(--space-3);
+	border: 1px solid transparent;
+}
+.canvas .designer-list .dl-label:hover {
+	background: rgba(var(--ui-accent-rgb), 0.1);
+	border-color: rgba(var(--ui-accent-rgb), 0.3);
+}
+.canvas .designer-list .dl-label svg {
+	flex: none;
+	color: var(--ui-fg-muted);
+}
+.canvas .designer-list .dl-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	justify-self: end;
+	gap: var(--space-2);
+	min-height: 28px;
+	min-width: 28px;
+	padding: var(--space-2);
+	font-size: var(--text-sm);
+	opacity: 1;
+}
+.canvas .designer-list .dl-use {
+	color: var(--ui-accent-fg);
+}
+.canvas .designer-list .dl-item:has(.dl-use) {
+	display: flex;
+}
+.canvas .designer-list .dl-item:has(.dl-use) .dl-label {
+	flex: 1;
+}
+.canvas :is(.designer-list .dl-new, .designer-empty .dl-create) {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-height: var(--control-h);
+	padding: var(--space-3);
+	border: 1px solid rgba(var(--ui-accent-rgb), 0.6);
+	border-radius: var(--radius-control);
+	background: rgba(var(--ui-accent-rgb), 0.16);
+	color: var(--ui-accent-fg);
+	font-family: var(--ui-font);
+	font-size: var(--text-md);
+	cursor: pointer;
+}
+.canvas .designer-empty .dl-create:hover {
+	border-color: rgb(var(--ui-accent-rgb));
+}
+.canvas .designer-empty .dl-create:focus-visible {
+	outline: 2px solid var(--ui-accent-fg);
+	outline-offset: 2px;
+}
+.canvas .designer-list :is(button, input, summary):focus-visible {
+	outline: 2px solid var(--ui-accent-fg);
+	outline-offset: 2px;
+}
+.canvas .designer-empty .de-title {
+	text-transform: none;
+	letter-spacing: normal;
+	font-size: var(--text-xl);
+	font-weight: 600;
+}
+.canvas .designer-empty .de-hint {
+	max-width: 420px;
+	line-height: var(--line-body);
+}
+.canvas .designer-empty .de-footnote {
+	margin: 0;
+	font-size: var(--text-sm);
+	color: var(--ui-fg-muted);
+}
+
+.canvas .designer-list .dl-view-row {
+	display: flex;
+	justify-content: flex-end;
+	min-width: 0;
+}
+.canvas .designer-list .preview-tiles .dl-items {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+}
+.canvas .designer-list .preview-tiles .dl-item {
+	display: grid;
+	align-items: stretch;
+	border: 1px solid var(--ui-border);
+	overflow: hidden;
+	background: var(--ui-surface);
+}
+.canvas .designer-list .preview-tiles .catalog-preview {
+	grid-column: 1 / -1;
+	width: 100%;
+}
+.canvas .designer-list .preview-tiles .dl-label {
+	min-height: 44px;
+}
+.canvas .designer-list .preview-tiles .dl-use {
+	grid-column: 1 / -1;
+	justify-self: stretch;
+}
+
+.canvas .designer-list {
+	container-type: inline-size;
+}
+.canvas .designer-list .dl-tools {
+	min-width: 0;
+}
+@container (max-width: 180px) {
+	.canvas .designer-list .catalog-view-text {
+		display: none;
+	}
+	.canvas .designer-list .dl-toolbar {
+		flex-wrap: wrap;
+	}
+	.canvas .designer-list .dl-toolbar .dl-new {
+		white-space: normal;
+	}
+}
+
+/* List mode keeps the name and its actions on one compact line. */
+.canvas .designer-list .palette-section:not(.preview-tiles) .dl-item {
+	display: flex;
+}
+.canvas .designer-list .palette-section:not(.preview-tiles) .dl-label {
+	flex: 1;
+	min-height: 32px;
+	padding: var(--space-2);
+	gap: var(--space-2);
+}
+.canvas .designer-list .palette-section:not(.preview-tiles) .catalog-item-name {
+	gap: var(--space-2);
+}
+.canvas .designer-list .palette-section:not(.preview-tiles) .catalog-item-name > span {
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+.canvas .designer-list .palette-section:not(.preview-tiles) .dl-icon {
+	flex: none;
+	min-width: 24px;
+	min-height: 24px;
+	padding: var(--space-1);
+}
+.canvas .designer-list .palette-section:not(.preview-tiles) .dl-name-input {
+	flex: 1;
+	min-width: 0;
+	width: 0;
+}
+
+/* Saved rows reveal their tools on hover/focus, keeping the full name readable at rest. */
+.canvas .designer-list .palette-section:not(.preview-tiles) .dl-item:not(:has(.dl-use)) {
+	position: relative;
+}
+.canvas .designer-list .palette-section:not(.preview-tiles) .dl-item:not(:has(.dl-use)) .dl-icon {
+	position: absolute;
+	top: 50%;
+	right: var(--space-1);
+	transform: translateY(-50%);
+	width: 24px;
+	opacity: 0;
+	pointer-events: none;
+}
+.canvas
+	.designer-list
+	.palette-section:not(.preview-tiles)
+	.dl-item:not(:has(.dl-use))
+	.dl-icon:nth-last-child(2) {
+	right: 28px;
+}
+.canvas
+	.designer-list
+	.palette-section:not(.preview-tiles)
+	.dl-item:not(:has(.dl-use))
+	.dl-icon:nth-last-child(3) {
+	right: 54px;
+}
+.canvas
+	.designer-list
+	.palette-section:not(.preview-tiles)
+	.dl-item:not(:has(.dl-use)):is(:hover, :focus-within)
+	.dl-icon {
+	opacity: 1;
+	pointer-events: auto;
+}
+.canvas
+	.designer-list
+	.palette-section:not(.preview-tiles)
+	.dl-item:not(:has(.dl-use)):is(:hover, :focus-within)
+	.dl-label {
+	padding-right: 80px;
+}

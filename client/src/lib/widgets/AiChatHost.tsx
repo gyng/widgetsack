@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { useLlmChat } from '../llm/useLlmChat';
 import AiChat from './meters/AiChat';
-export default function AiChatHost({ label = 'AI Assistant' }: { label?: string }) {
+export default function AiChatHost({ label = 'AI Chat' }: { label?: string }) {
 	const { chat, send, cancel, reset } = useLlmChat();
 	const [input, setInput] = useState('');
 	const active = chat.turns.filter((t) => t.streaming);

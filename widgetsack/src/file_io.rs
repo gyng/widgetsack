@@ -111,7 +111,7 @@ const REPLACE_RETRY_DELAYS_MS: [u64; 4] = [10, 20, 40, 80];
 /// The last error is returned once the delays run out or the error is not transient. Pure apart
 /// from the injected `sleep` (tested).
 #[cfg_attr(not(windows), allow(dead_code))]
-fn with_retries<T, E>(
+pub(crate) fn with_retries<T, E>(
     delays: &[u64],
     mut op: impl FnMut() -> Result<T, E>,
     is_transient: impl Fn(&E) -> bool,

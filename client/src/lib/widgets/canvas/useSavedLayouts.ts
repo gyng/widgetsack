@@ -25,7 +25,7 @@ export type PresetStatus = { kind: 'ok' | 'error'; message: string } | null;
 export type SavedLayouts = {
 	/** The saved presets (names), loaded when the Presets section is open. */
 	layoutNames: string[];
-	/** The last save/load/delete outcome ("Saved preset X · N presets", or why it failed). */
+	/** The last save/load/delete outcome ("Saved layout X · N presets", or why it failed). */
 	status: PresetStatus;
 	/** Save this monitor's arrangement under `name` (from the panel's inline field). */
 	saveCurrentLayout: (name: string) => Promise<void>;
@@ -52,7 +52,7 @@ export function useSavedLayouts({
 		[editingDefId]
 	);
 
-	// Load the preset names when the Presets section opens.
+	// Load the saved layout names when the Presets section opens.
 	useEffect(() => {
 		if (studio && navSection === 'saved-layouts') listLayouts().then(setLayoutNames);
 	}, [studio, navSection]);
@@ -61,12 +61,12 @@ export function useSavedLayouts({
 		async (rawName: string) => {
 			if (editingDefId != null) {
 				// Mid def-edit `monitor` is the def scratch, not the real layout — finish first (like sacks).
-				setStatus({ kind: 'error', message: `${FINISH_EDITING}saving a preset.` });
+				setStatus({ kind: 'error', message: `${FINISH_EDITING}saving a layout.` });
 				return;
 			}
 			const name = rawName.trim();
 			if (!name) {
-				setStatus({ kind: 'error', message: 'Enter a name for the preset.' });
+				setStatus({ kind: 'error', message: 'Enter a name for the saved layout.' });
 				return;
 			}
 			const json = JSON.stringify(packLayout(monitorRef.current, name), null, '\t');
@@ -74,11 +74,11 @@ export function useSavedLayouts({
 			try {
 				existing = await listLayouts(true);
 			} catch (error) {
-				setStatus({ kind: 'error', message: `Could not check existing presets: ${String(error)}` });
+				setStatus({ kind: 'error', message: `Could not check saved layouts: ${String(error)}` });
 				return;
 			}
 			const exists = existing.some((saved) => saved.toLowerCase() === name.toLowerCase());
-			if (exists && !window.confirm(`Overwrite the preset “${name}”?`)) return;
+			if (exists && !window.confirm(`Overwrite the saved layout “${name}”?`)) return;
 			const path = await saveLayoutAs(name, json, exists);
 			const names = await listLayouts();
 			setLayoutNames(names);
@@ -86,13 +86,13 @@ export function useSavedLayouts({
 				setStatus({
 					kind: 'error',
 					message:
-						'Could not save the preset. Check the name and folder permissions, then try again.'
+						'Could not save the layout. Check the name and folder permissions, then try again.'
 				});
 				return;
 			}
 			setStatus({
 				kind: 'ok',
-				message: `Saved preset ${name} · ${names.length} preset${names.length === 1 ? '' : 's'}`
+				message: `Saved layout ${name} · ${names.length} layout${names.length === 1 ? '' : 's'}`
 			});
 		},
 		[editingDefId, monitorRef]
@@ -101,7 +101,7 @@ export function useSavedLayouts({
 	const loadSavedLayout = useCallback(
 		async (name: string) => {
 			if (editingDefId != null) {
-				setStatus({ kind: 'error', message: `${FINISH_EDITING}loading a preset.` });
+				setStatus({ kind: 'error', message: `${FINISH_EDITING}loading a layout.` });
 				return;
 			}
 			const revision = ++loadRevision.current;
@@ -112,18 +112,18 @@ export function useSavedLayouts({
 				setStatus({
 					kind: 'error',
 					message:
-						'The layout changed while the preset was loading. Load it again to replace the current layout.'
+						'The layout changed while the saved layout was loading. Load it again to replace the current layout.'
 				});
 				return;
 			}
 			const mon = raw ? unpackLayout(raw) : null;
 			if (!mon) {
-				setStatus({ kind: 'error', message: `Could not read the preset “${name}”.` });
+				setStatus({ kind: 'error', message: `Could not read the saved layout “${name}”.` });
 				return;
 			}
 			if (
 				!window.confirm(
-					`Replace this monitor’s layout with the preset “${name}”? (Ctrl+Z restores it.)`
+					`Replace this monitor’s layout with the saved layout “${name}”? (Ctrl+Z restores it.)`
 				)
 			) {
 				return;
@@ -133,23 +133,23 @@ export function useSavedLayouts({
 			commitOp(() => ({ monitor: mon, selectedId: null, selectedIds: [] }));
 			setStatus({
 				kind: 'ok',
-				message: `Loaded preset ${name} — Ctrl+Z restores the previous layout.`
+				message: `Loaded layout ${name} — Ctrl+Z restores the previous layout.`
 			});
 		},
 		[editingDefId, monitorRef, commitOp]
 	);
 
 	const deleteSavedLayout = useCallback(async (name: string) => {
-		if (!window.confirm(`Delete the preset “${name}”?`)) return;
+		if (!window.confirm(`Delete the saved layout “${name}”?`)) return;
 		if (!(await deleteLayout(name))) {
-			setStatus({ kind: 'error', message: `Could not delete the preset “${name}”.` });
+			setStatus({ kind: 'error', message: `Could not delete the saved layout “${name}”.` });
 			return;
 		}
 		const names = await listLayouts();
 		setLayoutNames(names);
 		setStatus({
 			kind: 'ok',
-			message: `Deleted preset ${name} · ${names.length} preset${names.length === 1 ? '' : 's'}`
+			message: `Deleted layout ${name} · ${names.length} layout${names.length === 1 ? '' : 's'}`
 		});
 	}, []);
 

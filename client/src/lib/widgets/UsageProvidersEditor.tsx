@@ -116,77 +116,83 @@ export default function UsageProvidersEditor({
 							Remove
 						</button>
 					</div>
-					<label>
-						Label
-						<input value={p.label} onChange={(e) => edit(i, { label: e.target.value })} />
-					</label>
-					<label>
-						Icon
-						<select
-							aria-label="Icon"
-							value={p.icon}
-							onChange={(e) => edit(i, { icon: e.target.value as ProviderIconChoice })}
-						>
-							<option value="auto">Automatic</option>
-							<option value="none">No icon</option>
-							{Object.entries(providerIcons).map(([id, label]) => (
-								<option key={id} value={id}>
-									{label}
-								</option>
-							))}
-						</select>
-					</label>
-					<label>
-						Source
-						<select
-							value={p.source}
-							onChange={(e) => edit(i, { source: e.target.value as UsageSource })}
-						>
-							{['codex', 'claude', 'openrouter', 'omp', 'command'].map((s) => (
-								<option key={s}>{s}</option>
-							))}
-						</select>
-					</label>
-					<label>
-						Layout
-						<select
-							value={p.compact}
-							onChange={(e) => edit(i, { compact: e.target.value as UsageProvider['compact'] })}
-						>
-							{['inherit', 'compact', 'detailed'].map((s) => (
-								<option key={s}>{s}</option>
-							))}
-						</select>
-					</label>
-					{p.source === 'openrouter' && (
+					<details
+						className="usage-connection"
+						open={p.source === 'command' || p.source === 'openrouter' || p.source === 'omp'}
+					>
+						<summary>Connection &amp; identity</summary>
 						<label>
-							API key environment variable
-							<input value={p.env} onChange={(e) => edit(i, { env: e.target.value })} />
+							Label
+							<input value={p.label} onChange={(e) => edit(i, { label: e.target.value })} />
 						</label>
-					)}
-					{p.source === 'omp' && (
 						<label>
-							OMP provider id (blank = all)
-							<input value={p.account} onChange={(e) => edit(i, { account: e.target.value })} />
+							Icon
+							<select
+								aria-label="Icon"
+								value={p.icon}
+								onChange={(e) => edit(i, { icon: e.target.value as ProviderIconChoice })}
+							>
+								<option value="auto">Automatic</option>
+								<option value="none">No icon</option>
+								{Object.entries(providerIcons).map(([id, label]) => (
+									<option key={id} value={id}>
+										{label}
+									</option>
+								))}
+							</select>
 						</label>
-					)}
-					<label>
-						PowerShell command override
-						<textarea
-							aria-label={`${p.label} usage command`}
-							value={p.command}
-							placeholder={
-								p.source === 'command'
-									? 'Print version 1 usage JSON to stdout'
-									: 'Blank uses the built-in reader'
-							}
-							onChange={(e) => edit(i, { command: e.target.value })}
-						/>
-					</label>
-					<small>
-						Commands run only after Test / activate on this computer. Use environment variables for
-						secrets.
-					</small>
+						<label>
+							Source
+							<select
+								value={p.source}
+								onChange={(e) => edit(i, { source: e.target.value as UsageSource })}
+							>
+								{['codex', 'claude', 'openrouter', 'omp', 'command'].map((s) => (
+									<option key={s}>{s}</option>
+								))}
+							</select>
+						</label>
+						<label>
+							Layout
+							<select
+								value={p.compact}
+								onChange={(e) => edit(i, { compact: e.target.value as UsageProvider['compact'] })}
+							>
+								{['inherit', 'compact', 'detailed'].map((s) => (
+									<option key={s}>{s}</option>
+								))}
+							</select>
+						</label>
+						{p.source === 'openrouter' && (
+							<label>
+								API key environment variable
+								<input value={p.env} onChange={(e) => edit(i, { env: e.target.value })} />
+							</label>
+						)}
+						{p.source === 'omp' && (
+							<label>
+								OMP provider id (blank = all)
+								<input value={p.account} onChange={(e) => edit(i, { account: e.target.value })} />
+							</label>
+						)}
+						<label>
+							PowerShell command override
+							<textarea
+								aria-label={`${p.label} usage command`}
+								value={p.command}
+								placeholder={
+									p.source === 'command'
+										? 'Print version 1 usage JSON to stdout'
+										: 'Blank uses the built-in reader'
+								}
+								onChange={(e) => edit(i, { command: e.target.value })}
+							/>
+						</label>
+						<small>
+							Commands run only after Test / activate on this computer. Use environment variables
+							for secrets.
+						</small>{' '}
+					</details>
 
 					<ol className="usage-reading-order" aria-label={`${p.label} reading order`}>
 						{p.order.map((key) => {

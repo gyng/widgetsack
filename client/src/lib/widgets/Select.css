@@ -132,3 +132,23 @@
 	padding: var(--space-1) var(--space-3);
 	color: var(--ui-fg-dim);
 }
+
+.np-select-menu {
+	overflow-x: hidden;
+}
+.np-select-opt-label {
+	min-width: 0;
+}
+.np-select-menu.wrap-options .np-select-opt-label {
+	white-space: normal;
+	overflow-wrap: anywhere;
+	line-height: var(--line-body);
+}
+.np-select-menu.wrap-options .np-select-option {
+	align-items: flex-start;
+}
+.np-select-menu.wrap-options .np-select-opt-hint {
+	max-width: 45%;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}

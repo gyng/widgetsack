@@ -1,3 +1,5 @@
+import InspectorViewTabs from './InspectorViewTabs';
+import McpSettingsPanel from './McpSettingsPanel';
 import { useEffect, useRef, useState } from 'react';
 import {
 	createStudioAgentSession,
@@ -15,14 +17,15 @@ import Select from './Select';
 import './StudioAssistantSidebar.css';
 
 type Props = {
+	hidden?: boolean;
 	read(): StudioSnapshot;
 	apply(ops: StudioOp[], expected: StudioSnapshot): StudioApplyResult;
 	verify?(
 		expected: StudioSnapshot
 	): Promise<import('../core/studioVerification').StudioVerification>;
-	onClose(): void;
 };
 export default function StudioAssistantSidebar(props: Props) {
+	const [mode, setMode] = useState('Your agent');
 	const latest = useRef(props);
 	useEffect(() => {
 		latest.current = props;
@@ -93,160 +96,176 @@ export default function StudioAssistantSidebar(props: Props) {
 		setInput('');
 	};
 	return (
-		<aside className="studio-assistant" aria-label="Studio AI assistant">
-			<header>
-				<strong>Studio assistant</strong>
-				<button type="button" aria-label="Close assistant" onClick={props.onClose}>
-					×
-				</button>
-			</header>
-			<div className="assistant-options">
-				<label>
-					Agent
-					<select
-						aria-label="Agent backend"
-						value={backend}
-						disabled={state.busy || !status}
-						onChange={(event) => {
-							session.reset();
-							selectedBackend.current = event.target.value;
-							setBackend(event.target.value);
-							setModel('');
-						}}
-					>
-						<option value="" disabled>
-							Select an installed agent
-						</option>
-						{(status?.backends ?? []).map((agent) => (
-							<option key={agent.id} value={agent.id} disabled={!agent.available}>
-								{agent.label}
-								{agent.available ? '' : ' (not installed)'}
-							</option>
-						))}
-					</select>
-				</label>
-				<label>
-					Model (optional)
-					<Select
-						searchable
-						allowCustom
-						options={[
-							{ value: '', label: 'Installed agent default' },
-							...(status?.models?.[backend] ?? []).map((value) => ({ value, label: value }))
-						]}
-						aria-label="Agent model"
-						value={model}
-						placeholder="Installed agent default"
-						disabled={state.busy || !available}
-						onChange={setModel}
-					/>
-				</label>
-				<button
-					type="button"
-					disabled={state.busy}
-					onClick={() => setRefresh((value) => value + 1)}
-				>
-					Refresh agents
-				</button>
-			</div>
-			<p className="assistant-hint">
-				Ask the agent to add, arrange, or style widgets. Changes appear immediately. Select Save to
-				keep them. Use Undo to reverse them.
-			</p>
-			{!status && !statusError && <p role="status">Checking agents…</p>}
-			{statusError && <p role="alert">{statusError}</p>}
-			{status && !status.backends.some((agent) => agent.available) ? (
-				<p className="assistant-setup" role="status">
-					No installed agent found. Install and sign in with Pi, Codex, or Claude, then select
-					Refresh agents. Nothing is downloaded automatically.
-				</p>
-			) : (
-				status && (
-					<p className="assistant-hint">
-						The assistant uses your agent&apos;s login and settings. Leave Model blank to use the
-						agent default.
-					</p>
-				)
-			)}
+		<aside hidden={props.hidden} className="studio-assistant" aria-label="Studio AI assistant">
+			<InspectorViewTabs
+				palette
+				label="Assistant mode"
+				values={['Your agent', 'Built-in']}
+				active={mode}
+				onSelect={setMode}
+			/>
 			<div
-				className="assistant-transcript"
-				ref={transcript}
-				role="log"
-				aria-label="Assistant conversation"
-				aria-live="polite"
+				role="tabpanel"
+				aria-labelledby="inspector-tab-Your%20agent"
+				hidden={mode !== 'Your agent'}
 			>
-				{!state.messages.length && (
-					<div className="assistant-empty">
-						<strong>Make room for an idea.</strong>
-						<p>Describe the change you want, or start here.</p>
-						{['Add a clock', 'Arrange my widgets neatly'].map((prompt) => (
-							<button
-								key={prompt}
-								type="button"
-								disabled={!available}
-								onClick={() => {
-									setInput(prompt);
-									composer.current?.focus();
+				<McpSettingsPanel connectionOnly />
+			</div>
+			<div
+				className="assistant-built-in"
+				role="tabpanel"
+				aria-labelledby="inspector-tab-Built-in"
+				hidden={mode !== 'Built-in'}
+			>
+				<details className="assistant-intro" open>
+					<summary>Edit your layout in chat</summary>
+					<p className="assistant-hint">
+						Use an installed agent with its existing login. No separate API key is needed.
+					</p>
+					<div className="assistant-options">
+						<label>
+							Agent
+							<select
+								aria-label="Agent backend"
+								value={backend}
+								disabled={state.busy || !status}
+								onChange={(event) => {
+									session.reset();
+									selectedBackend.current = event.target.value;
+									setBackend(event.target.value);
+									setModel('');
 								}}
 							>
-								{prompt}
-							</button>
-						))}
+								<option value="" disabled>
+									Select an installed agent
+								</option>
+								{(status?.backends ?? []).map((agent) => (
+									<option key={agent.id} value={agent.id} disabled={!agent.available}>
+										{agent.label}
+										{agent.available ? '' : ' (not installed)'}
+									</option>
+								))}
+							</select>
+						</label>
+						<label>
+							Model
+							<Select
+								searchable
+								allowCustom
+								options={[
+									{ value: '', label: 'Installed agent default' },
+									...(status?.models?.[backend] ?? []).map((value) => ({ value, label: value }))
+								]}
+								aria-label="Agent model"
+								value={model}
+								placeholder="Installed agent default"
+								disabled={state.busy || !available}
+								onChange={setModel}
+							/>
+						</label>
+						<button
+							type="button"
+							disabled={state.busy}
+							onClick={() => setRefresh((value) => value + 1)}
+						>
+							Refresh agents
+						</button>
 					</div>
-				)}
-				{state.messages.map((message, i) => (
-					<article key={i} data-role={message.role}>
-						<strong>{message.role === 'user' ? 'You' : 'Assistant'}</strong>
-						<div>{message.text}</div>
-					</article>
-				))}
-				{state.actions.map((action, i) => (
-					<p className="assistant-action" key={i}>
-						{action}
+					<p className="assistant-hint">
+						Layout changes appear immediately. Use Undo to reverse them and Save to keep them.
+						Integration settings save immediately.
 					</p>
-				))}
-			</div>
-			{state.error && <p role="alert">{state.error}</p>}
-			{state.busy && (
-				<p className="assistant-hint" role="status">
-					{status?.backends.find((agent) => agent.id === backend)?.label} is working…
-				</p>
-			)}
-			<form
-				onSubmit={(event) => {
-					event.preventDefault();
-					submit();
-				}}
-			>
-				<textarea
-					ref={composer}
-					aria-label="Message to studio assistant"
-					value={input}
-					placeholder="Add a clock and a smooth CPU chart…"
-					disabled={state.busy}
-					onChange={(event) => setInput(event.target.value)}
-					onKeyDown={(event) => {
-						if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-							event.preventDefault();
-							submit();
-						}
-					}}
-				/>
-				<div className="assistant-actions">
-					{state.busy ? (
-						<button type="button" onClick={session.stop}>
-							Stop
-						</button>
-					) : (
-						<button type="submit" disabled={!input.trim() || !available}>
-							Send
-						</button>
+				</details>
+				{!status && !statusError && <p role="status">Checking agents…</p>}
+				{statusError && <p role="alert">{statusError}</p>}
+				{status && !status.backends.some((agent) => agent.available) ? (
+					<p className="assistant-setup" role="status">
+						No installed agent found. Install and sign in with Pi, Codex, or Claude, then select
+						Refresh agents. Nothing is downloaded automatically.
+					</p>
+				) : null}
+				<div
+					className="assistant-transcript"
+					ref={transcript}
+					role="log"
+					aria-label="Assistant conversation"
+					aria-live="polite"
+				>
+					{!state.messages.length && (
+						<div className="assistant-empty">
+							<strong>What would you like to change?</strong>
+							<p>Add a widget, tidy the layout, or try a different style.</p>
+							{['Add a clock', 'Arrange my widgets neatly'].map((prompt) => (
+								<button
+									key={prompt}
+									type="button"
+									disabled={!available}
+									onClick={() => {
+										setInput(prompt);
+										composer.current?.focus();
+									}}
+								>
+									{prompt}
+								</button>
+							))}
+						</div>
 					)}
-					<button type="button" onClick={session.reset}>
-						New chat
-					</button>
+					{state.messages.map((message, i) => (
+						<article key={i} data-role={message.role}>
+							<strong>{message.role === 'user' ? 'You' : 'Assistant'}</strong>
+							<div>{message.text}</div>
+						</article>
+					))}
+					{state.actions.map((action, i) => (
+						<p className="assistant-action" key={i}>
+							{action}
+						</p>
+					))}
 				</div>
-			</form>
+				{state.error && <p role="alert">{state.error}</p>}
+				<form
+					onSubmit={(event) => {
+						event.preventDefault();
+						submit();
+					}}
+				>
+					{state.busy && (
+						<p className="assistant-hint" role="status">
+							<span className="assistant-spinner" aria-hidden="true" />
+							{status?.backends.find((agent) => agent.id === backend)?.label} is working…
+						</p>
+					)}
+					<textarea
+						ref={composer}
+						aria-label="Message to studio assistant"
+						value={input}
+						placeholder="Describe a widget or layout change…"
+						disabled={state.busy}
+						onChange={(event) => setInput(event.target.value)}
+						onKeyDown={(event) => {
+							if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+								event.preventDefault();
+								submit();
+							}
+						}}
+					/>
+					<p className="assistant-hint">Enter to send · Shift+Enter for a new line</p>
+					<div className="assistant-actions">
+						{state.busy ? (
+							<button type="button" onClick={session.stop}>
+								Stop
+							</button>
+						) : (
+							<button type="submit" disabled={!input.trim() || !available}>
+								Send
+							</button>
+						)}
+						<button type="button" onClick={session.reset}>
+							New chat
+						</button>
+					</div>
+				</form>
+			</div>
 		</aside>
 	);
 }

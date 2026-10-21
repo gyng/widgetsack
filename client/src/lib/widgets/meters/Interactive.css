@@ -3,6 +3,8 @@
 :where(
 	.np-button,
 	.timer-btn,
+	.assistant-refresh,
+	.transcribe-mic,
 	.as-row,
 	.ms-row,
 	.vol-mute,

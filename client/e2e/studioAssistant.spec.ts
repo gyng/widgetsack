@@ -1,6 +1,30 @@
 import { test, expect } from '@playwright/test';
 import { gotoStudio, openSection, watchConsole } from './helpers';
 
+test('opening Assistant keeps Studio visible while its module loads', async ({ page }) => {
+	await gotoStudio(page);
+	let release!: () => void;
+	const gate = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+	await page.route('**/StudioAssistantSidebar.tsx*', async (route) => {
+		await gate;
+		await route.continue();
+	});
+	await page.getByRole('tab', { name: 'Assistant', exact: true }).click();
+	try {
+		await expect(page.getByText('Loading assistant…')).toBeVisible();
+		await expect(page.locator('.nav-rail')).toBeVisible();
+		await expect(page.locator('.studio-bar').first()).toBeVisible();
+		await expect(page.locator('.studio-subbar')).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Add', exact: true })).toBeVisible();
+	} finally {
+		release();
+	}
+	await expect(page.getByRole('tab', { name: 'Your agent', exact: true })).toBeVisible();
+	await expect(page.getByText('Loading assistant…')).toHaveCount(0);
+});
+
 test('assistant stays open across studio sections without replacing their content', async ({
 	page
 }) => {
@@ -8,9 +32,16 @@ test('assistant stays open across studio sections without replacing their conten
 	await page.setViewportSize({ width: 1024, height: 768 });
 	await gotoStudio(page);
 	await page.getByRole('button', { name: 'Studio AI assistant', exact: true }).click();
+	await page.getByRole('tab', { name: 'Built-in', exact: true }).click();
 	const sidebar = page.getByRole('complementary', { name: 'Studio AI assistant' });
-	await expect(page.locator('.inspector.docked')).toBeVisible();
+	await expect(page.locator('.inspector.docked')).not.toBeVisible();
 	await sidebar.getByLabel('Message to studio assistant').fill('My draft request');
+	const setup = sidebar.getByText('Edit your layout in chat', { exact: true });
+	await setup.click();
+	await expect(sidebar.getByLabel('Agent backend')).not.toBeVisible();
+	await expect(sidebar.getByLabel('Message to studio assistant')).toHaveValue('My draft request');
+	await setup.click();
+	await expect(sidebar.getByLabel('Agent backend')).toBeVisible();
 	for (const section of [
 		'sensors',
 		'plugins',
@@ -40,8 +71,8 @@ test('assistant stays open across studio sections without replacing their conten
 	await expect(page.locator('.set-help-list').first()).toBeVisible();
 	await page.screenshot({ path: 'test-results/studio-overlay-assistant.png' });
 	await openSection(page, 'layouts');
-	await expect(page.locator('.inspector.docked')).toBeVisible();
-	await sidebar.getByRole('button', { name: 'Close assistant' }).click();
+	await expect(page.locator('.inspector.docked')).not.toBeVisible();
+	await page.getByRole('tab', { name: 'Add', exact: true }).click();
 	await expect(page.locator('.canvas')).not.toHaveClass(/assistant-open/);
 	expect(log.errors).toEqual([]);
 	expect(log.mockWarns).toEqual([]);
@@ -78,6 +109,7 @@ test('native agent setup fits a compact studio and refresh discovers an installe
 				: invoke(command, args);
 	});
 	await page.getByRole('button', { name: 'Studio AI assistant', exact: true }).click();
+	await page.getByRole('tab', { name: 'Built-in', exact: true }).click();
 	const sidebar = page.getByRole('complementary', { name: 'Studio AI assistant' });
 	await expect(sidebar.getByText(/No installed agent found/)).toBeVisible();
 	await expect(sidebar.getByRole('button', { name: 'Send', exact: true })).toBeDisabled();
@@ -185,9 +217,10 @@ test('the docked assistant controls real editor state and each batch can be undo
 		};
 	});
 	await page.getByRole('button', { name: 'Studio AI assistant', exact: true }).click();
+	await page.getByRole('tab', { name: 'Built-in', exact: true }).click();
 	const sidebar = page.getByRole('complementary', { name: 'Studio AI assistant' });
 	await expect(sidebar).toBeVisible();
-	await expect(page.locator('.inspector.docked')).toBeVisible();
+	await expect(page.locator('.inspector.docked')).not.toBeVisible();
 	await expect(sidebar.getByLabel('Agent backend')).toHaveValue('pi');
 	await sidebar.getByLabel('Message to studio assistant').fill('Add and style a clock');
 	await sidebar.getByRole('button', { name: 'Send', exact: true }).click();
@@ -202,17 +235,17 @@ test('the docked assistant controls real editor state and each batch can be undo
 	const panel = await sidebar.boundingBox();
 	const stage = await page.locator('.canvas.studio').boundingBox();
 	expect(panel!.x).toBeGreaterThanOrEqual(stage!.x + stage!.width);
-	const inspector = await page.locator('.inspector.docked').boundingBox();
-	expect(inspector!.x).toBeGreaterThanOrEqual(stage!.x + stage!.width);
-	expect(inspector!.x + inspector!.width).toBeLessThanOrEqual(panel!.x);
+	await expect(page.locator('.inspector.docked')).not.toBeVisible();
 	await page.screenshot({ path: 'test-results/native-agent-docks.png' });
 	await sidebar.screenshot({ path: 'test-results/studio-assistant.png' });
 	await page.getByRole('button', { name: /Undo/ }).click();
 	await expect(clock).not.toHaveCSS('width', '220px');
 	await page.getByRole('button', { name: /Undo/ }).click();
 	await expect(clock).toHaveCount(0);
-	await sidebar.getByRole('button', { name: 'Close assistant' }).click();
-	await expect(sidebar).toHaveCount(0);
+	await page.getByRole('tab', { name: 'Add', exact: true }).click();
+	await expect(sidebar).not.toBeVisible();
+	await page.getByRole('tab', { name: 'Assistant', exact: true }).click();
+	await expect(sidebar.getByText('Added and styled the clock.')).toBeVisible();
 	expect(log.errors).toEqual([]);
 	expect(log.mockWarns).toEqual([]);
 });

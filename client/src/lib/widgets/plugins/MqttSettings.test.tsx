@@ -9,6 +9,7 @@ vi.mock('./mqtt-commands', () => ({
 			host: 'broker.local',
 			port: 1883,
 			username: 'u',
+			client_id: 'personal-id',
 			topics: ['zigbee2mqtt/#', 'tasmota/SENSOR'],
 			tls: false,
 			insecure: false,
@@ -232,6 +233,7 @@ describe('MqttSettings', () => {
 			resolveStatus({
 				configured: true,
 				host: 'late.local',
+				client_id: 'saved-client',
 				port: 1883,
 				username: '',
 				topics: [],

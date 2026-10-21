@@ -344,7 +344,9 @@ describe('Inspector add-palette open state', () => {
 		let unmount: () => void = () => undefined;
 		try {
 			unmount = render(<Inspector onOp={vi.fn()} />).unmount;
-			expect(within(palette()).getByText('Templates · MyPlugin', { selector: '.hd' })).toBeTruthy();
+			expect(
+				within(palette()).getByText('Templates · MyPlugin', { selector: '.palette-section-name' })
+			).toBeTruthy();
 			expect(within(palette()).getByRole('button', { name: /^Plugin Widget/ })).toBeTruthy();
 		} finally {
 			unmount();
@@ -770,7 +772,7 @@ describe('Inspector group def params + floating group', () => {
 		const def: WidgetDef = { id: 'd1', name: 'Def', size: { w: 1, h: 1 }, child };
 		render(<Inspector groupUnit={g} def={def} placement="flow" onOp={onOp} />);
 		fireEvent.change(screen.getByPlaceholderText('param key'), { target: { value: 'k' } });
-		fireEvent.click(screen.getByRole('button', { name: 'Add param' }));
+		fireEvent.click(screen.getByRole('button', { name: 'Add parameter' }));
 		expect(lastOp(onOp, 'addDefParam')).toEqual({
 			op: 'addDefParam',
 			defId: 'd1',
@@ -785,7 +787,7 @@ describe('Inspector group def params + floating group', () => {
 		const g = group('g1', { w: 1, h: 1 }, child, { name: 'G', def: 'd1' });
 		const def: WidgetDef = { id: 'd1', name: 'Def', size: { w: 1, h: 1 }, child };
 		render(<Inspector groupUnit={g} def={def} placement="flow" onOp={onOp} />);
-		fireEvent.click(screen.getByRole('button', { name: 'Add param' })); // key still empty
+		fireEvent.click(screen.getByRole('button', { name: 'Add parameter' })); // key still empty
 		expect(onOp.mock.calls.some((c) => (c[0] as LayoutOp).op === 'addDefParam')).toBe(false);
 	});
 
@@ -1164,10 +1166,11 @@ describe('Inspector template options form — unlabeled param', () => {
 		let unmount: () => void = () => undefined;
 		try {
 			unmount = render(<Inspector onOp={vi.fn()} />).unmount;
+			fireEvent.click(screen.getByRole('button', { name: 'Set up Key Only' }));
 			// No `label` on the spec → the key names both the visible row and the select's aria-label.
-			expect(within(palette()).getByLabelText('Key Only — lang')).toBeTruthy();
-			expect(within(palette()).getByRole('textbox', { name: 'Key Only — note' })).toHaveValue('');
-			expect(within(palette()).getByText('lang', { selector: 'label' })).toBeTruthy();
+			expect(screen.getByLabelText('Key Only — lang')).toBeTruthy();
+			expect(screen.getByRole('textbox', { name: 'Key Only — note' })).toHaveValue('');
+			expect(screen.getByText('lang', { selector: 'label' })).toBeTruthy();
 		} finally {
 			unmount();
 			unregisterTemplates('KeyOnly');

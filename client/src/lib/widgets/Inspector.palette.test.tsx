@@ -17,13 +17,66 @@ const widgetTypes = [
 	{ type: 'clock', label: 'Clock', category: 'Clocks' }
 ];
 
+it('remembers preview view across catalog tabs and keeps the choice usable without storage', () => {
+	const onOp = vi.fn();
+	const def: WidgetDef = {
+		id: 'my-clock',
+		name: 'My Clock',
+		size: { w: 100, h: 40 },
+		child: {
+			id: 'clock',
+			unit: { id: 'clock', type: 'clock', rect: { x: 0, y: 0, w: 100, h: 40 }, config: {} }
+		}
+	};
+	const view = render(
+		<Inspector workspace pane="add" widgetTypes={widgetTypes} defs={[def]} onOp={onOp} />
+	);
+	fireEvent.click(screen.getByRole('button', { name: 'Previews' }));
+	expect(localStorage.getItem('widgetsack.palette.view')).toBe('tiles');
+	expect(view.container.querySelectorAll('.catalog-preview').length).toBeGreaterThan(0);
+	fireEvent.click(screen.getByRole('tab', { name: 'Templates' }));
+	expect(view.container.querySelector('.template-options-card .catalog-preview')).toBeTruthy();
+	fireEvent.click(screen.getByRole('tab', { name: 'My widgets' }));
+	expect(screen.getByRole('button', { name: 'My Clock' })).toBeVisible();
+	fireEvent.click(screen.getByRole('tab', { name: 'Widgets' }));
+	fireEvent.change(screen.getByLabelText('Filter the add palette'), {
+		target: { value: 'My Clock' }
+	});
+	expect(screen.getByRole('button', { name: 'My Clock' })).toBeVisible();
+	fireEvent.click(screen.getByRole('button', { name: 'List' }));
+	expect(localStorage.getItem('widgetsack.palette.view')).toBe('rows');
+	view.unmount();
+	const get = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+		throw new Error('unavailable');
+	});
+	const set = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+		throw new Error('unavailable');
+	});
+	try {
+		render(<Inspector workspace pane="add" onOp={onOp} />);
+		fireEvent.click(screen.getByRole('button', { name: 'Previews' }));
+		expect(screen.getByRole('button', { name: 'Previews' })).toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+	} finally {
+		get.mockRestore();
+		set.mockRestore();
+		localStorage.clear();
+	}
+});
+
 describe('Inspector add-palette — widget types', () => {
 	it('groups widget types by category and emits addWidget on click', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector widgetTypes={widgetTypes} onOp={onOp} />);
 		// Category headers + the entries under them.
-		expect(within(palette()).getByText('Meters', { selector: '.hd2' })).toBeTruthy();
-		expect(within(palette()).getByText('Clocks', { selector: '.hd2' })).toBeTruthy();
+		expect(
+			within(palette()).getByText(/^Meters/, { selector: '.palette-section-name' })
+		).toBeTruthy();
+		expect(
+			within(palette()).getByText(/^Clocks/, { selector: '.palette-section-name' })
+		).toBeTruthy();
 		fireEvent.click(within(palette()).getByRole('button', { name: /^Gauge/ }));
 		expect(onOp).toHaveBeenCalledWith({ op: 'addWidget', widgetType: 'gauge' });
 	});
@@ -63,13 +116,15 @@ describe('Inspector add-palette — templates', () => {
 	it('renders a param template as an options form and passes the chosen options on insert', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector onOp={onOp} />);
+		expect(screen.queryByRole('dialog')).toBeNull();
+		fireEvent.click(within(palette()).getByRole('button', { name: 'Set up Clock (JP weekday)' }));
 		// "Clock (JP weekday)" (clock-jp) carries ParamSpecs → an options form with selects + Insert.
-		const weekday = within(palette()).getByLabelText('Clock (JP weekday) — Weekday');
+		const weekday = screen.getByLabelText('Clock (JP weekday) — Weekday');
 		fireEvent.click(weekday);
 		fireEvent.click(screen.getByText('English', { selector: '.np-select-opt-label' }));
-		const insert = within(palette())
-			.getAllByText('＋ Insert')
-			.find((b) => b.getAttribute('title')?.includes('Analog icon'))!;
+		const insert = within(screen.getByRole('dialog')).getByRole('button', {
+			name: 'Add to layout'
+		});
 		fireEvent.click(insert);
 		const call = onOp.mock.calls.map((c) => c[0]).find((o) => o.op === 'insertTemplate');
 		expect(call && call.op === 'insertTemplate' && call.templateId).toBe('clock-jp');
@@ -101,7 +156,9 @@ describe('Inspector add-palette — library defs', () => {
 	it('lists library defs and inserts an instance on click', () => {
 		const onOp = vi.fn<(op: LayoutOp) => void>();
 		render(<Inspector defs={[def('d1', 'My Widget')]} onOp={onOp} />);
-		expect(within(palette()).getByText('My widgets', { selector: '.hd' })).toBeTruthy();
+		expect(
+			within(palette()).getByText(/^My widgets/, { selector: '.palette-section-name' })
+		).toBeTruthy();
 		fireEvent.click(within(palette()).getByRole('button', { name: 'My Widget' }));
 		expect(onOp).toHaveBeenCalledWith({ op: 'insertWidget', defId: 'd1' });
 	});
@@ -172,16 +229,45 @@ describe('Inspector add-palette — filter', () => {
 it('accepts a command when inserting the CLI template', () => {
 	const onOp = vi.fn();
 	render(<Inspector onOp={onOp} />);
+	fireEvent.click(screen.getByRole('button', { name: 'Set up CLI Command' }));
 	fireEvent.change(screen.getByRole('textbox', { name: 'CLI Command — PowerShell command' }), {
 		target: { value: 'Get-Date' }
 	});
 	const card = screen
-		.getByText('CLI Command', { selector: '.tpl-opts-name' })
+		.getByText('Set up CLI Command', { selector: '.tpl-opts-name' })
 		.closest('.tpl-opts') as HTMLElement;
-	fireEvent.click(within(card).getByRole('button', { name: '＋ Insert' }));
+	fireEvent.click(within(card).getByRole('button', { name: 'Add to layout' }));
 	expect(onOp).toHaveBeenCalledWith({
 		op: 'insertTemplate',
 		templateId: 'cli-command',
 		options: { command: 'Get-Date' }
 	});
+});
+
+it('cancels template setup without inserting, retains the draft, and returns focus to its card', () => {
+	const onOp = vi.fn();
+	render(<Inspector onOp={onOp} />);
+	const trigger = screen.getByRole('button', { name: 'Set up CLI Command' });
+	fireEvent.click(trigger);
+	const input = screen.getByLabelText('CLI Command — PowerShell command');
+	expect(input).toHaveFocus();
+	fireEvent.change(input, { target: { value: 'Get-Date' } });
+	fireEvent.keyDown(input, { key: 'Tab' });
+	fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+	expect(screen.queryByRole('dialog')).toBeNull();
+	expect(trigger).toHaveFocus();
+	fireEvent.click(trigger);
+	expect(screen.getByLabelText('CLI Command — PowerShell command')).toHaveValue('Get-Date');
+	const handledEscape = new KeyboardEvent('keydown', {
+		key: 'Escape',
+		bubbles: true,
+		cancelable: true
+	});
+	handledEscape.preventDefault();
+	fireEvent(screen.getByRole('dialog'), handledEscape);
+	expect(screen.getByRole('dialog')).toBeVisible();
+	fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+	expect(screen.queryByRole('dialog')).toBeNull();
+	expect(trigger).toHaveFocus();
+	expect(onOp).not.toHaveBeenCalled();
 });

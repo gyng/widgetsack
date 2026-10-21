@@ -1,8 +1,10 @@
 /* Ping — a status dot (color by reachability/latency), the host, and the round-trip time. --np-* themed. */
 .ping {
+	font-size: var(--np-text-body, 14px);
+	line-height: var(--np-line-body, 20px);
 	display: flex;
 	align-items: center;
-	gap: var(--ping-gap, 8px);
+	gap: var(--ping-gap, calc(var(--np-gap, 4px) * 2));
 	width: 100%;
 	height: 100%;
 	box-sizing: border-box;

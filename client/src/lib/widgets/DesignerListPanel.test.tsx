@@ -1,9 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, render, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react';
 
 // copyToClipboard is a Tauri/clipboard adapter (outer ring) — mock it so the "Copy widget reference"
 // button can be exercised without a backend. The outcome shows inline (no alert()).
 vi.mock('../overlay', () => ({ copyToClipboard: vi.fn(() => Promise.resolve(true)) }));
+vi.mock('./WidgetPreview', () => ({ default: () => <span>Sample meter</span> }));
 
 import DesignerListPanel from './DesignerListPanel';
 import { copyToClipboard } from '../overlay';
@@ -60,6 +61,45 @@ const baseProps = () => ({
 	actions: makeActions()
 });
 
+it('uses sample tooltips for Custom templates and dismisses hover previews with Escape', () => {
+	vi.useFakeTimers();
+	try {
+		const props = baseProps();
+		const view = render(<DesignerListPanel {...props} />);
+		const button = view.getByRole('button', { name: 'Network' });
+		fireEvent.mouseEnter(button);
+		act(() => vi.advanceTimersByTime(300));
+		expect(view.getByRole('tooltip')).toHaveTextContent('Sample meter');
+		fireEvent.keyDown(window, { key: 'ArrowRight' });
+		expect(view.getByRole('tooltip')).toBeVisible();
+		fireEvent.keyDown(window, { key: 'Escape' });
+		expect(view.queryByRole('tooltip')).toBeNull();
+		fireEvent.focus(button);
+		act(() => vi.advanceTimersByTime(300));
+		expect(view.getByRole('tooltip')).toBeVisible();
+		fireEvent.click(button);
+		expect(view.queryByRole('tooltip')).toBeNull();
+		expect(props.actions.previewTemplate).toHaveBeenCalledWith('network');
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+it('filters saved widgets and templates together without changing the edited definition', () => {
+	const props = baseProps();
+	const view = render(<DesignerListPanel {...props} editingDefId="def-b" />);
+	const filter = view.getByRole('searchbox', { name: 'Filter custom widgets and templates' });
+	fireEvent.change(filter, { target: { value: 'My Clock' } });
+	expect(view.getByRole('button', { name: 'My Clock' })).toBeVisible();
+	expect(view.queryByRole('button', { name: 'My Gauge' })).toBeNull();
+	expect(view.getByLabelText('Custom widget name')).toHaveValue('My Clock');
+	fireEvent.change(filter, { target: { value: 'no matching widget anywhere' } });
+	expect(view.getByRole('status')).toHaveTextContent('No matches');
+	fireEvent.change(filter, { target: { value: '' } });
+	expect(view.getByRole('button', { name: 'My Gauge' })).toBeVisible();
+	expect(props.actions.openExistingDef).not.toHaveBeenCalled();
+});
+
 let alertSpy: ReturnType<typeof vi.spyOn>;
 let promptSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
@@ -101,9 +141,7 @@ describe('DesignerListPanel library list', () => {
 
 	it('✎ turns the row name into an inline field; Enter commits the new name and closes it', () => {
 		const props = baseProps();
-		const { getByText, getByLabelText, queryByLabelText } = render(
-			<DesignerListPanel {...props} />
-		);
+		const { getByText, getByLabelText } = render(<DesignerListPanel {...props} />);
 		const row = getByText('My Gauge').closest('.dl-item')! as HTMLElement;
 		fireEvent.click(within(row).getByTitle('Rename custom widget'));
 		const field = getByLabelText('Rename My Gauge') as HTMLInputElement;
@@ -114,22 +152,20 @@ describe('DesignerListPanel library list', () => {
 		fireEvent.blur(field); // Enter blurs the field, which is what commits (once)
 		expect(props.actions.renameWidget).toHaveBeenCalledTimes(1);
 		expect(props.actions.renameWidget).toHaveBeenCalledWith('def-a', 'Big Gauge');
-		expect(queryByLabelText('Rename My Gauge')).toBeNull(); // back to the label + ✎
+		expect(within(row).queryByRole('textbox', { name: 'Rename My Gauge' })).toBeNull(); // back to the label + ✎
 		expect(within(row).getByTitle('Rename custom widget')).toBeTruthy();
 	});
 
 	it('Escape cancels an inline rename without committing; an unchanged / blank name commits nothing', () => {
 		const props = baseProps();
-		const { getByText, getByLabelText, queryByLabelText } = render(
-			<DesignerListPanel {...props} />
-		);
+		const { getByText, getByLabelText } = render(<DesignerListPanel {...props} />);
 		const row = getByText('My Clock').closest('.dl-item')! as HTMLElement;
 		fireEvent.click(within(row).getByTitle('Rename custom widget'));
 		const field = getByLabelText('Rename My Clock') as HTMLInputElement;
 		fireEvent.change(field, { target: { value: 'Nope' } });
 		fireEvent.keyDown(field, { key: 'Escape' });
 		expect(props.actions.renameWidget).not.toHaveBeenCalled();
-		expect(queryByLabelText('Rename My Clock')).toBeNull();
+		expect(within(row).queryByRole('textbox', { name: 'Rename My Clock' })).toBeNull();
 		// Blur with the name untouched → no rename op either.
 		fireEvent.click(within(row).getByTitle('Rename custom widget'));
 		fireEvent.blur(getByLabelText('Rename My Clock'));
@@ -170,12 +206,14 @@ describe('DesignerListPanel library list', () => {
 	});
 
 	it('shows the empty-library stub when there are no defs (and no header field for an unknown open id)', () => {
-		const { getByText, queryByLabelText } = render(
+		const { getByText, queryByLabelText, rerender } = render(
 			<DesignerListPanel {...baseProps()} library={{ version: 1, defs: [] }} editingDefId="gone" />
 		);
 		expect(getByText(/No custom widgets yet/)).toBeTruthy();
 		expect(getByText('My widgets')).toBeTruthy();
 		expect(queryByLabelText('Custom widget name')).toBeNull();
+		rerender(<DesignerListPanel {...baseProps()} library={undefined} />);
+		expect(getByText(/No custom widgets yet/)).toBeVisible();
 	});
 });
 
@@ -199,7 +237,7 @@ describe('DesignerListPanel template groups', () => {
 		const props = baseProps();
 		const { getByText } = render(<DesignerListPanel {...props} />);
 		const row = within(getByText('Network').closest('.dl-item')! as HTMLElement);
-		fireEvent.click(row.getByTitle(/Clone into a new editable custom widget/));
+		fireEvent.click(row.getByRole('button', { name: 'Use Network template' }));
 		expect(props.actions.newFromTemplate).toHaveBeenCalledWith('network');
 	});
 
@@ -227,16 +265,29 @@ describe('DesignerListPanel template groups', () => {
 });
 
 describe('DesignerListPanel header actions', () => {
+	it('discards a clipboard result after leaving the designer', async () => {
+		let finish!: (ok: boolean) => void;
+		vi.mocked(copyToClipboard).mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				})
+		);
+		const view = render(<DesignerListPanel {...baseProps()} />);
+		fireEvent.click(view.getByRole('button', { name: 'Copy widget reference' }));
+		view.unmount();
+		await act(async () => finish(true));
+	});
 	it('the New custom widget button starts a fresh def', () => {
 		const props = baseProps();
-		const { getByText } = render(<DesignerListPanel {...props} />);
-		fireEvent.click(getByText('＋ New custom widget'));
+		const { getByRole } = render(<DesignerListPanel {...props} />);
+		fireEvent.click(getByRole('button', { name: 'New custom widget' }));
 		expect(props.actions.startNewWidget).toHaveBeenCalledTimes(1);
 	});
 
 	it('Copy widget reference copies markdown and reports success inline', async () => {
-		const { getByText, findByRole } = render(<DesignerListPanel {...baseProps()} />);
-		fireEvent.click(getByText('⧉ Copy widget reference'));
+		const { getByRole, findByRole } = render(<DesignerListPanel {...baseProps()} />);
+		fireEvent.click(getByRole('button', { name: 'Copy widget reference' }));
 		await waitFor(() => expect(copyToClipboard).toHaveBeenCalledTimes(1));
 		// The copied payload is the generated widget-reference markdown (non-empty).
 		const md = vi.mocked(copyToClipboard).mock.calls[0][0];
@@ -246,12 +297,10 @@ describe('DesignerListPanel header actions', () => {
 	});
 
 	it('reports a failure inline (and does not claim success) when the copy fails', async () => {
-		const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
 		vi.mocked(copyToClipboard).mockResolvedValueOnce(false);
-		const { getByText, findByRole } = render(<DesignerListPanel {...baseProps()} />);
-		fireEvent.click(getByText('⧉ Copy widget reference'));
+		const { getByRole, findByRole } = render(<DesignerListPanel {...baseProps()} />);
+		fireEvent.click(getByRole('button', { name: 'Copy widget reference' }));
 		expect((await findByRole('status')).textContent).toMatch(/Copy failed/i);
-		expect(log).toHaveBeenCalledOnce();
 	});
 });
 
@@ -265,4 +314,43 @@ describe('DesignerListPanel empty-state explainer', () => {
 		const { queryByText } = render(<DesignerListPanel {...baseProps()} designing />);
 		expect(queryByText('Widget designer')).toBeNull();
 	});
+});
+
+it('persists preview cards for saved widgets and templates while retaining actions', () => {
+	localStorage.removeItem('widgetsack.designer.view');
+	const props = baseProps();
+	const view = render(<DesignerListPanel {...props} />);
+	fireEvent.click(view.getByRole('button', { name: 'Previews' }));
+	expect(localStorage.getItem('widgetsack.designer.view')).toBe('tiles');
+	expect(view.container.querySelectorAll('.preview-tiles .catalog-preview').length).toBeGreaterThan(
+		2
+	);
+	fireEvent.click(view.getByRole('button', { name: 'Duplicate My Gauge' }));
+	expect(props.actions.cloneDefToEdit).toHaveBeenCalledWith('def-a');
+	view.unmount();
+	const restored = render(<DesignerListPanel {...props} />);
+	expect(restored.getByRole('button', { name: 'Previews' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+	fireEvent.click(restored.getByRole('button', { name: 'List' }));
+	expect(restored.container.querySelector('.catalog-preview')).toBeNull();
+	expect(localStorage.getItem('widgetsack.designer.view')).toBe('rows');
+});
+it('keeps the catalog usable when view preferences cannot be read or saved', () => {
+	const read = vi.spyOn(localStorage, 'getItem').mockImplementation(() => {
+		throw Error('blocked');
+	});
+	const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+		throw Error('blocked');
+	});
+	try {
+		const view = render(<DesignerListPanel {...baseProps()} />);
+		expect(view.getByRole('button', { name: 'List' })).toHaveAttribute('aria-pressed', 'true');
+		fireEvent.click(view.getByRole('button', { name: 'Previews' }));
+		expect(view.getByRole('button', { name: 'Previews' })).toHaveAttribute('aria-pressed', 'true');
+	} finally {
+		read.mockRestore();
+		write.mockRestore();
+	}
 });

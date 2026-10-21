@@ -1,3 +1,4 @@
+import Icon from './Icon';
 import type { TelemetryHub } from '../core/telemetry';
 import { statusDotFrom } from './plugin';
 import { useSensor } from './useSensor';
@@ -31,9 +32,10 @@ export default function PalettePluginSetup({
 				type="button"
 				className="palette-configure"
 				aria-label={`Configure ${name}`}
+				title={`Configure ${name}`}
 				onClick={() => onConfigure(id)}
 			>
-				Configure
+				<Icon name="settings" size={14} />
 			</button>
 		</span>
 	);

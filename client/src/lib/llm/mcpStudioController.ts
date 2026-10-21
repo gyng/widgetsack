@@ -1,3 +1,4 @@
+import { studioIntegrationTool } from './studioIntegrationTools';
 import { decodeStudioOps, type StudioOp } from '../core/studioAssistant';
 import type { StudioSnapshot } from './studioAgentSession';
 import type { StudioApplyResult } from '../widgets/plugin';
@@ -25,6 +26,7 @@ export function createMcpStudioController(
 		read(): StudioSnapshot;
 		apply(ops: StudioOp[], expected: StudioSnapshot): StudioApplyResult;
 		verify(expected: StudioSnapshot, signal?: AbortSignal): Promise<StudioVerification>;
+		integrationTool?: typeof studioIntegrationTool;
 	}
 ) {
 	const snapshots = new Map<string, StudioSnapshot>();
@@ -54,6 +56,15 @@ export function createMcpStudioController(
 				result = studio.apply(ops, expected);
 			} else if (request.name === 'studio_verify')
 				result = await whileActive(studio.verify(studio.read(), signal), signal);
+			else if (
+				['studio_integrations', 'studio_configure_integration', 'studio_test_integration'].includes(
+					request.name
+				)
+			)
+				result = await whileActive(
+					(studio.integrationTool ?? studioIntegrationTool)(request.name, request.args, signal),
+					signal
+				);
 			else throw new Error('Unknown studio tool.');
 		} catch (error) {
 			result = { error: String(error) };

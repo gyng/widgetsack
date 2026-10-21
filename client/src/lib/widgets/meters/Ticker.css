@@ -3,13 +3,15 @@
 .np-ticker {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
+	gap: var(--np-gap, 4px);
 	width: 100%;
 	height: 100%;
 	overflow: hidden;
 	justify-content: center;
 	color: var(--np-fg, rgb(255, 255, 255));
 	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	font-size: var(--np-text-body, 14px);
+	line-height: var(--np-line-body, 20px);
 	/* Direction palette (overridable). `--dir` is selected by [data-dir] below. */
 	--np-up: var(--np-accent-up, rgb(63, 185, 80));
 	--np-down: var(--np-accent-down, rgb(248, 81, 73));
@@ -33,11 +35,11 @@
 	display: flex;
 	align-items: baseline;
 	justify-content: space-between;
-	gap: 6px;
+	gap: var(--np-gap, 4px);
 	flex: 0 0 auto;
 }
 .np-ticker-symbol {
-	font-size: 14px;
+	font-size: var(--np-text-body, 14px);
 	font-weight: 600;
 	letter-spacing: 0.5px;
 	white-space: nowrap;
@@ -45,14 +47,15 @@
 	text-overflow: ellipsis;
 }
 .np-ticker-state {
-	font-size: 9px;
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
 	opacity: 0.6;
 	white-space: nowrap;
 }
 .np-ticker-price {
-	font-size: 26px;
+	font-size: var(--ticker-price-size, calc(var(--np-text-heading, 16px) * 1.625));
 	line-height: 1.1;
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
@@ -62,13 +65,14 @@
 .np-ticker-change {
 	display: flex;
 	align-items: center;
-	gap: 4px;
-	font-size: 12px;
+	gap: var(--np-gap, 4px);
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
 	font-variant-numeric: tabular-nums;
 	color: var(--dir);
 }
 .np-ticker-arrow {
-	font-size: 10px;
+	font-size: 1em;
 }
 .np-ticker-spark {
 	flex: 1 1 auto;
@@ -86,7 +90,7 @@
 	align-items: center;
 }
 .np-ticker-msg {
-	font-size: 12px;
+	font-size: var(--np-text-caption, 12px);
 	opacity: 0.6;
 }
 

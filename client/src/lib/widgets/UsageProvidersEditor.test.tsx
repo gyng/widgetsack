@@ -39,10 +39,12 @@ describe('usage provider configuration', () => {
 		])
 			fireEvent.click(within(codex).getByLabelText(label));
 		fireEvent.click(screen.getByRole('button', { name: 'Move Work down' }));
-		expect(screen.getAllByRole('group')[1]).toHaveAccessibleName('Work');
+		expect(
+			screen.getAllByRole('group').filter((el) => el.tagName === 'FIELDSET')[1]
+		).toHaveAccessibleName('Work');
 		fireEvent.click(screen.getByRole('button', { name: 'Move Work up' }));
 		fireEvent.click(screen.getByRole('button', { name: 'Remove Claude' }));
-		expect(screen.getAllByRole('group')).toHaveLength(1);
+		expect(screen.getAllByRole('group').filter((el) => el.tagName === 'FIELDSET')).toHaveLength(1);
 	});
 	it('adds credit, OMP and custom sources with their relevant settings', async () => {
 		render(<Editor initial={[]} />);
