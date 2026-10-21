@@ -5,6 +5,7 @@
 // shaping (which rows, names, stats) lives in core/monitorInputs.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MonitorSwitch from './meters/MonitorSwitch';
+import { readMonitorInputSnapshot, saveMonitorInputSnapshot } from '../ddc/monitorInputSnapshots';
 import {
 	listMonitorInputs,
 	setMonitorInput,
@@ -48,11 +49,13 @@ export default function MonitorSwitchHost({
 	color
 }: Props) {
 	const target = monitor?.trim() ?? '';
+	const cached = useMemo(() => readMonitorInputSnapshot(target), [target]);
 	const [snapshot, setSnapshot] = useState<{
 		target: string;
 		selected: MonitorInputs | null;
 		missing: boolean;
 	} | null>(null);
+	const [refreshingTarget, setRefreshingTarget] = useState<string | null>(null);
 	const [busyValue, setBusyValue] = useState<number | null>(null);
 	const refreshId = useRef(0);
 	const mounted = useRef(true);
@@ -60,9 +63,9 @@ export default function MonitorSwitchHost({
 	const targetRef = useRef(target);
 	targetRef.current = target;
 	const currentSnapshot = snapshot?.target === target ? snapshot : null;
-	const selected = currentSnapshot?.selected ?? null;
+	const selected = currentSnapshot ? currentSnapshot.selected : cached;
 	const missing = currentSnapshot?.missing ?? false;
-	const loading = currentSnapshot === null;
+	const loading = currentSnapshot === null || refreshingTarget === target;
 
 	// DDC reads in flight. A monitor mid input-switch answers slowly (or not at all until the switch
 	// settles), so the interval tick stands down while one is pending instead of stacking blocking
@@ -71,6 +74,7 @@ export default function MonitorSwitchHost({
 
 	const refresh = useCallback(async (): Promise<void> => {
 		const request = ++refreshId.current;
+		setRefreshingTarget(target);
 		inFlight.current += 1;
 		let list: MonitorInputs[];
 		try {
@@ -83,17 +87,19 @@ export default function MonitorSwitchHost({
 			? (list.find((m) => m.gdi === target || (m.stable !== '' && m.stable === target)) ?? null)
 			: (list.find((m) => m.primary) ?? list[0] ?? null);
 		if (!mounted.current || request !== refreshId.current || targetRef.current !== target) return;
+		if (found) saveMonitorInputSnapshot(target, found);
 		setSnapshot({ target, selected: found, missing: Boolean(target) && found === null });
+		setRefreshingTarget(null);
 	}, [target]);
 
 	useEffect(() => {
 		mounted.current = true;
 		let alive = true;
 		const onFocus = (): void => void refresh();
-		onFocus(); // initial load (kept off the effect's sync path — refresh setStates after an await)
+		onFocus(); // initial load; cached controls stay disabled until this refresh finishes
 		window.addEventListener('focus', onFocus);
 		const timer = window.setInterval(() => {
-			if (alive && inFlight.current === 0) void refresh();
+			if (alive && inFlight.current === 0 && !busy.current) void refresh();
 		}, REFRESH_MS);
 		return () => {
 			alive = false;
@@ -138,7 +144,7 @@ export default function MonitorSwitchHost({
 				) {
 					console.warn('system volume change after input switch failed');
 				}
-				if (targetRef.current === target) {
+				if (mounted.current && targetRef.current === target) {
 					await refresh(); // reconcile with what the monitor actually reports (snaps back on failure)
 				}
 				if (!ok) console.warn('monitor input switch failed; reverted to the reported input');
