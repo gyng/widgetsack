@@ -9,6 +9,7 @@ Monitor input controls retain their last response across restarts and stay in pl
 
 ### Fixed
 
+- Keep Claude usage rate and ETA history when reset timestamps vary slightly between refreshes.
 - Restore cached monitor inputs, names and display stats while fresh hardware reads are pending.
   Keep inputs disabled with a loading indicator until the refresh completes.
 - Pause automatic monitor polling during an input switch so a slow switch keeps its pending highlight.

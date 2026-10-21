@@ -224,6 +224,11 @@ export function appendUsageHistory(
 	}
 	return [...buckets.values()].sort((a, b) => a.at - b.at).slice(-8641);
 }
+// Provider reset estimates can drift slightly between reads (observed with Claude). Keep
+// minute-level rounding jitter inside one window; counter drops still reset the trend below.
+function sameUsageReset(a: number | undefined, b: number | undefined): boolean {
+	return a === b || (a !== undefined && b !== undefined && Math.abs(a - b) <= 60000);
+}
 export function usageTrend(
 	history: UsagePoint[],
 	metric: UsageMetric,
@@ -242,7 +247,7 @@ export function usageTrend(
 		const m = point.metrics.find((m) => m.id === metric.id);
 		if (
 			!m ||
-			m.resetsAt !== metric.resetsAt ||
+			!sameUsageReset(m.resetsAt, metric.resetsAt) ||
 			m.period !== metric.period ||
 			m.scope !== metric.scope ||
 			m.kind !== metric.kind ||
