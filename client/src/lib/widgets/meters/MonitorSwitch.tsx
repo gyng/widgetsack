@@ -42,13 +42,21 @@ export default function MonitorSwitch({
 		<div
 			className="monitorswitch np-monitorswitch"
 			data-compact={compact || undefined}
+			aria-busy={loading || busyValue != null}
 			style={vars}
 		>
 			<div className="ms-head">
 				<span className="ms-title">{title}</span>
 				{showStats && stats ? <span className="ms-stats">{stats}</span> : null}
+				<span
+					className="ms-refresh"
+					data-loading={loading || undefined}
+					role="status"
+					aria-label="Refreshing monitor inputs"
+					aria-hidden={!loading}
+				/>
 			</div>
-			{loading ? (
+			{loading && rows.length === 0 ? (
 				<div className="ms-empty" data-part="empty">
 					loading…
 				</div>
@@ -75,7 +83,7 @@ export default function MonitorSwitch({
 							data-busy={busyValue === r.value || undefined}
 							aria-pressed={r.active}
 							aria-busy={busyValue === r.value || undefined}
-							disabled={busyValue != null}
+							disabled={loading || busyValue != null}
 							onClick={() => onPick(r.value)}
 						>
 							<span className="ms-name">{r.label}</span>

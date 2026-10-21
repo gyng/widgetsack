@@ -3,7 +3,22 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## Unreleased
+
+Monitor input controls retain their last response across restarts and stay in place while refreshing.
+
+### Fixed
+
+- Keep Claude usage rate and ETA history when reset timestamps vary slightly between refreshes.
+- Restore cached monitor inputs, names and display stats while fresh hardware reads are pending.
+  Keep inputs disabled with a loading indicator until the refresh completes.
+- Pause automatic monitor polling during an input switch so a slow switch keeps its pending highlight.
+
 ## 0.0.68
+
+Studio is easier to use, with a shared widget catalog, clearer editing and reusable widget workflows.
+This release also adds custom HTML widgets and design presets, and improves desktop meter readability
+and stability.
 
 ### Added
 

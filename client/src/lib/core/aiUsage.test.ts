@@ -317,3 +317,42 @@ it('polling identity ignores display changes, duplicates and provider order', ()
 		JSON.parse(usagePollingSpec([{ ...providers[0], enabled: false }, providers[1]]))
 	).toHaveLength(1);
 });
+
+it('keeps Claude observations in the same quota window despite reset timestamp jitter', () => {
+	const reset = 7 * 86400000;
+	const history = [0, 4, 770].map((jitter, i) => ({
+		at: i * 900000,
+		metrics: [quota(4, reset + jitter)]
+	}));
+	expect(usageTrend(history, quota(4, reset + 770), 1800000, 1)).toEqual({ state: 'idle' });
+	const rising = history.map((point, i) => ({
+		...point,
+		metrics: [{ ...point.metrics[0], used: 2 + i }]
+	}));
+	expect(usageTrend(rising, quota(4, reset + 770), 1800000, 1)).toMatchObject({
+		state: 'active',
+		rate: 4,
+		etaHours: 24
+	});
+});
+it('still separates actual quota resets and missing reset identities', () => {
+	const latest = quota(4);
+	for (const [before, after] of [
+		[latest.resetsAt - 60001, latest.resetsAt],
+		[undefined, latest.resetsAt],
+		[latest.resetsAt, undefined]
+	]) {
+		const metric = { ...latest, resetsAt: after };
+		expect(
+			usageTrend(
+				[
+					{ at: 0, metrics: [{ ...latest, used: 2, resetsAt: before }] },
+					{ at: 900000, metrics: [metric] }
+				],
+				metric,
+				900000,
+				1
+			).state
+		).toBe('collecting');
+	}
+});

@@ -90,6 +90,10 @@ The release workflow runs this check before upload.
 The [release workflow](../../.github/workflows/build.yml) starts when a `v*` tag is pushed.
 Use a draft release to keep the release private until its installer is available.
 
+Start each version's changelog entry with a short, plain-language summary of the main changes and
+their benefit to users. Put it before the Added, Changed and Fixed lists, and include it at the top
+of the GitHub release notes too.
+
 1. Set the same version in `widgetsack/tauri.conf.json`, `widgetsack/Cargo.toml`, and `client/package.json`.
 2. Refresh lockfiles through their package managers if required.
 3. Add the version section to [CHANGELOG.md](../../CHANGELOG.md).

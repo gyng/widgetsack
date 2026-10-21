@@ -13,6 +13,7 @@ vi.mock('../ddc/monitors', () => ({ listMonitorInputs, setMonitorInput, setMonit
 vi.mock('../audio/volume', () => ({ setAudioVolume }));
 
 import MonitorSwitchHost from './MonitorSwitchHost';
+import { readMonitorInputSnapshot, saveMonitorInputSnapshot } from '../ddc/monitorInputSnapshots';
 import type { MonitorInputs } from '../ddc/monitors';
 
 const mon = (over: Partial<MonitorInputs> = {}): MonitorInputs => ({
@@ -29,6 +30,7 @@ const mon = (over: Partial<MonitorInputs> = {}): MonitorInputs => ({
 });
 
 beforeEach(() => {
+	localStorage.clear();
 	listMonitorInputs.mockReset();
 	setMonitorInput.mockReset();
 	setAudioVolume.mockReset();
@@ -467,4 +469,112 @@ describe('MonitorSwitchHost (container wiring)', () => {
 		});
 		cleanup(); // unmount tears down the focus listener + interval
 	});
+});
+
+it('retains cached monitor rows and stats across remounts, disabled until fresh data arrives', async () => {
+	const first = render(<MonitorSwitchHost showStats />);
+	await waitFor(() => expect(first.getByRole('button', { name: 'HDMI 1' })).toBeEnabled());
+	first.unmount();
+	let finish!: (list: MonitorInputs[]) => void;
+	listMonitorInputs.mockImplementationOnce(
+		() =>
+			new Promise((resolve) => {
+				finish = resolve;
+			})
+	);
+	const next = render(<MonitorSwitchHost showStats />);
+	expect(next.container.querySelector('.ms-title')).toHaveTextContent('Dell U2720Q');
+	expect(next.container.querySelector('.ms-stats')).toHaveTextContent('2560×1440 · 144 Hz');
+	expect(next.getByRole('button', { name: 'HDMI 1' })).toBeDisabled();
+	expect(next.getByRole('status')).toHaveAccessibleName('Refreshing monitor inputs');
+	fireEvent.click(next.getByRole('button', { name: 'DisplayPort 1' }));
+	expect(setMonitorInput).not.toHaveBeenCalled();
+	await act(async () => finish([mon({ current_input: 0x0f })]));
+	expect(next.getByRole('button', { name: 'DisplayPort 1' })).toBeEnabled();
+	expect(next.getByRole('button', { name: 'DisplayPort 1' })).toHaveAttribute(
+		'aria-pressed',
+		'true'
+	);
+});
+it('retains rows during a focus refresh and ignores an older refresh while the newer one is pending', async () => {
+	const view = render(<MonitorSwitchHost />);
+	await waitFor(() => expect(view.getByRole('button', { name: 'HDMI 1' })).toBeEnabled());
+	let older!: (list: MonitorInputs[]) => void;
+	let newer!: (list: MonitorInputs[]) => void;
+	listMonitorInputs
+		.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					older = resolve;
+				})
+		)
+		.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					newer = resolve;
+				})
+		);
+	fireEvent(window, new Event('focus'));
+	fireEvent(window, new Event('focus'));
+	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeDisabled();
+	await act(async () => older([mon({ friendly: 'Old response' })]));
+	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeDisabled();
+	expect(view.container.querySelector('.ms-title')).toHaveTextContent('Dell U2720Q');
+	await act(async () => newer([mon({ friendly: 'Fresh response' })]));
+	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeEnabled();
+	expect(view.container.querySelector('.ms-title')).toHaveTextContent('Fresh response');
+});
+it('does not reuse another target’s cached controls or discard its last successful response', async () => {
+	const view = render(<MonitorSwitchHost monitor="DELD154-UID184579" />);
+	await waitFor(() => expect(view.getByRole('button', { name: 'HDMI 1' })).toBeEnabled());
+	listMonitorInputs.mockReturnValueOnce(new Promise(() => {}));
+	view.rerender(<MonitorSwitchHost monitor="other-monitor" />);
+	expect(view.queryByRole('button', { name: 'HDMI 1' })).toBeNull();
+	listMonitorInputs.mockResolvedValueOnce([]);
+	view.rerender(<MonitorSwitchHost monitor="DELD154-UID184579" />);
+	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeDisabled();
+	await waitFor(() => expect(view.getByText('monitor not found')).toBeVisible());
+	expect(readMonitorInputSnapshot('DELD154-UID184579')?.friendly).toBe('Dell U2720Q');
+});
+
+it('restores a persisted response before the first hardware request resolves', () => {
+	saveMonitorInputSnapshot('desk', mon());
+	listMonitorInputs.mockReturnValue(new Promise(() => {}));
+	const view = render(<MonitorSwitchHost monitor="desk" showStats />);
+	expect(view.container.querySelector('.ms-title')).toHaveTextContent('Dell U2720Q');
+	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeDisabled();
+	expect(view.container.querySelector('.ms-stats')).toHaveTextContent('2560×1440 · 144 Hz');
+});
+
+it('does not poll over a slow input switch or replace its optimistic highlight', async () => {
+	vi.useFakeTimers();
+	try {
+		let finish!: (ok: boolean) => void;
+		setMonitorInput.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				})
+		);
+		const view = render(<MonitorSwitchHost />);
+		await act(async () => undefined);
+		fireEvent.click(view.getByRole('button', { name: 'DisplayPort 1' }));
+		await act(async () => undefined);
+		listMonitorInputs.mockClear();
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(16000);
+		});
+		expect(listMonitorInputs).not.toHaveBeenCalled();
+		expect(view.getByRole('button', { name: 'DisplayPort 1' })).toHaveAttribute(
+			'aria-pressed',
+			'true'
+		);
+		expect(readMonitorInputSnapshot('')?.current_input).toBe(0x11);
+		await act(async () => finish(true));
+		expect(listMonitorInputs).toHaveBeenCalledOnce();
+		expect(view.getByRole('button', { name: 'HDMI 1' })).toBeEnabled();
+		view.unmount();
+	} finally {
+		vi.useRealTimers();
+	}
 });
