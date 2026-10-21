@@ -68,11 +68,11 @@
 	line-height: 1.1;
 }
 .bat-pct {
-	font-size: var(--bat-pct-size, 1em);
+	font-size: var(--bat-pct-size, var(--np-text-body, 14px));
 	font-weight: 600;
 }
 .bat-status {
-	font-size: var(--bat-status-size, 0.72em);
+	font-size: var(--bat-status-size, var(--np-text-caption, 12px));
 	color: var(--np-label, rgba(255, 255, 255, 0.6));
 	white-space: nowrap;
 	overflow: hidden;

@@ -8,6 +8,7 @@ export type MqttStatus = {
 	host: string;
 	port: number;
 	username: string;
+	client_id: string;
 	topics: string[];
 	tls: boolean;
 	insecure: boolean;

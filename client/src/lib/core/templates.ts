@@ -19,7 +19,6 @@ import { container, group, isContainer, isGroup, leaf } from './layoutTree';
 import { applyParams } from './solve';
 import { NOWPLAYING_DEFAULT_CSS, createWidget } from './widget';
 import { dashboardMetas } from './dashboardMetas';
-import { aiUsageMeta } from './aiUsageMeta';
 import { aiUsageTemplates } from './aiUsageTemplates';
 import { LOCAL_DESKTOP_DEF } from './localDesktop';
 
@@ -81,7 +80,7 @@ function clockTree(): Container {
 				prim(
 					'dt-icon',
 					'analogclock',
-					{ showSeconds: true, showTicks: false, showNumbers: false, showCap: false },
+					{ showSeconds: true, showTicks: false, showNumbers: false, showCap: false, lineWidth: 2 },
 					{ w: 30, h: 30 }
 				),
 				'content',
@@ -120,9 +119,32 @@ function clockTree(): Container {
 
 // gyng\System: CPU/RAM/SWAP on one row, GPU/VRAM on the next, then the per-core CPU widget (its own
 // 8-wide sparkline grid) filling the rest. Each value cell grows to an equal share of its row.
-function systemTree(): Container {
+function systemTree(showSparklines = false): Container {
 	const val = (id: string, label: string, sensor: string): Leaf =>
-		lf(prim(id, 'text', { label, format: 'integer' }, { sensor, w: 50, h: 16 }), { fr: 1 });
+		lf(
+			prim(
+				id,
+				'text',
+				{
+					label,
+					format: 'integer',
+					showSparkline: showSparklines,
+					sparklineWidth: 28,
+					sparklineSeconds: 60,
+					sparklineScale: 'percent',
+					sparklineSmooth: true
+				},
+				{
+					sensor,
+					w: 50,
+					h: showSparklines ? 24 : 16,
+					css: showSparklines
+						? '.np-text { display: grid; grid-template-columns: var(--system-label-width, 44px) var(--system-value-width, 32px) minmax(0, 1fr); column-gap: var(--system-column-gap, 4px); }\n.np-text .label { white-space: nowrap; }\n.np-text .value { min-width: 0; text-align: right; white-space: nowrap; }'
+						: undefined
+				}
+			),
+			{ fr: 1 }
+		);
 	return container(
 		'sys-root',
 		'col',
@@ -158,12 +180,12 @@ function systemTree(): Container {
 				prim(
 					'sys-cores',
 					'cpu',
-					{ mode: 'cores', cols: 8, seconds: 20, lineWidth: 1 },
+					{ mode: 'cores', cols: 8, seconds: 20, lineWidth: 1, smooth: showSparklines },
 					{ w: 150, h: 70 }
 				),
 				{ fr: 1 },
 				undefined,
-				{ margin: { t: 8, r: 0, b: 0, l: 0 } }
+				{ margin: { t: showSparklines ? 4 : 8, r: 0, b: 0, l: 0 } }
 			)
 		],
 		{ align: 'stretch', gap: 4 }
@@ -199,7 +221,11 @@ function networkTree(): Container {
 					sensor,
 					w: 75,
 					h: RATE_H,
-					css: alignEnd ? '.np-text { justify-content: flex-end; }' : undefined
+					// This legacy 170px instrument has intentionally small, fixed readouts. The
+					// wider inline preset inherits density tokens instead.
+					css: `.np-text { gap: 4px; justify-content: ${alignEnd ? 'flex-end' : 'flex-start'}; }
+.np-text .label { font-size: 11px; }
+.np-text.rate .value { font-size: 12px; }`
 				}
 			),
 			{ fr: 1 }
@@ -243,6 +269,62 @@ function networkTree(): Container {
 		// Inter-row spacing comes from the histograms' own bottom margins (HIST_GAP, HIST_TEXT_GAP)
 		// so the two gaps differ; the root col adds none of its own.
 		{ align: 'stretch', gap: 0 }
+	);
+}
+
+function inlineNetworkTree(): Container {
+	const css = `.np-text { display: grid; font-size: var(--np-text-body, 14px); grid-template-columns: 0.8em 7ch minmax(24px, 1fr); column-gap: 4px; }
+.np-text.rate .value { font-size: inherit; min-width: 0; text-align: left; white-space: nowrap; }`;
+	return container(
+		'net-inline',
+		'row',
+		[
+			lf(
+				prim(
+					'net-inline-down',
+					'text',
+					{
+						label: '▼',
+						format: 'rate-short',
+						color: 'var(--np-label)',
+						showSparkline: true,
+						sparklineSeconds: 90,
+						sparklineWidth: 32,
+						sparklineStretch: true,
+						sparklineSmooth: true,
+						sparklineScale: 'auto'
+					},
+					{ sensor: 'net.down', w: 174, h: 28, css }
+				),
+				{ fr: 1 },
+				undefined,
+				{ margin: { t: 0, r: 18, b: 0, l: 0 } }
+			),
+			lf(
+				prim(
+					'net-inline-up',
+					'text',
+					{
+						label: '▲',
+						format: 'rate-short',
+						color: 'var(--np-accent)',
+						showSparkline: true,
+						sparklineSeconds: 90,
+						sparklineWidth: 32,
+						sparklineStretch: true,
+						sparklineSmooth: true,
+						sparklineScale: 'auto'
+					},
+					{ sensor: 'net.up', w: 174, h: 28, css }
+				),
+				{ fr: 1 },
+				undefined,
+				{ margin: { t: 0, r: 0, b: 0, l: 18 } }
+			)
+		],
+		// 48px between readings: 12px row gap + balanced 18px inner margins.
+		// Keep the gap below the short-row spacing guard without increasing its height.
+		{ gap: 12, align: 'center' }
 	);
 }
 
@@ -328,19 +410,40 @@ export const TEMPLATES: Template[] = [
 		size: LOCAL_DESKTOP_DEF.size,
 		tree: () => structuredClone(LOCAL_DESKTOP_DEF.child)
 	},
-	...[...dashboardMetas, aiUsageMeta].map((meta) => ({
+	...dashboardMetas.map((meta) => ({
 		id: `dashboard-widget-${meta.type}`,
-		name: meta.type === 'aiusage' ? 'AI Usage panel' : meta.label!,
+		name: meta.label!,
 		description: meta.description!,
 		size: meta.defaultSize!,
 		tree: () => leaf(createWidget(meta.type, `template-${meta.type}`))
 	})),
 	{
 		id: 'ai-assistant',
-		name: 'AI Assistant',
+		name: 'AI Chat',
 		description: 'Chat with your configured AI provider',
 		size: { w: 360, h: 300 },
-		tree: () => leaf(prim('ai-chat', 'aichat', { label: 'AI Assistant' }, { w: 360, h: 300 }))
+		tree: () => leaf(prim('ai-chat', 'aichat', { label: 'AI Chat' }, { w: 360, h: 300 }))
+	},
+	{
+		id: 'ai-prompt',
+		name: 'AI Prompt',
+		description: 'A saved sensor prompt refreshed every 10 minutes; supports cron or manual runs',
+		size: { w: 280, h: 96 },
+		tree: () =>
+			leaf(
+				prim(
+					'ai-prompt',
+					'assistant',
+					{
+						prompt: 'Summarize my system status in one short, friendly sentence.',
+						schedule: '10m',
+						sensors: 'auto',
+						speak: false,
+						label: 'AI Prompt'
+					},
+					{ w: 280, h: 96 }
+				)
+			)
 	},
 	{
 		id: 'cli-command',
@@ -383,6 +486,49 @@ export const TEMPLATES: Template[] = [
 		tree: systemTree
 	},
 	{
+		id: 'system-inline',
+		name: 'System monitor · Inline',
+		description:
+			'CPU, memory, GPU and VRAM values with optional inline sparklines and per-core charts.',
+		size: { w: 360, h: 140 },
+		params: [
+			{
+				key: 'showSparklines',
+				label: 'Inline sparklines',
+				default: true,
+				targets: [
+					'children.0.children.0.unit.config.showSparkline',
+					'children.0.children.1.unit.config.showSparkline',
+					'children.0.children.2.unit.config.showSparkline',
+					'children.1.children.0.unit.config.showSparkline',
+					'children.1.children.1.unit.config.showSparkline'
+				],
+				choices: [
+					{ value: 'true', label: 'On' },
+					{ value: 'false', label: 'Off' }
+				]
+			},
+			{
+				key: 'smooth',
+				label: 'Smooth charts',
+				default: true,
+				targets: [
+					'children.0.children.0.unit.config.sparklineSmooth',
+					'children.0.children.1.unit.config.sparklineSmooth',
+					'children.0.children.2.unit.config.sparklineSmooth',
+					'children.1.children.0.unit.config.sparklineSmooth',
+					'children.1.children.1.unit.config.sparklineSmooth',
+					'children.2.unit.config.smooth'
+				],
+				choices: [
+					{ value: 'true', label: 'On' },
+					{ value: 'false', label: 'Off' }
+				]
+			}
+		],
+		tree: () => systemTree(true)
+	},
+	{
 		id: 'network',
 		name: 'Network',
 		description: 'Upload and download charts with current transfer rates.',
@@ -400,6 +546,38 @@ export const TEMPLATES: Template[] = [
 			}
 		],
 		tree: networkTree
+	},
+	{
+		id: 'network-inline',
+		name: 'Network · Inline',
+		description: 'Download and upload rates with optional inline sparklines on one row.',
+		size: { w: 360, h: 28 },
+		params: [
+			{
+				key: 'showSparklines',
+				label: 'Inline sparklines',
+				default: true,
+				targets: ['children.0.unit.config.showSparkline', 'children.1.unit.config.showSparkline'],
+				choices: [
+					{ value: 'true', label: 'On' },
+					{ value: 'false', label: 'Off' }
+				]
+			},
+			{
+				key: 'smooth',
+				label: 'Smooth charts',
+				default: true,
+				targets: [
+					'children.0.unit.config.sparklineSmooth',
+					'children.1.unit.config.sparklineSmooth'
+				],
+				choices: [
+					{ value: 'true', label: 'On' },
+					{ value: 'false', label: 'Off' }
+				]
+			}
+		],
+		tree: inlineNetworkTree
 	},
 	{
 		id: 'nowplaying',

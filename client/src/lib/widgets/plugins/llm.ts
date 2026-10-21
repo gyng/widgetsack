@@ -8,7 +8,7 @@ import LlmSettings from './LlmSettings';
 import AssistantHost from '../AssistantHost';
 import AiChatHost from '../AiChatHost';
 import Transcribe from '../meters/Transcribe';
-import { llmConfigStatus } from './llm-commands';
+import { llmConfigStatus, onLlmConfigChanged } from './llm-commands';
 import { ingestLlmStatus, LLM_STATUS_SENSOR } from './llm-status';
 import { setLlmStudioApi } from './llm-studio';
 import { asMeter } from '../registry';
@@ -19,12 +19,31 @@ import { asMeter } from '../registry';
 const llmStatusSource: SensorSource = {
 	id: 'ai-provider',
 	start: async (hub) => {
+		let active = true;
+		let revision = 0;
+		const refresh = async () => {
+			const at = ++revision;
+			try {
+				const status = await llmConfigStatus();
+				if (active && at === revision) ingestLlmStatus(hub, status);
+			} catch {
+				/* Keep the previous readiness sample during a transient failure. */
+			}
+		};
+		let stop = () => {};
 		try {
-			ingestLlmStatus(hub, await llmConfigStatus());
+			stop = await onLlmConfigChanged(() => {
+				void refresh();
+			});
 		} catch {
-			// not configured / no backend — keep the default "Not connected" dot
+			/* No event bridge in a plain preview. */
 		}
-		return () => undefined;
+		await refresh();
+		return () => {
+			active = false;
+			revision++;
+			stop();
+		};
 	},
 	catalog: () => [LLM_STATUS_SENSOR],
 	catalogEntries: () => [{ id: LLM_STATUS_SENSOR, label: 'AI provider status' }]
@@ -35,7 +54,7 @@ export const registerLlmPlugin = (): void =>
 		id: 'ai-provider',
 		name: 'AI Provider',
 		description:
-			'Configure one LLM provider (Anthropic, OpenAI-compatible, or local Ollama) used across the app — the natural-language layout assistant, the AI briefing widget, and a chat tester. The API key stays server-side.',
+			'Connect an AI service for AI Chat, scheduled prompts, speech and translation. API keys are stored locally.',
 		settings: LlmSettings,
 		sources: [llmStatusSource],
 		statusSensor: LLM_STATUS_SENSOR,
@@ -49,13 +68,13 @@ export const registerLlmPlugin = (): void =>
 			{
 				meta: {
 					type: 'aichat',
-					label: 'AI Assistant',
+					label: 'AI Chat',
 					description:
 						'An interactive chat with your configured AI provider. Send messages, stop a reply, or clear the conversation. Chat is shared within each window.',
 					binds: 'none',
 					interactive: true,
 					defaultSize: { w: 360, h: 300 },
-					defaultConfig: { label: 'AI Assistant' },
+					defaultConfig: { label: 'AI Chat' },
 					configFields: [
 						{
 							key: 'label',
@@ -76,16 +95,16 @@ export const registerLlmPlugin = (): void =>
 					type: 'assistant',
 					binds: 'none',
 					interactive: true,
-					label: 'AI Briefing',
+					label: 'AI Prompt',
 					description:
-						'Generate a briefing from sensor readings with the configured AI Provider. Set an interval or cron schedule. Use manual refresh in Studio.',
+						'Run a saved prompt with live sensor readings, manually or on an interval or cron schedule. Displays the latest response; use AI Chat for conversations.',
 					defaultSize: { w: 280, h: 96 },
 					defaultConfig: {
 						prompt: 'Summarize my system status in one short, friendly sentence.',
 						schedule: '10m',
 						sensors: 'auto',
 						speak: false,
-						label: 'AI',
+						label: 'AI Prompt',
 						color: ''
 					},
 					configFields: [
@@ -101,7 +120,7 @@ export const registerLlmPlugin = (): void =>
 							group: 'Behaviour',
 							label: 'schedule',
 							kind: 'text',
-							help: 'how often to refresh: an interval (30s, 5m, 2h), a cron expr (e.g. 0 9 * * *), or "manual"'
+							help: 'Interval: 30s, 5m, 2h (15s minimum). Cron: minute hour day month weekday, e.g. 0 9 * * * for 09:00 local time. Blank or manual disables automatic runs. Runs while the overlay is open; Studio refreshes manually.'
 						},
 						{
 							key: 'sensors',

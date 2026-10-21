@@ -13,6 +13,7 @@ beforeEach(() => {
 });
 it('sends a prompt, renders streamed replies, stops and clears the conversation', async () => {
 	render(<AiChatHost />);
+	expect(screen.getByText('AI Chat')).toBeTruthy();
 	expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled();
 	fireEvent.change(screen.getByRole('textbox', { name: 'Message' }), {
 		target: { value: 'Hello' }

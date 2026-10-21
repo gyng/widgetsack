@@ -1,6 +1,15 @@
 import type { Template } from './templates';
-import { container, leaf } from './layoutTree';
+import { leaf } from './layoutTree';
 import { defaultUsageProviders } from './aiUsage';
+
+// Live sidebar grouping, with typography inherited from the selected design density.
+const compactCss = `.np-ai-usage { padding: 4px 0; --usage-provider-icon-size: var(--np-text-caption, 18px); --usage-column-gap: var(--np-gap, 8px); }
+.np-ai-usage .usage-provider.usage-compact-row { min-height: var(--np-line-body, 32px); column-gap: var(--np-gap, 8px); row-gap: 4px; align-content: flex-start; }
+.np-ai-usage .usage-inline-metric { gap: 3px; }
+.np-ai-usage .usage-inline-metric > b { font-weight: 600; }
+.np-ai-usage .usage-inline-resets { gap: 4px; }
+.np-ai-usage .usage-reset-short { margin-left: 0; }
+.np-ai-usage .usage-provider.usage-compact-row + .usage-provider.usage-compact-row { margin-top: var(--np-row-gap, 8px); }`;
 
 const variants = [
 	{
@@ -8,9 +17,9 @@ const variants = [
 		name: 'Minimal quotas',
 		w: 180,
 		h: 44,
+		css: '',
 		config: {
-			compact: true,
-			minimal: true,
+			layout: 'minimal',
 			minimalIcons: false,
 			providers: defaultUsageProviders().map((p) => ({
 				...p,
@@ -24,15 +33,23 @@ const variants = [
 	{
 		id: 'compact',
 		name: 'Compact quotas',
-		w: 265,
-		h: 44,
+		w: 380,
+		h: 112,
+		css: compactCss,
 		config: {
-			compact: true,
+			layout: 'compact',
 			providers: defaultUsageProviders().map((p) => ({
 				...p,
+				session: p.source === 'codex',
 				tokens: false,
 				credits: false,
-				eta: false
+				other: false,
+				eta: true,
+				resets: true,
+				order:
+					p.source === 'codex'
+						? ['session', 'week', 'other', 'tokens', 'credits', 'eta', 'graph', 'resets', 'banked']
+						: p.order
 			})),
 			resetDisplay: 'countdown'
 		}
@@ -42,67 +59,32 @@ const variants = [
 		name: 'Detailed activity',
 		w: 350,
 		h: 700,
+		css: '',
 		config: {
-			compact: false,
+			layout: 'detailed',
 			showResets: true,
 			providers: defaultUsageProviders().map((p) => ({ ...p, graph: true })),
 			resetDisplay: 'both'
 		}
-	},
-	{
-		id: 'remaining',
-		name: 'Remaining allowance',
-		w: 265,
-		h: 44,
-		config: {
-			compact: true,
-			remaining: true,
-			providers: defaultUsageProviders().map((p) => ({
-				...p,
-				tokens: false,
-				credits: false,
-				eta: false
-			})),
-			resetDisplay: 'countdown'
-		}
 	}
 ];
-export const aiUsageTemplates: Template[] = [
-	...variants.map((v) => ({
-		id: `ai-usage-${v.id}`,
-		name: `AI Usage · ${v.name}`,
-		description: `Claude and Codex: ${v.name.toLowerCase()}.`,
-		size: { w: v.w, h: v.h },
-		tree: () =>
-			leaf({
-				id: `ai-usage-${v.id}`,
-				type: 'aiusage',
-				rect: { x: 0, y: 0, w: v.w, h: v.h },
-				config: { label: v.name, ...v.config }
-			})
-	})),
-	{
-		id: 'ai-usage-comparison',
-		name: 'AI Usage · Compare layouts',
-		description:
-			'Live compact quotas, detailed activity with graphs, and remaining allowance side by side.',
-		size: { w: 1132, h: 700 },
-		tree: () =>
-			container(
-				'usage-comparison',
-				'row',
-				variants.map((v) =>
-					leaf(
-						{
-							id: `compare-${v.id}`,
-							type: 'aiusage',
-							rect: { x: 0, y: 0, w: v.w, h: v.h },
-							config: { label: v.name, ...v.config }
-						},
-						v.w
-					)
-				),
-				{ gap: 24, align: 'start' }
-			)
-	}
-];
+export const aiUsageTemplates: Template[] = variants.map((v) => ({
+	id: `ai-usage-${v.id}`,
+	name: `AI Usage · ${v.name}`,
+	description: `Claude and Codex: ${v.name.toLowerCase()}.`,
+	size: { w: v.w, h: v.h },
+	tree: () =>
+		leaf({
+			id: `ai-usage-${v.id}`,
+			type: 'aiusage',
+			rect: { x: 0, y: 0, w: v.w, h: v.h },
+			config: structuredClone({
+				label: v.name,
+				showHeader: false,
+				providerIcons: true,
+				remaining: true,
+				...v.config
+			}),
+			...(v.css ? { css: v.css } : {})
+		})
+}));

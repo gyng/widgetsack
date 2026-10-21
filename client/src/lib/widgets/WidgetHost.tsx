@@ -1,3 +1,4 @@
+import { selectionRequest } from './canvas/selectionRequest';
 // Container (organism): positions one widget and wires its sensor to the presentational meter.
 // The meter stays prop-only; all subscription lives here. In edit mode a transparent overlay drags
 // the widget and corner/edge handles resize it; both report rect changes up via the `onChange`
@@ -59,7 +60,7 @@ type Props = {
 	// flow/grid, regardless of the studio "into grids" toggle.
 	onCommit?: (e?: { skipFlow?: boolean }) => void;
 	onCancel?: (e: { commit: boolean }) => void;
-	onSelect?: (e: { id: string }) => void;
+	onSelect?: (e: { id: string; additive?: boolean }) => void;
 	onDragOver?: (e: { id: string; x: number; y: number; skipFlow?: boolean }) => void;
 	onDrop?: (e: { id: string; x: number; y: number }) => void;
 	onContextMenu?: (e: { id: string; x: number; y: number }) => void;
@@ -218,7 +219,8 @@ function WidgetHost({
 		startRect: Rect;
 		moved: boolean;
 		skipFlow: boolean; // a right-button move-drag never docks (free-move)
-		wasSelected: boolean; // selected at press → defer the select so a drag can move the group
+		wasSelected: boolean;
+		additive: boolean; // selected at press → defer the select so a drag can move the group
 	}>({
 		action: null,
 		startX: 0,
@@ -226,7 +228,8 @@ function WidgetHost({
 		startRect: instance.rect,
 		moved: false,
 		skipFlow: false,
-		wasSelected: false
+		wasSelected: false,
+		additive: false
 	});
 	const [action, setAction] = useState<'move' | 'flow' | ResizeHandle | null>(null);
 	const [ghost, setGhost] = useState({ dx: 0, dy: 0 });
@@ -256,7 +259,7 @@ function WidgetHost({
 	const handleOverlayKey = (e: ReactKeyboardEvent) => {
 		if (e.key !== 'Enter' && e.key !== ' ') return;
 		e.preventDefault();
-		onSelect?.({ id: selectId });
+		onSelect?.(selectionRequest(selectId, e));
 	};
 
 	function begin(kind: 'move' | ResizeHandle, e: ReactPointerEvent) {
@@ -269,11 +272,13 @@ function WidgetHost({
 		if (!editMode) return;
 		const d = drag.current;
 		d.wasSelected = selected;
+		d.additive = e.ctrlKey || e.metaKey || e.shiftKey;
 		// Select on press EXCEPT when starting a MOVE on an already-selected widget — then defer to
 		// end(): pressing a member of a multi-selection must not collapse it (otherwise only the pressed
 		// widget would drag); a click without a drag collapses to just it. A resize still collapses on
 		// press so it acts on the single widget (onChange's group-move only applies to a move drag).
-		if (!selected || kind !== 'move') onSelect?.({ id: selectId });
+		if (!selected || kind !== 'move')
+			onSelect?.(selectionRequest(selectId, kind === 'move' ? e : {}));
 		d.moved = false;
 		d.skipFlow = intent.skipFlow;
 		if (!movable) {
@@ -347,13 +352,14 @@ function WidgetHost({
 			// collapses the (multi-)selection to just this one — selecting an unselected one already
 			// happened in begin(), so only re-select here when it was selected at press.
 			if (didMove) onDrop?.({ id: selectId, x: e.clientX, y: e.clientY });
-			else if (wasSelected) onSelect?.({ id: selectId });
+			else if (wasSelected) onSelect?.(selectionRequest(selectId, { ctrlKey: d.additive }));
 			return;
 		}
 		// Likewise a click (no drag) on an already-selected floating widget collapses a multi-selection
 		// to just it — only for a MOVE (a resize already selected on press); a real drag commits instead.
 		if (didMove) onCommit?.({ skipFlow: d.skipFlow });
-		else if (wasSelected && wasMove) onSelect?.({ id: selectId });
+		else if (wasSelected && wasMove)
+			onSelect?.(selectionRequest(selectId, { ctrlKey: d.additive }));
 		// A real right-button free-move arms canvas-side suppression of the contextmenu that follows
 		// (a right-CLICK without movement must still open the menu, so only arm when it actually moved).
 		if (didMove && d.skipFlow) onSuppressContextMenu?.();
@@ -395,6 +401,7 @@ function WidgetHost({
 		<div
 			ref={boxRef}
 			className={cls.join(' ')}
+			data-presentation={instance.tokens?.['--np-presentation-mode']}
 			style={
 				flow
 					? // Slot mode (CSS layout): fill the FlowNode slot that owns position/size; only the

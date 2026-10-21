@@ -1,9 +1,11 @@
 /* Process Watcher — a running dot + process name + (when running) CPU%/RAM. The dot/name colour
    tracks the running state. Themeable via --np-* / --pw-* tokens. */
 .procwatch {
+	font-size: var(--np-text-body, 14px);
+	line-height: var(--np-line-body, 20px);
 	display: flex;
 	align-items: center;
-	gap: var(--pw-gap, 8px);
+	gap: var(--pw-gap, calc(var(--np-gap, 4px) * 2));
 	width: 100%;
 	height: 100%;
 	box-sizing: border-box;
@@ -35,7 +37,8 @@
 	line-height: 1.15;
 }
 .pw-name {
-	font-size: var(--pw-name-size, 0.95em);
+	font-size: var(--pw-name-size, var(--np-text-body, 14px));
+	line-height: var(--np-line-body, 20px);
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -44,7 +47,8 @@
 	color: var(--np-label, rgba(255, 255, 255, 0.6));
 }
 .pw-status {
-	font-size: var(--pw-status-size, 0.72em);
+	font-size: var(--pw-status-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	font-variant-numeric: tabular-nums;
 	color: var(--np-label, rgba(255, 255, 255, 0.6));
 }

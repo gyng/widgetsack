@@ -5,6 +5,17 @@ import AnalogClock from './AnalogClock';
 afterEach(() => vi.useRealTimers());
 
 describe('AnalogClock (DOM)', () => {
+	it('supports a pixel line thickness and keeps automatic sizing when unset or invalid', () => {
+		const view = render(<AnalogClock lineWidth={2} />);
+		const root = () => view.container.querySelector<HTMLElement>('.np-analog-clock')!;
+		expect(root().style.getPropertyValue('--clock-line-width')).toBe('2px');
+		view.rerender(<AnalogClock lineWidth={20} />);
+		expect(root().style.getPropertyValue('--clock-line-width')).toBe('6px');
+		for (const width of [0, -1, NaN, Infinity]) {
+			view.rerender(<AnalogClock lineWidth={width} />);
+			expect(root().style.getPropertyValue('--clock-line-width')).toBe('');
+		}
+	});
 	it('renders a DOM dial with three hands (no SVG)', () => {
 		const { container } = render(<AnalogClock />);
 		expect(container.querySelector('svg')).toBeNull(); // pure DOM, restylable via CSS

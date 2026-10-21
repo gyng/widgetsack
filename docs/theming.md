@@ -57,6 +57,8 @@ Set only the values you want to change. Other tokens keep the defaults below.
 | `--np-font` | `'Bahnschrift', 'Arial Narrow', sans-serif` | Body font family. |
 | `--np-font-display` | `'Bahnschrift', 'Arial Narrow', sans-serif` | Display font family (large numerals and headings). |
 | `--np-radius` | `2px` | Widget corner radius. |
+| `--np-widget-bg` | `transparent` | Optional common widget surface, controlled by design style presets. |
+| `--np-widget-shadow` | `none` | Common widget inset border and shadow; none in Transparent style. |
 | `--np-gap` | `4px` | Default gap between elements inside a widget. |
 | `--np-text-caption` | `12px` | Supporting widget text size (labels, units, metadata). |
 | `--np-text-body` | `14px` | Compact content-widget body size. |

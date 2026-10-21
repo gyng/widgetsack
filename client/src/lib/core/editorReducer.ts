@@ -124,7 +124,7 @@ export type Action =
 	| { type: 'undo' }
 	| { type: 'redo' }
 	| { type: 'select'; id: string }
-	| { type: 'selectClick'; id: string } // a plain click: collapses any marquee selection
+	| { type: 'selectClick'; id: string; additive?: boolean } // a plain click: collapses any marquee selection
 	| { type: 'setSelectedIds'; ids: string[]; primary: string | null }
 	| { type: 'enterDefEdit'; defId: string }
 	| { type: 'newWidget'; id: string; name: string } // item 4: create an empty def + floating instance, then enter def-edit
@@ -182,6 +182,18 @@ function reduceSelection(state: EditorState, action: SelectionAction): EditorSta
 			// A bare select (Outline/Inspector/menu) sets selectedId only → collapse the marquee.
 			return clearAddTargetIfOutside(syncPrimary({ ...state, selectedId: action.id }, false));
 		case 'selectClick':
+			if (action.additive) {
+				const ids = state.selectedIds.includes(action.id)
+					? state.selectedIds.filter((id) => id !== action.id)
+					: [...state.selectedIds, action.id];
+				const primary = ids.includes(action.id) ? action.id : (ids.at(-1) ?? null);
+				return clearAddTargetIfOutside({
+					...state,
+					selectedIds: ids,
+					selectedId: primary,
+					lastPrimary: primary
+				});
+			}
 			// A plain canvas click: set both + mark synced so syncPrimary is a no-op.
 			return clearAddTargetIfOutside({
 				...state,

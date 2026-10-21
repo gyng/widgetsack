@@ -56,6 +56,7 @@ Use a text template when you need labels, calculations, or several readings.
 | `integer` | Rounded to a whole number. | 37 |
 | `percent` | A whole-number percentage with a `%` suffix. | 37% |
 | `rate` | Bytes/second, binary-scaled, with a `/s` suffix. | 1.0 KiB/s |
+| `rate-short` | Binary throughput: whole K/s, two significant figures from M upward, and <1K/s for tiny traffic. | 24M/s |
 | `bytes` | Binary-scaled bytes (B / KiB / MiB / GiB / TiB). | 16.0 GiB |
 | `duration` | A whole-seconds duration, two most-significant units. | 3d 4h |
 

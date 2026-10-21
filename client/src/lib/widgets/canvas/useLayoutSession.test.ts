@@ -41,6 +41,60 @@ afterEach(() => {
 	vi.resetAllMocks();
 });
 
+it('recovers a failed initial read without a restart and clears the paused-saving status', async () => {
+	invoke.mockRejectedValue(new Error('temporary lock'));
+	const { result } = renderHook(() => useSession('a'));
+	await act(async () => {
+		expect(await result.current.reloadLayout()).toBe(false);
+	});
+	expect(result.current.layoutReadFailed).toBe(true);
+	expect(result.current.state.savedBaseline).toBeNull();
+	invoke.mockResolvedValue(document('a', 'recovered'));
+	await act(async () => {
+		expect(await result.current.retryLayout()).toBe(true);
+	});
+	expect(result.current.layoutReadFailed).toBe(false);
+	expect(result.current.state.savedBaseline?.monitor.root.id).toBe('recovered');
+});
+
+it('recovery probes preserve both loaded edits and drafts created before the initial read', async () => {
+	invoke.mockResolvedValue(document('a', 'saved'));
+	const { result } = renderHook(() => useSession('a'));
+	act(() =>
+		result.current.commitOp(() => ({
+			monitor: { root: container('draft', 'row', []), floating: [] }
+		}))
+	);
+	await act(async () => {
+		expect(await result.current.retryLayout()).toBe(false);
+	});
+	expect(result.current.state.monitor.root.id).toBe('draft');
+	invoke.mockResolvedValue('{');
+	await act(async () => {
+		expect(await result.current.retryLayout()).toBe(false);
+	});
+	invoke.mockRejectedValue(new Error('locked'));
+	await act(async () => {
+		expect(await result.current.retryLayout()).toBe(false);
+	});
+	invoke.mockResolvedValue(document('a', 'saved'));
+	await act(async () => {
+		await result.current.reloadLayout();
+	});
+	act(() =>
+		result.current.commitOp(() => ({
+			monitor: { root: container('edited', 'row', []), floating: [] }
+		}))
+	);
+	await act(async () => {
+		expect(await result.current.retryLayout()).toBe(true);
+	});
+	expect(result.current.state.monitor.root.id).toBe('edited');
+	await act(async () => {
+		await result.current.flushPreviewWrite();
+	});
+});
+
 describe('layout session', () => {
 	it('does not apply a completed Save baseline to a reloaded session on the same monitor', async () => {
 		invoke.mockResolvedValue(document('a', 'old'));

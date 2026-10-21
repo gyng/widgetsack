@@ -309,3 +309,17 @@ describe('active-sensor tracking (demand-gating)', () => {
 		expect(changes).toBe(1);
 	});
 });
+
+it('publishes a coherent batch before notifying multi-sensor readers, once per changed sensor', () => {
+	const hub = createTelemetryHub();
+	const snapshots: number[][] = [];
+	hub
+		.sensor('cpu.total')
+		.subscribe(() => snapshots.push(hub.sensor('cpu.core.0').getSnapshot().history));
+	hub.ingestBatch([
+		{ sensor: 'cpu.total', ts_ms: 1, value: { kind: 'scalar', value: 10 } },
+		{ sensor: 'cpu.total', ts_ms: 2, value: { kind: 'scalar', value: 20 } },
+		{ sensor: 'cpu.core.0', ts_ms: 2, value: { kind: 'scalar', value: 25 } }
+	]);
+	expect(snapshots).toEqual([[25]]);
+});

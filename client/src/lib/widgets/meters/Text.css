@@ -8,23 +8,54 @@
 	width: 100%;
 	height: 100%;
 	font-family: var(--np-font, 'Bahnschrift', 'Arial Narrow', sans-serif);
+	font-size: var(--np-text-body, 14px);
 }
 
 .np-text .label {
-	font-size: 11px;
+	font-size: var(--np-text-caption, 11px);
 	opacity: 0.7;
 }
 
 .np-text .value {
-	font-size: 15px;
+	font-size: var(--np-text-body, 15px);
 	/* Equal-width digits so a changing value (rate, %) doesn't make the text wobble/shift. */
 	font-variant-numeric: tabular-nums;
 }
 
+.np-text .text-sparkline {
+	display: block;
+	position: relative;
+	flex: 0 0 auto;
+	align-self: baseline;
+	/* Share the reading's font metrics: 100 meets the numeral cap and 0 its baseline.
+	   An em box rises above the digits, especially at the larger desktop densities. */
+	font-size: var(--np-text-body, 15px);
+	height: var(--text-sparkline-height, 1cap);
+	/* Adds to the reading row's existing column gap (normally 4px). */
+	margin-inline-start: var(--text-sparkline-gap, 2px);
+	overflow: hidden;
+	max-width: 100%;
+}
+
+.np-text .text-sparkline > .np-sparkline {
+	position: absolute;
+	inset: 0;
+}
+
+.np-text .text-sparkline.stretch {
+	flex: 1 1 0;
+	width: auto;
+	min-width: 24px;
+}
+
 /* Rate values share a narrow two-column row in the Network widget. Keep a long formatted value
    on one line inside its authored height instead of wrapping below the widget's clipped bottom. */
+.np-text.rate .value,
+.np-text.rate .text-sparkline {
+	font-size: var(--np-text-body, 12px);
+}
+
 .np-text.rate .value {
-	font-size: 12px;
 	white-space: nowrap;
 }
 

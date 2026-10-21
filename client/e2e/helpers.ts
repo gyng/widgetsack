@@ -61,9 +61,10 @@ export async function addWidget(page: Page, type: string): Promise<Locator> {
 	await openSection(page, 'layouts');
 	// The Add palette lives in a <details> that auto-collapses once a node is selected, so re-open it
 	// (a no-op on a fresh boot where nothing is selected) before reaching for a palette button.
-	const summary = page.locator('.inspector .add-panel > summary');
-	await expect(summary).toBeVisible();
-	if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
+	await page.getByRole('button', { name: 'Add widget', exact: true }).click();
+	const catalog = page.locator('.inspector .add-panel');
+	await expect(catalog).toHaveAttribute('open', '');
+	await catalog.getByRole('tab', { name: 'Widgets', exact: true }).click();
 	const label = type.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // escape regex metachars in the label
 	// The add selects the new widget. When a widget is ALREADY selected (a second add), waiting for
 	// `.widget.selected` to be visible passes at once — before the click has even committed — and the
@@ -80,6 +81,7 @@ export async function addWidget(page: Page, type: string): Promise<Locator> {
 	expect(id, 'the added widget host carries its id').toBeTruthy();
 	// A stable handle on THIS widget, not on "whatever is selected now", so a later add or a deselect
 	// can't silently retarget the caller's locator.
+	await page.getByRole('tab', { name: 'Configure', exact: true }).click();
 	return page.locator(`.widget[data-w="${id}"]`);
 }
 

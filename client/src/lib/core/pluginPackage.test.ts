@@ -534,6 +534,39 @@ describe('packageSensorId / consentFingerprint / enableConsentMessage', () => {
 });
 
 describe('packageTemplateThreats / templateThreatFingerprint', () => {
+	it('flags custom HTML templates and invalidates consent when any inline source or sensor scope changes', () => {
+		const custom = (javascript: string, sensorIds = 'cpu.total') =>
+			parsePluginPackage(
+				'weather-pack',
+				manifest({
+					templates: [
+						{
+							id: 'custom',
+							name: 'Custom',
+							size: { w: 320, h: 100 },
+							tree: {
+								id: 'custom',
+								unit: {
+									id: 'custom',
+									type: 'customhtml',
+									rect: { x: 0, y: 0, w: 320, h: 100 },
+									config: { html: '<main/>', javascript, sensorIds }
+								}
+							}
+						}
+					]
+				})
+			);
+		const a = custom('x'.repeat(200) + '1');
+		const b = custom('x'.repeat(200) + '2');
+		const c = custom('x'.repeat(200) + '1', 'mem.used');
+		if (!a.ok || !b.ok || !c.ok) throw new Error('valid custom HTML package fixture');
+		const threats = packageTemplateThreats(a.pkg.manifest);
+		expect(threats).toEqual([expect.objectContaining({ kind: 'custom-html' })]);
+		const fingerprint = templateThreatFingerprint(threats);
+		expect(templateThreatFingerprint(packageTemplateThreats(b.pkg.manifest))).not.toBe(fingerprint);
+		expect(templateThreatFingerprint(packageTemplateThreats(c.pkg.manifest))).not.toBe(fingerprint);
+	});
 	const iframeNode = (id: string, config: Record<string, unknown>) => ({
 		id,
 		unit: { id, type: 'iframe', rect: { x: 0, y: 0, w: 1, h: 1 }, config }

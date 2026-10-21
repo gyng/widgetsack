@@ -86,7 +86,8 @@ Show sensor history as a line, area chart, or histogram.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `smooth` | toggle | false |  | Blend chart changes between readings. Charts do not animate when reduced motion is on. Recorded values stay unchanged. |
+| `smooth` | toggle | false |  | Play buffered recorded samples smoothly. Respects reduced motion; recorded values stay unchanged. |
+| `smoothDelay` | number | 1.5 | min 1, max 10, step 0.5 | Playback delay for smooth charts. Buffers recorded samples so the right edge has known data. History duration stays unchanged. |
 | `seconds` | number | 60 | min 5, step 5 | seconds of history to show |
 | `color` | color |  |  | line / bar colour (blank = theme accent) |
 | `fill` | toggle |  |  | fill the area under the line |
@@ -99,7 +100,7 @@ Show sensor history as a line, area chart, or histogram.
 
 ![Text widget](img/widgets/text.png)
 
-Show a formatted sensor value with an optional label. Formats include percentages, rates, bytes, durations, and integers.
+Show a formatted sensor value with an optional label and inline history sparkline. Formats include percentages, rates, bytes, durations, and integers.
 
 - **Data:** Numeric sensor. Default: `net.down`.
 - **Default size:** 100×18
@@ -108,9 +109,16 @@ Show a formatted sensor value with an optional label. Formats include percentage
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `label` | text | "↓" |  | prefix shown before the value |
-| `format` | text | "rate" |  | percent \| rate (bytes/s) \| bytes (e.g. 16.0 GiB) \| duration (uptime) \| integer; else raw |
+| `format` | text | "rate" |  | percent \| rate (binary bytes/s) \| rate-short (one decimal / three significant figures, e.g. 1.2M/s) \| bytes \| duration \| integer; else raw |
 | `value` | expr |  | → text | template: text + {expressions}, e.g. CPU {round(cpu.total)}% · {bytes(mem.used.bytes)} |
-| `color` | color |  |  | text colour (blank = theme) |
+| `color` | color |  |  | text and inline graph colour (blank = theme) |
+| `showSparkline` | toggle | false |  | Show the bound sensor history beside its current value. |
+| `sparklineSeconds` | number | 60 | min 5, max 600 | History window for the inline graph, in seconds. |
+| `sparklineWidth` | number | 40 | min 24, max 160, step 4 | Inline graph width in pixels. |
+| `sparklineStretch` | toggle | false |  | Expand the inline graph to fill the space beside the value instead of using a fixed width. |
+| `sparklineSmooth` | toggle | true |  | Scroll recorded samples left between readings. Enabled by default; respects reduced motion. |
+| `sparklineDelay` | number | 1.5 | min 1, max 10, step 0.5 | Smooth playback delay. Buffers recorded data; does not shorten the selected history window. |
+| `sparklineScale` | select | "auto" | `auto`, `percent` | Auto for rates and unbounded values; percent fixes the graph to 0–100 for percentage readings. |
 
 ### Clock — `clock`
 
@@ -163,6 +171,7 @@ Show the time on an analog clock with hour, minute, and second hands.
 | `color` | color |  |  | hour + minute hands, ticks, ring |
 | `accent` | color |  |  | second hand colour |
 | `face` | color |  |  | face fill (default transparent) |
+| `lineWidth` | number | 0 | min 0, max 6, step 0.25 | ring and hand thickness in pixels; 0 scales with the dial size |
 | `updateMs` | number | 1000 | min 16, step 50 | redraw interval; lower = smoother second hand, higher = lighter |
 
 ### Button / Macro — `button`
@@ -189,7 +198,8 @@ Show CPU usage as per-core charts or one combined gauge.
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `smooth` | toggle | false |  | animate between telemetry ticks; respects reduced motion |
+| `smooth` | toggle | false |  | Play buffered per-core samples smoothly; respects reduced motion. |
+| `smoothDelay` | number | 1.5 | min 1, max 10, step 0.5 | Playback delay for smooth charts. Buffers recorded samples so the right edge has known data. History duration stays unchanged. |
 | `mode` | select | "cores" | `cores`, `combined` | per-core sparkline grid vs one combined gauge |
 | `seconds` | number | 30 | min 5, step 5 | seconds of history to show |
 | `label` | text |  |  | caption for the combined gauge |
@@ -217,7 +227,7 @@ Show battery charge and charging status or remaining time. A computer without a 
 
 Show NVIDIA GPU usage and available temperature, memory, power, clock, and fan readings. Unavailable readings show “—”.
 
-- **Default size:** 200×96
+- **Default size:** 260×144
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
@@ -580,6 +590,8 @@ Compare sensor histories on one scale, with a threshold band and min/average/max
 
 ### AI Usage — `aiusage`
 
+![AI Usage widget](img/widgets/aiusage.png)
+
 Claude and Codex quotas, token activity, credit balances and banked resets, with optional local history graphs and consumption estimates. Add OpenRouter, OMP or custom JSON commands.
 
 - **Default size:** 265×44
@@ -587,14 +599,31 @@ Claude and Codex quotas, token activity, credit balances and banked resets, with
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `providerIcons` | toggle | true |  | Monochrome provider marks replace names in Compact and accompany names in Detailed. Choose each mark in the provider row. |
-| `minimal` | toggle | false |  | Values only, one line per provider. Overrides provider density. |
+| `layout` | select | "compact" | `detailed`, `compact`, `minimal` | Detailed shows full readings; Compact wraps readings by provider; Minimal hides reading labels. Provider rows can override Detailed or Compact. |
 | `minimalIcons` | toggle | false |  | Optional provider icons instead of hiding labels entirely. |
 | `showHeader` | toggle | false |  | Optional heading above the provider rows. |
 | `label` | text | "AI Usage" |  | Widget heading. |
 | `providers` | usageProviders | [{"icon":"auto","settings":{"session":{},"week":{},"other":{},"tokens":{},"credits":{},"banked":{},"graph":{},"eta":{},"resets":{}},"labels":{},"order":["session","week","other","tokens","credits","banked","graph","eta","resets"],"id":"codex","source":"codex","label":"Codex","enabled":true,"command":"","env":"OPENROUTER_API_KEY","account":"","compact":"inherit","session":true,"week":true,"other":false,"tokens":false,"credits":false,"banked":true,"eta":false,"resets":false,"graph":false},{"icon":"auto","settings":{"session":{},"week":{},"other":{},"tokens":{},"credits":{},"banked":{},"graph":{},"eta":{},"resets":{}},"labels":{},"order":["session","week","other","tokens","credits","banked","graph","eta","resets"],"id":"claude","source":"claude","label":"Claude","enabled":true,"command":"","env":"OPENROUTER_API_KEY","account":"","compact":"inherit","session":true,"week":true,"other":false,"tokens":false,"credits":false,"banked":true,"eta":false,"resets":false,"graph":false}] |  | Codex and Claude are enabled initially. Add providers, override commands and choose visible readings independently. |
 | `interval` | number | 900 | min 60, max 3600 | Backend requests are shared for 60 seconds across windows. Default: fifteen minutes. |
 | `timeout` | number | 20 | min 5, max 60 | Maximum duration of each provider refresh. |
-| `compact` | toggle | true |  | One line per provider with optional inline sparklines. Detailed layout includes estimates and full graph captions. |
+
+### Custom HTML — `customhtml`
+
+![Custom HTML widget](img/widgets/customhtml.png)
+
+Build a portable isolated widget with HTML, CSS, JavaScript, theme tokens and selected sensors.
+
+- **Default size:** 320×100
+- **Controls:** available on the desktop.
+
+| key | type | default | options / range | description |
+| --- | --- | --- | --- | --- |
+| `title` | text | "Custom HTML widget" |  | Accessible frame title. |
+| `html` | text | "<main><span>CPU</span><strong id=\"value\">—</strong></main>" |  | Body markup, saved with the widget. Inline data images and SVG are supported. |
+| `css` | text | "main { height: 100%; display: flex; align-items: center; gap: var(--np-row-gap); } span { color: var(--np-label); } strong { color: var(--np-fg); font-size: var(--np-text-heading); font-variant-numeric: tabular-nums; }" |  | Document styles. Use inherited --np-* theme tokens for a consistent look. |
+| `javascript` | text | "widgetsack.subscribe(({ sensors }) => { const value = sensors['cpu.total']?.value; document.querySelector('#value').textContent = value?.kind === 'scalar' ? Math.round(value.value) + '%' : '—'; });" |  | Isolated module. Use widgetsack.subscribe(state => …) for selected sensors, theme tokens and viewport size. |
+| `sensorIds` | text | "cpu.total" |  | Comma or newline separated sensor IDs; only these sensors are exposed (maximum 32). |
+| `interact` | toggle | false |  | Catch mouse clicks in the overlay. Off passes clicks through to the desktop. |
 
 ### HA Sensor — `ha.sensor`
 
@@ -623,7 +652,7 @@ Claude and Codex quotas, token activity, credit balances and banked resets, with
 ![HA Light widget](img/widgets/ha.light.png)
 
 - **Data:** Structured sensor data.
-- **Default size:** 120×48
+- **Default size:** 120×56
 - **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
@@ -727,7 +756,7 @@ Claude and Codex quotas, token activity, credit balances and banked resets, with
 ![HA Media Player widget](img/widgets/ha.media_player.png)
 
 - **Data:** Structured sensor data.
-- **Default size:** 180×92
+- **Default size:** 240×120
 - **Controls:** available on the desktop.
 
 | key | type | default | options / range | description |
@@ -831,7 +860,7 @@ Show upcoming events from the configured ICS calendar feed.
 | `maxRows` | number | 6 | min 1, max 20, step 1 | how many upcoming events to show |
 | `color` | color |  |  | time / timeline colour (blank = theme accent) |
 
-### AI Assistant — `aichat`
+### AI Chat — `aichat`
 
 An interactive chat with your configured AI provider. Send messages, stop a reply, or clear the conversation. Chat is shared within each window.
 
@@ -840,11 +869,11 @@ An interactive chat with your configured AI provider. Send messages, stop a repl
 
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
-| `label` | text | "AI Assistant" |  | Header displayed above the conversation. |
+| `label` | text | "AI Chat" |  | Header displayed above the conversation. |
 
-### AI Briefing — `assistant`
+### AI Prompt — `assistant`
 
-Generate a briefing from sensor readings with the configured AI Provider. Set an interval or cron schedule. Use manual refresh in Studio.
+Run a saved prompt with live sensor readings, manually or on an interval or cron schedule. Displays the latest response; use AI Chat for conversations.
 
 - **Default size:** 280×96
 - **Controls:** available on the desktop.
@@ -852,10 +881,10 @@ Generate a briefing from sensor readings with the configured AI Provider. Set an
 | key | type | default | options / range | description |
 | --- | --- | --- | --- | --- |
 | `prompt` | text | "Summarize my system status in one short, friendly sentence." |  | what to ask the AI (your live sensors are included automatically) |
-| `schedule` | text | "10m" |  | how often to refresh: an interval (30s, 5m, 2h), a cron expr (e.g. 0 9 * * *), or "manual" |
+| `schedule` | text | "10m" |  | Interval: 30s, 5m, 2h (15s minimum). Cron: minute hour day month weekday, e.g. 0 9 * * * for 09:00 local time. Blank or manual disables automatic runs. Runs while the overlay is open; Studio refreshes manually. |
 | `sensors` | text | "auto" |  | comma-separated sensor ids to feed the prompt, or "auto" |
 | `speak` | toggle | false |  | speak each update (TTS) |
-| `label` | text | "AI" |  | header text |
+| `label` | text | "AI Prompt" |  | header text |
 | `color` | color | "" |  | text colour (blank = theme) |
 
 ### Transcribe / Translate — `transcribe`

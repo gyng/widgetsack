@@ -75,9 +75,30 @@ fn layout_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// Read the saved layout file, or `None` if it does not exist yet. The frontend
 /// validates/parses the contents (see core/layout.ts) so this stays dumb I/O.
 #[tauri::command]
-pub async fn load_layout(app: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn load_layout(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LayoutIoState>,
+) -> Result<Option<String>, String> {
+    // Reads and writes share a transaction lock across webviews. Brief scanner/sync locks should
+    // recover before the frontend pauses saving; do the bounded file work off the async executor.
+    let _transaction = state.lock.lock().await;
     let path = layout_path(&app)?;
-    match fs::read_to_string(&path) {
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        crate::file_io::with_retries(
+            &[10, 20, 40, 80],
+            || fs::read_to_string(&path),
+            |error| {
+                matches!(
+                    error.kind(),
+                    std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::WouldBlock
+                ) || error.raw_os_error() == Some(32)
+            },
+            |ms| std::thread::sleep(std::time::Duration::from_millis(ms)),
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?;
+    match result {
         Ok(contents) => Ok(Some(contents)),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(err) => Err(err.to_string()),

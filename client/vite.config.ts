@@ -72,6 +72,8 @@ export default defineConfig({
 				// Resize/MutationObserver (happy-dom returns zero rects). Its pure seam screenRectToLayout
 				// is unit-tested in core/measureMath.test.ts; the rest is runtime/e2e only.
 				'src/lib/widgets/canvas/useMeasuredRects.ts',
+				// Glyph geometry, exercised by the arrangement browser journey.
+				'src/lib/widgets/canvas/measureContent.ts',
 				// canvas-2D / FFT-stream draw glue: the substance is imperative draw() on a 2D context
 				// happy-dom doesn't provide (getContext returns null, client sizes are 0). The pure geometry
 				// is unit-tested in cpuCoresMath / sparklineMath / spectrumMath.test.ts; acquire/release is

@@ -8,7 +8,10 @@ import {
 } from './studioAgentSession';
 import { emptyMonitorLayout } from '../core/layoutTree';
 
-function setup(withVerification = false) {
+function setup(
+	withVerification = false,
+	integrationTool?: (name: string, args: unknown, signal?: AbortSignal) => Promise<unknown>
+) {
 	let receive: (event: AgentEvent) => void = () => {};
 	let resolve: () => void = () => {};
 	const ports: AgentPorts = {
@@ -33,7 +36,7 @@ function setup(withVerification = false) {
 	const updates: AgentState[] = [];
 	const session = createStudioAgentSession(
 		ports,
-		{ read: () => snapshot, apply, ...(withVerification ? { verify } : {}) },
+		{ read: () => snapshot, apply, ...(withVerification ? { verify } : {}), integrationTool },
 		(state) => updates.push(state),
 		() => 'run'
 	);
@@ -56,6 +59,83 @@ function setup(withVerification = false) {
 		}
 	};
 }
+
+it('routes configuration tools and never replies after a stopped run', async () => {
+	let finish!: (value: unknown) => void;
+	const tool = vi.fn(
+		(_name: string, _args: unknown, _signal?: AbortSignal) =>
+			new Promise((resolve) => {
+				finish = resolve;
+			})
+	);
+	const s = setup(false, tool);
+	const running = s.session.send('Configure Home Assistant', 'codex', '');
+	s.receive({
+		type: 'tool',
+		id: 'config',
+		name: 'studio_configure_integration',
+		args: { integration: 'home-assistant', settings: {} }
+	});
+	expect(tool).toHaveBeenCalledOnce();
+	s.session.stop();
+	expect(tool.mock.calls[0][2]?.aborted).toBe(true);
+	finish({ persisted: true });
+	await Promise.resolve();
+	expect(s.ports.reply).not.toHaveBeenCalled();
+	s.finish();
+	await running;
+});
+it('returns configuration outcomes and safe validation failures to the installed agent', async () => {
+	const tool = vi.fn().mockResolvedValue({ persisted: true });
+	const s = setup(false, tool);
+	const running = s.session.send('Set up integrations', 'codex', '');
+	s.receive({ type: 'tool', id: 'config', name: 'studio_configure_integration', args: {} });
+	await vi.waitFor(() =>
+		expect(s.ports.reply).toHaveBeenCalledWith('run', 'config', { persisted: true })
+	);
+	tool.mockRejectedValueOnce(new Error('private backend payload'));
+	s.receive({ type: 'tool', id: 'failed', name: 'studio_test_integration', args: {} });
+	await vi.waitFor(() =>
+		expect(s.ports.reply).toHaveBeenCalledWith('run', 'failed', {
+			error: 'Integration request failed.'
+		})
+	);
+	s.finish();
+	await running;
+	const defaults = setup();
+	const next = defaults.session.send('Setup', 'codex', '');
+	defaults.receive({ type: 'tool', id: 'unknown', name: 'studio_configure_integration', args: {} });
+	await vi.waitFor(() =>
+		expect(defaults.ports.reply).toHaveBeenCalledWith('run', 'unknown', {
+			error: 'Integration request failed.'
+		})
+	);
+	defaults.finish();
+	await next;
+});
+
+it('handles a disconnected integration reply and ignores a rejection after cancellation', async () => {
+	const tool = vi.fn().mockRejectedValue(new Error('private backend detail'));
+	const s = setup(false, tool);
+	vi.mocked(s.ports.reply).mockRejectedValue(new Error('transport closed'));
+	const running = s.session.send('Configure', 'codex', '');
+	s.receive({ type: 'tool', id: 'failed', name: 'studio_test_integration', args: {} });
+	await vi.waitFor(() => expect(s.updates.at(-1)?.error).toBe('Integration request failed.'));
+	let fail!: (error: Error) => void;
+	tool.mockImplementationOnce(
+		() =>
+			new Promise((_, reject) => {
+				fail = reject;
+			})
+	);
+	s.receive({ type: 'tool', id: 'cancelled', name: 'studio_test_integration', args: {} });
+	s.session.stop();
+	fail(new Error('cancelled private detail'));
+	await Promise.resolve();
+	s.finish();
+	await running;
+	expect(s.ports.reply).toHaveBeenCalledTimes(1);
+});
 describe('studio agent session', () => {
 	it.each(['stop', 'reset'] as const)(
 		'discards prompts waiting for cancellation when %s is requested',

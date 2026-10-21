@@ -1,5 +1,7 @@
 .timer-dial {
-	gap: 5px;
+	font-size: var(--np-text-body, 14px);
+	line-height: var(--np-line-body, 20px);
+	gap: var(--np-gap, 4px);
 	min-height: 0;
 	overflow: hidden;
 }
@@ -65,7 +67,8 @@
 	flex: 0 0 auto;
 }
 .dial-hint {
-	font-size: 0.65em;
+	font-size: var(--np-text-caption, 12px);
+	line-height: var(--np-line-caption, 16px);
 	opacity: 0.7;
 	flex: 0 0 auto;
 }
@@ -76,7 +79,7 @@
 .timer-dial .timer-btn {
 	padding: 0 6px;
 	font: inherit;
-	font-size: 0.7em;
+	font-size: var(--np-text-body, 14px);
 }
 .timer-dial .timer-btn:disabled {
 	opacity: 0.3;

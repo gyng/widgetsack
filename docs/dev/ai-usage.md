@@ -1,8 +1,8 @@
 # AI Usage widget
 
 The widget starts with Codex and Claude enabled in Compact mode, with the heading hidden and
-quotas showing the allowance left. Refresh defaults to 15 minutes. Add **AI Usage** from the
-Tools palette or choose a preset from the widget designer.
+quotas showing the allowance left. The left/used suffix is hidden by default; enable **Show left / used suffix** in a quota row’s settings when wanted. Refresh defaults to 15 minutes. Add **AI Usage** from the
+Tools palette or choose a preset from Build.
 
 Each provider has a source, label and layout override. Its aligned reading rows combine a
 visibility checkbox, label override, up/down controls and a settings button. Quota rows own

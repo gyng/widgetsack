@@ -84,6 +84,14 @@ export default function UsageItemSettingsEditor({
 			{['session', 'week', 'other'].includes(item) && (
 				<>
 					<label>
+						<input
+							type="checkbox"
+							checked={value.showMode}
+							onChange={(e) => onChange({ showMode: e.target.checked })}
+						/>
+						Show left / used suffix
+					</label>
+					<label>
 						Warning used %
 						<input
 							type="number"

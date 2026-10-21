@@ -4,6 +4,7 @@
 // ("Saved preset X · N presets" / the failure reason) renders right under it. Lazy-loadable like the
 // other studio panels.
 import { useState } from 'react';
+import Icon from './Icon';
 import type { PresetStatus } from './canvas/useSavedLayouts';
 import { LOCAL_DESKTOP_PRESET_NAME } from '../core/localDesktop';
 
@@ -25,10 +26,8 @@ export default function SavedLayoutsPanel({
 	const [name, setName] = useState('');
 	return (
 		<div className="rail-panel presets-panel">
-			<div className="rp-hd">Presets</div>
-			<div className="rp-stub">
-				Save this monitor’s layout as a preset. Load it when you need it.
-			</div>
+			<h2 className="rp-hd">Saved layouts</h2>
+			<div className="rp-stub">Save this monitor’s arrangement and restore it later.</div>
 			<form
 				className="preset-save"
 				onSubmit={(e) => {
@@ -39,13 +38,13 @@ export default function SavedLayoutsPanel({
 				<input
 					type="text"
 					value={name}
-					placeholder="Preset name"
-					aria-label="Preset name"
+					placeholder="Layout name"
+					aria-label="Layout name"
 					spellCheck={false}
 					onChange={(e) => setName(e.currentTarget.value)}
 				/>
 				<button type="submit" disabled={!name.trim()}>
-					⤓ Save
+					<Icon name="save" /> Save
 				</button>
 			</form>
 			{status && (
@@ -67,27 +66,27 @@ export default function SavedLayoutsPanel({
 						<div className="rp-list-row" key={n}>
 							<button
 								type="button"
-								title="Replace this monitor’s layout with this preset (Ctrl+Z restores it)"
+								title="Replace this monitor’s layout with this saved layout (Ctrl+Z restores it)"
 								onClick={() => onLoad(n)}
 							>
-								⤒ {n}
+								<Icon name="load" /> {n}
 							</button>
 							{n !== LOCAL_DESKTOP_PRESET_NAME && (
 								<button
 									type="button"
 									className="rp-danger"
-									title="Delete this preset"
-									aria-label={`Delete preset ${n}`}
+									title="Delete this saved layout"
+									aria-label={`Delete saved layout ${n}`}
 									onClick={() => onDelete(n)}
 								>
-									✕
+									<Icon name="trash" />
 								</button>
 							)}
 						</div>
 					))}
 				</div>
 			) : (
-				<div className="rp-stub">No presets yet. Enter a name above and select Save.</div>
+				<div className="rp-stub">No saved layouts yet. Enter a name above and select Save.</div>
 			)}
 		</div>
 	);

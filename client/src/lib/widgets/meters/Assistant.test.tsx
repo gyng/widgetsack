@@ -11,7 +11,7 @@ describe('Assistant (pure view)', () => {
 
 	it('shows a waiting placeholder when empty, and a thinking state when busy', () => {
 		const { getByText, rerender } = render(<Assistant text="" />);
-		expect(getByText(/Waiting for the AI/)).toBeTruthy();
+		expect(getByText('No response yet. Generate now.')).toBeTruthy();
 		rerender(<Assistant text="" busy />);
 		expect(getByText(/Thinking/)).toBeTruthy();
 	});

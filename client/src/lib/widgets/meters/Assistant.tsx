@@ -23,7 +23,7 @@ export default function Assistant({
 }: AssistantViewProps) {
 	// `||` (not `??`) so a blank config color falls back to the theme variable.
 	const colorCss = color || 'var(--np-fg, rgb(255, 255, 255))';
-	const body = error ? error : text || (busy ? 'Thinking…' : 'Waiting for the AI…');
+	const body = error ? error : text || (busy ? 'Thinking…' : 'No response yet. Generate now.');
 
 	return (
 		<div className="assistant np-assistant" data-part="root" style={{ color: colorCss }}>

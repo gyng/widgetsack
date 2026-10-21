@@ -70,9 +70,9 @@ test('all dashboard sacks import and insert as a styled group', async ({ page })
 		await page.getByRole('button', { name: new RegExp(`Built-in: ${name}`) }).click();
 		await expect(page.getByText(/Imported 1 widget/)).toBeVisible();
 		await openSection(page, 'layouts');
-		const summary = page.locator('.inspector .add-panel > summary');
-		await expect(summary).toBeVisible();
-		if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
+		await page.getByRole('tab', { name: 'Add', exact: true }).click();
+		await expect(page.locator('.inspector .add-panel')).toHaveAttribute('open', '');
+		await page.locator('.inspector').getByRole('tab', { name: 'My widgets', exact: true }).click();
 		await page
 			.locator('.inspector')
 			.getByRole('button', { name: `${name} dashboard`, exact: true })
@@ -120,14 +120,13 @@ test('service warnings use theme colors and long errors stay inside the widget',
 			return invoke(command, args);
 		};
 	});
-	const summary = page.locator('.inspector .add-panel > summary');
-	await expect(summary).toBeVisible();
-	if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
+	await page.getByRole('tab', { name: 'Add', exact: true }).click();
+	await expect(page.locator('.inspector .add-panel')).toHaveAttribute('open', '');
 	await page
 		.locator('.palette')
-		.filter({ has: page.locator('.hd2', { hasText: /^System$/ }) })
 		.getByRole('button', { name: /^Service Health —/ })
 		.click();
+	await page.getByRole('tab', { name: 'Configure', exact: true }).click();
 	const endpoint = page
 		.locator('.inspector')
 		.getByRole('textbox', { name: 'endpoint URL', exact: true });

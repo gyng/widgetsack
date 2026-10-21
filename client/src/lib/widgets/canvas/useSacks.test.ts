@@ -137,6 +137,13 @@ beforeEach(() => {
 });
 
 describe('refreshSacks (section-open peek)', () => {
+	it('seeds a valid export name from display labels while preserving typed names', () => {
+		const { result } = setup({ navSection: 'settings' });
+		expect(result.current.exportName).toBe('default');
+		expect(result.current.exportNameError).toBeNull();
+		act(() => result.current.setExportName('my own bundle'));
+		expect(result.current.exportName).toBe('my own bundle');
+	});
 	it('summarizes each sack: def count, theme name, token count — and flags unreadable files', async () => {
 		listSacks.mockResolvedValue(['good', 'bad']);
 		readSack.mockImplementation(async (name: string) =>

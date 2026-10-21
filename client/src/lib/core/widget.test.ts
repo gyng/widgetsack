@@ -87,7 +87,8 @@ describe('meta registry', () => {
 			'audiomixer',
 			'checklist',
 			'history',
-			'aiusage'
+			'aiusage',
+			'customhtml'
 		]);
 		expect(getMeta('gauge')).toMatchObject({ label: 'Gauge', binds: 'scalar' });
 		expect(getMeta('sparkline')?.binds).toBe('series');
@@ -347,8 +348,7 @@ describe('field metadata: showWhen / group / help', () => {
 it('creates AI Usage as a two-row compact widget sized for a narrow sidebar', () => {
 	const widget = createWidget('aiusage', 'usage');
 	expect(widget.config).toMatchObject({
-		compact: true,
-		minimal: false,
+		layout: 'compact',
 		showHeader: false,
 		interval: 900
 	});

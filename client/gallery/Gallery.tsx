@@ -29,6 +29,8 @@ import type { TelemetryHub } from '../src/lib/core/telemetry';
 import { fakeSpectrum, makeHub } from './seed';
 import './gallery.css';
 import PresetGallery from './PresetGallery';
+import DensityGallery from './DensityGallery';
+import ContentDensityGallery from './ContentDensityGallery';
 
 registerHomeAssistantPlugin();
 registerNowPlayingPlugin();
@@ -197,7 +199,8 @@ const DEMO: WidgetInstance[] = [
 	}),
 	buildInstance('ha.climate', 'd-ha-climate', {
 		rect: { x: 748, y: 204, w: 128, h: 82 },
-		sensor: 'demo.climate'
+		sensor: 'demo.climate',
+		config: { label: 'HVAC' }
 	}),
 	buildInstance('ha.light', 'd-ha-light', {
 		rect: { x: 748, y: 300, w: 128, h: 48 },
@@ -295,6 +298,20 @@ export default function Gallery() {
 		requestAnimationFrame(() => document.body.setAttribute('data-ready', 'true'));
 	}, []);
 
+	if (new URLSearchParams(location.search).has('content-density'))
+		return (
+			<>
+				<StyleLayer css={styleCss} />
+				<ContentDensityGallery />
+			</>
+		);
+	if (new URLSearchParams(location.search).has('density'))
+		return (
+			<>
+				<StyleLayer css={styleCss} />
+				<DensityGallery />
+			</>
+		);
 	if (new URLSearchParams(location.search).has('presets'))
 		return (
 			<>

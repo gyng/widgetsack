@@ -11,6 +11,18 @@ import {
 import type { LayoutOp } from './ops';
 
 describe('groupPalette', () => {
+	it('merges legacy categories into the shared Utilities and Tools headings', () => {
+		expect(
+			groupPalette([
+				{ type: 'a', label: 'A', category: 'Utility' },
+				{ type: 'b', label: 'B', category: 'Utilities' },
+				{ type: 'c', label: 'C', category: 'System' }
+			]).map((group) => [group.category, group.items.length])
+		).toEqual([
+			['Utilities', 2],
+			['Tools', 1]
+		]);
+	});
 	it('groups by category in first-seen order, keeping registration order within a group', () => {
 		const groups = groupPalette([
 			{ type: 'gauge', label: 'Gauge', category: 'Meters' },
@@ -31,12 +43,71 @@ describe('groupPalette', () => {
 	});
 });
 
+it('offers Layout and Appearance views for groups and Layout for containers', () => {
+	const onOp = vi.fn();
+	const groupUnit: Group = {
+		id: 'group-a',
+		kind: 'group',
+		name: 'Group A',
+		size: { w: 100, h: 100 },
+		child: leaf(flowWidget)
+	};
+	const view = render(
+		<Inspector
+			workspace
+			pane="configure"
+			groupUnit={groupUnit}
+			node={leaf(groupUnit)}
+			onOp={onOp}
+		/>
+	);
+	fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+	expect(view.container.querySelector('.group-fields')).toHaveAttribute('data-view', 'Appearance');
+	fireEvent.click(screen.getByRole('tab', { name: 'Layout' }));
+	expect(view.container.querySelector('.group-fields')).toHaveAttribute('data-view', 'Layout');
+	fireEvent.click(screen.getByRole('tab', { name: 'Appearance' }));
+	const row = container('row', 'row', []);
+	view.rerender(<Inspector workspace pane="configure" container={row} node={row} onOp={onOp} />);
+	expect(screen.queryByRole('tab', { name: 'Appearance' })).toBeNull();
+	expect(view.container.querySelector('#inspector-panel-form')).toHaveAttribute(
+		'aria-labelledby',
+		'inspector-tab-Layout'
+	);
+});
+
 const flowWidget: WidgetInstance = {
 	id: 'w1',
 	type: 'clock',
 	rect: { x: 0, y: 0, w: 160, h: 40 },
 	config: {}
 };
+
+it('keeps the Add pane available for repeated insertion and names the Configure panel', () => {
+	const onOp = vi.fn();
+	const node = leaf(flowWidget);
+	const view = render(
+		<Inspector workspace pane="add" widget={flowWidget} node={node} onOp={onOp} addRequest={1} />
+	);
+	expect(view.container.querySelector('.inspector')).toHaveAttribute(
+		'aria-labelledby',
+		'workspace-tab-add'
+	);
+	expect(view.container.querySelector('.add-panel')).toHaveAttribute('open');
+	fireEvent.click(screen.getByRole('tab', { name: 'My widgets' }));
+	expect(screen.getByText(/No saved widgets yet/)).toBeVisible();
+	fireEvent.change(screen.getByLabelText('Filter the add palette'), { target: { value: 'Clock' } });
+	view.rerender(
+		<Inspector workspace pane="configure" widget={flowWidget} node={node} onOp={onOp} />
+	);
+	for (const name of ['Layout', 'Appearance', 'Advanced', 'Content'])
+		fireEvent.click(screen.getByRole('tab', { name }));
+	expect(view.container.querySelector('.inspector')).toHaveAttribute(
+		'aria-labelledby',
+		'workspace-tab-configure'
+	);
+	view.rerender(<Inspector workspace pane="hidden" onOp={onOp} />);
+	expect(view.container.querySelector('.inspector')).toHaveAttribute('data-pane', 'hidden');
+});
 
 describe('Inspector Data tab (JSON/YAML representation)', () => {
 	it('applies an edited JSON node via replaceNode, coercing the id back to the slot', () => {
@@ -259,8 +330,8 @@ describe('Inspector group + def params block', () => {
 		fireEvent.input(defH, { target: { value: '80' } });
 		expect(lastOp((o) => o.op === 'setDefSize' && o.h === 80)).toBeTruthy();
 
-		// Edit custom widget…
-		fireEvent.click(getByText('Edit custom widget…'));
+		// Edit shared widget…
+		fireEvent.click(getByText('Edit shared widget…'));
 		expect(lastOp((o) => o.op === 'editDef')).toMatchObject({ op: 'editDef', defId: 'd1' });
 
 		// A text param writes the override into group.params.
@@ -276,11 +347,11 @@ describe('Inspector group + def params block', () => {
 		expect(lastOp((o) => o.op === 'patchGroup' && o.patch.params?.hours === '12')).toBeTruthy();
 
 		// Add a new param from the key/target inputs (the row above the "Add param" button).
-		const addRow = getByText('Add param').previousElementSibling as HTMLElement;
+		const addRow = getByText('Add parameter').previousElementSibling as HTMLElement;
 		const [keyInput, targetInput] = [...addRow.querySelectorAll('input')];
 		fireEvent.change(keyInput, { target: { value: 'fmt' } });
 		fireEvent.change(targetInput, { target: { value: 'unit.config.fmt' } });
-		fireEvent.click(getByText('Add param'));
+		fireEvent.click(getByText('Add parameter'));
 		expect(lastOp((o) => o.op === 'addDefParam')).toMatchObject({
 			op: 'addDefParam',
 			defId: 'd1',
@@ -313,6 +384,6 @@ describe('Inspector group + def params block', () => {
 		const { queryByText } = render(
 			<Inspector groupUnit={noParamGroup} def={noParams} placement="floating" onOp={vi.fn()} />
 		);
-		expect(queryByText('Params')).toBeNull();
+		expect(queryByText('Parameters')).toBeNull();
 	});
 });

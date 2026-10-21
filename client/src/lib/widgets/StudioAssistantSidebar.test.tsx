@@ -1,5 +1,13 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import {
+	act,
+	cleanup,
+	fireEvent,
+	render as baseRender,
+	screen,
+	waitFor
+} from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactNode } from 'react';
 import StudioAssistantSidebar from './StudioAssistantSidebar';
 import { studioAgentPorts, studioAgentStatus } from './plugins/studio-agent-commands';
 import type { AgentEvent } from '../llm/studioAgentSession';
@@ -8,6 +16,12 @@ vi.mock('./plugins/studio-agent-commands', () => ({
 	studioAgentStatus: vi.fn(),
 	studioAgentPorts: { run: vi.fn(), reply: vi.fn(), cancel: vi.fn() }
 }));
+vi.mock('./McpSettingsPanel', () => ({ default: () => <p>Connect using stdio MCP</p> }));
+function render(element: ReactNode) {
+	const view = baseRender(element);
+	fireEvent.click(screen.getByRole('tab', { name: 'Built-in' }));
+	return view;
+}
 const ready = {
 	defaultBackend: 'pi',
 	backends: [
@@ -29,6 +43,22 @@ beforeEach(() => {
 	vi.mocked(studioAgentPorts.cancel).mockResolvedValue(undefined);
 });
 afterEach(cleanup);
+
+it('opens with existing-agent stdio help and preserves the built-in draft between tabs', async () => {
+	const view = baseRender(<StudioAssistantSidebar {...props()} />);
+	expect(screen.getByRole('tab', { name: 'Your agent' })).toHaveAttribute('aria-selected', 'true');
+	expect(screen.getByText('Connect using stdio MCP')).toBeVisible();
+	fireEvent.click(screen.getByRole('tab', { name: 'Built-in' }));
+	await waitFor(() => expect(screen.getByLabelText('Agent backend')).toHaveValue('pi'));
+	fireEvent.change(screen.getByLabelText('Message to studio assistant'), {
+		target: { value: 'Keep this draft' }
+	});
+	fireEvent.click(screen.getByRole('tab', { name: 'Your agent' }));
+	fireEvent.click(screen.getByRole('tab', { name: 'Built-in' }));
+	expect(screen.getByLabelText('Message to studio assistant')).toHaveValue('Keep this draft');
+	view.rerender(<StudioAssistantSidebar {...props()} hidden />);
+	expect(view.container.querySelector('aside')).toHaveAttribute('hidden');
+});
 describe('Studio assistant sidebar', () => {
 	it('keeps a selected installed agent on refresh and clears its model when falling back', async () => {
 		render(<StudioAssistantSidebar {...props()} />);
@@ -107,8 +137,7 @@ describe('Studio assistant sidebar', () => {
 			expect.objectContaining({ backend: 'pi', model: '' }),
 			expect.any(Function)
 		);
-		fireEvent.click(screen.getByRole('button', { name: 'Close assistant' }));
-		expect(p.onClose).toHaveBeenCalledOnce();
+		expect(screen.queryByText('Studio assistant', { exact: true })).toBeNull();
 	});
 	it('streams the reply, applies tools, stops work, and cancels on disposal', async () => {
 		let receive: (event: AgentEvent) => void = () => {};
@@ -126,6 +155,8 @@ describe('Studio assistant sidebar', () => {
 			target: { value: 'Add a clock' }
 		});
 		fireEvent.submit(screen.getByLabelText('Message to studio assistant').closest('form')!);
+		expect(screen.getByRole('status')).toHaveTextContent('Pi (installed) is working…');
+		expect(screen.getByRole('status').querySelector('.assistant-spinner')).toBeTruthy();
 		act(() => {
 			receive({ type: 'tool', id: 'r', name: 'studio_read', args: {} });
 			receive({

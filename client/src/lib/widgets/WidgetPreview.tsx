@@ -192,7 +192,8 @@ export default function WidgetPreview({ type, node, size, w = 200, h = 120 }: Pr
 	const { tree, nat } = useMemo<{ tree: LayoutNode | null; nat: { w: number; h: number } }>(() => {
 		if (type) {
 			const inst = createWidget(type, `preview-${type}`);
-			const size = getMeta(type)?.defaultSize ?? { w, h };
+			const size =
+				type === 'spacer' ? { w: 240, h: 100 } : (getMeta(type)?.defaultSize ?? { w, h });
 			inst.rect = { x: 0, y: 0, ...size };
 			if (type.startsWith('ha.')) inst.sensor = `preview.${type}`;
 			return { tree: leaf(inst), nat: size };

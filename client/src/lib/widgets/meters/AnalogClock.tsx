@@ -17,6 +17,7 @@ type Props = {
 	color?: string; // hour + minute hands, ticks, ring  → --clock-fg
 	accent?: string; // second hand + centre cap          → --clock-accent
 	face?: string; // face fill (default transparent)    → --clock-face
+	lineWidth?: number; // pixels; 0 keeps proportional dial strokes
 };
 
 const rot = (deg: number): CSSProperties => ({ transform: `rotate(${deg}deg)` });
@@ -29,7 +30,8 @@ export default function AnalogClock({
 	updateMs = 1000,
 	color,
 	accent,
-	face
+	face,
+	lineWidth = 0
 }: Props) {
 	// The shared wall clock at this widget's redraw period (one timer per period per window).
 	const now = new Date(useNow(updatePeriod(updateMs)));
@@ -40,6 +42,8 @@ export default function AnalogClock({
 	if (color) vars['--clock-fg'] = color;
 	if (accent) vars['--clock-accent'] = accent;
 	if (face) vars['--clock-face'] = face;
+	if (Number.isFinite(lineWidth) && lineWidth > 0)
+		vars['--clock-line-width'] = `${Math.min(6, lineWidth)}px`;
 
 	return (
 		<div className="analog-clock np-analog-clock" style={vars as CSSProperties}>

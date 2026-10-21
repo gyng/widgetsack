@@ -12,7 +12,9 @@ import './AiUsage.css';
 import ProviderIcon from '../ProviderIcon';
 import {
 	resolveUsageSettings,
+	resolveUsageLayout,
 	usageResetText,
+	type UsageLayout,
 	type UsageSettings
 } from '../../core/aiUsageSettings';
 export type UsageReading = {
@@ -23,6 +25,7 @@ export type UsageReading = {
 	busy: boolean;
 };
 export type AiUsageOptions = {
+	layout?: UsageLayout;
 	label?: string;
 	showHeader?: boolean;
 	showResets?: boolean;
@@ -63,10 +66,11 @@ export default function AiUsage({
 	label = 'AI Usage',
 	showHeader = false,
 	showResets = false,
-	minimal = false,
+	minimal: legacyMinimal = false,
 	minimalIcons = false,
 	providerIcons = true,
-	compact = true,
+	compact: legacyCompact = true,
+	layout,
 	remaining = true,
 	resetDisplay = 'countdown',
 	rateHours = 1,
@@ -81,6 +85,9 @@ export default function AiUsage({
 	now: number;
 	interval?: number;
 }) {
+	const density = resolveUsageLayout({ layout, minimal: legacyMinimal, compact: legacyCompact });
+	const minimal = density === 'minimal';
+	const compact = density === 'compact';
 	return (
 		<div className="np-ai-usage">
 			{showHeader && (
@@ -116,7 +123,8 @@ export default function AiUsage({
 									(point): point is { at: number; value: number } => point.value !== undefined
 								)
 						: [];
-					const max = Math.max(1, ...points.map((point) => point.value));
+					const max =
+						graph?.unit === '%' ? 100 : Math.max(1, ...points.map((point) => point.value));
 					const resetMetrics = metrics.filter((m) => m.resetsAt !== undefined);
 					const resetOptions = resolveUsageSettings(p.settings.resets, { resetDisplay });
 					const renderResets = (dense: boolean) => (
@@ -220,13 +228,14 @@ export default function AiUsage({
 										<span
 											className="usage-inline-metric"
 											data-kind={m.kind}
+											data-mode-label={item.showMode || undefined}
 
 											style={{ order: p.order.indexOf(usageMetricItem(m)) + 1 }}
 											key={m.id}
 											title={`${m.label} · ${m.kind === 'tokens' ? 'tracked tokens' : item.remaining ? 'left' : 'used'} · ${m.scope}`}
 										>
 											{(!minimal || p.labels[usageMetricItem(m)]) && (
-												<span>
+												<span className="usage-metric-label">
 													{p.labels[usageMetricItem(m)] ??
 														(m.kind === 'tokens'
 															? 'Tok'
@@ -237,8 +246,10 @@ export default function AiUsage({
 																	: m.label)}{' '}
 												</span>
 											)}
-											<b>{valueText(m, item.remaining || m.period === 'balance', true)}</b>
-											{m.kind === 'quota' && (
+											<b>
+												<span>{valueText(m, item.remaining || m.period === 'balance', true)}</span>
+											</b>
+											{m.kind === 'quota' && item.showMode && (
 												<span className="usage-value-mode">{item.remaining ? 'left' : 'used'}</span>
 											)}
 										</span>
@@ -332,7 +343,11 @@ export default function AiUsage({
 											</span>
 											<strong>
 												{valueText(m, item.remaining || m.period === 'balance')}
-												{m.kind === 'quota' && item.remaining ? ' left' : ''}
+												{m.kind === 'quota' && item.showMode
+													? item.remaining
+														? ' left'
+														: ' used'
+													: ''}
 											</strong>
 										</div>
 										{pct !== undefined && (

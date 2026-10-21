@@ -35,6 +35,46 @@ const lastConfigPatch = (onOp: ReturnType<typeof vi.fn>): Record<string, unknown
 const panel = (): HTMLElement => screen.getByRole('tabpanel');
 
 describe('Inspector config-field rendering (per ConfigField kind)', () => {
+	it('edits multiline source without losing newlines', () => {
+		const onOp = vi.fn();
+		render(
+			<Inspector
+				widget={gaugeWidget()}
+				placement="floating"
+				configFields={[{ key: 'html', label: 'HTML', kind: 'text', multiline: true }]}
+				onOp={onOp}
+			/>
+		);
+		const input = within(panel()).getByRole('textbox', { name: 'HTML' });
+		expect(input.tagName).toBe('TEXTAREA');
+		fireEvent.input(input, { target: { value: '<main>\nHello\n</main>' } });
+		expect(lastConfigPatch(onOp)).toEqual({ html: '<main>\nHello\n</main>' });
+		fireEvent.input(input, { target: { value: '' } });
+		expect(lastConfigPatch(onOp)).toEqual({ html: undefined });
+	});
+	it('shows the saved legacy AI density in one layout selector and writes an explicit choice', () => {
+		const onOp = vi.fn();
+		const fields: ConfigField[] = [
+			{
+				key: 'layout',
+				label: 'layout',
+				kind: 'select',
+				options: ['detailed', 'compact', 'minimal']
+			}
+		];
+		render(
+			<Inspector
+				widget={{ ...gaugeWidget({ minimal: true }), type: 'aiusage' }}
+				placement="floating"
+				configFields={fields}
+				onOp={onOp}
+			/>
+		);
+		expect(within(panel()).getByRole('combobox', { name: 'layout' })).toHaveTextContent('minimal');
+		fireEvent.click(within(panel()).getByRole('combobox', { name: 'layout' }));
+		fireEvent.click(screen.getByText('detailed', { selector: '.np-select-opt-label' }));
+		expect(lastConfigPatch(onOp)).toEqual({ minimal: true, layout: 'detailed' });
+	});
 	it('edits provider settings through the AI Usage field', () => {
 		const onOp = vi.fn();
 		render(

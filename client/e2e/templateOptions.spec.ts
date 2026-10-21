@@ -17,6 +17,9 @@ async function pickClockOption(
 	label: string,
 	choice: string
 ): Promise<void> {
+	await page.getByRole('tab', { name: 'Add', exact: true }).click();
+	await page.getByRole('tab', { name: 'Templates', exact: true }).click();
+	await page.getByRole('button', { name: 'Set up Clock (JP weekday)', exact: true }).click();
 	await page.getByRole('combobox', { name: `Clock (JP weekday) — ${label}` }).click();
 	await page.locator('.np-select-option', { hasText: choice }).click();
 }
@@ -55,9 +58,10 @@ test('clock template options: English weekday applies on insert', async ({ page 
 test('System monitor and Network offer smooth charts on insertion', async ({ page }) => {
 	await gotoStudio(page);
 	await addWidget(page, 'Clock');
-	const summary = page.locator('.inspector .add-panel > summary');
 	for (const name of ['System monitor', 'Network']) {
-		if (!(await page.locator('.inspector .add-panel[open]').count())) await summary.click();
+		await page.getByRole('tab', { name: 'Add', exact: true }).click();
+		await page.getByRole('tab', { name: 'Templates', exact: true }).click();
+		await page.getByRole('button', { name: `Set up ${name}`, exact: true }).click();
 		const option = page.getByRole('combobox', { name: `${name} — Smooth charts`, exact: true });
 		await expect(option).toContainText('Off');
 		await option.click();
@@ -65,11 +69,12 @@ test('System monitor and Network offer smooth charts on insertion', async ({ pag
 		await expect(option).toContainText('On');
 		await page
 			.locator('.tpl-opts')
-			.filter({ has: page.locator('.tpl-opts-name', { hasText: name }) })
+			.filter({ has: page.locator('.tpl-opts-name', { hasText: `Set up ${name}` }) })
 			.locator('.tpl-opts-insert')
 			.click();
 		await expect(page.locator('.inspector .node-hd')).toHaveText(name);
-		await summary.click();
+		await page.getByRole('tab', { name: 'Configure', exact: true }).click();
+		await page.locator('.inspector').getByRole('tab', { name: 'Layout', exact: true }).click();
 		const smooth = page.getByRole('checkbox', { name: 'Smooth charts', exact: true });
 		await expect(smooth, name).toBeChecked();
 		await smooth.uncheck();
@@ -79,6 +84,7 @@ test('System monitor and Network offer smooth charts on insertion', async ({ pag
 	}
 	await page.screenshot({ path: 'test-results/studio-smooth-charts.png' });
 	await addWidget(page, 'CPU');
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
 	await expect(page.locator('.inspector .cfg-group-hd', { hasText: 'Appearance' })).toBeVisible();
 	const cpuSmooth = page.getByRole('checkbox', { name: 'Smooth charts', exact: true });
 	await expect(cpuSmooth).not.toBeChecked();

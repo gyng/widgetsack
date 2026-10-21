@@ -77,7 +77,6 @@ export default function MonitorSwitch({
 							aria-busy={busyValue === r.value || undefined}
 							disabled={busyValue != null}
 							onClick={() => onPick(r.value)}
-							title={r.label}
 						>
 							<span className="ms-name">{r.label}</span>
 						</button>

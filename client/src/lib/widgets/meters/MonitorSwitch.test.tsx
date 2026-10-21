@@ -18,6 +18,7 @@ describe('MonitorSwitch meter', () => {
 		expect(container.querySelector('.ms-title')?.textContent).toBe('Desk');
 		const els = container.querySelectorAll('.ms-row');
 		expect(els).toHaveLength(2);
+		expect([...els].every((row) => !row.hasAttribute('title'))).toBe(true);
 		const active = [...els].find((r) => r.getAttribute('data-active') === 'true');
 		expect(active?.textContent).toContain('HDMI 1');
 	});

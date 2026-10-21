@@ -6,6 +6,7 @@ import {
 	formatDuration,
 	formatPercent,
 	formatRate,
+	formatCompactRate,
 	formatScalar,
 	guessSensorFormat,
 	localeDayNames,
@@ -42,6 +43,33 @@ describe('formatBytesPair', () => {
 });
 
 describe('formatRate / formatPercent', () => {
+	it('uses whole K/s and two significant figures from M upward, without B/s', () => {
+		for (const [value, text] of [
+			[0, '0K/s'],
+			[-1, '0K/s'],
+			[NaN, '0K/s'],
+			[Infinity, '0K/s'],
+			[0.1, '<1K/s'],
+			[512, '<1K/s'],
+			[1024, '1K/s'],
+			[1.49 * 1024, '1K/s'],
+			[12.34 * 1024, '12K/s'],
+			[1024 ** 2 - 1, '1024K/s'],
+			[1024 ** 2, '1.0M/s'],
+			[9.94 * 1024 ** 2, '9.9M/s'],
+			[9.99 * 1024 ** 2, '10M/s'],
+			[24 * 1024 ** 2, '24M/s'],
+			[117.723 * 1024 ** 2, '120M/s'],
+			[1.223 * 1024 ** 2, '1.2M/s'],
+			[24.32 * 1024 ** 2, '24M/s'],
+			[1023.99 * 1024 ** 2, '1000M/s'],
+			[1024 ** 3, '1.0G/s'],
+			[1024 ** 4, '1.0T/s'],
+			[1024 ** 4 * 1024, '1000T/s']
+		] as const)
+			expect(formatCompactRate(value)).toBe(text);
+		expect(formatScalar(24 * 1024 ** 2, 'rate-short')).toBe('24M/s');
+	});
 	it('formats a byte rate', () => {
 		expect(formatRate(1048576)).toBe('1.0 MiB/s');
 	});

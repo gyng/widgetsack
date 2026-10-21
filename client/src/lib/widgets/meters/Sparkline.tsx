@@ -12,7 +12,8 @@
 // --np-accent token from Sparkline.css — which makes `currentColor`, `var()` and named colours all
 // work (the ticker passes `currentColor`). Props/meta are unchanged from the SVG version.
 import { useCallback, useEffect, useRef } from 'react';
-import { interpolateHistory, sparklineBars, sparklinePoints } from './sparklineMath';
+import { sparklineBars, sparklinePoints } from './sparklineMath';
+import { nextScroll, scrollAt, type ScrollClock } from './scrollClock';
 import './Sparkline.css';
 
 type Props = {
@@ -33,6 +34,7 @@ type Props = {
 	// Line thickness in px (constant regardless of widget size, like the old non-scaling stroke).
 	lineWidth?: number;
 	smooth?: boolean;
+	smoothDelay?: number;
 };
 
 const FALLBACK_COLOR = 'rgb(119, 196, 211)';
@@ -49,16 +51,43 @@ export default function Sparkline({
 	axis = true,
 	seconds = 60,
 	lineWidth = 1.5,
-	smooth = false
+	smooth = false,
+	smoothDelay = 1.5
 }: Props) {
 	const wrapRef = useRef<HTMLDivElement>(null);
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 	const displayed = useRef(history);
+	const scroll = useRef(0);
+	const playback = useRef(false);
+	const sample = useRef(history);
+	const clock = useRef<ScrollClock | null>(null);
 	// Latest props read by the draw without re-subscribing the ResizeObserver. Written in a commit
 	// effect (not during render) — the draw only reads it later from the effects below.
-	const propsRef = useRef({ history, min, max, fill, histogram, barGap, axis, seconds, lineWidth });
+	const propsRef = useRef({
+		history,
+		min,
+		max,
+		fill,
+		histogram,
+		barGap,
+		axis,
+		seconds,
+		lineWidth,
+		smoothDelay
+	});
 	useEffect(() => {
-		propsRef.current = { history, min, max, fill, histogram, barGap, axis, seconds, lineWidth };
+		propsRef.current = {
+			history,
+			min,
+			max,
+			fill,
+			histogram,
+			barGap,
+			axis,
+			seconds,
+			lineWidth,
+			smoothDelay
+		};
 	});
 
 	const draw = useCallback((): void => {
@@ -82,7 +111,17 @@ export default function Sparkline({
 		const windowSlots = Math.max(1, Math.round(p.seconds));
 
 		if (p.histogram) {
-			const bars = sparklineBars(displayed.current, w, h, p.min, p.max, p.barGap, windowSlots);
+			const bars = sparklineBars(
+				displayed.current,
+				w,
+				h,
+				p.min,
+				p.max,
+				p.barGap,
+				windowSlots,
+				scroll.current,
+				playback.current ? p.smoothDelay : 0
+			);
 			ctx.fillStyle = paint;
 			for (const b of bars) ctx.fillRect(b.x, b.y, b.w, b.h);
 			// Baseline axis: a thin line at the bottom the bars rise from (default on).
@@ -93,7 +132,16 @@ export default function Sparkline({
 			return;
 		}
 
-		const pts = sparklinePoints(displayed.current, w, h, p.min, p.max, windowSlots);
+		const pts = sparklinePoints(
+			displayed.current,
+			w,
+			h,
+			p.min,
+			p.max,
+			windowSlots,
+			scroll.current,
+			playback.current ? p.smoothDelay : 0
+		);
 		if (pts.length === 0) return;
 		if (p.fill) {
 			ctx.fillStyle = paint;
@@ -118,52 +166,58 @@ export default function Sparkline({
 		ctx.stroke();
 	}, []);
 
-	// Redraw whenever the data or any draw-affecting config changes (history is a new array each tick;
-	// `color` changes the wrapper's computed colour the draw reads).
+	// Telemetry histories advance once per second. Scroll their recorded slots linearly
+	// between arrivals; never interpolate values or animate a hidden/reduced-motion view.
 	useEffect(() => {
+		if (clock.current === null || sample.current !== history) {
+			clock.current = nextScroll(clock.current, performance.now());
+			sample.current = history;
+		}
+		displayed.current = history;
 		let frame: number | null = null;
 		const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
 		const cancel = () => {
 			if (frame !== null) cancelAnimationFrame(frame);
 			frame = null;
 		};
-		const finish = () => {
+		const stop = () => {
 			cancel();
-			displayed.current = history;
+			playback.current = false;
+			scroll.current = 0;
 			draw();
 		};
-		const from = displayed.current;
-		const changed = from.length !== history.length || from.some((value, i) => value !== history[i]);
-		if (
-			smooth &&
-			changed &&
-			from.length &&
-			history.length &&
-			!motion.matches &&
-			document.visibilityState !== 'hidden'
-		) {
-			const start = performance.now();
-			const animate = (now: number) => {
-				const progress = (now - start) / 300;
-				if (progress >= 1) {
-					finish();
-					return;
-				}
-				displayed.current = interpolateHistory(from, history, progress);
-				draw();
-				frame = requestAnimationFrame(animate);
-			};
-			frame = requestAnimationFrame(animate);
-		} else finish();
-		// Finish promptly if the window hides or the user changes their motion preference.
-		motion.addEventListener('change', finish);
-		document.addEventListener('visibilitychange', finish);
+		const start = clock.current;
+		const animate = (now: number) => {
+			scroll.current = scrollAt(start, now);
+			draw();
+			frame = scroll.current < 1 ? requestAnimationFrame(animate) : null;
+		};
+		if (smooth && history.length > 1 && !motion.matches && document.visibilityState !== 'hidden') {
+			playback.current = true;
+			animate(performance.now());
+		} else stop();
+		motion.addEventListener('change', stop);
+		document.addEventListener('visibilitychange', stop);
 		return () => {
 			cancel();
-			motion.removeEventListener('change', finish);
-			document.removeEventListener('visibilitychange', finish);
+			motion.removeEventListener('change', stop);
+			document.removeEventListener('visibilitychange', stop);
 		};
-	}, [draw, history, min, max, color, fill, histogram, barGap, axis, seconds, lineWidth, smooth]);
+	}, [
+		draw,
+		history,
+		min,
+		max,
+		color,
+		fill,
+		histogram,
+		barGap,
+		axis,
+		seconds,
+		lineWidth,
+		smooth,
+		smoothDelay
+	]);
 
 	// Repaint on resize (the canvas is wiped when its backing store changes).
 	useEffect(() => {

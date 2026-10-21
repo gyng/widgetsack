@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import type { UsageProvider } from './aiUsage';
 import {
 	BUILTIN_TEMPLATE_GROUP,
 	TEMPLATES,
@@ -42,6 +43,96 @@ function treeOf(id: string): LayoutNode {
 }
 
 describe('templates', () => {
+	it('offers distinct saved-prompt and conversation templates with stable chat identity', () => {
+		const chat = getTemplate('ai-assistant')!;
+		expect(chat.name).toBe('AI Chat');
+		expect(leaves(chat.tree())[0]).toMatchObject({ type: 'aichat', config: { label: 'AI Chat' } });
+		const prompt = getTemplate('ai-prompt')!;
+		expect(prompt.name).toBe('AI Prompt');
+		expect(leaves(prompt.tree())[0]).toMatchObject({
+			type: 'assistant',
+			config: { schedule: '10m', sensors: 'auto', speak: false }
+		});
+	});
+	it('offers only the three distinct AI layouts and uses the live sidebar for Compact', () => {
+		expect(TEMPLATES.filter((t) => t.name.startsWith('AI Usage')).map((t) => t.id)).toEqual([
+			'ai-usage-minimal',
+			'ai-usage-compact',
+			'ai-usage-detailed'
+		]);
+		const compact = getTemplate('ai-usage-compact')!;
+		expect(compact.size).toEqual({ w: 380, h: 112 });
+		const [widget] = leaves(compact.tree());
+		expect(widget.config).toMatchObject({
+			layout: 'compact',
+			showHeader: false,
+			providerIcons: true,
+			remaining: true,
+			providers: [
+				{
+					source: 'codex',
+					session: true,
+					week: true,
+					eta: true,
+					resets: true,
+					banked: true,
+					tokens: false,
+					credits: false
+				},
+				{
+					source: 'claude',
+					session: false,
+					week: true,
+					eta: true,
+					resets: true,
+					banked: true,
+					tokens: false,
+					credits: false
+				}
+			]
+		});
+		(widget.config.providers as UsageProvider[])[0].labels.week = 'Changed';
+		expect(
+			(leaves(compact.tree())[0].config.providers as UsageProvider[])[0].labels.week
+		).toBeUndefined();
+	});
+	it('inline network keeps download then upload, with independently bound optional history', () => {
+		const template = getTemplate('network-inline')!;
+		expect(template).toBeDefined();
+		const tree = template.tree();
+		expect(isContainer(tree) && tree.kind).toBe('row');
+		const readings = leaves(tree);
+		expect(readings.map((w) => w.sensor)).toEqual(['net.down', 'net.up']);
+		expect(readings.every((w) => w.type === 'text' && w.config.showSparkline)).toBe(true);
+		const toggled = instantiateTemplate(template, { showSparklines: 'false' });
+		expect(leaves(toggled).every((w) => w.config.showSparkline === false)).toBe(true);
+		for (const showSparklines of ['true', 'false']) {
+			const system = leaves(
+				instantiateTemplate(getTemplate('system-inline')!, { showSparklines })
+			).filter((w) => w.type === 'text');
+			expect(system).toHaveLength(5);
+			expect(system.every((w) => w.config.sparklineScale === 'percent')).toBe(true);
+			expect(system.every((w) => w.config.showSparkline === (showSparklines === 'true'))).toBe(
+				true
+			);
+		}
+	});
+	it('inline presets scroll smoothly by default and retain an off setting', () => {
+		for (const id of ['system-inline', 'network-inline']) {
+			const template = getTemplate(id)!;
+			expect(resolveTemplateOptions(template).smooth).toBe('true');
+			for (const smooth of ['true', 'false']) {
+				const charts = leaves(instantiateTemplate(template, { smooth }));
+				expect(
+					charts.every(
+						(w) =>
+							(w.type === 'text' ? w.config.sparklineSmooth : w.config.smooth) ===
+							(smooth === 'true')
+					)
+				).toBe(true);
+			}
+		}
+	});
 	it('every template is a flow tree of known widget types, with a positive size', () => {
 		const known = new Set([
 			'alerts',
@@ -50,6 +141,7 @@ describe('templates', () => {
 			'checklist',
 			'history',
 			'aichat',
+			'assistant',
 			'command',
 			'aiusage',
 			'clock',

@@ -15,6 +15,25 @@ const SENSORS: SelectOption[] = Array.from({ length: 12 }, (_, i) => ({
 	hint: `s.${i}`
 }));
 
+it.each([false, true])(
+	'supports viewport-bounded wrapping monitor menus (searchable=%s)',
+	(searchable) => {
+		render(
+			<Select
+				value="a"
+				options={SMALL}
+				onChange={vi.fn()}
+				searchable={searchable}
+				menuMinWidth={480}
+				wrapOptions
+			/>
+		);
+		fireEvent.click(screen.getByRole('combobox'));
+		expect(document.querySelector('.np-select-menu')).toHaveClass('wrap-options');
+		expect(document.querySelector('.np-select-menu')).toHaveStyle({ boxSizing: 'border-box' });
+	}
+);
+
 describe('Select (listbox variant: small closed set)', () => {
 	// Downshift's useSelect trigger carries role="combobox" (ARIA 1.2) but is a <button>, not an <input>.
 	it('shows the selected option label and the placeholder when empty', () => {

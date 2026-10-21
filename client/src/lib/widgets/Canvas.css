@@ -38,15 +38,11 @@
 	   STAGE only — not the side rails. So it adds to the stage's top offset alone (below), and is 0
 	   unless a stage is shown (.has-subbar). The rails stay anchored under the primary bar. */
 	--subbar-h: 0px;
-	/* The bottom "powerline" hint bar advertises CANVAS gestures (click/drag/marquee/pan/nudge…), so it
-	   — and the row it reserves — exists only on an edit stage, the same .has-subbar condition as the top
-	   subbar. Off-stage sections (Themes / Sensors / Plugins / …) and read-only preview have no canvas
-	   gestures to hint, so --bar-b collapses to 0 there and every rail/panel reclaims the row down to the
-	   window's bottom edge (no dead gap under the bar). */
-	--bar-b: 0px;
-	--nav-w: 56px; /* the left nav strip; the section panel fills the rest of --rail-l */
+	/* The footer keeps its height across sections; only its contextual contents change. */
+	--bar-b: 24px;
+	--nav-w: 80px;
 	--tree-w: 200px; /* widget-designer: the def's structure tree, between the list and the canvas */
-	--rail-l: 250px;
+	--rail-l: 274px;
 	--rail-r: 360px;
 	--assistant-w: 0px;
 	--pane-gap: 6px; /* empty gutter at each resizable divider — the drag handle lives here */
@@ -63,13 +59,9 @@
 	-webkit-user-select: none;
 }
 
-/* A stage is visible (Layouts, or designing a def) → reserve a row for the contextual subbar (top) AND
-   the powerline hint bar (bottom). Only the stage's own top offset reads --subbar-h, so the side rails
-   are unaffected by it (they stay at --bar-h); --bar-b reserves the bottom row for every rail/panel/stage
-   so the powerbar never overlaps them. Both bars appear together — same gate (Canvas.tsx `showSubbar`). */
+/* Canvas sections add their contextual toolbar; the footer height stays constant. */
 .canvas.studio.has-subbar {
 	--subbar-h: 36px;
-	--bar-b: 24px;
 }
 
 /* Draggable pane dividers (resizable studio columns; widths persist via usePaneSizes). Each panel is
@@ -157,6 +149,7 @@
    slightly lifted neutral backdrop, with the work-area frame standing in as the widget bounds.
    The stage is inset by --tree-w to make room for the def's structure tree to its left. */
 .canvas.studio.designing {
+	--tree-inset: var(--tree-w);
 	left: calc(var(--rail-l) + var(--tree-w));
 	background: var(--ui-raised);
 	background-image: radial-gradient(rgba(var(--ui-accent-rgb), 0.08) 1px, transparent 1px);
@@ -523,13 +516,19 @@
 	left: 50%;
 	transform: translateX(-50%);
 	display: flex;
-	gap: var(--space-4);
+	gap: var(--space-3);
+	flex-wrap: wrap;
+	justify-content: center;
+	width: max-content;
+	max-width: calc(100% - 16px);
+	box-sizing: border-box;
 	align-items: center;
 	padding: var(--space-2) var(--space-5);
 	font-family: var(--ui-font);
-	font-size: var(--text-lg);
-	color: var(--ui-bg);
-	background: var(--ui-accent-fg);
+	font-size: var(--text-md);
+	color: var(--ui-fg);
+	background: var(--ui-bg);
+	border: 1px solid var(--ui-border-strong);
 	border-radius: var(--radius-control);
 	pointer-events: auto;
 	z-index: 4;
@@ -543,14 +542,17 @@
 	padding: var(--space-1) var(--space-3);
 	cursor: pointer;
 	font-family: var(--ui-font);
+	flex: none;
 }
 
-/* A read-only template preview reads as amber (distinct from the mint "designing" banner) AND carries
-   a dashed border the editable banner doesn't — a non-color (shape) cue for the read-only mode, so
-   the distinction survives a quick glance / colour-vision differences, not just the amber fill. */
+.canvas .def-banner > span {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+/* Dashed amber framing and explicit text distinguish read-only previews. */
 .canvas .def-banner.preview {
-	background: var(--ui-warn-fg);
-	border: 1px dashed var(--ui-surface);
+	border: 1px dashed var(--ui-warn-fg);
 }
 
 .canvas .def-banner.preview button {
@@ -604,7 +606,7 @@
 	align-items: center;
 	padding: 0 var(--space-5);
 	background: var(--ui-bar-bg);
-	border-bottom: 1px solid rgba(var(--ui-accent-rgb), 0.5);
+	border-bottom: 1px solid var(--ui-border);
 	color: var(--ui-fg);
 	font-family: var(--ui-font);
 	font-size: var(--text-md);
@@ -691,7 +693,53 @@
 	/* Clip to the stage column so a tight fit (narrow window / widened details rail) can't spill the
 	   controls rightward over the Inspector — it sits at a lower z-index, so the overflow would paint
 	   on top of it. The rightmost (least-essential) controls clip first; undo/redo + toggles survive. */
-	overflow: hidden;
+	overflow: visible;
+}
+
+.stage-tools {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	width: 100%;
+	min-width: 0;
+}
+.stage-tools > button {
+	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	min-width: 30px;
+	white-space: nowrap;
+}
+.stage-tools .tool-divider {
+	height: 18px;
+	border-left: 1px solid var(--ui-border);
+	margin-inline: 2px;
+}
+.stage-tools .zlevel {
+	margin-left: auto;
+	flex: 0 0 4ch;
+	text-align: right;
+}
+.stage-options {
+	position: fixed;
+	inset: auto;
+	box-sizing: border-box;
+	min-width: 210px;
+	margin: 0;
+	padding: 12px;
+	background: var(--ui-surface);
+	color: var(--ui-fg);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-panel);
+	box-shadow: 0 8px 24px var(--ui-scrim);
+}
+.stage-options:popover-open {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 10px;
 }
 
 /* Top-bar overflow (≡) menu: quick access to actions otherwise buried in nav sections. The dropdown
@@ -740,9 +788,9 @@
 }
 
 .canvas .studio-bar .lbl {
-	color: rgb(var(--ui-accent-rgb));
-	text-transform: uppercase;
-	letter-spacing: 1px;
+	color: var(--ui-fg-muted);
+	text-transform: none;
+	letter-spacing: normal;
 	/* Extra leading space before each section label chunks the 16-control bar by proximity (Gestalt),
 	   so File / Edit / Drop / Zoom / Debug read as groups, not one undifferentiated run. */
 	margin-left: var(--space-5);
@@ -762,21 +810,14 @@
 }
 .canvas .studio-bar .monitor-picker .np-select.sb-select {
 	width: clamp(180px, 20vw, 260px);
+	min-width: 150px;
 	max-width: 260px;
 }
-.canvas.studio.assistant-open {
-	--assistant-w: 320px;
-}
-.canvas.studio.assistant-open .inspector.docked {
-	right: var(--assistant-w);
-}
 @media (max-width: 1150px) {
-	.canvas.studio.assistant-open {
-		--rail-l: 200px !important;
-		--rail-r: 280px !important;
-		--assistant-w: 280px;
+	.canvas.studio {
+		--rail-l: 244px !important;
 	}
-	.canvas.studio.assistant-open .pane-resize {
+	.stage-tools .tool-label {
 		display: none;
 	}
 }
@@ -882,6 +923,9 @@
 	text-transform: lowercase;
 	letter-spacing: 0.3px;
 }
+.canvas .powerbar[aria-label='Studio status'] .lbl {
+	text-transform: none;
+}
 
 /* Transient "✓ saved" confirmation segment (after an explicit Save). Calm green, no kbd chip. */
 .canvas .powerbar .seg.flash {
@@ -914,6 +958,7 @@
 	background: var(--ui-raised);
 	color: var(--ui-fg);
 	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
 	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	padding: var(--space-1) var(--space-3);
@@ -953,6 +998,11 @@
 	color: var(--ui-accent-fg);
 	background: rgba(var(--ui-accent-rgb), 0.18);
 	opacity: 1;
+}
+.canvas .studio-bar button[aria-pressed='true'] {
+	color: var(--ui-accent-fg);
+	border-color: var(--ui-accent-fg);
+	background: rgba(var(--ui-accent-rgb), 0.12);
 }
 
 /* Clean state: a calm full-opacity "✓ Saved" confirmation, not a dimmed/disabled-looking control —
@@ -1272,4 +1322,152 @@
 
 .canvas .studio-bar:not(.studio-subbar) {
 	z-index: 8;
+}
+
+.layout-read-status {
+	position: fixed;
+	bottom: 40px;
+	left: max(16px, var(--rail-l, 16px));
+	right: max(16px, var(--rail-r, 16px));
+	z-index: 60;
+	pointer-events: auto;
+	display: flex;
+	align-items: center;
+	gap: var(--space-4);
+	padding: var(--space-4);
+	background: var(--ui-surface);
+	border: 1px solid var(--ui-warn-fg);
+	border-radius: var(--radius-panel);
+	color: var(--ui-fg);
+	font: var(--text-md)/var(--line-body) var(--ui-font);
+}
+.layout-read-status span {
+	flex: 1;
+}
+
+.canvas .monitor-badge.monitor-switcher {
+	pointer-events: auto;
+	padding: 0;
+	width: min(520px, calc(100% - 20px));
+	max-width: calc(100% - 20px);
+	letter-spacing: normal;
+}
+.canvas .monitor-switcher .np-select {
+	width: 100%;
+	min-width: 140px;
+}
+.canvas .monitor-switcher .np-select-trigger {
+	background: transparent;
+	border: 0;
+	color: var(--ui-accent-fg);
+	min-height: 28px;
+	font-size: var(--text-sm);
+}
+
+.canvas .right-pane-tabs {
+	position: fixed;
+	top: var(--bar-h);
+	right: 0;
+	width: calc(var(--rail-r) - var(--pane-gap));
+	height: 40px;
+	display: flex;
+	align-items: stretch;
+	padding-inline: var(--space-3);
+	box-sizing: border-box;
+	background: var(--ui-surface);
+	border-bottom: 1px solid var(--ui-border);
+	border-left: 1px solid var(--ui-border);
+	z-index: 8;
+	gap: var(--space-2);
+}
+.canvas .right-pane-tabs button {
+	flex: 1;
+	color: var(--ui-fg-muted);
+	border: 0;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	background: transparent;
+	font: var(--text-md)/var(--line-body) var(--ui-font);
+	cursor: pointer;
+}
+.canvas .right-pane-tabs button[aria-selected='true'] {
+	color: var(--ui-accent-fg);
+	border-bottom-color: var(--ui-accent-fg);
+}
+.canvas.studio .inspector.workspace.docked,
+.canvas.studio .inspector.multi.docked {
+	top: calc(var(--bar-h) + 40px);
+}
+.canvas.studio .studio-assistant {
+	top: calc(var(--bar-h) + 40px);
+	width: calc(var(--rail-r) - var(--pane-gap));
+}
+.canvas.studio .studio-assistant[hidden] {
+	display: none;
+}
+
+.canvas .monitor-switcher .np-select-value {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+.canvas.studio.assistant-open .rail-panel,
+.canvas.studio.assistant-open .designer-empty {
+	right: var(--rail-r);
+}
+.canvas.studio .assistant-loading {
+	position: fixed;
+	top: calc(var(--bar-h) + 40px);
+	right: 0;
+	bottom: var(--bar-b);
+	width: calc(var(--rail-r, 360px) - var(--pane-gap, 6px));
+	box-sizing: border-box;
+	padding: var(--space-5);
+	background: var(--ui-bg);
+	color: var(--ui-fg-muted);
+	font: var(--text-md)/var(--line-body) var(--ui-font);
+	border-left: 1px solid var(--ui-border);
+}
+
+/* Loading stays inside the requested pane; the title bar and navigation remain usable. */
+.canvas .studio-panel-loading {
+	position: fixed;
+	top: var(--bar-h, 44px);
+	left: var(--nav-w, 56px);
+	right: var(--assistant-w, 0px);
+	bottom: var(--bar-b, 0px);
+	box-sizing: border-box;
+	padding: var(--space-5);
+	background: var(--ui-bg);
+	color: var(--ui-fg-muted);
+	font: var(--text-md)/var(--line-body) var(--ui-font);
+	pointer-events: auto;
+	z-index: 7;
+}
+.canvas .studio-panel-loading[hidden] {
+	display: none;
+}
+.canvas .studio-panel-loading:is([data-pane='layouts'], [data-pane='widget-designer']) {
+	right: auto;
+	width: calc(var(--rail-l) - var(--nav-w) - var(--pane-gap));
+	border-right: 1px solid var(--ui-border);
+}
+.canvas .studio-panel-loading[data-pane='details'] {
+	left: auto;
+	right: 0;
+	top: calc(var(--bar-h) + 40px);
+	width: calc(var(--rail-r) - var(--pane-gap));
+	border-left: 1px solid var(--ui-border);
+}
+.canvas:not(.studio) .studio-panel-loading[data-pane='details'] {
+	position: absolute;
+	left: var(--space-4);
+	right: auto;
+	top: auto;
+	bottom: var(--space-4);
+	width: 240px;
+}
+
+.canvas .widget[data-presentation='minimal'] [data-part='label'] {
+	display: none;
 }

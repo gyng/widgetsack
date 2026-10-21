@@ -62,7 +62,7 @@ describe('NavRail', () => {
 
 		// widget-designer: label "Widget designer" !== short "Custom" → title is the full label.
 		const custom = container.querySelector('button[data-section="widget-designer"]')!;
-		expect(custom.getAttribute('title')).toBe('Widget designer');
+		expect(custom.getAttribute('title')).toBe('Widget builder');
 
 		// sensors: label "Sensors" === short "Sensors" and not a stub → no redundant title.
 		const sensors = container.querySelector('button[data-section="sensors"]')!;
@@ -79,9 +79,9 @@ describe('NavRail', () => {
 		const sensors = container.querySelector('button[data-section="sensors"]')!;
 		expect(sensors.getAttribute('aria-label')).toBe('Sensors');
 		const custom = container.querySelector('button[data-section="widget-designer"]')!;
-		expect(custom.getAttribute('aria-label')).toBe('Widget designer');
+		expect(custom.getAttribute('aria-label')).toBe('Widget builder');
 		// the visible short label still differs from the accessible name
-		expect(custom.querySelector('.nav-short')!.textContent).toBe('Custom');
+		expect(custom.querySelector('.nav-short')!.textContent).toBe('Build');
 	});
 
 	it('marks long short-labels (Background, Settings) with the compact class so they fit the strip', () => {

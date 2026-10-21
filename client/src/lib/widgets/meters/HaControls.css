@@ -2,6 +2,40 @@
    binary_sensor). Follows the HA widgets' --np-* token conventions and .np-ha-* root scoping, so user
    themes / per-widget css targeting [data-part] or the inner class names keep matching. */
 
+/* Text roles are shared by the full family; authored CSS and --ha-* overrides still win. */
+:where(
+	.np-ha-sensor,
+	.np-ha-binary,
+	.np-ha-light,
+	.np-ha-switch,
+	.np-ha-fan,
+	.np-ha-climate,
+	.np-ha-cover,
+	.np-ha-lock,
+	.np-ha-scene,
+	.np-ha-input,
+	.np-ha-media
+) {
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
+	line-height: var(--np-line-body, 20px);
+	min-width: 0;
+}
+:where(
+		.np-ha-sensor,
+		.np-ha-binary,
+		.np-ha-light,
+		.np-ha-switch,
+		.np-ha-fan,
+		.np-ha-climate,
+		.np-ha-cover,
+		.np-ha-lock,
+		.np-ha-input,
+		.np-ha-media
+	)
+	.label {
+	line-height: var(--np-line-caption, 16px);
+}
+
 /* --- button-shaped roots: switch / scene / lock --- */
 .np-ha-switch,
 .np-ha-scene,
@@ -10,10 +44,10 @@
 	flex-direction: column;
 	align-items: flex-start;
 	justify-content: center;
-	gap: 2px;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 	width: 100%;
 	height: 100%;
-	padding: 0 10px;
+	padding: 0 var(--ha-padding, calc(var(--np-gap, 4px) * 2));
 	box-sizing: border-box;
 	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.8));
 	border-radius: var(--np-radius, 4px);
@@ -35,31 +69,31 @@
 .np-ha-cover .label,
 .np-ha-input .label,
 .np-ha-binary .label {
-	font-size: 10px;
+	font-size: var(--ha-caption-size, var(--np-text-caption, 12px));
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
 	opacity: 0.8;
 }
 .np-ha-switch .state,
 .np-ha-lock .state {
-	font-size: 16px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
 	letter-spacing: 1px;
 }
 .np-ha-scene,
 .np-ha-lock {
 	flex-direction: row;
 	align-items: center;
-	gap: 8px;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 }
 .np-ha-scene .icon {
-	font-size: 14px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
 }
 .np-ha-scene .label {
-	font-size: 13px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
 	text-transform: none;
 }
 .np-ha-lock .icon {
-	font-size: 16px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
 }
 
 /* --- fan --- */
@@ -70,16 +104,19 @@
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
-	gap: 3px;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 	width: 100%;
 	height: 100%;
-	padding: 0 10px;
+	padding: 0 var(--ha-padding, calc(var(--np-gap, 4px) * 2));
 	box-sizing: border-box;
 	color: var(--np-fg, #fff);
 	font-family: var(--np-font, 'Bahnschrift', 'Arial Narrow', sans-serif);
 }
 .np-ha-fan {
-	gap: 4px;
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-content: center;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.7));
 	border-radius: var(--np-radius, 4px);
 	background: var(--np-bg, rgba(10, 10, 12, 0.6));
@@ -88,10 +125,13 @@
 	border-color: var(--np-accent, rgba(119, 196, 211, 1));
 }
 .np-ha-fan .ha-fan-toggle {
+	grid-column: 1;
+	grid-row: 1;
+	min-width: 0;
 	display: flex;
 	justify-content: space-between;
 	align-items: baseline;
-	gap: 6px;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 	padding: 0;
 	border: none;
 	background: transparent;
@@ -101,7 +141,7 @@
 	min-height: var(--np-control-size, 28px);
 }
 .np-ha-fan .state {
-	font-size: 14px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
 }
 .np-ha-fan .ha-fan-speed,
 .np-ha-cover .ha-cover-pos,
@@ -111,6 +151,8 @@
 	cursor: pointer;
 }
 .np-ha-fan .ha-fan-osc {
+	grid-column: 2;
+	grid-row: 1;
 	min-width: var(--np-control-size, 28px);
 	min-height: var(--np-control-size, 28px);
 	align-self: flex-end;
@@ -118,6 +160,7 @@
 	border-radius: var(--np-radius, 3px);
 	background: transparent;
 	color: inherit;
+	font: inherit;
 	cursor: pointer;
 }
 .np-ha-fan .ha-fan-osc.on {
@@ -126,11 +169,53 @@
 
 /* --- cover --- */
 .np-ha-cover .state {
-	font-size: 14px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
+}
+.np-ha-fan .ha-fan-speed {
+	grid-column: 1 / -1;
+	grid-row: 2;
+}
+.np-ha-cover {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-content: center;
+}
+.np-ha-cover > .label {
+	grid-column: 1;
+	grid-row: 1;
+}
+.np-ha-cover > .state {
+	grid-column: 2;
+	grid-row: 1;
+}
+.np-ha-cover .ha-cover-btns {
+	grid-column: 1 / -1;
+	grid-row: 2;
+}
+.np-ha-cover .ha-cover-pos {
+	grid-column: 1 / -1;
+	grid-row: 3;
+}
+.np-ha-lock {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	row-gap: 0;
+}
+.np-ha-lock > .icon {
+	grid-column: 1;
+	grid-row: 1 / 3;
+}
+.np-ha-lock > .label {
+	grid-column: 2;
+	grid-row: 1;
+}
+.np-ha-lock > .state {
+	grid-column: 2;
+	grid-row: 2;
 }
 .np-ha-cover .ha-cover-btns {
 	display: flex;
-	gap: 4px;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 }
 .np-ha-cover .ha-cover-btns button {
 	flex: 1;
@@ -177,12 +262,29 @@
 	font: inherit;
 }
 .np-ha-input .hi-num {
-	font-size: 14px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
+}
+.np-ha-input:has(.hi-num) {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-content: center;
+}
+.np-ha-input:has(.hi-num) > .label {
+	grid-column: 1;
+	grid-row: 1;
+}
+.np-ha-input .hi-num {
+	grid-column: 2;
+	grid-row: 1;
+}
+.np-ha-input .hi-range {
+	grid-column: 1 / -1;
+	grid-row: 2;
 }
 
 /* --- binary_sensor --- */
 .np-ha-binary .value {
-	font-size: 16px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
 }
 .np-ha-binary.on .value {
 	color: var(--np-accent, rgb(119, 196, 211));
@@ -193,10 +295,10 @@
 	display: flex;
 	flex-direction: row;
 	align-items: center;
-	gap: 8px;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 	width: 100%;
 	height: 100%;
-	padding: 0 10px;
+	padding: 0 var(--ha-padding, calc(var(--np-gap, 4px) * 2));
 	box-sizing: border-box;
 	color: var(--np-fg, #fff);
 	font-family: var(--np-font, 'Bahnschrift', 'Arial Narrow', sans-serif);
@@ -214,23 +316,23 @@
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
-	gap: 3px;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 }
 .np-ha-media .label {
-	font-size: 10px;
+	font-size: var(--ha-caption-size, var(--np-text-caption, 12px));
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
 	opacity: 0.8;
 }
 .np-ha-media .now {
-	font-size: 13px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
 .np-ha-media .ha-media-tx {
 	display: flex;
-	gap: 4px;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 }
 .np-ha-media .ha-media-tx button {
 	flex: 1;
@@ -250,7 +352,7 @@
 .np-ha-media .ha-media-vol {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 }
 .np-ha-media .ha-media-vol button {
 	min-width: var(--np-control-size, 28px);
@@ -263,16 +365,33 @@
 }
 .np-ha-media .ha-media-vol input {
 	flex: 1;
+	min-width: 0;
 	accent-color: var(--np-accent, rgba(119, 196, 211, 0.9));
 	cursor: pointer;
 }
 
-/* The HA family's "no live data" body (HaTileNotice): a quiet, wrapping note in place of the value —
+/* The HA family's "no live data" body (HaTileNotice): a quiet note in place of the value —
    "Not configured — set up in Plugins → Home Assistant", "Home Assistant offline", … Kept small and
    dimmed so a dozen unconfigured tiles read as hints, not alarms. */
-.ha-tile-notice {
-	font-size: 10px;
-	line-height: 1.3;
+.ha-tile-notice.value[data-part='value'] {
+	font-size: var(--ha-caption-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	opacity: 0.7;
-	white-space: normal;
+	max-width: 100%;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* Native sliders keep their track geometry; the surrounding text/buttons follow density. */
+:where(.np-ha-fan, .np-ha-cover, .np-ha-input, .np-ha-light, .np-ha-media) input[type='range'] {
+	min-width: 0;
+	margin: 0;
+	height: 16px;
+	flex-shrink: 0;
+}
+:is(.np-ha-fan, .np-ha-cover, .np-ha-climate, .np-ha-input, .np-ha-lock)[data-tile-state] {
+	display: flex;
+	flex-direction: column;
+	align-items: stretch;
 }

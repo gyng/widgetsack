@@ -39,10 +39,12 @@ describe('usage provider configuration', () => {
 		])
 			fireEvent.click(within(codex).getByLabelText(label));
 		fireEvent.click(screen.getByRole('button', { name: 'Move Work down' }));
-		expect(screen.getAllByRole('group')[1]).toHaveAccessibleName('Work');
+		expect(
+			screen.getAllByRole('group').filter((el) => el.tagName === 'FIELDSET')[1]
+		).toHaveAccessibleName('Work');
 		fireEvent.click(screen.getByRole('button', { name: 'Move Work up' }));
 		fireEvent.click(screen.getByRole('button', { name: 'Remove Claude' }));
-		expect(screen.getAllByRole('group')).toHaveLength(1);
+		expect(screen.getAllByRole('group').filter((el) => el.tagName === 'FIELDSET')).toHaveLength(1);
 	});
 	it('adds credit, OMP and custom sources with their relevant settings', async () => {
 		render(<Editor initial={[]} />);
@@ -120,6 +122,8 @@ it('edits settings beside each selected row with independent provider overrides'
 	fireEvent.click(within(codex).getByRole('button', { name: 'Settings for Codex week' }));
 	let options = screen.getByRole('group', { name: 'Codex week settings' });
 	expect(within(options).getByLabelText('Display')).toHaveValue('left');
+	expect(within(options).getByLabelText('Show left / used suffix')).not.toBeChecked();
+	fireEvent.click(within(options).getByLabelText('Show left / used suffix'));
 	fireEvent.change(within(options).getByLabelText('Display'), { target: { value: 'used' } });
 
 	fireEvent.change(within(options).getByLabelText('Warning used %'), { target: { value: '70' } });
@@ -144,4 +148,5 @@ it('edits settings beside each selected row with independent provider overrides'
 	options = screen.getByRole('group', { name: 'Codex week settings' });
 	expect(within(options).getByLabelText('Display')).toHaveValue('used');
 	expect(within(options).getByLabelText('Warning used %')).toHaveValue(70);
+	expect(within(options).getByLabelText('Show left / used suffix')).toBeChecked();
 });

@@ -69,8 +69,7 @@
 	font-size: var(--text-xs);
 	letter-spacing: 0.2px;
 	text-transform: none;
-	/* Never widen the strip: a label that still doesn't fit is clipped with an ellipsis (the full
-	   name is the button's aria-label / tooltip). */
+	/* The shared rail width accommodates the full section names. */
 	max-width: 100%;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -337,11 +336,16 @@
 }
 
 .canvas .rail-panel .rp-hd {
-	color: rgb(var(--ui-accent-rgb));
+	color: var(--ui-fg);
 	font-weight: 600;
 	font-size: var(--text-lg);
 	line-height: var(--line-heading);
 	margin: var(--space-4) 0 var(--space-2);
+}
+.canvas .rail-panel > h2.rp-hd {
+	font-size: var(--text-xl);
+	line-height: var(--line-title);
+	margin-bottom: var(--space-4);
 }
 
 .canvas .rail-panel .rp-hd:first-child {
@@ -356,6 +360,7 @@
 .canvas .rail-panel button {
 	background: var(--ui-raised);
 	border: 1px solid var(--ui-border-strong);
+	border-radius: var(--radius-control);
 	color: var(--ui-fg);
 	font-family: var(--ui-font);
 	font-size: var(--text-md);
@@ -383,6 +388,8 @@
 	background: var(--ui-raised);
 	color: var(--ui-fg);
 	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+	min-width: 0;
 	font-family: var(--ui-font);
 	font-size: var(--text-md);
 	padding: var(--space-1) var(--space-2);
@@ -602,6 +609,9 @@
 	display: flex;
 	gap: var(--space-2);
 	margin: var(--space-2) 0 var(--space-3);
+}
+.canvas :is(.presets-panel, .share-panel, .bg-panel) > * {
+	max-width: 640px;
 }
 
 .canvas .presets-panel .preset-save input {
@@ -958,7 +968,7 @@
 }
 
 .canvas .plugins-panel .pl-list {
-	flex: 0 0 264px;
+	flex: 0 0 clamp(180px, 30%, 240px);
 	box-sizing: border-box;
 	overflow-y: auto;
 	padding: var(--space-5);
@@ -1160,6 +1170,8 @@
 
 .canvas .plugins-panel .pl-detail {
 	flex: 1 1 auto;
+	min-width: 0;
+	container: studio-detail / inline-size;
 	box-sizing: border-box;
 	overflow-y: auto;
 	padding: var(--space-5) var(--space-6);
@@ -1170,12 +1182,15 @@
 	margin-bottom: var(--space-4);
 }
 
-/* Panel TITLE: one ramp step above the section headers, same uppercase voice. */
+/* Panel titles use the shared title role and sentence case. */
 .canvas .plugins-panel .pl-title {
 	font-size: var(--text-xl);
-	text-transform: uppercase;
-	letter-spacing: 1px;
-	color: var(--ui-accent-fg);
+	line-height: var(--line-title);
+	font-weight: 600;
+	text-transform: none;
+	letter-spacing: normal;
+	color: var(--ui-fg);
+	margin: 0 0 var(--space-3);
 }
 
 .canvas .plugins-panel .pl-desc {
@@ -1250,7 +1265,7 @@
 	color: var(--ui-fg);
 	border: 1px solid var(--ui-border);
 	font-family: var(--ui-font);
-	font-size: var(--text-lg);
+	font-size: var(--text-md);
 	padding: var(--space-2) var(--space-3);
 	resize: vertical;
 }
@@ -1601,7 +1616,7 @@
 	color: var(--ui-fg);
 	border: 1px solid var(--ui-border);
 	font-family: var(--ui-font);
-	font-size: var(--text-lg);
+	font-size: var(--text-md);
 	padding: var(--space-2) var(--space-3);
 	min-height: var(--control-h);
 }
@@ -1724,6 +1739,7 @@
 
 .canvas .plugins-panel .has-actions {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: var(--space-3);
 	margin-top: var(--space-4);
@@ -1869,8 +1885,8 @@
 
 .canvas .plugins-panel .has-area-hd {
 	color: rgb(var(--ui-accent-rgb));
-	text-transform: uppercase;
-	letter-spacing: 1px;
+	text-transform: none;
+	font-weight: 600;
 	font-size: var(--text-sm);
 	border-bottom: 1px solid var(--ui-border);
 	padding: var(--space-2) 0 var(--space-1);
@@ -1960,6 +1976,7 @@
 .theme-auto {
 	display: flex;
 	align-items: center;
-	gap: 8px;
-	margin-bottom: 8px;
+	gap: var(--space-4);
+	margin-bottom: var(--space-4);
+	flex-wrap: wrap;
 }

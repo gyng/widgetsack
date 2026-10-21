@@ -17,7 +17,7 @@ export default function HaTileNotice({ className, label, tile }: Props) {
 			<span className="label" data-part="label">
 				{label}
 			</span>
-			<span className="value ha-tile-notice" data-part="value" role="status">
+			<span className="value ha-tile-notice" data-part="value" role="status" title={tile.message}>
 				{tile.message}
 			</span>
 		</div>

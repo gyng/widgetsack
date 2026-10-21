@@ -10,6 +10,7 @@ test('Gauge value formula evaluates live via QuickJS (no sensor needed)', async 
 	await gotoStudio(page);
 	const gauge = await addWidget(page, 'Gauge');
 	const value = gauge.locator('[data-part="value"]');
+	await page.locator('.inspector summary').filter({ hasText: 'Advanced expressions' }).click();
 	await expect(value, 'starts as the null placeholder').toContainText('–');
 
 	await page.locator('.inspector textarea.cfg-expr').first().fill('1 + 1');
@@ -22,6 +23,7 @@ test('Text template formula renders the evaluated string and degrades gracefully
 	await gotoStudio(page);
 	const text = await addWidget(page, 'Text');
 	const value = text.locator('[data-part="value"]');
+	await page.locator('.inspector summary').filter({ hasText: 'Advanced expressions' }).click();
 
 	await page.locator('.inspector textarea.cfg-expr').first().fill('sum {1 + 1}');
 	await expect(value).toHaveText('sum 2');
@@ -35,6 +37,7 @@ test('Text template formula renders the evaluated string and degrades gracefully
 test('referenced-sensor hint lists refs and flags unknown ids', async ({ page }) => {
 	await gotoStudio(page);
 	await addWidget(page, 'Gauge');
+	await page.locator('.inspector summary').filter({ hasText: 'Advanced expressions' }).click();
 	await page.locator('.inspector textarea.cfg-expr').first().fill('cpu.total + nope.bad');
 
 	const refs = page.locator('.inspector .cfg-expr-refs').first();

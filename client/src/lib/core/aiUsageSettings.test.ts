@@ -1,10 +1,24 @@
 import { expect, it } from 'vitest';
-import { readUsageSettings, resolveUsageSettings, usageResetText } from './aiUsageSettings';
+import {
+	readUsageSettings,
+	resolveUsageSettings,
+	usageResetText,
+	resolveUsageLayout
+} from './aiUsageSettings';
+it('resolves a single layout choice while preserving the original density toggles', () => {
+	expect(resolveUsageLayout({})).toBe('compact');
+	expect(resolveUsageLayout({ minimal: true, compact: false })).toBe('minimal');
+	expect(resolveUsageLayout({ compact: false })).toBe('detailed');
+	for (const layout of ['compact', 'minimal', 'detailed'] as const)
+		expect(resolveUsageLayout({ layout, minimal: true, compact: false })).toBe(layout);
+	expect(resolveUsageLayout({ layout: 'bad' })).toBe('compact');
+});
 it('validates row settings and preserves legacy defaults beneath row overrides', () => {
 	expect(readUsageSettings(null)).toEqual({});
 	expect(readUsageSettings('bad')).toEqual({});
 	const value = {
 		remaining: false,
+		showMode: true,
 		showResets: true,
 		resetDisplay: 'date',
 		warning: 0,
@@ -37,6 +51,7 @@ it('validates row settings and preserves legacy defaults beneath row overrides',
 		resolveUsageSettings({ remaining: true }, { remaining: false, showResets: true })
 	).toMatchObject({ remaining: true, showResets: true });
 	expect(resolveUsageSettings({}).remaining).toBe(true);
+	expect(resolveUsageSettings({}).showMode).toBe(false);
 });
 it('formats reset boundaries as minutes, hours, days and weeks', () => {
 	for (const [minutes, text] of [

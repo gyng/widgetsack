@@ -5,7 +5,7 @@
 	gap: var(--np-gap, 4px);
 	width: 100%;
 	height: 100%;
-	padding: 0 10px;
+	padding: 0 var(--ha-padding, calc(var(--np-gap, 4px) * 2));
 	box-sizing: border-box;
 	border: 1px solid var(--np-accent, rgba(119, 196, 211, 0.8));
 	border-radius: var(--np-radius, 4px);
@@ -23,12 +23,12 @@
    root + the inner .label/.state parts, unchanged from when the root itself was the button). */
 .np-ha-light .ha-light-toggle {
 	display: flex;
-	flex-direction: column;
-	align-items: flex-start;
-	justify-content: center;
-	gap: 2px;
+	flex-direction: row;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--ha-gap, var(--np-gap, 4px));
 	flex: 1;
-	min-height: 0;
+	min-height: var(--np-control-size, 28px);
 	padding: 0;
 	border: none;
 	background: transparent;
@@ -39,20 +39,20 @@
 }
 
 .np-ha-light .label {
-	font-size: 10px;
+	font-size: var(--ha-caption-size, var(--np-text-caption, 12px));
 	text-transform: uppercase;
 	letter-spacing: 0.5px;
 	opacity: 0.8;
 }
 
 .np-ha-light .state {
-	font-size: 16px;
+	font-size: var(--ha-text-size, var(--np-text-body, 14px));
 	letter-spacing: 1px;
 }
 
 .np-ha-light .ha-light-dim {
 	width: 100%;
-	margin: 0 0 6px;
+	margin: 0;
 	accent-color: var(--np-bg, #0a0a0c);
 	cursor: pointer;
 }

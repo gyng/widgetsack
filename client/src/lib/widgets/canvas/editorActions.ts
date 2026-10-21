@@ -1,3 +1,5 @@
+import { createWidget, getMeta } from '../../core/widget';
+import { leaf } from '../../core/layoutTree';
 import type { Action } from '../../core/editorReducer';
 import type { WidgetDef } from '../../core/layoutTree';
 import { getTemplate } from '../../core/templates';
@@ -23,12 +25,27 @@ function templateDef(templateId: string): WidgetDef | null {
 export type EditorAction =
 	| Exclude<Action, { type: 'newWidget' | 'cloneDef' | 'newFromTemplate' | 'previewTemplate' }>
 	| { type: 'newWidget' }
+	| { type: 'newFromWidget'; widgetType: string }
 	| { type: 'cloneDef'; defId: string }
 	| { type: 'newFromTemplate' | 'previewTemplate'; templateId: string };
 
 /** Resolve fresh identities and template factories once, before React evaluates a reducer. */
 export function prepareEditorAction(action: EditorAction): Action {
 	switch (action.type) {
+		case 'newFromWidget': {
+			const meta = getMeta(action.widgetType);
+			if (!meta) return { type: 'newFromTemplate', definition: null };
+			const widget = createWidget(action.widgetType, `${action.widgetType}-${rand()}`);
+			return {
+				type: 'newFromTemplate',
+				definition: {
+					id: `def-${rand()}`,
+					name: meta.label ?? meta.type,
+					size: { w: widget.rect.w, h: widget.rect.h },
+					child: leaf(widget)
+				}
+			};
+		}
 		case 'newWidget':
 			return { ...action, id: `def-${rand()}`, name: `widget-${rand()}` };
 		case 'cloneDef':

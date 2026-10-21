@@ -13,6 +13,7 @@ test('a config JSON draft lands on its own widget when another widget is selecte
 }) => {
 	await gotoStudio(page);
 	await addWidget(page, 'Text');
+	await page.locator('.inspector').getByRole('tab', { name: 'Layout', exact: true }).click();
 	// Park it clear of the button's resize handles so the stage click below lands on it.
 	for (const [field, value] of [
 		['x', '900'],
@@ -24,6 +25,7 @@ test('a config JSON draft lands on its own widget when another widget is selecte
 		await page.getByRole('spinbutton', { name: field, exact: true }).press('Enter');
 	}
 	await moveHandle(page, 'button').click();
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
 	await page.getByText('Advanced — config JSON / CSS').click();
 	const json = page.getByRole('textbox', { name: /config \(JSON\)/ });
 	await json.fill('{ "label": "draft-for-button" }');
@@ -39,6 +41,7 @@ test('a config JSON draft lands on its own widget when another widget is selecte
 test('Escape in an Inspector text field keeps the selection', async ({ page }) => {
 	await gotoStudio(page);
 	await moveHandle(page, 'button').click();
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
 	await page.getByText('Advanced — config JSON / CSS').click();
 	await page.getByRole('textbox', { name: /config \(JSON\)/ }).focus();
 	await page.keyboard.press('Escape');

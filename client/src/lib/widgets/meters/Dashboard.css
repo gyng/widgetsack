@@ -19,7 +19,7 @@
 .np-dashboard .dashboard-row {
 	display: flex;
 	align-items: center;
-	gap: 8px;
+	gap: var(--np-gap, 8px);
 }
 .np-dashboard .dashboard-row > span {
 	flex: 1;
@@ -28,11 +28,16 @@
 .np-dashboard button,
 .np-dashboard input {
 	font: inherit;
+	box-sizing: border-box;
 	color: inherit;
 	background: var(--np-bg, #202733);
 	border: 1px solid var(--np-border, #45515f);
-	border-radius: 4px;
+	border-radius: var(--np-radius, 4px);
 	padding: 4px 6px;
+}
+.np-dashboard button,
+.np-dashboard input:not([type='checkbox'], [type='range']) {
+	min-height: var(--np-control-size, 28px);
 }
 .np-dashboard input[type='text'] {
 	min-width: 0;
@@ -70,13 +75,13 @@
 	position: absolute;
 	left: 0;
 	right: 0;
-	background: #ffd28020;
+	background: color-mix(in srgb, var(--np-warn, #ffd280) 12%, transparent);
 	pointer-events: none;
 }
 .np-dashboard .history-legend {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px;
+	gap: var(--np-gap, 8px);
 	font-size: var(--np-text-caption, 12px);
 	line-height: var(--np-line-caption, 16px);
 }

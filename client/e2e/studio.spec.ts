@@ -21,30 +21,26 @@ test('studio boots clean: chrome renders, no console errors, no unmocked command
 	expect(log.mockWarns, `unmocked Tauri commands:\n${log.mockWarns.join('\n')}`).toEqual([]);
 });
 
-test('powerline hint bar shows only on an edit stage (layouts / designing), not off-stage sections', async ({
+test('Studio keeps the footer row while replacing canvas hints with section status', async ({
 	page
 }) => {
 	await gotoStudio(page);
-	// Default boot = Layouts (an edit stage) → the canvas-gesture hints are relevant and shown.
-	const powerbar = page.locator('.powerbar');
-	await expect(powerbar).toBeVisible();
-
-	// An off-stage section (Sensors is a full-width browser, no canvas) has no gestures to hint — the
-	// bar must disappear and the section panel must reclaim the row (no dead gap above the window edge).
+	const footer = page.locator('.powerbar');
+	await expect(footer).toBeVisible();
+	await expect(footer.locator('kbd').first()).toBeVisible();
+	const before = (await page.locator('.nav-rail').boundingBox())!;
 	await openSection(page, 'sensors');
-	await expect(navItem(page, 'sensors')).toHaveClass(/active/);
-	await expect(powerbar).toHaveCount(0);
+	await expect(footer).toBeVisible();
+	await expect(footer).toHaveText('Sensors');
+	await expect(footer.locator('kbd')).toHaveCount(0);
+	const after = (await page.locator('.nav-rail').boundingBox())!;
+	expect(after.height).toBe(before.height);
 	const panelBottom = await page
 		.locator('.rail-panel')
 		.evaluate((el) => el.getBoundingClientRect().bottom);
-	expect(
-		panelBottom,
-		'panel reaches the window bottom with no reserved hint-bar gap'
-	).toBeGreaterThan((await page.evaluate(() => window.innerHeight)) - 2);
-
-	// Back to an edit stage → the hints come back.
+	expect(panelBottom).toBe((await footer.boundingBox())!.y);
 	await openSection(page, 'layouts');
-	await expect(powerbar).toBeVisible();
+	await expect(footer.locator('kbd').first()).toBeVisible();
 });
 
 test('Clock (JP weekday): analog icon stays visible (fill meter) + date row is one line', async ({
@@ -58,6 +54,8 @@ test('Clock (JP weekday): analog icon stays visible (fill meter) + date row is o
 	// width to 0 and it vanished — it must render with a real box.
 	const dial = page.locator('.analog-clock').first();
 	await expect(dial).toBeVisible();
+	await expect(dial.locator('.np-clock-face')).toHaveCSS('border-top-width', '2px');
+	await expect(dial.locator('.np-clock-minute')).toHaveCSS('width', '2px');
 	const box = await dial.boundingBox();
 	expect(box, 'analog clock has a layout box').not.toBeNull();
 	expect((box?.width ?? 0) > 8 && (box?.height ?? 0) > 8, 'analog dial not collapsed').toBeTruthy();
@@ -110,6 +108,24 @@ test('Sensors pane: per-sensor "stays active after the studio closes?" dots + le
 	await filter.fill('net.linkspeed.rx');
 	await expect(dotFor('net.linkspeed.rx')).toHaveClass(/\boff\b/);
 	await expect(dotFor('net.linkspeed.rx')).toHaveText('○');
+});
+
+test('analog clock line thickness is editable without changing its box', async ({ page }) => {
+	await gotoStudio(page);
+	const widget = await addWidget(page, 'Analog Clock');
+	const original = await widget.boundingBox();
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
+	const thickness = page.getByRole('spinbutton', { name: 'line thickness (px)', exact: true });
+	await thickness.fill('2');
+	await thickness.press('Tab');
+	await expect(widget.locator('.np-clock-face')).toHaveCSS('border-top-width', '2px');
+	await expect(widget.locator('.np-clock-minute')).toHaveCSS('width', '2px');
+	const next = await widget.boundingBox();
+	expect(next!.width).toBeCloseTo(original!.width, 1);
+	expect(next!.height).toBeCloseTo(original!.height, 1);
+	await thickness.fill('0');
+	await thickness.press('Tab');
+	await expect(widget.locator('.np-analog-clock')).toHaveCSS('--clock-line-width', '');
 });
 
 test('tab navigation switches directly without capturing whole-window fade snapshots', async ({

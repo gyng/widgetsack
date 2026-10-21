@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { render } from '@testing-library/react';
 import Text, { isEmptyText } from './Text';
+afterEach(() => vi.restoreAllMocks());
 
 const part = (c: Element, p: string) => {
 	const el = c.querySelector(`[data-part="${p}"]`);
@@ -9,6 +10,72 @@ const part = (c: Element, p: string) => {
 };
 
 describe('Text', () => {
+	it('renders abbreviated network rates with rate styling', () => {
+		const view = render(<Text value={24 * 1024 ** 2} format="rate-short" label="▼" />);
+		expect(part(view.container, 'value')).toHaveTextContent('24M/s');
+		expect(part(view.container, 'value')).toHaveAttribute('title', '24.0 MiB/s');
+		expect(view.container.querySelector('.np-text')).toHaveClass('rate');
+		view.rerender(<Text value="Offline" format="rate-short" />);
+		expect(part(view.container, 'value')).not.toHaveAttribute('title');
+	});
+	it('keeps percentage history on 0–100 while rate history can auto-scale', () => {
+		const context = {
+			clearRect: vi.fn(),
+			beginPath: vi.fn(),
+			moveTo: vi.fn(),
+			lineTo: vi.fn(),
+			stroke: vi.fn()
+		};
+		vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+			context as unknown as CanvasRenderingContext2D
+		);
+		vi.spyOn(HTMLCanvasElement.prototype, 'clientHeight', 'get').mockReturnValue(100);
+		const history = [10, 20];
+		const view = render(
+			<Text
+				value={20}
+				history={history}
+				showSparkline
+				sparklineSmooth={false}
+				sparklineScale="percent"
+			/>
+		);
+		expect(context.lineTo).toHaveBeenLastCalledWith(expect.any(Number), 80);
+		view.rerender(
+			<Text
+				value={20}
+				history={history}
+				showSparkline
+				sparklineSmooth={false}
+				sparklineScale="auto"
+			/>
+		);
+		expect(context.lineTo).toHaveBeenLastCalledWith(expect.any(Number), 0);
+	});
+	it('can toggle an inline history graph without losing its current reading', () => {
+		vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null);
+		const view = render(<Text value={30} label="CPU" history={[10, 20, 30]} />);
+		expect(view.queryByRole('img', { name: 'history' })).toBeNull();
+		view.rerender(
+			<Text
+				value={30}
+				label="CPU"
+				history={[10, 20, 30]}
+				showSparkline
+				sparklineSeconds={90}
+				sparklineWidth={32}
+			/>
+		);
+		expect(view.getByRole('img', { name: 'history' })).toBeVisible();
+		expect(view.getByText('30')).toBeVisible();
+		view.rerender(
+			<Text value={30} label="CPU" history={[10, 20, 30]} showSparkline sparklineStretch />
+		);
+		expect(view.container.querySelector('.text-sparkline.stretch')).toBeVisible();
+		view.rerender(<Text value={40} label="CPU" history={[20, 30, 40]} showSparkline={false} />);
+		expect(view.queryByRole('img', { name: 'history' })).toBeNull();
+		expect(view.getByText('40')).toBeVisible();
+	});
 	it('formats a numeric value via formatScalar (integer default) and uses the --np-fg token', () => {
 		const { container } = render(<Text value={42.7} />);
 		const value = part(container, 'value');

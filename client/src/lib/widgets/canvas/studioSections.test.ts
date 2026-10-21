@@ -31,7 +31,7 @@ describe('studio nav SECTIONS', () => {
 	it('uses the shared vocabulary for the user-facing labels (ids stay stable for e2e)', () => {
 		const byId = Object.fromEntries(SECTIONS.map((s) => [s.id, s]));
 		expect(byId['layouts'].short).toBe('Layout');
-		expect(byId['widget-designer']).toMatchObject({ label: 'Widget designer', short: 'Custom' });
+		expect(byId['widget-designer']).toMatchObject({ label: 'Widget builder', short: 'Build' });
 		expect(byId['background']).toMatchObject({ label: 'Background', short: 'Background' });
 		// Sacks are the user's own exports; the nav says "Share" and the tooltip explains the noun.
 		expect(byId['sacks']).toMatchObject({
@@ -39,10 +39,10 @@ describe('studio nav SECTIONS', () => {
 			short: 'Share',
 			title: 'Sacks — export/import'
 		});
-		expect(byId['saved-layouts']).toMatchObject({ label: 'Presets', short: 'Presets' });
+		expect(byId['saved-layouts']).toMatchObject({ label: 'Saved layouts', short: 'Saved' });
 		// The words that must NOT leak into the rail (renamed by the vocabulary sweep).
 		for (const s of SECTIONS) {
-			expect(`${s.label} ${s.short}`).not.toMatch(/(Defs|Backdrop|Saved layouts|Sacks)/);
+			expect(`${s.label} ${s.short}`).not.toMatch(/(Defs|Backdrop|Sacks)/);
 		}
 	});
 

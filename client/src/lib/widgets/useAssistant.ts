@@ -127,36 +127,34 @@ export function useAssistant(cfg: AssistantConfig): AssistantState {
 		// Auto-generation runs ONLY on the overlay (the always-on surface). The studio shows the last
 		// value + a manual refresh, so editing a layout doesn't rack up paid calls.
 		if (isStudioWindow()) return;
+		const ms = intervalMs(cfg.schedule);
+		if (ms === null && !isCron(cfg.schedule)) return;
 		let cancelled = false;
 		const tick = (): void => {
 			/* v8 ignore next -- cleanup clears every timer; this only protects an already-queued callback. */
 			if (!cancelled) void generate();
 		};
-		const timers: ReturnType<typeof setInterval>[] = [];
-		const initial = setTimeout(tick, FIRST_DELAY_MS);
-		const ms = intervalMs(cfg.schedule);
-		if (ms !== null) {
-			timers.push(setInterval(tick, Math.max(MIN_INTERVAL_MS, ms)));
-		} else if (isCron(cfg.schedule)) {
-			// Dedup by the absolute minute (epoch/60000), NOT clock h:m — an h:m key recurs every day, so
-			// a daily/weekly cron would fire once and then be permanently suppressed. The minute index is
-			// monotonic, so each matching minute fires exactly once.
-			let lastFireMinute = -1;
-			timers.push(
-				setInterval(() => {
-					const now = new Date();
-					const minute = Math.floor(now.getTime() / 60_000);
-					if (cronMatches(cfg.schedule, now) && minute !== lastFireMinute) {
-						lastFireMinute = minute;
-						tick();
-					}
-				}, 30_000)
-			);
-		}
+		// Absolute minutes allow a daily/weekly schedule to run again on later days. Cron checks use
+		// local wall time and never generate an out-of-schedule startup response.
+		let lastFireMinute = -1;
+		const scheduledTick = (): void => {
+			if (ms !== null) {
+				tick();
+				return;
+			}
+			const now = new Date();
+			const minute = Math.floor(now.getTime() / 60_000);
+			if (cronMatches(cfg.schedule, now) && minute !== lastFireMinute) {
+				lastFireMinute = minute;
+				tick();
+			}
+		};
+		const initial = setTimeout(scheduledTick, FIRST_DELAY_MS);
+		const timer = setInterval(scheduledTick, ms === null ? 30_000 : Math.max(MIN_INTERVAL_MS, ms));
 		return () => {
 			cancelled = true;
 			clearTimeout(initial);
-			timers.forEach(clearInterval);
+			clearInterval(timer);
 		};
 	}, [cfg.schedule, generate]);
 

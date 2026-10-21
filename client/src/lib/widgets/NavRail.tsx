@@ -9,7 +9,7 @@ import { useAppUpdate } from '../appUpdate';
 import { updateBadge } from '../core/updateNotice';
 import './NavRail.css';
 
-// A short label of this many characters or more doesn't fit the strip at --text-xs monospace.
+// Longer labels omit tracking so the full text fits at the standard caption size.
 const LONG_SHORT_LABEL = 8;
 
 type Props = {
@@ -44,8 +44,7 @@ export default function NavRail({ active, onSelect }: Props) {
 			<span className="nav-icon" aria-hidden="true">
 				<Icon name={s.icon} size={20} />
 			</span>
-			{/* Long labels ("BACKGROUND", "SHORTCUTS") drop to the compact size so they never overflow the
-			    56px strip; the class flips at 8 chars (the widest that fits at the normal size). */}
+			{/* Keep the full label at a readable size in the 80px navigation strip. */}
 			<span
 				className={s.short.length >= LONG_SHORT_LABEL ? 'nav-short nav-short--long' : 'nav-short'}
 			>

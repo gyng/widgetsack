@@ -269,6 +269,7 @@ export default function PluginsPanel({ hub, plugins, selectedId, onSelect }: Pro
 							key={p.id}
 							type="button"
 							aria-label={p.name}
+							aria-current={p.id === selectedId ? 'page' : undefined}
 							aria-describedby={p.statusSensor ? `plugin-status-${p.id}` : undefined}
 							className={['pl-item', p.id === selectedId && 'cur'].filter(Boolean).join(' ')}
 							onClick={() => onSelect(p.id)}
@@ -310,7 +311,7 @@ export default function PluginsPanel({ hub, plugins, selectedId, onSelect }: Pro
 					<div className="rp-stub">Select a plugin to view its settings.</div>
 				) : (
 					<>
-						<div className="pl-title">{selectedPlugin.name}</div>
+						<h2 className="pl-title">{selectedPlugin.name}</h2>
 						{selectedPlugin.description && (
 							<div className="pl-desc">{selectedPlugin.description}</div>
 						)}

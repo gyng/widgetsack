@@ -7,7 +7,7 @@
 
 /** Docked studio chrome: a press/drop/context-menu inside any of these belongs to that panel. */
 export const PANEL_SELECTOR =
-	'.outline, .inspector, .studio-bar, .powerbar, .theme-editor, .ctx, .nav-rail, .rail-panel, .designer-list, .designer-empty, .studio-menu, .layout-banner';
+	'.outline, .inspector, .studio-bar, .powerbar, .theme-editor, .ctx, .nav-rail, .rail-panel, .designer-list, .designer-empty, .studio-menu, .layout-banner, .right-pane-tabs, .studio-assistant, .monitor-switcher, .pane-resize, .layout-read-status, .studio-panel-loading, .assistant-loading';
 
 /** Stage items that own their own pointer presses (never an empty-canvas press). */
 export const STAGE_ITEM_SELECTOR = '.widget, .group-frame, .splitter, .grid-cell, .ctag, .marquee';

@@ -26,7 +26,7 @@
 	height: min(100cqw, 100cqh);
 	box-sizing: border-box;
 	border-radius: 50%;
-	border: 1.5cqmin solid var(--clock-fg);
+	border: var(--clock-line-width, 1.5cqmin) solid var(--clock-fg);
 	background: var(--clock-face);
 }
 
@@ -45,13 +45,13 @@
 	top: 2%;
 	left: 50%;
 	transform: translateX(-50%);
-	width: 0.9cqmin;
+	width: calc(var(--clock-line-width, 1.8cqmin) * 0.5);
 	height: 4%;
 	background: var(--clock-fg);
 	opacity: 0.5;
 }
 .analog-clock .np-clock-tick.major {
-	width: 1.6cqmin;
+	width: calc(var(--clock-line-width, 2cqmin) * 0.8);
 	height: 7%;
 	opacity: 0.9;
 }
@@ -79,15 +79,15 @@
 	background: var(--clock-fg);
 }
 .analog-clock .np-clock-hour {
-	width: 3.2cqmin;
+	width: calc(var(--clock-line-width, 2.56cqmin) * 1.25);
 	height: 28%;
 }
 .analog-clock .np-clock-minute {
-	width: 2.4cqmin;
+	width: var(--clock-line-width, 2.4cqmin);
 	height: 38%;
 }
 .analog-clock .np-clock-second {
-	width: 1.2cqmin;
+	width: calc(var(--clock-line-width, 2cqmin) * 0.6);
 	height: 42%;
 	background: var(--clock-accent);
 }

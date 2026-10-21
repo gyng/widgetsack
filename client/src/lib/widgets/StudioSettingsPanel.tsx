@@ -319,12 +319,13 @@ export default function StudioSettingsPanel({
 	const { prefs: overlayPrefs, setPrefs: setOverlayPrefs, layerStatus } = overlay;
 	return (
 		<div className="rail-panel plugins-panel settings-panel">
-			<div className="pl-list">
+			<nav className="pl-list" aria-label="Settings pages">
 				<div className="rp-hd">Settings</div>
 				{SETTINGS_TABS.map((t) => (
 					<button
 						key={t.id}
 						type="button"
+						aria-current={t.id === tab ? 'page' : undefined}
 						className={['pl-item', t.id === tab && 'cur', t.id === 'danger' && 'set-danger']
 							.filter(Boolean)
 							.join(' ')}
@@ -333,12 +334,12 @@ export default function StudioSettingsPanel({
 						{t.label}
 					</button>
 				))}
-			</div>
+			</nav>
 			<div className="pl-detail">
 				<div className="set-form">
 					{tab === 'display' && (
 						<>
-							<div className="pl-title">Monitor</div>
+							<h2 className="pl-title">Monitor</h2>
 							<div className="pl-desc">
 								This layout uses the selected monitor. Each monitor has its own layout.
 							</div>
@@ -390,7 +391,7 @@ export default function StudioSettingsPanel({
 					)}
 					{tab === 'overlay' && (
 						<>
-							<div className="pl-title">Overlay</div>
+							<h2 className="pl-title">Overlay</h2>
 							<div className="pl-desc">
 								Choose where desktop widgets appear and how their windows behave.
 							</div>
@@ -464,7 +465,7 @@ export default function StudioSettingsPanel({
 					)}
 					{tab === 'startup' && (
 						<>
-							<div className="pl-title">Startup</div>
+							<h2 className="pl-title">Startup</h2>
 							<div className="pl-desc">What happens when you sign in to Windows.</div>
 							<LaunchAtLogin />
 							<div className="pl-desc">
@@ -486,7 +487,7 @@ export default function StudioSettingsPanel({
 					)}
 					{tab === 'controls' && (
 						<>
-							<div className="pl-title">Shortcuts</div>
+							<h2 className="pl-title">Shortcuts</h2>
 							<div className="pl-desc">
 								Change the keyboard shortcuts for Studio and the overlays. The list also shows
 								built-in global shortcuts.
@@ -502,7 +503,7 @@ export default function StudioSettingsPanel({
 					{tab === 'mcp' && <McpSettingsPanel />}
 					{tab === 'diagnostics' && (
 						<>
-							<div className="pl-title">Diagnostics</div>
+							<h2 className="pl-title">Diagnostics</h2>
 							<div className="pl-desc">
 								Check memory use, retained media, widget element counts, and logs for Studio and the
 								overlays. Use developer tools to inspect a window.
@@ -542,7 +543,7 @@ export default function StudioSettingsPanel({
 									width={88}
 									height={88}
 								/>
-								<div className="pl-title">widgetsack</div>
+								<h2 className="pl-title">widgetsack</h2>
 							</div>
 							<div className="pl-desc">
 								Desktop widgets for Windows. Show system meters, clocks, music, and Home Assistant
@@ -575,10 +576,10 @@ export default function StudioSettingsPanel({
 					)}
 					{tab === 'danger' && (
 						<>
-							<div className="pl-title set-danger-title">Danger zone</div>
+							<h2 className="pl-title set-danger-title">Danger zone</h2>
 							<div className="pl-desc">
 								Clear this monitor’s layout. Press Ctrl+Z to undo it before you open the widget
-								designer or reload the layout.
+								builder or reload the layout.
 							</div>
 							<button type="button" className="rp-danger" onClick={clearMonitor}>
 								✕ Clear this monitor

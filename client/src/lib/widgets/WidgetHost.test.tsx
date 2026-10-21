@@ -856,3 +856,35 @@ it('cancels a stationary floating gesture without requesting a commit', () => {
 	fireEvent.pointerCancel(ov, { pointerId: 1 });
 	expect(cancel).toHaveBeenCalledWith({ commit: false });
 });
+
+it('preserves modifier selection through a pointer click and keyboard activation', () => {
+	const hub = createTelemetryHub();
+	const instance: WidgetInstance = {
+		id: 'modifier',
+		type: 'test.json',
+		sensor: 'x',
+		rect: { x: 0, y: 0, w: 100, h: 30 },
+		config: {}
+	};
+	for (const modifier of [{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }]) {
+		for (const selected of [false, true]) {
+			const onSelect = vi.fn();
+			const view = render(
+				<WidgetHost
+					hub={hub}
+					instance={instance}
+					editMode
+					selected={selected}
+					onSelect={onSelect}
+				/>
+			);
+			const overlay = view.getByRole('button', { name: 'Move test.json widget' });
+			fireEvent.pointerDown(overlay, { button: 0, pointerId: 1, ...modifier });
+			fireEvent.pointerUp(overlay, { button: 0, pointerId: 1 });
+			expect(onSelect).toHaveBeenCalledWith({ id: instance.id, additive: true });
+			fireEvent.keyDown(overlay, { key: 'Enter', ...modifier });
+			expect(onSelect).toHaveBeenLastCalledWith({ id: instance.id, additive: true });
+			view.unmount();
+		}
+	}
+});

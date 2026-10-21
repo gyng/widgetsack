@@ -1,6 +1,8 @@
 /* Countdown — a label, a large time value, and a subtitle (target hint / pomodoro phase). The accent
    shifts on the pomodoro phase + when an event is reached. Themeable via --np-* / --cd-* tokens. */
 .countdown {
+	font-size: var(--np-text-body, 14px);
+	line-height: var(--np-line-body, 20px);
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -8,7 +10,7 @@
 	width: 100%;
 	height: 100%;
 	box-sizing: border-box;
-	gap: var(--cd-gap, 2px);
+	gap: var(--cd-gap, var(--np-gap, 4px));
 	overflow: hidden;
 	text-align: center;
 	font-family: var(--np-font-display, 'Bahnschrift', 'Arial Narrow', sans-serif);
@@ -16,7 +18,8 @@
 }
 
 .cd-label {
-	font-size: var(--cd-label-size, 0.64em);
+	font-size: var(--cd-label-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
 	color: var(--np-label, rgba(255, 255, 255, 0.55));
@@ -29,7 +32,8 @@
 	color: var(--cd-accent, var(--np-accent, rgb(119, 196, 211)));
 }
 .cd-sub {
-	font-size: var(--cd-sub-size, 0.66em);
+	font-size: var(--cd-sub-size, var(--np-text-caption, 12px));
+	line-height: var(--np-line-caption, 16px);
 	color: var(--np-label, rgba(255, 255, 255, 0.55));
 }
 

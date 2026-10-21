@@ -31,8 +31,8 @@ export const SECTIONS: Section[] = [
 	{ id: 'layouts', label: 'Layout', short: 'Layout', icon: 'zone', group: 'main' },
 	{
 		id: 'widget-designer',
-		label: 'Widget designer',
-		short: 'Custom',
+		label: 'Widget builder',
+		short: 'Build',
 		icon: 'group',
 		group: 'main'
 	},
@@ -55,7 +55,7 @@ export const SECTIONS: Section[] = [
 	},
 	// Presets (saved layout profiles: save the current monitor's arrangement, load it back). ⊞ is
 	// distinct from the other nav glyphs and from the in-canvas ▦ (container/grid) signifier.
-	{ id: 'saved-layouts', label: 'Presets', short: 'Presets', icon: 'calendar', group: 'main' },
+	{ id: 'saved-layouts', label: 'Saved layouts', short: 'Saved', icon: 'calendar', group: 'main' },
 	// Shortcut remaps moved into Settings → Shortcuts; Settings is the sole foot item now.
 	{ id: 'settings', label: 'Settings', short: 'Settings', icon: 'settings', group: 'foot' }
 ];

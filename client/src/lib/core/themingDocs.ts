@@ -76,6 +76,8 @@ const TOKEN_DESCRIPTIONS: Record<string, string> = {
 	'--np-label': 'Labels above or below a value.',
 	'--np-track': 'The unfilled part of a gauge or bar.',
 	'--np-bg': 'Widget background.',
+	'--np-widget-bg': 'Optional common widget surface, controlled by design style presets.',
+	'--np-widget-shadow': 'Common widget inset border and shadow; none in Transparent style.',
 	'--np-danger': 'Errors and readings above a threshold.',
 	'--np-warn': 'Warning state.',
 	'--np-success': 'Normal state.',

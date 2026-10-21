@@ -35,6 +35,17 @@ export function formatRate(bytesPerSec: number, decimals = 1): string {
 	return `${formatBytes(bytesPerSec, decimals)}/s`;
 }
 
+/** Binary rate: whole K/s, two significant figures from M upward, and no B/s tier. */
+export function formatCompactRate(bytesPerSec: number): string {
+	if (!Number.isFinite(bytesPerSec) || bytesPerSec <= 0) return '0K/s';
+	if (bytesPerSec < 1024) return '<1K/s';
+	const unit = Math.min(4, Math.max(0, Math.floor(Math.log(bytesPerSec) / Math.log(1024))));
+	const scaled = bytesPerSec / 1024 ** unit;
+	if (unit === 1) return `${Math.round(scaled)}K/s`;
+	const value = Number(scaled.toPrecision(2));
+	return `${value.toFixed(value < 10 ? 1 : 0)}${'BKMGT'[unit]}/s`;
+}
+
 /** A percentage with fixed decimals. */
 export function formatPercent(value: number, decimals = 0): string {
 	return `${value.toFixed(decimals)}%`;
@@ -69,6 +80,12 @@ export const SCALAR_FORMATS: ScalarFormat[] = [
 		example: '1.0 KiB/s'
 	},
 	{
+		name: 'rate-short',
+		summary:
+			'Binary throughput: whole K/s, two significant figures from M upward, and <1K/s for tiny traffic.',
+		example: '24M/s'
+	},
+	{
 		name: 'bytes',
 		summary: 'Binary-scaled bytes (B / KiB / MiB / GiB / TiB).',
 		example: '16.0 GiB'
@@ -88,6 +105,8 @@ export function formatScalar(value: number | null, format: string): string {
 			return formatPercent(value);
 		case 'rate':
 			return formatRate(value);
+		case 'rate-short':
+			return formatCompactRate(value);
 		case 'bytes':
 			return formatBytes(value);
 		case 'duration':

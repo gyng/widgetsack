@@ -21,6 +21,7 @@ buttons and controls.
 - **Controls:** media playback, volume, audio outputs, monitor inputs, and Home Assistant devices.
 - **Layouts:** arrange widgets in rows, columns, grids, or free positions. Each monitor has its own layout.
 - **Themes:** change fonts, colors, and spacing. Apply one theme to all monitors or select a theme for each monitor.
+- **Agent-assisted design:** ask your agent to build and refine widgets from the built-in meters, live sensors, and CSS.
 - **Window zones:** define regions where you can place app windows.
 
 GPU readings currently support NVIDIA GPUs. Media controls work with apps that support Windows media sessions.
@@ -89,18 +90,37 @@ Use **Check updates** to check a package for updates.
 
 Use **Themes** to edit a theme. You can also add CSS to an individual widget in the Inspector.
 Use formulas to calculate values or combine sensor readings.
-The widget designer lets you save groups as reusable widgets.
+Layout arranges your desktop; Build creates reusable widgets in My widgets. Both share the same catalog and favourites. See [Layout and Build](docs/studio-workflows.md) for starting points, shared edits and arrangement previews.
 
 See the [theme guide](docs/theming.md) and [templates and formulas](docs/templating.md) for examples.
 
-## AI assistance
+## Build widgets with your agent
 
-Select **Assistant** in the Studio toolbar to request layout or widget changes.
-The assistant requires an installed and signed-in Pi, Codex, or Claude agent.
-Select an agent in the sidebar. Review its changes before you select **Save**.
-Use **Undo** to reverse a batch of edits.
+Describe the widget you want in plain language. Your agent can combine built-in meters,
+bind available sensors, and adjust layout, labels, and CSS in Studio.
 
-To connect an external agent, open **Settings → MCP** and follow the [setup instructions](docs/mcp.md).
+1. Open **Assistant** in the Studio toolbar.
+2. Use **Your agent** for stdio MCP setup, or select **Built-in** and choose an installed and signed-in Pi, Codex, or Claude agent.
+3. Describe the content, size, and appearance you want. For example:
+
+   > Build a compact CPU and memory row with percentages and sparklines. Match my theme,
+   > use readable text, and keep it within a 360 px sidebar. Check for clipping afterward.
+
+4. Review the result. Use **Undo** to reverse a batch or **Save** to keep it.
+
+Use Build, or save a selection from Layout, to create a reusable widget.
+Agents can configure Home Assistant, AI providers and other integrations through MCP after you request setup. Saved credentials remain write-only; integration settings save immediately outside layout Undo. Commands still require local activation. The layout tools work with
+existing widget types. For a fully custom renderer, add **Custom HTML** and let your agent
+write portable HTML/CSS/JavaScript with selected sensors, theme tokens and responsive sizing.
+See the [Custom HTML guide](docs/custom-html.md). Adding a new sensor source requires development.
+
+You can also use an external agent through **Settings → MCP**. Follow the
+[connection guide](docs/mcp.md), then ask it to read, edit, verify, and screenshot your layout.
+For scheduled prompts and interactive chat widgets, see [AI widgets](docs/ai-widgets.md).
+
+Keep Studio open. MCP layout edits are undoable and remain unsaved until you select **Save**.
+
+Choose reusable [widget design presets](docs/design-presets.md): Transparent, Instrument, or Soft, with Compact, Comfortable, or Large typography. Apply them globally or to one widget/group; manual overrides are preserved by default.
 
 ## Settings and troubleshooting
 

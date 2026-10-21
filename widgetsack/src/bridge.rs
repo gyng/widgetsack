@@ -11,6 +11,7 @@ pub const TELEMETRY_EVENT: &str = "telemetry";
 
 /// Streamed LLM tokens (llm.rs → lib/llm/source.ts).
 pub const LLM_DELTA_EVENT: &str = "llm_delta";
+pub const LLM_CONFIG_CHANGED_EVENT: &str = "llm_config_changed";
 
 /// One `LogRecord` to the webview (log.rs → lib/logs.ts).
 pub const LOG_EVENT: &str = "log";

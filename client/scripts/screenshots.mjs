@@ -10,7 +10,7 @@
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium } from '@playwright/test';
+import { chromium, expect } from '@playwright/test';
 import { createServer } from 'vite';
 
 const clientRoot = fileURLToPath(new URL('..', import.meta.url));
@@ -87,7 +87,7 @@ async function main() {
 	// not a [data-shot] element.
 	const studioPage = await browser.newPage({
 		deviceScaleFactor: 2,
-		viewport: { width: 1280, height: 800 }
+		viewport: { width: 1600, height: 1000 }
 	});
 	studioPage.on('pageerror', (e) => errors.push(`studio: ${e}`));
 	await studioPage.goto(new URL('gallery/studio.html', base).href, { waitUntil: 'load' });
@@ -98,15 +98,43 @@ async function main() {
 		timeout: 20000
 	});
 	await studioPage.waitForSelector('.canvas.studio .studio-bar', { timeout: 20000 });
+	await studioPage.locator('.outline.docked').waitFor();
+	await studioPage.locator('.inspector').waitFor();
 	await studioPage.evaluate(() => document.fonts.ready);
 	// Select the needle gauge so the shot shows a REAL Inspector (sensor/config/style fields)
 	// instead of the empty "select a widget" stub. Click the widget on the stage like a user would.
 	await studioPage.click('[data-w="sg-g-needle"]', { timeout: 5000 }).catch(() => {
 		console.warn('  studio.png: showcase widget not found — capturing unselected');
 	});
-	await studioPage.waitForTimeout(400);
+	await studioPage
+		.locator('.inspector')
+		.getByRole('tab', { name: 'Content', exact: true })
+		.waitFor();
+	await studioPage.evaluate(() => document.fonts.ready);
 	await studioPage.screenshot({ path: path.join(outDir, 'studio.png') });
 	console.log('  studio.png');
+	n++;
+	// Capture Build with the same catalog, a real template copy and its editing context.
+	await studioPage.locator('[data-section="widget-designer"]').click();
+	const build = studioPage.locator('.designer-list');
+	await build.getByRole('combobox', { name: 'Catalog section' }).click();
+	await studioPage.getByRole('option', { name: 'Templates', exact: true }).click();
+	await build.getByRole('searchbox').fill('clock');
+	await build.getByRole('button', { name: 'Previews', exact: true }).click();
+	await build.getByRole('button', { name: 'Use Clock (JP weekday) template', exact: true }).click();
+	await expect(studioPage.locator('.def-banner')).toContainText('Clock (JP weekday)');
+	const clock = studioPage.locator('.world .widget:has(.np-clock)').first();
+	await clock.click();
+	// Use the editor's own zoom gesture so a tiny template is shown at a readable scale.
+	const stage = await studioPage.locator('.world').boundingBox();
+	await studioPage.mouse.move(stage.x + stage.width / 2, stage.y + stage.height / 2);
+	for (let step = 0; step < 6; step++) await studioPage.mouse.wheel(0, 100);
+	await expect(
+		studioPage.locator('.inspector').getByRole('tab', { name: 'Content', exact: true })
+	).toBeVisible();
+	await studioPage.evaluate(() => document.fonts.ready);
+	await studioPage.screenshot({ path: path.join(outDir, 'build.png') });
+	console.log('  build.png');
 	n++;
 	await studioPage.close();
 

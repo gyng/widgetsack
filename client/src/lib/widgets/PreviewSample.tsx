@@ -70,7 +70,7 @@ export default function PreviewSample({ type }: { type: string }) {
 		case 'aichat':
 			content = (
 				<AiChat
-					label="AI Assistant"
+					label="AI Chat"
 					turns={[]}
 					input="Summarize my day"
 					busy={false}

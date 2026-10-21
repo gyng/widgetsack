@@ -21,6 +21,51 @@ const setup = () => {
 	return { ports, studio, controller: createMcpStudioController(ports, studio) };
 };
 
+it('routes integration tools without layout revisions and cancels their pending response', async () => {
+	const ports = {
+		claim: vi.fn().mockResolvedValue(true),
+		reply: vi.fn().mockResolvedValue(undefined)
+	};
+	let finish!: (value: unknown) => void;
+	const integrationTool = vi.fn(
+		(_name: string, _args: unknown, _signal?: AbortSignal) =>
+			new Promise((resolve) => {
+				finish = resolve;
+			})
+	);
+	const studio = {
+		read: () => ({ monitorKey: 'primary', monitor: emptyMonitorLayout() }),
+		apply: vi.fn(),
+		verify: vi.fn(),
+		integrationTool
+	};
+	const controller = createMcpStudioController(ports, studio);
+	const pending = controller.handle({
+		id: 'configure',
+		name: 'studio_configure_integration',
+		args: { integration: 'home-assistant', settings: {} }
+	});
+	await vi.waitFor(() => expect(integrationTool).toHaveBeenCalledOnce());
+	await controller.handle({ id: 'configure', cancelled: true });
+	expect(integrationTool.mock.calls[0][2]?.aborted).toBe(true);
+	finish({ persisted: true });
+	await pending;
+	expect(ports.reply).not.toHaveBeenCalled();
+	controller.dispose();
+});
+
+it('uses the shared integration service when no override is supplied', async () => {
+	const s = setup();
+	await s.controller.handle({
+		id: 'invalid-settings',
+		name: 'studio_configure_integration',
+		args: { integration: 'unknown' }
+	});
+	expect(s.ports.reply).toHaveBeenCalledWith('invalid-settings', {
+		error: expect.stringContaining('Unknown integration')
+	});
+});
+
 it('releases a cancelled verification so a later tool can run before rendering finishes', async () => {
 	const s = setup();
 	let finish!: (value: unknown) => void;

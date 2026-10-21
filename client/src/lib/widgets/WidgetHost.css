@@ -1,5 +1,10 @@
 .widget {
 	position: absolute;
+	background: var(--np-widget-bg, transparent);
+	border-radius: var(--np-radius, 2px);
+	box-shadow: var(--np-widget-shadow, none);
+	font-family: var(--np-font, sans-serif);
+	font-size: var(--np-text-body, 14px);
 }
 
 /* CSS-layout (flow) mode: the widget is a normal in-flow box filling its FlowNode slot, which owns

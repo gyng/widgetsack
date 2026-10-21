@@ -43,7 +43,7 @@ const icons: Record<string, string> = {
 	rss: 'rss',
 	agenda: 'calendar',
 	aichat: 'chat',
-	assistant: 'chat',
+	assistant: 'timer',
 	transcribe: 'mic',
 	'ha.sensor': 'gauge',
 	'ha.binary_sensor': 'button',

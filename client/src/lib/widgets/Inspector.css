@@ -16,6 +16,29 @@
 	pointer-events: auto;
 }
 
+.inspector [hidden] {
+	display: none !important;
+}
+.inspector .inspector-section {
+	display: contents;
+}
+.inspector .group-fields[data-view='Appearance'] > :not(.node-hd):not(.group-appearance) {
+	display: none;
+}
+.inspector .group-fields[data-view='Layout'] > .group-appearance {
+	display: none;
+}
+.workspace > .detail-tabs {
+	flex: 0 0 auto;
+	position: sticky;
+	top: -12px;
+	background: var(--ui-surface);
+	z-index: 2;
+}
+.inspector .palette-filter {
+	flex-shrink: 0;
+}
+
 /* Studio: a full-height, scrollable right rail in the reserved margin (no stage overlap). */
 .inspector.docked {
 	position: fixed;
@@ -95,15 +118,17 @@
 .inspector .palette-plugin-status--ok {
 	color: var(--ui-success-fg);
 }
-.inspector .palette button.palette-configure {
+.inspector .palette-configure {
 	padding: var(--space-1) var(--space-2);
 	min-height: 24px;
 	background: transparent;
 	border-color: transparent;
 	color: var(--ui-accent-fg);
 	font-size: var(--text-sm);
-	text-decoration: underline;
-	text-underline-offset: 3px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 24px;
 }
 
 /* A template that exposes insert-time options (the clock cluster): a full-width card with the option
@@ -691,57 +716,7 @@
 	color: var(--ui-danger-fg);
 }
 
-/* Add-palette hover preview (Tier 2): a floating card with a LIVE widget render + its name/description.
-   position:fixed so it escapes the rail's overflow; JS positions it to the left of the hovered chip.
-   pointer-events:none so it never steals the hover/click from the palette (which would make it flicker). */
-.inspector .palette-preview {
-	position: fixed;
-	z-index: 1000;
-	width: 248px;
-	box-sizing: border-box;
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-5);
-	padding: var(--space-5);
-	background: var(--ui-raised);
-	border: 1px solid var(--ui-border-strong);
-	border-radius: var(--radius-md, 6px);
-	box-shadow: 0 6px 24px var(--ui-scrim, rgba(0, 0, 0, 0.45));
-	pointer-events: none;
-}
-.inspector .palette-preview .pp-stage {
-	width: 200px;
-	height: 120px;
-	align-self: center;
-	overflow: hidden;
-	border-radius: var(--radius-sm, 4px);
-	background: var(--ui-sunken, rgba(0, 0, 0, 0.25));
-}
-.inspector .palette-preview .pp-meta {
-	display: flex;
-	flex-direction: column;
-	gap: var(--space-2);
-}
-.inspector .palette-preview .pp-name {
-	font-weight: 600;
-	font-size: var(--text-md);
-}
-.inspector .palette-preview .pp-desc {
-	font-size: var(--text-sm);
-	color: var(--ui-fg-dim);
-	line-height: var(--line-caption);
-}
-.inspector .pp-sample-note {
-	font-size: var(--text-sm);
-	color: var(--ui-fg-muted);
-}
-.inspector .palette-preview .pp-hint {
-	margin-top: var(--space-4);
-	font-size: var(--text-sm);
-	color: var(--ui-fg-dim);
-	line-height: var(--line-caption);
-}
-.inspector .palette button:has(> .widget-icon) {
+.inspector .palette button:has(.catalog-item-name) {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--space-3);
@@ -763,4 +738,398 @@
 
 .inspector .palette .tpl-opts-fields label:has(input) {
 	grid-column: 1 / -1;
+}
+
+/* Catalog panes share Studio tokens; previews are display-only specimens. */
+.inspector[data-pane='hidden'] {
+	display: none;
+}
+.inspector[data-pane='configure'] > .add-panel {
+	display: none;
+}
+.inspector[data-pane='add'] > :not(.add-panel):not(.palette-preview),
+.inspector[data-pane='add'] .add-panel > summary {
+	display: none;
+}
+.inspector .add-panel {
+	container: catalog / inline-size;
+}
+.inspector .catalog-tools {
+	position: sticky;
+	top: calc(-1 * var(--space-5));
+	z-index: 3;
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-3);
+	padding-block: var(--space-3);
+	margin-bottom: var(--space-2);
+	background: var(--ui-surface);
+	border-bottom: 1px solid var(--ui-border);
+}
+.inspector .catalog-tools .palette-filter {
+	margin: 0;
+	flex-shrink: 0;
+	width: 100%;
+}
+.inspector .catalog-tab-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--space-3);
+	flex-wrap: wrap;
+}
+.inspector .catalog-tab-row > .detail-tabs {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+.inspector .catalog-tab-row .detail-tabs button {
+	flex: 1;
+	padding-inline: var(--space-2);
+	white-space: nowrap;
+}
+.inspector .catalog-view-row {
+	flex: none;
+	margin-left: auto;
+}
+.inspector .catalog-destination {
+	color: var(--ui-fg-muted);
+	font-size: var(--text-sm);
+}
+.inspector .catalog-results {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+.inspector .palette-section > summary .palette-heading {
+	flex: 0 0 auto;
+	width: auto;
+	padding: 0;
+	margin-left: auto;
+	font-weight: 400;
+}
+.inspector .palette-section > summary .palette-plugin-setup {
+	gap: var(--space-2);
+	white-space: nowrap;
+}
+.inspector .palette:has(> :is(.catalog-widget-item, .libitem)),
+.inspector .preview-tiles .palette {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	align-items: stretch;
+}
+.inspector .catalog-widget-item {
+	min-width: 0;
+	position: relative;
+	display: flex;
+	flex-direction: column;
+}
+.inspector :is(.catalog-widget-item, .libitem) > button:first-of-type {
+	flex: 1;
+	width: 100%;
+	min-width: 0;
+	min-height: 36px;
+	padding: var(--space-3);
+	text-align: left;
+	line-height: var(--line-caption);
+	border-color: transparent;
+	background: transparent;
+	border-radius: var(--radius-control);
+}
+.inspector :is(.catalog-widget-item, .libitem) > button:first-of-type:hover {
+	background: rgba(var(--ui-accent-rgb), 0.1);
+	border-color: rgba(var(--ui-accent-rgb), 0.3);
+	box-shadow: none;
+}
+.inspector .palette button:hover {
+	transform: none;
+}
+.inspector .catalog-item-name {
+	display: flex;
+	align-items: center;
+	gap: var(--space-3);
+	min-width: 0;
+}
+.inspector .palette .widget-icon {
+	width: 16px;
+	height: 16px;
+	flex: none;
+	color: var(--ui-fg-muted);
+}
+.inspector .preview-tiles .catalog-widget-item,
+.inspector .preview-tiles .libitem {
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+	overflow: hidden;
+}
+.inspector .preview-tiles .catalog-widget-item > button {
+	border: 0;
+	min-height: 44px;
+}
+.inspector .preview-tiles .catalog-widget-item > button::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+}
+.inspector .preview-tiles :is(.catalog-widget-item, .libitem):has(button:hover) {
+	border-color: var(--ui-accent-fg);
+}
+.inspector .preview-tiles .catalog-widget-item:focus-within {
+	outline: 2px solid var(--ui-accent-fg);
+	outline-offset: 2px;
+}
+.inspector .preview-tiles .libitem {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 0;
+	width: 100%;
+	min-width: 0;
+}
+.inspector .preview-tiles .libitem > .catalog-preview {
+	grid-column: 1 / -1;
+	width: 100%;
+}
+.inspector .preview-tiles .libitem > button {
+	min-width: 0;
+	white-space: normal;
+	overflow-wrap: anywhere;
+	border: 0;
+	background: transparent;
+	padding: var(--space-3);
+	line-height: var(--line-caption);
+}
+.inspector .preview-tiles .libitem > button:not(.tpl-preview):not(.x) {
+	text-align: left;
+	min-height: 44px;
+}
+.inspector .preview-tiles .tpl-opts {
+	grid-column: 1 / -1;
+	min-width: 0;
+	width: 100%;
+	box-sizing: border-box;
+}
+.inspector .palette .tpl-opts-fields {
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr));
+}
+.inspector .palette .tpl-opts {
+	grid-column: 1 / -1;
+	box-sizing: border-box;
+}
+.inspector .libitem > button:first-of-type {
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+.inspector .libitem > :is(.tpl-preview, .x) {
+	flex: none;
+	align-self: center;
+	background: transparent;
+	border-color: transparent;
+}
+.inspector .palette .tpl-opts-name {
+	color: var(--ui-fg);
+	font-weight: 600;
+}
+.inspector .preview-tiles .libitem > .tpl-preview,
+.inspector .preview-tiles .libitem > .x {
+	align-self: end;
+	min-width: var(--control-h);
+	min-height: 44px;
+}
+.inspector .preview-tiles .libitem:focus-within {
+	outline: 2px solid var(--ui-accent-fg);
+	outline-offset: 2px;
+}
+@container catalog (min-width: 560px) {
+	.inspector .palette:has(> :is(.catalog-widget-item, .libitem)),
+	.inspector .preview-tiles .palette {
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+	}
+}
+@container catalog (max-width: 390px) {
+	.catalog-view-text {
+		display: none;
+	}
+	.inspector .catalog-tab-row {
+		gap: var(--space-2);
+		flex-wrap: nowrap;
+	}
+	.inspector .catalog-tab-row .detail-tabs button {
+		padding-inline: var(--space-1);
+		font-size: var(--text-sm);
+	}
+}
+
+.template-setup-backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 45;
+	display: grid;
+	place-items: center;
+	padding: var(--space-5);
+	background: var(--ui-scrim);
+	pointer-events: auto;
+}
+.inspector.template-setup {
+	position: static;
+	background: var(--ui-bg);
+	width: min(480px, calc(100vw - 32px));
+	max-height: calc(100vh - 32px);
+	box-sizing: border-box;
+	overflow: auto;
+	box-shadow: 0 8px 24px var(--ui-scrim);
+}
+.inspector.template-setup :is(button, input) {
+	font: inherit;
+	color: var(--ui-fg);
+	background: var(--ui-bg-2);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+	min-height: var(--control-h);
+	padding: var(--space-3) var(--space-4);
+	box-sizing: border-box;
+}
+.inspector.template-setup :is(button, input):focus-visible {
+	outline: 2px solid var(--ui-accent-fg);
+	outline-offset: 2px;
+}
+.template-setup .tpl-opts {
+	display: grid;
+	gap: var(--space-5);
+}
+.template-setup .tpl-opts-name {
+	font-size: var(--text-lg);
+	font-weight: 600;
+}
+.template-setup .tpl-opts-fields,
+.template-setup .tpl-opts-fields label {
+	display: grid;
+	gap: var(--space-3);
+}
+.template-setup .tpl-opts-fields label {
+	gap: var(--space-2);
+}
+.template-setup-description {
+	margin: 0;
+	color: var(--ui-fg-muted);
+	line-height: var(--line-body);
+}
+.template-setup-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--space-3);
+	border-top: 1px solid var(--ui-border);
+	padding-top: var(--space-4);
+}
+.inspector.template-setup .tpl-opts-insert {
+	background: var(--ui-accent-fg);
+	color: var(--ui-bg);
+}
+
+.inspector .editing-context {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-1);
+	font-size: var(--text-sm);
+	color: var(--ui-fg-muted);
+	line-height: var(--line-caption);
+}
+.inspector .editing-context button {
+	display: inline;
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--ui-accent-fg);
+	font: inherit;
+	text-align: left;
+}
+
+.inspector .reuse-card {
+	padding: var(--space-3);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-panel);
+	background: var(--ui-raised);
+}
+.inspector .reuse-card p {
+	margin-block: var(--space-2);
+	color: var(--ui-fg-muted);
+	line-height: var(--line-body);
+}
+.inspector .reuse-card details {
+	margin-block: var(--space-3);
+}
+.inspector .shared-settings .row2 {
+	margin-top: var(--space-3);
+}
+.canvas .def-banner .scope-usage {
+	display: block;
+	color: var(--ui-fg-muted);
+	font-size: var(--text-sm);
+	margin-top: var(--space-1);
+}
+
+.presentation-options {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 140px), 1fr));
+	gap: var(--space-2);
+}
+.inspector .presentation-option,
+.presentation-option {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+	padding: var(--space-3);
+	border: 1px solid var(--ui-border);
+	border-radius: var(--radius-control);
+	background: var(--ui-bg);
+	color: var(--ui-fg);
+	font: inherit;
+	cursor: pointer;
+	text-align: left;
+}
+.presentation-option[aria-pressed='true'] {
+	border-color: var(--ui-accent-fg);
+}
+.presentation-option small {
+	color: var(--ui-fg-muted);
+	line-height: var(--line-caption);
+	font-size: var(--text-sm);
+}
+.presentation-specimen {
+	display: block;
+	width: 100%;
+	min-height: 40px;
+	font-size: var(--text-md);
+}
+.presentation-extra {
+	display: block;
+	margin-top: var(--space-1);
+}
+
+.widget-start-dialog h2 {
+	margin: 0;
+	font-size: var(--text-xl);
+}
+.widget-start-dialog p {
+	color: var(--ui-fg-muted);
+	line-height: var(--line-body);
+	margin-block: var(--space-2);
+}
+.inspector.widget-start-dialog .widget-start-choice {
+	display: flex;
+	gap: var(--space-3);
+	align-items: flex-start;
+	text-align: left;
+	min-height: 64px;
+	width: 100%;
+	padding: var(--space-3);
+}
+.widget-start-choice > span {
+	display: flex;
+	flex-direction: column;
+	gap: var(--space-2);
+}
+.widget-start-choice small {
+	font-size: var(--text-sm);
+	color: var(--ui-fg-muted);
+	line-height: var(--line-caption);
 }

@@ -39,6 +39,7 @@ export type DefEditor = {
 	/** Fold any open def: a read-only preview is discarded; a real def edit is folded back. */
 	foldOpenDef: () => void;
 	startNewWidget: () => void;
+	newFromWidget: (type: string) => void;
 	openExistingDef: (defId: string) => void;
 	cloneDefToEdit: (defId: string) => void;
 	newFromTemplate: (templateId: string) => void;
@@ -78,6 +79,13 @@ export function useDefEditor({
 		foldOpenDef();
 		dispatch({ type: 'newWidget' });
 	}, [foldOpenDef, dispatch]);
+	const newFromWidget = useCallback(
+		(widgetType: string) => {
+			foldOpenDef();
+			dispatch({ type: 'newFromWidget', widgetType });
+		},
+		[foldOpenDef, dispatch]
+	);
 	const openExistingDef = useCallback(
 		(defId: string) => {
 			if (!defId) return;
@@ -148,6 +156,7 @@ export function useDefEditor({
 	return {
 		foldOpenDef,
 		startNewWidget,
+		newFromWidget,
 		openExistingDef,
 		cloneDefToEdit,
 		newFromTemplate,

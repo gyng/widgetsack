@@ -49,6 +49,40 @@ describe('isRemoteUrl', () => {
 });
 
 describe('scanTreeThreats', () => {
+	it('reports imported custom HTML as active code while keeping consent source separate from readable prose', () => {
+		const threats = scanTreeThreats(
+			leaf(
+				unit('custom', 'customhtml', {
+					html: '<main>Hello</main>',
+					css: 'main{}',
+					javascript: 'console.log(1)',
+					sensorIds: 'cpu.total',
+					interact: true
+				})
+			)
+		);
+		expect(threats).toEqual([
+			{
+				kind: 'custom-html',
+				id: 'custom',
+				detail: 'isolated inline HTML/JavaScript with selected sensor access',
+				content: JSON.stringify([
+					'<main>Hello</main>',
+					'main{}',
+					'console.log(1)',
+					'cpu.total',
+					true
+				])
+			}
+		]);
+		expect(treeThreatSummary(threats)).toBe('1 custom HTML widget that runs isolated code');
+		expect(treeThreatSummary([...threats, ...threats])).toBe(
+			'2 custom HTML widgets that run isolated code'
+		);
+		expect(scanTreeThreats(leaf(unit('blank', 'customhtml')))[0].content).toBe(
+			JSON.stringify(['', '', '', '', false])
+		);
+	});
 	it('discloses native commands and parameters that can alter capabilities', () => {
 		const def: WidgetDef = {
 			id: 'def',

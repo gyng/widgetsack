@@ -587,7 +587,7 @@ describe('StudioSettingsPanel — Danger section', () => {
 		// Matches the clearMonitor confirm: history survives switching sections; it is reset only by a
 		// def edit (widget designer) or a layout reload / revert.
 		expect(container.textContent).toContain(
-			'Press Ctrl+Z to undo it before you open the widget designer or reload the layout'
+			'Press Ctrl+Z to undo it before you open the widget builder or reload the layout'
 		);
 		expect(container.textContent).not.toContain('There is no undo');
 	});

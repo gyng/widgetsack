@@ -26,6 +26,8 @@ export const DEFAULT_TOKENS: Tokens = {
 	'--np-font': "'Bahnschrift', 'Arial Narrow', sans-serif",
 	'--np-font-display': "'Bahnschrift', 'Arial Narrow', sans-serif",
 	'--np-radius': '2px',
+	'--np-widget-bg': 'transparent',
+	'--np-widget-shadow': 'none',
 	'--np-gap': '4px',
 	'--np-text-caption': '12px',
 	'--np-text-body': '14px',

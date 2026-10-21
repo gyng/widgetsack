@@ -10,6 +10,10 @@ test('AI Usage defaults to Codex and Claude and exposes provider options', async
 	await expect(meter).toContainText('58%');
 	await expect(meter.locator('[data-provider-icon="claude"]')).toBeVisible();
 	await expect(meter.locator('[data-provider-icon="codex"]')).toBeVisible();
+	await editor
+		.getByRole('group', { name: 'Codex', exact: true })
+		.locator('.usage-connection > summary')
+		.click();
 	const icon = editor
 		.getByRole('group', { name: 'Codex', exact: true })
 		.getByLabel('Icon', { exact: true });
@@ -20,12 +24,14 @@ test('AI Usage defaults to Codex and Claude and exposes provider options', async
 		'background-color',
 		'rgb(255, 255, 255)'
 	);
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
 	await page.getByLabel('provider icons', { exact: true }).uncheck();
 	await expect(meter.getByRole('region', { name: 'Codex usage' })).toContainText('Codex');
 	await page.getByLabel('provider icons', { exact: true }).check();
 	await expect(meter.locator('header')).toHaveCount(0);
 	await expect(meter).toHaveCSS('font-size', '14px');
-	await expect(meter.locator('.usage-value-mode').first()).toHaveCSS('font-size', '12px');
+	await expect(meter.locator('.usage-value-mode')).toHaveCount(0);
+	await page.locator('.inspector').getByRole('tab', { name: 'Content', exact: true }).click();
 	await editor
 		.getByRole('group', { name: 'Codex', exact: true })
 		.getByLabel('Rate / ETA', { exact: true })
@@ -47,7 +53,13 @@ test('AI Usage defaults to Codex and Claude and exposes provider options', async
 		.getByRole('combobox', { name: 'Display', exact: true })
 		.selectOption('left');
 	await expect(meter).toContainText('58%');
-	await page.getByLabel('compact layout', { exact: true }).uncheck();
+	await page.locator('.inspector').getByRole('tab', { name: 'Appearance', exact: true }).click();
+	await page.getByLabel('layout', { exact: true }).click();
+	await page
+		.locator('.np-select-menu')
+		.getByRole('option', { name: 'detailed', exact: true })
+		.click();
+	await page.locator('.inspector').getByRole('tab', { name: 'Content', exact: true }).click();
 	await expect(editor.getByRole('group', { name: 'Codex', exact: true })).toBeVisible();
 	await editor
 		.getByRole('group', { name: 'Codex', exact: true })
@@ -69,19 +81,16 @@ test('compact and detailed presets remain centered and use theme-native transpar
 	page
 }) => {
 	await gotoStudio(page);
-	for (const name of [
-		'Minimal quotas',
-		'Compact quotas',
-		'Detailed activity',
-		'Remaining allowance'
-	]) {
+	for (const name of ['Minimal quotas', 'Compact quotas', 'Detailed activity']) {
 		await previewTemplate(page, `AI Usage · ${name}`);
 		const meter = page.locator('.world .np-ai-usage');
 		await expect(meter).toBeVisible();
 		await expect(meter).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)');
 		if (name !== 'Detailed activity') {
 			await expect(meter.locator('.usage-compact-row')).toHaveCount(2);
-			expect(await meter.evaluate((e) => e.scrollHeight)).toBeLessThanOrEqual(44);
+			expect(await meter.evaluate((e) => e.scrollHeight)).toBeLessThanOrEqual(
+				name === 'Compact quotas' ? 112 : 44
+			);
 		}
 		const rect = await meter.boundingBox();
 		const stage = await page.locator('.canvas').boundingBox();
@@ -115,12 +124,52 @@ test('quota columns align one and three digit percentages in every density', asy
 						: '.usage-inline-metric[data-kind="quota"] > b'
 				)
 				.first();
-			await expect(value).toHaveText(
-				`${provider === 'Codex' ? '1%' : '100%'}${name === 'Detailed activity' ? ' left' : ''}`
-			);
+			await expect(value).toHaveText(`${provider === 'Codex' ? '1%' : '100%'}`);
 			values.push((await value.boundingBox())!);
 		}
 		expect(Math.abs(values[0].x + values[0].width - values[1].x - values[1].width)).toBeLessThan(1);
+	}
+});
+
+test('wrapped compact readings keep the provider icon in its own gutter', async ({ page }) => {
+	await gotoStudio(page);
+	await previewTemplate(page, 'AI Usage · Compact quotas');
+	const meter = page.locator('.world .np-ai-usage');
+	await meter.evaluate((el) => {
+		el.style.width = '80px';
+	});
+	const row = meter.getByRole('region', { name: 'Codex usage' });
+	const icon = (await row.locator('.usage-provider-icon').boundingBox())!;
+	const positions = await row.evaluate((el) =>
+		Array.from(el.children)
+			.filter((child) => !child.classList.contains('usage-provider-icon'))
+			.map((child) => {
+				const r = child.getBoundingClientRect();
+				return { x: r.x, y: r.y };
+			})
+	);
+	expect(positions.length).toBeGreaterThan(1);
+	expect(positions.some((p) => p.y > positions[0].y + 5)).toBe(true);
+	for (const position of positions) expect(position.x).toBeGreaterThan(icon.x + icon.width);
+});
+
+test('hidden quota labels and suffixes do not reserve empty space', async ({ page }) => {
+	await gotoStudio(page);
+	for (const name of ['Minimal quotas', 'Compact quotas']) {
+		await previewTemplate(page, `AI Usage · ${name}`);
+		const quotas = page.locator('.world .usage-inline-metric[data-kind="quota"]');
+		await expect(quotas.first()).toBeVisible();
+		const gaps = await quotas.evaluateAll((items) =>
+			items.map((item) => {
+				const cell = item.getBoundingClientRect();
+				const value = item.querySelector('b')!.getBoundingClientRect();
+				return { trailing: cell.right - value.right, leading: value.left - cell.left };
+			})
+		);
+		for (const gap of gaps) {
+			expect(Math.abs(gap.trailing)).toBeLessThan(1);
+			if (name === 'Minimal quotas') expect(Math.abs(gap.leading)).toBeLessThan(1);
+		}
 	}
 });
 

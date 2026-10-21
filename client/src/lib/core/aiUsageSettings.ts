@@ -1,5 +1,15 @@
+export type UsageLayout = 'detailed' | 'compact' | 'minimal';
+
+/** Saved layouts using the original two toggles keep their density until explicitly changed. */
+export function resolveUsageLayout(config: Record<string, unknown>): UsageLayout {
+	if (config.layout === 'minimal' || config.layout === 'compact' || config.layout === 'detailed')
+		return config.layout;
+	return config.minimal === true ? 'minimal' : config.compact === false ? 'detailed' : 'compact';
+}
+
 export type UsageSettings = {
 	remaining: boolean;
+	showMode: boolean;
 	showResets: boolean;
 	resetDisplay: 'countdown' | 'date' | 'both';
 	warning: number;
@@ -18,7 +28,7 @@ export function readUsageSettings(value: unknown): Partial<UsageSettings> {
 	const input =
 		value !== null && typeof value === 'object' ? (value as Record<string, unknown>) : {};
 	const result: Partial<UsageSettings> = {};
-	for (const key of ['remaining', 'showResets'] as const)
+	for (const key of ['remaining', 'showResets', 'showMode'] as const)
 		if (typeof input[key] === 'boolean') result[key] = input[key];
 	for (const key of ['warning', 'critical', 'graphHours', 'rateHours'] as const) {
 		const n = input[key];
@@ -45,6 +55,7 @@ export function resolveUsageSettings(
 ): UsageSettings {
 	return {
 		remaining: true,
+		showMode: false,
 		showResets: false,
 		resetDisplay: 'countdown',
 		warning: 80,

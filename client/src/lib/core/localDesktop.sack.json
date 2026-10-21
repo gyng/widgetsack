@@ -94,6 +94,7 @@
 																	"unit": {
 																		"config": {
 																			"showCap": false,
+																			"lineWidth": 2,
 																			"showNumbers": false,
 																			"showSeconds": true,
 																			"showTicks": false

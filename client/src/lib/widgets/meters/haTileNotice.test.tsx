@@ -43,6 +43,7 @@ describe('HA tiles — no-data states', () => {
 			);
 			const notice = getByRole('status');
 			expect(notice.textContent).toBe(HA_UNCONFIGURED_MESSAGE);
+			expect(notice.getAttribute('title')).toBe(HA_UNCONFIGURED_MESSAGE);
 			const root = container.firstElementChild as HTMLElement;
 			expect(root.classList.contains(rootClass)).toBe(true);
 			expect(root.getAttribute('data-tile-state')).toBe('unconfigured');

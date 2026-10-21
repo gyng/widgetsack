@@ -1,3 +1,4 @@
+import type { Presentation } from '../core/widgetPresentation';
 // The single editor-operation message both the Inspector and the Outline dispatch up to
 // the Canvas (which holds the layout state and applies it via core/layoutEdit). One
 // discriminated union keeps the wiring flat — Canvas has one `handleOp` switch.
@@ -16,6 +17,12 @@ import type {
 import type { AlignEdge, DistributeAxis } from '../core/align';
 
 export type LayoutOp =
+	| {
+			op: 'applyWidgetDesign';
+			ids: string[] | null;
+			presentation: Presentation;
+			tokens: Record<string, string>;
+	  }
 	| { op: 'select'; id: string }
 	| { op: 'addWidget'; widgetType: string }
 	// Drop a palette widget onto the stage at world coords (x,y) → a new floating widget there.
@@ -45,7 +52,9 @@ export type LayoutOp =
 	| { op: 'indent'; id: string } // move into the previous sibling container
 	| { op: 'dock'; id: string } // floating → flow (into root)
 	| { op: 'float'; id: string } // flow leaf → floating
+	| { op: 'saveSelectionWidget'; ids: string[] }
 	| { op: 'makeWidget'; id: string } // wrap a node into a reusable group + def (6a)
+	| { op: 'makeIndependentCopy'; id: string }
 	| { op: 'ungroup'; id: string } // inline a group back to its subtree (6a)
 	| { op: 'insertWidget'; defId: string } // instantiate a library def as a new group (6d)
 	// Instantiate a built-in template (core/templates.ts) directly onto the canvas as a self-contained

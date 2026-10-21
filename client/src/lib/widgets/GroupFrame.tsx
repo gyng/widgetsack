@@ -1,3 +1,4 @@
+import { selectionRequest } from './canvas/selectionRequest';
 // GroupFrame — the single interactive surface for a placed group ("grouped"/custom widget) on the
 // floating layer. The group already renders as one absolute CSS box (its composed children, a
 // FlowNode, passed as `children`); this frame makes it behave like ONE widget: select, free-move and
@@ -34,7 +35,7 @@ type Props = {
 	onChange?: (e: { id: string; rect: Rect }) => void;
 	onCommit?: (e?: { skipFlow?: boolean }) => void;
 	onCancel?: (e: { commit: boolean }) => void;
-	onSelect?: (e: { id: string }) => void;
+	onSelect?: (e: { id: string; additive?: boolean }) => void;
 	onContextMenu?: (e: { id: string; x: number; y: number }) => void;
 	onHover?: (id: string | null) => void;
 	onSuppressContextMenu?: () => void;
@@ -70,6 +71,7 @@ export default function GroupFrame({
 		moved: boolean;
 		skipFlow: boolean;
 		wasSelected: boolean;
+		additive: boolean;
 	}>({
 		action: null,
 		startX: 0,
@@ -77,7 +79,8 @@ export default function GroupFrame({
 		startRect: rect,
 		moved: false,
 		skipFlow: false,
-		wasSelected: false
+		wasSelected: false,
+		additive: false
 	});
 	const [action, setAction] = useState<'move' | ResizeHandle | null>(null);
 
@@ -98,9 +101,10 @@ export default function GroupFrame({
 		if (!editMode) return;
 		const d = drag.current;
 		d.wasSelected = selected;
+		d.additive = e.ctrlKey || e.metaKey || e.shiftKey;
 		// Defer selecting an already-selected group when starting a MOVE so a multi-selection isn't
 		// collapsed before the drag (mirrors WidgetHost); a resize / unselected press selects now.
-		if (!selected || kind !== 'move') onSelect?.({ id });
+		if (!selected || kind !== 'move') onSelect?.(selectionRequest(id, kind === 'move' ? e : {}));
 		d.action = kind;
 		d.startX = e.clientX;
 		d.startY = e.clientY;
@@ -145,7 +149,7 @@ export default function GroupFrame({
 		// A real drag commits the move/resize; a click (no drag) on an already-selected group collapses
 		// a multi-selection to just it (selecting an unselected group happened in begin()).
 		if (didMove) onCommit?.({ skipFlow: d.skipFlow });
-		else if (wasSelected && wasMove) onSelect?.({ id });
+		else if (wasSelected && wasMove) onSelect?.(selectionRequest(id, { ctrlKey: d.additive }));
 		if (didMove && d.skipFlow) onSuppressContextMenu?.();
 	}
 
