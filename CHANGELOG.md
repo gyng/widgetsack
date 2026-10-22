@@ -3,9 +3,10 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
-## Unreleased
+## 0.0.69
 
-Monitor input controls retain their last response across restarts and stay in place while refreshing.
+Claude usage estimates appear reliably again, and monitor input controls retain their last response
+across restarts and stay in place while refreshing.
 
 ### Fixed
 
