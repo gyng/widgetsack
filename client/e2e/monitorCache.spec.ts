@@ -58,4 +58,13 @@ test('persisted monitor inputs stay visible and keep their geometry while revali
 		'true'
 	);
 	expect(await geometry()).toEqual(before);
+	await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+	await expect(meter.getByRole('status', { name: 'Refreshing monitor inputs' })).toBeVisible();
+	await expect(meter.getByRole('button', { name: 'HDMI 1' })).toBeEnabled();
+	await expect(meter.getByRole('button', { name: 'DisplayPort 1' })).toBeEnabled();
+	expect(await geometry()).toEqual(before);
+	await page.evaluate(() =>
+		(window as unknown as { finishMonitorInputs: () => void }).finishMonitorInputs()
+	);
+	await expect(meter).toHaveAttribute('aria-busy', 'false');
 });

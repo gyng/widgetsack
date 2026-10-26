@@ -65,7 +65,8 @@ export default function MonitorSwitchHost({
 	const currentSnapshot = snapshot?.target === target ? snapshot : null;
 	const selected = currentSnapshot ? currentSnapshot.selected : cached;
 	const missing = currentSnapshot?.missing ?? false;
-	const loading = currentSnapshot === null || refreshingTarget === target;
+	const loading = currentSnapshot === null;
+	const refreshing = refreshingTarget === target;
 
 	// DDC reads in flight. A monitor mid input-switch answers slowly (or not at all until the switch
 	// settles), so the interval tick stands down while one is pending instead of stacking blocking
@@ -94,6 +95,8 @@ export default function MonitorSwitchHost({
 
 	useEffect(() => {
 		mounted.current = true;
+		// A changed target must be validated again, even when returning to a previous target.
+		setSnapshot(null);
 		let alive = true;
 		const onFocus = (): void => void refresh();
 		onFocus(); // initial load; cached controls stay disabled until this refresh finishes
@@ -184,6 +187,7 @@ export default function MonitorSwitchHost({
 			busyValue={busyValue}
 			missing={missing}
 			loading={loading}
+			refreshing={refreshing}
 			unavailable={!loading && !missing && selected === null}
 			compact={compact}
 			onPick={pick}
