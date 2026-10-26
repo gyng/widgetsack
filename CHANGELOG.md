@@ -3,6 +3,17 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.70
+
+Monitor input buttons stay enabled during background refreshes, so polling no longer interrupts
+switching inputs or repeatedly dims the controls.
+
+### Fixed
+
+- Keep validated monitor input controls enabled during automatic and window-focus refreshes.
+- Continue disabling controls during initial monitor validation and while an input switch is pending.
+- Validate the monitor again when changing targets, including when returning to a previous monitor.
+
 ## 0.0.69
 
 AI usage countdowns show 24–47 hours instead of rounding down to one day, and usage checks run a minute
