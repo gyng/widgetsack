@@ -3,7 +3,10 @@
     "beforeBuildCommand": "cd ../client && npm run build",
     "beforeDevCommand": "cd ../client && npm run dev",
     "frontendDist": "../client/build",
-    "devUrl": "http://localhost:1420"
+    "devUrl": "http://localhost:1420",
+    "windows": {
+      "staticVCRuntime": true
+    }
   },
   "bundle": {
     "active": true,

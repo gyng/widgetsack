@@ -194,6 +194,10 @@ inside compound commands when using the agent Bash tool (it can trigger a prompt
 the working-directory-aware tools.
 
 ### Frontend (`client/`)
+Use Tauri CLI **2.12.4**, matching the release workflow and the project's Windows runtime config.
+If the globally installed `cargo tauri` is older, use `npx --yes @tauri-apps/cli@2.12.4` in its place
+for the Tauri commands below.
+
 | Task | Command |
 |------|---------|
 | Install deps | `npm ci` (CI) / `npm i` (local) |

@@ -6,9 +6,10 @@ Read [AGENTS.md](../../AGENTS.md) before making changes.
 
 ## Setup
 
-Install the Windows prerequisites for Tauri and Rust 1.90 or later.
+Install the Windows prerequisites for Tauri and Rust 1.95 or later.
 Use Node 24 with npm, as CI does.
-Use a Tauri v2 CLI.
+The commands below pin Tauri CLI 2.12.4 to match the release workflow. Older CLIs do not support
+the project's `build.windows.staticVCRuntime` setting.
 Install client dependencies from `client/`:
 
 ```powershell
@@ -18,7 +19,7 @@ npm ci
 Run the application from the repository root:
 
 ```powershell
-cargo tauri dev
+npx --yes @tauri-apps/cli@2.12.4 dev
 ```
 
 Tauri starts the Vite server on port 1420.
@@ -51,7 +52,7 @@ cargo clippy
 ```
 
 Tauri embeds `client/build`, so build the frontend before Rust checks.
-Use `cargo tauri build` to create an installer.
+Use `npx --yes @tauri-apps/cli@2.12.4 build` to create an installer.
 See [CI checks](../../.github/workflows/test.yml) for the current gate configuration.
 
 ## Documentation and screenshots

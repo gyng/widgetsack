@@ -79,7 +79,7 @@ jobs:
           # uploader, so a transient flake just retries the cheap upload instead.
           # Pin the CLI tested with our custom NSIS template. CLI upgrades must also
           # re-sync widgetsack/windows/installer.nsi with the bundled template.
-          tauriScript: npx @tauri-apps/cli@2.11.5
+          tauriScript: npx @tauri-apps/cli@2.12.4
       - name: Verify legacy agent upgrade cleanup
         shell: pwsh
         run: ./widgetsack/windows/test-agent-cleanup.ps1

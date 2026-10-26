@@ -44,11 +44,11 @@ pub struct ControlState {
     handle: Mutex<Option<JoinHandle<()>>>,
 }
 
-/// A per-launch CSPRNG token (256 bits → 64 hex). `getrandom` uses the OS RNG (BCryptGenRandom on
-/// Windows). Falls back to a time+pid mix only if the OS RNG is somehow unavailable.
+/// A per-launch CSPRNG token (256 bits → 64 hex). `getrandom` uses the OS RNG.
+/// Falls back to a time+pid mix only if the OS RNG is somehow unavailable.
 fn gen_token() -> String {
     let mut bytes = [0u8; 32];
-    if getrandom::getrandom(&mut bytes).is_err() {
+    if getrandom::fill(&mut bytes).is_err() {
         let seed = (std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_nanos())
