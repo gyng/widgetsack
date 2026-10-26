@@ -126,7 +126,7 @@ Choose reusable [widget design presets](docs/design-presets.md): Transparent, In
 
 - **Launch at login:** enable this option in **Settings → Startup**.
 - **Update checks:** enable automatic checks in **Settings → About**. Open the release page to download an update.
-- **Window layer:** use **Settings → Overlay** to place widgets below windows, above windows, or behind desktop icons.
+- **Window layer:** use **Settings → Overlay** to place widgets below windows, above windows, or behind desktop icons. Choose **On desktop** to keep widgets visible and clickable during Show Desktop / Win+D.
 - **Media priority:** use **Plugins → Now Playing** to choose which media source the widget shows.
 
 Press **Ctrl+Alt+E** to turn desktop edit mode on or off.
@@ -144,6 +144,11 @@ See [User guides](docs/README.md) for configuration and usage instructions.
 See the [development guide](docs/dev/development.md) for build commands and contribution checks.
 The [design system](docs/dev/design-system.md) covers interface conventions.
 See the [package authoring guide](docs/dev/plugin-packages.md) to create a plugin package.
+
+## Contributors
+
+- [Kjell Naessens (@naessenskjell)](https://github.com/naessenskjell) — contributed the **On desktop**
+  overlay layer in [PR #78](https://github.com/gyng/widgetsack/pull/78).
 
 ## License
 

@@ -3,6 +3,26 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.71
+
+The new opt-in **On desktop** window layer keeps widgets visible and clickable during Show Desktop
+or Win+D. Select it in **Settings → Overlay → Window layer**; the default remains **Below windows**.
+Thanks to [Kjell Naessens (@naessenskjell)](https://github.com/naessenskjell) for
+[PR #78](https://github.com/gyng/widgetsack/pull/78).
+
+### Added
+
+- **On desktop** overlay placement with Show Desktop detection and restoration below application windows.
+- An opt-in native smoke test for Show Desktop visibility and input hit testing on connected monitors.
+
+### Fixed
+
+- Serialize overlay presentation changes so delayed desktop activation cannot overwrite a newer layer.
+- Apply queued window placement on the UI thread using current registrations and desktop state.
+- Detect the correct sentinel when multiple Widgetsack instances run, and pause polling when no
+  windows use the desktop layer.
+- Avoid retaining a desktop-layer registration when watcher startup fails.
+
 ## 0.0.70
 
 Monitor input buttons stay enabled during background refreshes, so polling no longer interrupts

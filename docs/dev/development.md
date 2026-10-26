@@ -85,6 +85,20 @@ The installer removes legacy bundled agent resources during upgrades.
 After an NSIS build, run `widgetsack/windows/test-agent-cleanup.ps1` against its isolated fixtures.
 The release workflow runs this check before upload.
 
+### Native desktop-layer smoke test
+
+On an interactive Windows desktop, run:
+
+```powershell
+cargo test native_desktop_smoke -- --ignored --nocapture --test-threads=1
+```
+
+This opt-in test briefly sends Win+D and creates a temporary window on each connected monitor.
+It checks Show Desktop detection, placement above desktop icons, and native input hit testing,
+including a second sentinel with the same window class. It restores the original desktop state
+and removes its windows on completion or failure. Avoid using the keyboard while it runs.
+It does not replace testing real widget interactions or older Windows shell versions.
+
 ## Release
 
 The [release workflow](../../.github/workflows/build.yml) starts when a `v*` tag is pushed.
