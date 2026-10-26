@@ -13,13 +13,13 @@ rust-version = "1.95"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
+tauri-build = { version = "2.7.4", features = [] }
 
 [dependencies]
 futures-util = "0.3"
-# CSPRNG for the agent-control server's per-launch auth token (OS RNG: BCryptGenRandom on Windows —
-# no NASM/cmake). Already in the dependency tree transitively.
-getrandom = "0.2"
+# OS CSPRNG for the agent-control server's per-launch auth token (no NASM/cmake).
+# Already in the dependency tree transitively.
+getrandom = "0.4"
 # TLS for the HA client (wss/https) via the OS-native stack: SChannel on this Windows-only
 # build — no OpenSSL, and no aws-lc-rs/ring (so no NASM/cmake build tooling). Used directly
 # only to build the self-signed-cert connector; reqwest/tungstenite use it via their features.
@@ -65,7 +65,8 @@ win-gsmtc = { version = "0.1.0", features = ["serde"] }
 # and re-assert on startup. Already in the lock tree (auto-launch / embed-resource pull winreg).
 winreg = "0.56"
 # The #[interface] macro (audio.rs IPolicyConfig: set the default audio endpoint) expands to
-# ::windows_core paths, so the crate must be a direct dependency. Pinned to windows 0.61's core.
+# ::windows_core paths, so the crate must be a direct dependency. Keep it aligned with windows 0.62;
+# windows-core 0.100 is a separate type universe and cannot be mixed into these Win32 interfaces.
 windows-core = "0.62"
 # Already used by Tauri; captures only this app's Studio webview.
 webview2-com = "0.39"

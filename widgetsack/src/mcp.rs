@@ -210,7 +210,7 @@ async fn start_server(app: AppHandle) -> Result<Server, String> {
         listener.local_addr().map_err(|e| e.to_string())?.port()
     );
     let mut bytes = [0u8; 32];
-    getrandom::getrandom(&mut bytes).map_err(|e| e.to_string())?;
+    getrandom::fill(&mut bytes).map_err(|e| e.to_string())?;
     let token: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
     let path = descriptor(&app)?;
     std::fs::create_dir_all(path.parent().ok_or("Invalid MCP path")?).map_err(|e| e.to_string())?;

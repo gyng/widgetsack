@@ -57,7 +57,7 @@ impl Sessions {
             }
         }
         let mut bytes = [0u8; 32];
-        getrandom::getrandom(&mut bytes).map_err(|error| error.to_string())?;
+        getrandom::fill(&mut bytes).map_err(|error| error.to_string())?;
         let id: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
         self.clients.insert(
             id.clone(),
