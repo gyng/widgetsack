@@ -133,7 +133,11 @@ describe('AI usage refresh lifetime', () => {
 		render(<AiUsageHost providers={providers} />);
 		await act(async () => {});
 		expect(readAiUsage).not.toHaveBeenCalled();
-		expect(screen.getByText(/Activate this command/)).toBeVisible();
+		expect(screen.getByRole('status')).toHaveTextContent(/^\?$/);
+		expect(screen.getByRole('status')).toHaveAttribute(
+			'title',
+			'Activate this command in Studio provider settings.'
+		);
 		await act(async () => approveUsageCommand(providers[0]));
 		expect(readAiUsage).toHaveBeenCalledTimes(1);
 	});

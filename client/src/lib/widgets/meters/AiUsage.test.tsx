@@ -185,7 +185,8 @@ describe('AI usage meter', () => {
 		expect(screen.getByRole('meter')).toHaveAttribute('aria-valuenow', '98');
 		expect(screen.getByText('0')).toBeVisible();
 		expect(screen.getByText('Stale')).toBeVisible();
-		expect(screen.getByText('Offline')).toBeVisible();
+		expect(screen.getByRole('status')).toHaveTextContent(/^\?$/);
+		expect(screen.getByRole('status')).toHaveAttribute('title', 'Offline');
 		expect(screen.getByText('Source note')).toBeVisible();
 		view.rerender(
 			<AiUsage providers={[{ ...p, session: false, week: false }]} readings={reading()} now={now} />
