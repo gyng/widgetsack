@@ -16,6 +16,7 @@ type Props = {
 	// instead of buttons that would target nothing.
 	missing?: boolean;
 	loading?: boolean;
+	refreshing?: boolean;
 	unavailable?: boolean;
 	// Compact list (small rows) instead of the default large touch buttons.
 	compact?: boolean;
@@ -31,6 +32,7 @@ export default function MonitorSwitch({
 	busyValue,
 	missing,
 	loading,
+	refreshing,
 	unavailable,
 	compact,
 	onPick,
@@ -42,7 +44,7 @@ export default function MonitorSwitch({
 		<div
 			className="monitorswitch np-monitorswitch"
 			data-compact={compact || undefined}
-			aria-busy={loading || busyValue != null}
+			aria-busy={loading || refreshing || busyValue != null}
 			style={vars}
 		>
 			<div className="ms-head">
@@ -50,10 +52,10 @@ export default function MonitorSwitch({
 				{showStats && stats ? <span className="ms-stats">{stats}</span> : null}
 				<span
 					className="ms-refresh"
-					data-loading={loading || undefined}
+					data-loading={loading || refreshing || undefined}
 					role="status"
 					aria-label="Refreshing monitor inputs"
-					aria-hidden={!loading}
+					aria-hidden={!loading && !refreshing}
 				/>
 			</div>
 			{loading && rows.length === 0 ? (
