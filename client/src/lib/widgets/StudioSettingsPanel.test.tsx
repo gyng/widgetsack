@@ -262,6 +262,19 @@ describe('StudioSettingsPanel — Overlay section', () => {
 		expect(status.querySelector('.set-error')).toBeNull();
 	});
 
+	it('offers On desktop and reports it as the selected layer', () => {
+		const props = overlayProps();
+		const view = render(<StudioSettingsPanel {...props} />);
+		fireEvent.click(view.getByLabelText('Window layer'));
+		fireEvent.click(view.getByRole('option', { name: 'On desktop' }));
+		expect(props.overlay.setPrefs).toHaveBeenCalledWith({ overlayLayer: 'desktop' });
+		props.overlay.prefs.overlayLayer = 'desktop';
+		view.rerender(<StudioSettingsPanel {...props} />);
+		expect(view.container.querySelector('.set-status')).toHaveTextContent(
+			'Current layer: On desktop'
+		);
+	});
+
 	it('shows just the current layer while no overlay has reported yet, and flags a FAILED apply', () => {
 		const props = overlayProps();
 		props.overlay.layerStatus = '';

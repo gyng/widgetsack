@@ -27,6 +27,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
+use tauri::Manager;
 
 /// Overlay windows in the 'desktop' layer: window label → HWND.
 static OVERLAYS: Mutex<BTreeMap<String, usize>> = Mutex::new(BTreeMap::new());
@@ -69,6 +70,31 @@ fn is_above(z: &[ZWindow], overlay: usize, host: usize) -> bool {
     }
 }
 
+fn desktop_shown(z: &[ZWindow], host: usize, sentinel: usize) -> bool {
+    matches!(
+        (z.iter().position(|w| w.hwnd == host), z.iter().position(|w| w.hwnd == sentinel)),
+        (Some(host), Some(sentinel)) if host < sentinel
+    )
+}
+
+#[derive(Debug, PartialEq)]
+enum Placement {
+    Raise(Vec<usize>, usize),
+    Lower(Vec<usize>),
+}
+
+/// Use live registration and shell state when the UI thread runs. Coalescing must preserve a final
+/// lower, and queued work must never touch windows that have since left this layer.
+fn placement_plan(current: Vec<usize>, shown: bool, host: Option<usize>) -> Option<Placement> {
+    if current.is_empty() {
+        None
+    } else if shown {
+        host.map(|host| Placement::Raise(current, host))
+    } else {
+        Some(Placement::Lower(current))
+    }
+}
+
 /// PURE SEAM: candidates to insert a raised overlay AFTER, best first — the topmost windows above
 /// `host`, backmost first (so the overlay lands at the top of the normal band: over the icon host,
 /// still under the taskbar). Rainmeter walks the same way and takes the first one SetWindowPos
@@ -90,6 +116,9 @@ fn raise_anchors(z: &[ZWindow], host: usize, ours: &[usize]) -> Vec<usize> {
 pub fn set_overlay_desktop(window: tauri::WebviewWindow, enabled: bool) -> Result<String, String> {
     let hwnd = imp::window_hwnd(&window)?;
     let label = window.label().to_string();
+    if enabled {
+        imp::ensure_watcher(window.app_handle().clone())?;
+    }
     {
         let mut map = OVERLAYS.lock().unwrap_or_else(|e| e.into_inner());
         if enabled {
@@ -98,9 +127,7 @@ pub fn set_overlay_desktop(window: tauri::WebviewWindow, enabled: bool) -> Resul
             return Ok("not in the desktop layer".to_string());
         }
     }
-    if enabled {
-        imp::ensure_watcher()?;
-    } else if imp::is_shown() {
+    if !enabled && imp::is_shown() {
         // Only undo our own lift: outside Show Desktop the window is wherever its NEW layer is about
         // to put it, and an HWND_BOTTOM landing after the 'top' layer's HWND_TOPMOST would demote it.
         imp::lower(hwnd);
@@ -115,22 +142,31 @@ pub fn set_overlay_desktop(window: tauri::WebviewWindow, enabled: bool) -> Resul
 
 /// Drop a destroyed window (called from the app's `WindowEvent::Destroyed` handler).
 pub fn forget_window(label: &str) {
-    let mut map = OVERLAYS.lock().unwrap_or_else(|e| e.into_inner());
-    map.remove(label);
+    let removed = OVERLAYS
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(label)
+        .is_some();
+    if removed {
+        imp::request_check();
+    }
 }
 
 #[cfg(target_os = "windows")]
 mod imp {
-    use super::{ZWindow, icon_host, is_above, overlay_hwnds, raise_anchors};
+    use super::{
+        Placement, ZWindow, desktop_shown, icon_host, is_above, overlay_hwnds, placement_plan,
+        raise_anchors,
+    };
     use std::sync::OnceLock;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::{
         DefWindowProcW, FindWindowExW, GWL_EXSTYLE, GetClassNameW, GetShellWindow, GetWindowLongW,
-        GetWindowThreadProcessId, HWND_BOTTOM, HWND_TOP, IsWindowVisible, PostMessageW,
-        SET_WINDOW_POS_FLAGS, SWP_ASYNCWINDOWPOS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER,
-        SWP_NOSENDCHANGING, SWP_NOSIZE, SWP_NOZORDER, SetTimer, SetWindowPos, WINDOWPOS, WM_APP,
-        WM_TIMER, WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
+        GetWindowThreadProcessId, HWND_BOTTOM, HWND_TOP, IsWindowVisible, KillTimer, PostMessageW,
+        SET_WINDOW_POS_FLAGS, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSENDCHANGING,
+        SWP_NOSIZE, SWP_NOZORDER, SetTimer, SetWindowPos, WINDOWPOS, WM_APP, WM_TIMER,
+        WM_WINDOWPOSCHANGING, WS_EX_TOPMOST,
     };
     use windows::core::{PCWSTR, w};
 
@@ -141,23 +177,21 @@ mod imp {
     const INTERVAL_IDLE_MS: u32 = 250;
     const INTERVAL_SHOWN_MS: u32 = 100;
     /// Rainmeter's `ZPOS_FLAGS`: z-order only, no activation, and NO `WM_WINDOWPOSCHANGING` (so
-    /// neither tao's ALWAYS_ON_BOTTOM rewrite nor the sentinel's own guard intercepts us). Async so a
-    /// busy UI thread (which owns the overlays) can never block this pump.
+    /// neither tao's ALWAYS_ON_BOTTOM rewrite nor the sentinel's own guard intercepts us). Overlay
+    /// placements run on their owning UI thread, after validating the current registration.
     const ZPOS: SET_WINDOW_POS_FLAGS = SET_WINDOW_POS_FLAGS(
-        SWP_NOMOVE.0
-            | SWP_NOSIZE.0
-            | SWP_NOOWNERZORDER.0
-            | SWP_NOACTIVATE.0
-            | SWP_NOSENDCHANGING.0
-            | SWP_ASYNCWINDOWPOS.0,
+        SWP_NOMOVE.0 | SWP_NOSIZE.0 | SWP_NOOWNERZORDER.0 | SWP_NOACTIVATE.0 | SWP_NOSENDCHANGING.0,
     );
 
     static STARTED: OnceLock<Result<(), String>> = OnceLock::new();
     static SENTINEL: AtomicUsize = AtomicUsize::new(0);
     static SHOWN: AtomicBool = AtomicBool::new(false);
+    static PLACEMENT_PENDING: AtomicBool = AtomicBool::new(false);
+    static APP: OnceLock<tauri::AppHandle> = OnceLock::new();
 
     /// Start the sentinel + hook pump thread once; waits for the sentinel so the first check works.
-    pub fn ensure_watcher() -> Result<(), String> {
+    pub fn ensure_watcher(app: tauri::AppHandle) -> Result<(), String> {
+        APP.get_or_init(|| app);
         STARTED
             .get_or_init(|| {
                 let (tx, rx) = std::sync::mpsc::channel();
@@ -244,8 +278,7 @@ mod imp {
                 }
             };
             // Our own window on our own thread: synchronous is fine.
-            let flags = SET_WINDOW_POS_FLAGS(ZPOS.0 & !SWP_ASYNCWINDOWPOS.0);
-            let _ = SetWindowPos(sentinel, Some(HWND_BOTTOM), 0, 0, 0, 0, flags);
+            let _ = SetWindowPos(sentinel, Some(HWND_BOTTOM), 0, 0, 0, 0, ZPOS);
             SENTINEL.store(sentinel.0 as usize, Ordering::SeqCst);
             let hook = SetWinEventHook(
                 EVENT_SYSTEM_FOREGROUND,
@@ -424,35 +457,65 @@ mod imp {
     fn check() -> bool {
         let overlays = overlay_hwnds();
         let sentinel = HWND(SENTINEL.load(Ordering::SeqCst) as _);
+        if overlays.is_empty() {
+            let was = SHOWN.swap(false, Ordering::SeqCst);
+            unsafe {
+                let _ = KillTimer(Some(sentinel), TIMER_ID);
+            }
+            return was;
+        }
         let host = find_icon_host();
         // The icon host has moved ABOVE our bottom-parked sentinel ⇔ the desktop is being shown.
-        let shown = !overlays.is_empty()
-            && host.is_some_and(|host| {
-                unsafe { IsWindowVisible(host) }.as_bool()
-                    && unsafe { FindWindowExW(None, Some(host), SENTINEL_CLASS, None) }
-                        .is_ok_and(|h| h == sentinel)
-            });
+        let shown = host.is_some_and(|host| {
+            unsafe { IsWindowVisible(host) }.as_bool()
+                && desktop_shown(&zorder(), host.0 as usize, sentinel.0 as usize)
+        });
         let was = SHOWN.swap(shown, Ordering::SeqCst);
-        if let (true, Some(host)) = (shown, host) {
-            raise(&overlays, host.0 as usize);
-        } else if was {
-            for &o in &overlays {
-                lower(o);
-            }
+        if shown || was {
+            queue_placement();
         }
+        // Also restart the timer after the last desktop overlay was removed and a new one joined.
+        let interval = if shown {
+            INTERVAL_SHOWN_MS
+        } else {
+            INTERVAL_IDLE_MS
+        };
+        unsafe { SetTimer(Some(sentinel), TIMER_ID, interval, None) };
         if was != shown {
-            let interval = if shown {
-                INTERVAL_SHOWN_MS
-            } else {
-                INTERVAL_IDLE_MS
-            };
-            unsafe { SetTimer(Some(sentinel), TIMER_ID, interval, None) };
             crate::log::info("desktop_layer", "show desktop state changed")
                 .field("shown", shown)
                 .field("overlays", overlays.len())
                 .emit();
         }
         was != shown
+    }
+
+    fn queue_placement() {
+        if let Some(app) = APP.get() {
+            if PLACEMENT_PENDING.swap(true, Ordering::SeqCst) {
+                return;
+            }
+            if app
+                .run_on_main_thread(move || {
+                    PLACEMENT_PENDING.store(false, Ordering::SeqCst);
+                    let current = overlay_hwnds();
+                    let shown = is_shown();
+                    let host = shown.then(find_icon_host).flatten().map(|h| h.0 as usize);
+                    match placement_plan(current, shown, host) {
+                        Some(Placement::Raise(targets, host)) => raise(&targets, host),
+                        Some(Placement::Lower(targets)) => {
+                            for hwnd in targets {
+                                lower(hwnd);
+                            }
+                        }
+                        None => {}
+                    }
+                })
+                .is_err()
+            {
+                PLACEMENT_PENDING.store(false, Ordering::SeqCst);
+            }
+        }
     }
 
     /// Slot every overlay that isn't already above the icon host just under the backmost topmost
@@ -474,6 +537,257 @@ mod imp {
             }
         }
     }
+
+    #[cfg(test)]
+    mod native_tests {
+        use super::*;
+        use windows::Win32::Foundation::{POINT, RECT};
+        use windows::Win32::Graphics::Gdi::{EnumDisplayMonitors, HDC, HMONITOR};
+        use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+        use windows::Win32::UI::Input::KeyboardAndMouse::{
+            INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYEVENTF_KEYUP, SendInput, VIRTUAL_KEY,
+            VK_LWIN,
+        };
+        use windows::Win32::UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, DispatchMessageW, MSG, PM_REMOVE, PeekMessageW,
+            RegisterClassW, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_POPUP, WS_VISIBLE,
+            WindowFromPoint,
+        };
+
+        struct Cleanup {
+            windows: Vec<HWND>,
+            toggled: bool,
+        }
+
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                if self.toggled {
+                    toggle_desktop();
+                }
+                for hwnd in &self.windows {
+                    super::super::forget_window(&format!("native-smoke-{}", hwnd.0 as usize));
+                    let _ = unsafe { DestroyWindow(*hwnd) };
+                }
+            }
+        }
+
+        fn toggle_desktop() {
+            let inputs = [
+                (VK_LWIN, false),
+                (VIRTUAL_KEY(0x44), false),
+                (VIRTUAL_KEY(0x44), true),
+                (VK_LWIN, true),
+            ]
+            .map(|(key, up)| INPUT {
+                r#type: INPUT_KEYBOARD,
+                Anonymous: INPUT_0 {
+                    ki: KEYBDINPUT {
+                        wVk: key,
+                        dwFlags: if up {
+                            KEYEVENTF_KEYUP
+                        } else {
+                            Default::default()
+                        },
+                        ..Default::default()
+                    },
+                },
+            });
+            assert_eq!(
+                unsafe { SendInput(&inputs, std::mem::size_of::<INPUT>() as i32) },
+                4,
+                "Win+D input was rejected"
+            );
+        }
+
+        fn wait_for(mut condition: impl FnMut() -> bool) {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+            loop {
+                let mut msg = MSG::default();
+                unsafe {
+                    while PeekMessageW(&mut msg, None, 0, 0, PM_REMOVE).as_bool() {
+                        DispatchMessageW(&msg);
+                    }
+                }
+                if condition() {
+                    return;
+                }
+                assert!(
+                    std::time::Instant::now() < deadline,
+                    "desktop state did not settle"
+                );
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        }
+
+        #[test]
+        #[ignore = "interactive Windows smoke: briefly toggles Show Desktop and creates one temporary window per monitor"]
+        fn native_desktop_smoke() {
+            unsafe extern "system" fn overlay_proc(
+                hwnd: HWND,
+                msg: u32,
+                wparam: WPARAM,
+                lparam: LPARAM,
+            ) -> LRESULT {
+                if msg == WM_WINDOWPOSCHANGING && lparam.0 != 0 {
+                    // Model tao's always-on-bottom guard. Our lift must bypass this message.
+                    unsafe {
+                        (*(lparam.0 as *mut WINDOWPOS)).hwndInsertAfter = HWND_BOTTOM;
+                    }
+                }
+                unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
+            }
+            unsafe extern "system" fn monitor(
+                h: HMONITOR,
+                _dc: HDC,
+                rc: *mut RECT,
+                data: LPARAM,
+            ) -> windows::core::BOOL {
+                let _ = h;
+                unsafe {
+                    (*(data.0 as *mut Vec<RECT>)).push(*rc);
+                }
+                windows::core::BOOL(1)
+            }
+            unsafe {
+                let mut cleanup = Cleanup {
+                    windows: Vec::new(),
+                    toggled: false,
+                };
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || pump(tx));
+                rx.recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap()
+                    .unwrap();
+                let instance = GetModuleHandleW(None).unwrap();
+                let class = w!("WidgetsackNativeDesktopSmoke");
+                assert_ne!(
+                    RegisterClassW(&WNDCLASSW {
+                        lpfnWndProc: Some(overlay_proc),
+                        hInstance: instance.into(),
+                        lpszClassName: class,
+                        ..Default::default()
+                    }),
+                    0
+                );
+                let mut monitors = Vec::<RECT>::new();
+                EnumDisplayMonitors(
+                    None,
+                    None,
+                    Some(monitor),
+                    LPARAM(&mut monitors as *mut _ as isize),
+                )
+                .ok()
+                .unwrap();
+                assert!(!monitors.is_empty());
+                let mut points = Vec::new();
+                for rc in monitors {
+                    let x = (rc.left + rc.right) / 2;
+                    let y = (rc.top + rc.bottom) / 2;
+                    let hwnd = CreateWindowExW(
+                        WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+                        class,
+                        w!("widgetsack native smoke"),
+                        WS_POPUP | WS_VISIBLE,
+                        x,
+                        y,
+                        64,
+                        64,
+                        None,
+                        None,
+                        Some(instance.into()),
+                        None,
+                    )
+                    .unwrap();
+                    cleanup.windows.push(hwnd);
+                    points.push(POINT {
+                        x: x + 16,
+                        y: y + 16,
+                    });
+                    super::super::OVERLAYS
+                        .lock()
+                        .unwrap()
+                        .insert(format!("native-smoke-{}", hwnd.0 as usize), hwnd.0 as usize);
+                    lower(hwnd.0 as usize);
+                }
+                // A second instance's sentinel with the same class must not mask our own.
+                let other = CreateWindowExW(
+                    WS_EX_TOOLWINDOW,
+                    SENTINEL_CLASS,
+                    w!("other instance"),
+                    WS_POPUP,
+                    0,
+                    0,
+                    0,
+                    0,
+                    None,
+                    None,
+                    Some(instance.into()),
+                    None,
+                )
+                .unwrap();
+                cleanup.windows.push(other);
+                let host = find_icon_host().expect("Explorer desktop icons host");
+                check();
+                let initial = is_shown();
+                let diagnostic = || {
+                    let z = zorder();
+                    let sentinel = SENTINEL.load(Ordering::SeqCst);
+                    eprintln!(
+                        "desktop smoke: shown={} host={:?} sentinel={:?} overlays={:?} foreground={}",
+                        is_shown(),
+                        z.iter().position(|w| w.hwnd == host.0 as usize),
+                        z.iter().position(|w| w.hwnd == sentinel),
+                        targets_for_diagnostics(&z),
+                        class_name(windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow())
+                    );
+                };
+                diagnostic();
+                if !initial {
+                    toggle_desktop();
+                    cleanup.toggled = true;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(200));
+                check();
+                diagnostic();
+                wait_for(|| {
+                    check();
+                    is_shown()
+                });
+                let targets = overlay_hwnds();
+                raise(&targets, host.0 as usize);
+                for (&hwnd, point) in cleanup.windows.iter().zip(points) {
+                    assert!(is_above(&zorder(), hwnd.0 as usize, host.0 as usize));
+                    assert_eq!(
+                        WindowFromPoint(point),
+                        hwnd,
+                        "desktop icons or another window intercepts clicks"
+                    );
+                }
+                eprintln!(
+                    "native Show Desktop visibility and hit testing passed for {} overlay(s)",
+                    targets.len()
+                );
+                if cleanup.toggled {
+                    toggle_desktop();
+                    cleanup.toggled = false;
+                    wait_for(|| {
+                        check();
+                        !is_shown()
+                    });
+                }
+                for hwnd in targets {
+                    lower(hwnd);
+                }
+            }
+        }
+
+        fn targets_for_diagnostics(z: &[ZWindow]) -> Vec<Option<usize>> {
+            overlay_hwnds()
+                .iter()
+                .map(|h| z.iter().position(|w| w.hwnd == *h))
+                .collect()
+        }
+    }
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -481,7 +795,7 @@ mod imp {
     pub fn window_hwnd(_window: &tauri::WebviewWindow) -> Result<usize, String> {
         Err("the desktop layer is only available on Windows".to_string())
     }
-    pub fn ensure_watcher() -> Result<(), String> {
+    pub fn ensure_watcher(_app: tauri::AppHandle) -> Result<(), String> {
         Err("the desktop layer is only available on Windows".to_string())
     }
     pub fn request_check() {}
@@ -493,7 +807,9 @@ mod imp {
 
 #[cfg(test)]
 mod tests {
-    use super::{ZWindow, icon_host, is_above, raise_anchors};
+    use super::{
+        Placement, ZWindow, desktop_shown, icon_host, is_above, placement_plan, raise_anchors,
+    };
 
     fn z(list: &[(usize, bool)]) -> Vec<ZWindow> {
         list.iter()
@@ -545,5 +861,29 @@ mod tests {
         // Host missing from the snapshot: consider the whole list.
         let order = z(&[(1, true), (3, false)]);
         assert_eq!(raise_anchors(&order, 99, &[]), vec![1]);
+    }
+
+    #[test]
+    fn desktop_detection_uses_this_instances_sentinel_and_complete_snapshots() {
+        let order = z(&[(10, false), (20, false), (30, false)]);
+        // Another instance's sentinel (20) may appear before ours (30).
+        assert!(desktop_shown(&order, 10, 30));
+        assert!(!desktop_shown(&order, 30, 10));
+        assert!(!desktop_shown(&order, 10, 99));
+        assert!(!desktop_shown(&order, 99, 30));
+    }
+
+    #[test]
+    fn queued_placements_use_live_membership_and_preserve_the_final_lower() {
+        assert_eq!(
+            placement_plan(vec![2, 3], true, Some(10)),
+            Some(Placement::Raise(vec![2, 3], 10))
+        );
+        assert_eq!(
+            placement_plan(vec![2, 3], false, None),
+            Some(Placement::Lower(vec![2, 3]))
+        );
+        assert_eq!(placement_plan(vec![], true, Some(10)), None);
+        assert_eq!(placement_plan(vec![2], true, None), None);
     }
 }

@@ -44,13 +44,26 @@ import {
 	type PhysicalBox
 } from './core/windowFit';
 
-/** Apply the overlay z-order layer to THIS window: 'top' = always-on-top (default), 'bottom' =
+// One queue per overlay webview: refits, layer changes and debug presentation share the same order.
+let presentationQueue = Promise.resolve();
+
+function enqueuePresentation(apply: () => Promise<void>): Promise<void> {
+	const next = presentationQueue.then(apply);
+	presentationQueue = next.catch(() => undefined);
+	return next;
+}
+
+/** Apply the overlay z-order layer to THIS window: 'top' = always-on-top, 'bottom' (default) =
  *  always-on-bottom (below app windows), 'desktop' = always-on-bottom plus the Rust Show Desktop
  *  watcher (`set_overlay_desktop`), 'wallpaper' = parented to the desktop WorkerW (on the
  *  wallpaper, behind icons) via the Rust `set_overlay_wallpaper` command. Each overlay window
  *  self-applies — the wallpaper invoke targets the CALLING window, so it must run in that window.
  *  Best-effort: failures are logged, never thrown (a missing WorkerW falls back to 'bottom'). */
-export async function applyOverlayLayer(layer: OverlayLayer): Promise<void> {
+export function applyOverlayLayer(layer: OverlayLayer): Promise<void> {
+	return enqueuePresentation(() => applyOverlayLayerNow(layer));
+}
+
+async function applyOverlayLayerNow(layer: OverlayLayer): Promise<void> {
 	const win = getCurrentWindow();
 	let detail = '';
 	let ok = true;
@@ -624,7 +637,14 @@ export async function setClickThrough(enabled: boolean): Promise<void> {
  *  windowed-debug path instead detaches any wallpaper parent and drops topmost/bottom so the overlay is
  *  an ordinary movable window. The opaque-background half is the caller's (a CSS concern). Best-effort —
  *  failures are logged, never thrown. The studio never calls this (it's a normal editor window). */
-export async function applyOverlayPresentation(
+export function applyOverlayPresentation(
+	p: OverlayPresentation,
+	layer: OverlayLayer
+): Promise<void> {
+	return enqueuePresentation(() => applyOverlayPresentationNow(p, layer));
+}
+
+async function applyOverlayPresentationNow(
 	p: OverlayPresentation,
 	layer: OverlayLayer
 ): Promise<void> {
@@ -639,7 +659,7 @@ export async function applyOverlayPresentation(
 			await win.setAlwaysOnBottom(false);
 		} else {
 			// Normal overlay: defer the z-order (incl. wallpaper) + status broadcast to applyOverlayLayer.
-			await applyOverlayLayer(layer);
+			await applyOverlayLayerNow(layer);
 		}
 		await win.setDecorations(p.decorations);
 		await win.setShadow(false);
