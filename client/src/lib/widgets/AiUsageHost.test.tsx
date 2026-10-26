@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AiUsageHost from './AiUsageHost';
 import { readAiUsage } from './plugins/ai-usage-commands';
 import { approveUsageCommand, saveUsageHistory } from './plugins/ai-usage-source';
-import { usageProviders } from '../core/aiUsage';
+import { usageProviders, type UsageSnapshot } from '../core/aiUsage';
 vi.mock('./plugins/ai-usage-commands', () => ({ readAiUsage: vi.fn() }));
 const snapshot = {
 	version: 1 as const,
@@ -31,6 +31,66 @@ afterEach(() => {
 	vi.restoreAllMocks();
 });
 describe('AI usage refresh lifetime', () => {
+	it('waits one minute after session and weekly resets before checking stale boundaries once each', async () => {
+		const reset = Date.now() + 30000;
+		vi.mocked(readAiUsage).mockResolvedValue({
+			...snapshot,
+			metrics: [
+				{ ...snapshot.metrics[0], id: 'session', period: 'session', resetsAt: reset },
+				{ ...snapshot.metrics[0], resetsAt: reset + 30000 }
+			]
+		});
+		render(<AiUsageHost providers={[{ source: 'codex' }]} />);
+		await act(async () => {});
+		await act(async () => vi.advanceTimersByTimeAsync(30000));
+		expect(readAiUsage).toHaveBeenCalledTimes(1);
+		await act(async () => vi.advanceTimersByTimeAsync(59999));
+		expect(readAiUsage).toHaveBeenCalledTimes(1);
+		await act(async () => vi.advanceTimersByTimeAsync(1));
+		expect(readAiUsage).toHaveBeenCalledTimes(2);
+		await act(async () => vi.advanceTimersByTimeAsync(30000));
+		expect(readAiUsage).toHaveBeenCalledTimes(3);
+		await act(async () => vi.advanceTimersByTimeAsync(60000));
+		expect(readAiUsage).toHaveBeenCalledTimes(3);
+	});
+	it('checks a reset crossed during an in-flight request and resumes normal cadence after failure', async () => {
+		let finish!: (value: UsageSnapshot) => void;
+		const reset = Date.now() + 30000;
+		vi.mocked(readAiUsage).mockReturnValueOnce(
+			new Promise((resolve) => {
+				finish = resolve;
+			})
+		);
+		render(<AiUsageHost providers={[{ source: 'codex' }]} />);
+		await act(async () => vi.advanceTimersByTimeAsync(100000));
+		expect(readAiUsage).toHaveBeenCalledTimes(1);
+		vi.mocked(readAiUsage).mockRejectedValueOnce(new Error('Offline'));
+		await act(async () =>
+			finish({ ...snapshot, metrics: [{ ...snapshot.metrics[0], resetsAt: reset }] })
+		);
+		await act(async () => vi.advanceTimersByTimeAsync(1));
+		expect(readAiUsage).toHaveBeenCalledTimes(2);
+		expect(screen.getByText('Stale')).toBeVisible();
+		await act(async () => vi.advanceTimersByTimeAsync(60000));
+		expect(readAiUsage).toHaveBeenCalledTimes(2);
+		await act(async () => vi.advanceTimersByTimeAsync(840000));
+		expect(readAiUsage).toHaveBeenCalledTimes(3);
+	});
+	it('defers a reset check while hidden and checks when visible again', async () => {
+		const reset = Date.now() + 30000;
+		vi.mocked(readAiUsage).mockResolvedValue({
+			...snapshot,
+			metrics: [{ ...snapshot.metrics[0], resetsAt: reset }]
+		});
+		render(<AiUsageHost providers={[{ source: 'codex' }]} />);
+		await act(async () => {});
+		const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+		await act(async () => vi.advanceTimersByTimeAsync(120000));
+		expect(readAiUsage).toHaveBeenCalledTimes(1);
+		visibility.mockReturnValue('visible');
+		await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+		expect(readAiUsage).toHaveBeenCalledTimes(2);
+	});
 	it('uses the default cadence for invalid intervals', async () => {
 		render(<AiUsageHost providers={[{ source: 'codex' }]} interval={0} />);
 		await act(async () => {});
