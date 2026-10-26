@@ -12,10 +12,13 @@ const KEY = 'widgetsack.overlay.prefs';
 // The overlay's window z-order:
 //   'bottom'    — always-on-bottom (the DEFAULT): widgets sit BELOW application windows (but above
 //                 the desktop icons; Show Desktop / Win+D hides them). Frontend-only (setAlwaysOnBottom).
+//   'desktop'   — like 'bottom', but Show Desktop / Win+D does NOT hide them: while the desktop is
+//                 shown the backend lifts the overlay above the desktop icons (Rainmeter's "On
+//                 desktop"), so widgets stay visible AND clickable. Windows-only (desktop_layer.rs).
 //   'top'       — always-on-top: widgets float above every window.
 //   'wallpaper' — parented to the desktop's WorkerW so widgets render ON the wallpaper, behind the
 //                 icons, surviving Show Desktop. EXPERIMENTAL + Windows-only (a native SetParent).
-export type OverlayLayer = 'top' | 'bottom' | 'wallpaper';
+export type OverlayLayer = 'top' | 'bottom' | 'desktop' | 'wallpaper';
 
 export type OverlayPrefs = {
 	// true (default): the flow layout fills the monitor WORK AREA (excludes the taskbar);

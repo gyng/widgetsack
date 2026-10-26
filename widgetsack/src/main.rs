@@ -28,6 +28,7 @@ pub mod command;
 pub mod control;
 pub mod custom_html;
 pub mod ddc;
+pub mod desktop_layer;
 pub mod diag;
 pub mod display;
 pub mod displaywatch;
@@ -267,6 +268,8 @@ async fn main() -> Result<(), ()> {
                     .app_handle()
                     .state::<clickthrough::InteractiveRects>();
                 clickthrough::forget_window(&rects, window.label());
+                // A dead HWND must not stay in the desktop layer's Show Desktop set.
+                desktop_layer::forget_window(window.label());
                 // And its spectrum channel: a destroyed webview never calls `stop_spectrum`, so
                 // without this the WASAPI loopback + FFT thread keeps running for a dead consumer.
                 let spectrum = window.app_handle().state::<audio::SpectrumState>();
@@ -398,6 +401,7 @@ async fn main() -> Result<(), ()> {
             clickthrough::set_interactive_rects,
             clickthrough::current_work_area,
             clickthrough::set_overlay_wallpaper,
+            desktop_layer::set_overlay_desktop,
             sensors::set_active_sensors,
             sensors::get_system_sensor_catalog,
             audio::start_spectrum,

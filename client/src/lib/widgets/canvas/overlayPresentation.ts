@@ -57,7 +57,7 @@ export function overlayPresentation(i: PresentationInput): OverlayPresentation {
 		decorations: false,
 		taskbar: false,
 		alwaysOnTop: i.layer === 'top',
-		alwaysOnBottom: i.layer === 'bottom',
+		alwaysOnBottom: i.layer === 'bottom' || i.layer === 'desktop',
 		clickThrough: !i.editMode,
 		opaque: false
 	};

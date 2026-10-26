@@ -109,6 +109,7 @@ export const COMMANDS = {
 	setInteractiveRects: 'set_interactive_rects',
 	currentWorkArea: 'current_work_area',
 	setOverlayWallpaper: 'set_overlay_wallpaper',
+	setOverlayDesktop: 'set_overlay_desktop',
 	setOverlayFocusable: 'set_overlay_focusable',
 	listDisplayNames: 'list_display_names',
 	// monitor input-source switcher — DDC/CI VCP 0x60 (ddc.rs, the Monitor Switch widget)
