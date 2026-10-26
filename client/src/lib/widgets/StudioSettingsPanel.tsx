@@ -39,12 +39,14 @@ import './StudioSettingsPanel.css';
 // and the "Current layer:" status line read from this one table.
 const OVERLAY_LAYER_LABEL: Record<OverlayLayer, string> = {
 	bottom: 'Below windows',
+	desktop: 'On desktop',
 	top: 'Always on top',
 	wallpaper: 'Behind desktop icons (experimental)'
 };
 
 export const OVERLAY_LAYER_OPTIONS: { value: OverlayLayer; label: string; hint?: string }[] = [
 	{ value: 'bottom', label: OVERLAY_LAYER_LABEL.bottom, hint: 'default' },
+	{ value: 'desktop', label: OVERLAY_LAYER_LABEL.desktop },
 	{ value: 'top', label: OVERLAY_LAYER_LABEL.top },
 	{ value: 'wallpaper', label: OVERLAY_LAYER_LABEL.wallpaper }
 ];
@@ -416,6 +418,10 @@ export default function StudioSettingsPanel({
 								<li>
 									<strong>Below windows:</strong> Widgets appear behind apps and above desktop
 									icons. Show Desktop hides them.
+								</li>
+								<li>
+									<strong>On desktop:</strong> Like Below windows, but Show Desktop keeps them
+									visible and clickable.
 								</li>
 								<li>
 									<strong>Always on top:</strong> Widgets appear above other windows.

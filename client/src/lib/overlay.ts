@@ -45,7 +45,8 @@ import {
 } from './core/windowFit';
 
 /** Apply the overlay z-order layer to THIS window: 'top' = always-on-top (default), 'bottom' =
- *  always-on-bottom (below app windows), 'wallpaper' = parented to the desktop WorkerW (on the
+ *  always-on-bottom (below app windows), 'desktop' = always-on-bottom plus the Rust Show Desktop
+ *  watcher (`set_overlay_desktop`), 'wallpaper' = parented to the desktop WorkerW (on the
  *  wallpaper, behind icons) via the Rust `set_overlay_wallpaper` command. Each overlay window
  *  self-applies — the wallpaper invoke targets the CALLING window, so it must run in that window.
  *  Best-effort: failures are logged, never thrown (a missing WorkerW falls back to 'bottom'). */
@@ -54,6 +55,10 @@ export async function applyOverlayLayer(layer: OverlayLayer): Promise<void> {
 	let detail = '';
 	let ok = true;
 	try {
+		// Only the 'desktop' layer keeps this window in the backend's Show Desktop set.
+		if (layer !== 'desktop') {
+			await invoke(COMMANDS.setOverlayDesktop, { enabled: false }).catch(() => undefined);
+		}
 		if (layer === 'wallpaper') {
 			await win.setAlwaysOnTop(false);
 			await win.setAlwaysOnBottom(false);
@@ -78,6 +83,17 @@ export async function applyOverlayLayer(layer: OverlayLayer): Promise<void> {
 				await win.setAlwaysOnTop(false);
 				await win.setAlwaysOnBottom(true);
 				detail = 'below windows (always-on-bottom)';
+			} else if (layer === 'desktop') {
+				// Always-on-bottom keeps it under apps; the backend lifts it above the desktop icons
+				// only while Show Desktop is active. Without the watcher it's still a working 'bottom'.
+				await win.setAlwaysOnTop(false);
+				await win.setAlwaysOnBottom(true);
+				try {
+					detail = await invoke<string>(COMMANDS.setOverlayDesktop, { enabled: true });
+				} catch (err) {
+					ok = false;
+					detail = `Show Desktop watcher failed (${String(err)}); below windows only`;
+				}
 			} else {
 				await win.setAlwaysOnBottom(false);
 				await win.setAlwaysOnTop(true);
@@ -618,6 +634,7 @@ export async function applyOverlayPresentation(
 			// Windowed-debug: a normal decorated, interactive, alt-tab-able window. Un-parent from any
 			// WorkerW and clear topmost/bottom so it behaves like an ordinary window you can move/close.
 			await invoke(COMMANDS.setOverlayWallpaper, { enabled: false }).catch(() => undefined);
+			await invoke(COMMANDS.setOverlayDesktop, { enabled: false }).catch(() => undefined);
 			await win.setAlwaysOnTop(false);
 			await win.setAlwaysOnBottom(false);
 		} else {

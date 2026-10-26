@@ -33,10 +33,16 @@ describe('overlayPresentation', () => {
 		).toMatchObject({ alwaysOnTop: false, alwaysOnBottom: false });
 	});
 
+	it("'desktop' layer stays below windows (the backend only lifts it during Show Desktop)", () => {
+		expect(
+			overlayPresentation({ windowed: false, layer: 'desktop', editMode: false })
+		).toMatchObject({ alwaysOnTop: false, alwaysOnBottom: true, clickThrough: true });
+	});
+
 	it('a passive overlay is click-through on every layer — main and secondaries alike', () => {
 		// The window's role is not an input any more: `main` used to be always interactive, which made
 		// the whole primary monitor swallow clicks. Recovery from a stuck window is the backend rescue.
-		for (const layer of ['bottom', 'top', 'wallpaper'] as const) {
+		for (const layer of ['bottom', 'desktop', 'top', 'wallpaper'] as const) {
 			expect(overlayPresentation({ windowed: false, layer, editMode: false }).clickThrough).toBe(
 				true
 			);
