@@ -516,9 +516,10 @@ it('retains rows during a focus refresh and ignores an older refresh while the n
 		);
 	fireEvent(window, new Event('focus'));
 	fireEvent(window, new Event('focus'));
-	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeDisabled();
+	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeEnabled();
+	expect(view.getByRole('status')).toHaveAccessibleName('Refreshing monitor inputs');
 	await act(async () => older([mon({ friendly: 'Old response' })]));
-	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeDisabled();
+	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeEnabled();
 	expect(view.container.querySelector('.ms-title')).toHaveTextContent('Dell U2720Q');
 	await act(async () => newer([mon({ friendly: 'Fresh response' })]));
 	expect(view.getByRole('button', { name: 'HDMI 1' })).toBeEnabled();
@@ -572,6 +573,35 @@ it('does not poll over a slow input switch or replace its optimistic highlight',
 		expect(readMonitorInputSnapshot('')?.current_input).toBe(0x11);
 		await act(async () => finish(true));
 		expect(listMonitorInputs).toHaveBeenCalledOnce();
+		expect(view.getByRole('button', { name: 'HDMI 1' })).toBeEnabled();
+		view.unmount();
+	} finally {
+		vi.useRealTimers();
+	}
+});
+
+it('keeps validated inputs enabled during an interval refresh and allows switching', async () => {
+	vi.useFakeTimers();
+	try {
+		const view = render(<MonitorSwitchHost />);
+		await act(async () => undefined);
+		let finish!: (list: MonitorInputs[]) => void;
+		listMonitorInputs.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				})
+		);
+		await act(async () => {
+			await vi.advanceTimersByTimeAsync(8000);
+		});
+		expect(view.getByRole('status')).toHaveAccessibleName('Refreshing monitor inputs');
+		expect(view.getByRole('button', { name: 'DisplayPort 1' })).toBeEnabled();
+		fireEvent.click(view.getByRole('button', { name: 'DisplayPort 1' }));
+		await act(async () => undefined);
+		expect(setMonitorInput).toHaveBeenCalledWith('\\\\.\\DISPLAY1', 0x0f);
+		await act(async () => finish([mon({ friendly: 'Stale poll' })]));
+		expect(view.container.querySelector('.ms-title')).toHaveTextContent('Dell U2720Q');
 		expect(view.getByRole('button', { name: 'HDMI 1' })).toBeEnabled();
 		view.unmount();
 	} finally {
