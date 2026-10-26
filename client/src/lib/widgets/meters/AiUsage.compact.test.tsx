@@ -481,9 +481,12 @@ it('keeps an ETA cell available for active, idle and unbounded compact rates', (
 	expect(screen.getByText('Unavailable')).toBeVisible();
 });
 
-it('keeps rate-limit errors concise with the full message available on hover', () => {
+it.each([
+	'Provider usage returned HTTP 429; retry paused for 15 minutes',
+	'Provider usage returned HTTP 401 Unauthorized',
+	'Usage refresh timed out'
+])('shows ? for errors with the full message available on hover: %s', (error) => {
 	const p = defaultUsageProviders()[0];
-	const error = 'Provider usage returned HTTP 429; retry paused for 15 minutes';
 	render(
 		<AiUsage
 			providers={[p]}
@@ -491,7 +494,6 @@ it('keeps rate-limit errors concise with the full message available on hover', (
 			now={0}
 		/>
 	);
-	expect(screen.getByRole('status')).toHaveTextContent('429');
-	expect(screen.getByRole('status')).not.toHaveTextContent('15 minutes');
+	expect(screen.getByRole('status')).toHaveTextContent(/^\?$/);
 	expect(screen.getByRole('status')).toHaveAttribute('title', error);
 });

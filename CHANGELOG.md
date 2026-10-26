@@ -3,12 +3,19 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
-## Unreleased
+## 0.0.69
 
-Monitor input controls retain their last response across restarts and stay in place while refreshing.
+AI usage countdowns show 24–47 hours instead of rounding down to one day, and usage checks run a minute
+after session or weekly resets. Errors appear as `?` with details on hover. Claude usage estimates
+appear reliably again, and monitor input controls retain their last response across restarts and stay
+in place while refreshing.
 
 ### Fixed
 
+- Show 24–47 hours instead of rounding reset countdowns down to one day.
+- Check AI usage a minute after session and weekly resets, with no repeated checks for stale reset
+  times and no overlapping requests.
+- Show `?` for AI usage errors in compact and detailed views, keeping the full message on hover.
 - Keep Claude usage rate and ETA history when reset timestamps vary slightly between refreshes.
 - Restore cached monitor inputs, names and display stats while fresh hardware reads are pending.
   Keep inputs disabled with a loading indicator until the refresh completes.

@@ -287,7 +287,7 @@ export default function AiUsage({
 								{stale && <span>Stale</span>}
 								{reading?.error ? (
 									<span className="usage-inline-status" role="status" title={reading.error}>
-										{/\b429\b/.test(reading.error) ? '429 · paused' : reading.error}
+										?
 									</span>
 								) : !metrics.length ? (
 									<span>
@@ -419,8 +419,8 @@ export default function AiUsage({
 								</div>
 							)}
 							{reading?.error && (
-								<div className="usage-error" role="status">
-									{reading.error}
+								<div className="usage-error" role="status" title={reading.error}>
+									?
 								</div>
 							)}
 							{reading?.snapshot && !metrics.length && (

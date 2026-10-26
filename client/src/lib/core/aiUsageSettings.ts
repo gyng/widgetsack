@@ -71,7 +71,7 @@ export function usageResetText(at: number, now: number): string {
 	const minutes = (at - now) / 60000;
 	if (minutes <= 0) return 'due';
 	if (minutes >= 10080) return `${Math.floor(minutes / 10080)}w`;
-	if (minutes >= 1440) return `${Math.floor(minutes / 1440)}d`;
+	if (minutes >= 2880) return `${Math.floor(minutes / 1440)}d`;
 	if (minutes >= 60) return `${Math.floor(minutes / 60)}h`;
 	return `${Math.max(1, Math.ceil(minutes))}m`;
 }

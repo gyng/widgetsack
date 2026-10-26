@@ -56,6 +56,28 @@ export type UsageSnapshot = {
 	note?: string;
 };
 export type UsagePoint = { at: number; metrics: UsageMetric[] };
+// Give the provider a minute to roll over. A reset already checked by this poll must not
+// trigger a tight retry loop if the provider keeps returning the expired window.
+export function nextUsagePollAt(
+	snapshots: UsageSnapshot[],
+	attemptedAt: number,
+	now: number,
+	intervalMs: number
+): number {
+	let next = now + intervalMs;
+	for (const { metrics } of snapshots)
+		for (const metric of metrics) {
+			if (
+				metric.kind !== 'quota' ||
+				(metric.period !== 'session' && metric.period !== 'week') ||
+				metric.resetsAt === undefined
+			)
+				continue;
+			const afterReset = metric.resetsAt + 60000;
+			if (afterReset > attemptedAt) next = Math.min(next, Math.max(now, afterReset));
+		}
+	return next;
+}
 const sources = ['codex', 'claude', 'openrouter', 'omp', 'command'];
 const record = (v: unknown): Record<string, unknown> =>
 	v !== null && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {};

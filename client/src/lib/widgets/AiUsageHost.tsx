@@ -3,6 +3,7 @@ import {
 	usageProviders,
 	usagePollingSpec,
 	usageSourceKey,
+	nextUsagePollAt,
 	type UsageProvider,
 	type UsagePoint,
 	type UsageSnapshot
@@ -32,8 +33,10 @@ export default function AiUsageHost({
 		let nextPoll = 0;
 		const refreshMs = Math.max(60, Math.min(3600, Number(interval) || 900)) * 1000;
 		const initial: Record<string, UsageReading> = {};
+		const snapshots = new Map<string, UsageSnapshot>();
 		for (const p of items) {
 			const restored = loadUsageHistory(p);
+			if (restored.snapshot) snapshots.set(usageSourceKey(p), restored.snapshot);
 			initial[usageSourceKey(p)] = {
 				...restored,
 				at: restored.history.at(-1)?.at,
@@ -67,7 +70,7 @@ export default function AiUsageHost({
 				}, nextPoll - Date.now());
 				return;
 			}
-			nextPoll = Date.now() + refreshMs;
+			const attemptedAt = Date.now();
 			running = true;
 			await Promise.all(
 				items.map(async (p) => {
@@ -85,6 +88,7 @@ export default function AiUsageHost({
 					try {
 						const snapshot = await readAiUsage(p, timeout);
 						if (!alive) return;
+						snapshots.set(usageSourceKey(p), snapshot);
 						const at = Date.now();
 						const history = saveUsageHistory(p, snapshot, at);
 						update(p, snapshot, history, '', false, at);
@@ -94,10 +98,12 @@ export default function AiUsageHost({
 				})
 			);
 			running = false;
-			if (alive)
+			if (alive) {
+				nextPoll = nextUsagePollAt([...snapshots.values()], attemptedAt, Date.now(), refreshMs);
 				timer = setTimeout(() => {
 					void poll();
-				}, refreshMs);
+				}, nextPoll - Date.now());
+			}
 		};
 		const refresh = () => {
 			clearTimeout(timer);

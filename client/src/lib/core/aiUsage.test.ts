@@ -7,7 +7,8 @@ import {
 	usageTrend,
 	visibleUsageMetrics,
 	usageSourceKey,
-	usagePollingSpec
+	usagePollingSpec,
+	nextUsagePollAt
 } from './aiUsage';
 
 const quota = (used: number, resetsAt = 10000000) => ({
@@ -20,6 +21,22 @@ const quota = (used: number, resetsAt = 10000000) => ({
 	period: 'week',
 	scope: 'account',
 	resetsAt
+});
+it('schedules session and weekly reset checks after the boundary, ignoring already checked or unrelated resets', () => {
+	const metrics = [
+		{ ...quota(10, 9000), period: 'session' },
+		quota(10, 19000),
+		{ ...quota(10, 1000), kind: 'tokens' as const },
+		{ ...quota(10, 2000), period: 'month' },
+		{ ...quota(10), resetsAt: undefined }
+	];
+	const snapshots = [{ version: 1 as const, metrics }];
+	expect(nextUsagePollAt(snapshots, 0, 500, 900000)).toBe(69000);
+	expect(nextUsagePollAt(snapshots, 69000, 70000, 900000)).toBe(79000);
+	expect(nextUsagePollAt(snapshots, 79000, 80000, 900000)).toBe(980000);
+	expect(nextUsagePollAt(snapshots, 0, 80000, 900000)).toBe(80000);
+	expect(nextUsagePollAt(snapshots, 0, 500, 1000)).toBe(1500);
+	expect(nextUsagePollAt([], 0, 500, 60000)).toBe(60500);
 });
 describe('AI usage contracts', () => {
 	it('rejects malformed metric identities and banked reset metadata', () => {
