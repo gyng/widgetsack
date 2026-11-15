@@ -1,6 +1,6 @@
 {
 	"name": "client",
-	"version": "0.0.71",
+	"version": "0.0.72",
 	"license": "MIT OR Apache-2.0",
 	"scripts": {
 		"dev": "vite dev",

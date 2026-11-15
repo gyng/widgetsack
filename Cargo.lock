@@ -5100,7 +5100,7 @@ dependencies = [
 
 [[package]]
 name = "widgetsack"
-version = "0.0.71"
+version = "0.0.72"
 dependencies = [
  "fontdb",
  "futures-util",
