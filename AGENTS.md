@@ -486,8 +486,20 @@ presentational (pure) components**. Current code already models the key split:
 
 ### Commits
 - **Conventional Commits** — observed history: `feat:`, `fix:`, `chore:`. Keep using them.
-- **Do not commit or push unless the user asks.** When you do commit, work on a branch if
-  on `main`.
+- **Commit your own finished work without being asked**, on a feature branch (`feat/…`,
+  `fix/…`, `chore/…`). If you are on `main`, branch first; never commit directly to `main`.
+- **Commit when a change is verified,** not before: the §3 gates for what you touched pass.
+  Don't commit a red tree; if a gate can't be run, say so in the commit body.
+- **One logical change per commit.** Keep unrelated fixes, refactors, formatting and doc-only
+  edits in separate commits. Stage files explicitly; don't `git add -A` stray local files.
+- **Messages:** imperative subject under ~72 characters (`feat: show multiple Claude
+  profiles in AI Usage`). Use a body when the reason isn't obvious: what changed, why, and any
+  verification limits. AI agents end the message with their `Co-authored-by:` trailer.
+- **Never commit** secrets, local layouts/config, `target/`, `client/build/`, logs, or
+  `.playwright-mcp/` artifacts.
+- **History:** don't amend or rebase commits that have been pushed, don't force-push, and
+  don't skip hooks (`--no-verify`).
+- **Still ask first** before pushing, opening or merging PRs, tagging, or releasing.
 
 ---
 
@@ -541,4 +553,4 @@ presentational (pure) components**. Current code already models the key split:
 - [ ] Presentational meters still prop-driven (no store/Tauri/`useSensor` access)?
 - [ ] New widget type registered in `registry.tsx` and given `widget.ts` meta?
 - [ ] `npm run lint` clean (zero warnings) and `cargo clippy` clean?
-- [ ] Didn't commit/push unless asked?
+- [ ] Committed verified work on a feature branch in focused commits, without pushing, PRing or releasing unasked?

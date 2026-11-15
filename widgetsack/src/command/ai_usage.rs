@@ -201,6 +201,26 @@ fn openrouter_snapshot(data: &Value, credits: Option<&Value>) -> Value {
     }
     json!({"version":1,"metrics":metrics,"note":"Key allowance and account balance are separate. Account balance requires a management key."})
 }
+/// Claude Code config directory for a provider's profile. Blank is the default `~/.claude`; a
+/// profile name `n` is `~/.claude-n` (the directory a `CLAUDE_CONFIG_DIR`-based launcher uses).
+/// Names are restricted so a layout can never point the reader at an arbitrary path.
+fn claude_config_dir(home: &std::path::Path, profile: &str) -> Result<PathBuf, String> {
+    let profile = profile.trim();
+    if profile.is_empty() {
+        return Ok(home.join(".claude"));
+    }
+    if profile.len() > 32
+        || !profile
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+    {
+        return Err(
+            "Claude profile must be blank or contain only letters, digits, hyphens or underscores"
+                .into(),
+        );
+    }
+    Ok(home.join(format!(".claude-{profile}")))
+}
 fn cli_path(name: &str) -> PathBuf {
     let local = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
@@ -305,10 +325,11 @@ async fn fetch(request: &UsageRequest) -> Result<Value, UsageError> {
     match request.source.as_str() {
         "codex" => codex_read().await.map_err(UsageError::from),
         "claude" => {
-            let root = std::env::var_os("USERPROFILE")
+            let home = std::env::var_os("USERPROFILE")
                 .map(PathBuf::from)
                 .ok_or("User profile unavailable")?;
-            let raw = tokio::fs::read(root.join(".claude/.credentials.json"))
+            let root = claude_config_dir(&home, &request.account)?;
+            let raw = tokio::fs::read(root.join(".credentials.json"))
                 .await
                 .map_err(|_| {
                     "Claude CLI credentials unavailable. Sign in to Claude Code.".to_string()
@@ -321,7 +342,7 @@ async fn fetch(request: &UsageRequest) -> Result<Value, UsageError> {
             let value = get_json("https://api.anthropic.com/api/oauth/usage", token, true).await?;
             let mut snapshot = claude_snapshot(&value);
             if let Ok((tokens, since)) =
-                super::ai_usage_tokens::observed_tokens(root.join(".claude/projects")).await
+                super::ai_usage_tokens::observed_tokens(root.join("projects")).await
             {
                 let mut m = metric(
                     &format!("observed-tokens-{since}"),
@@ -334,7 +355,7 @@ async fn fetch(request: &UsageRequest) -> Result<Value, UsageError> {
                 m["used"] = json!(tokens);
                 snapshot["metrics"].as_array_mut().unwrap().push(m);
             }
-            if let Ok(raw) = tokio::fs::read(root.join(".claude/stats-cache.json")).await
+            if let Ok(raw) = tokio::fs::read(root.join("stats-cache.json")).await
                 && let Ok(stats) = serde_json::from_slice::<Value>(&raw)
             {
                 add_claude_tokens(&mut snapshot, &stats);
@@ -580,6 +601,23 @@ mod tests {
                 "{source}: {} usage readings",
                 value["metrics"].as_array().unwrap().len()
             );
+        }
+    }
+    #[test]
+    fn claude_profiles_map_to_their_config_dirs_and_reject_paths() {
+        let home = std::path::Path::new(r"C:\Users\me");
+        assert_eq!(claude_config_dir(home, "").unwrap(), home.join(".claude"));
+        assert_eq!(claude_config_dir(home, "  ").unwrap(), home.join(".claude"));
+        assert_eq!(
+            claude_config_dir(home, "1").unwrap(),
+            home.join(".claude-1")
+        );
+        assert_eq!(
+            claude_config_dir(home, " work_2 ").unwrap(),
+            home.join(".claude-work_2")
+        );
+        for bad in ["..", "../x", r"a\b", "a/b", "C:", "x y", &"a".repeat(33)] {
+            assert!(claude_config_dir(home, bad).is_err(), "{bad:?} accepted");
         }
     }
     #[test]

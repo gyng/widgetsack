@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import UsageProvidersEditor from './UsageProvidersEditor';
-import { defaultUsageProviders, type UsageProvider } from '../core/aiUsage';
+import { defaultUsageProviders, usageSourceKey, type UsageProvider } from '../core/aiUsage';
 import { readAiUsage } from './plugins/ai-usage-commands';
 vi.mock('./plugins/ai-usage-commands', () => ({ readAiUsage: vi.fn() }));
 function Editor({ initial = defaultUsageProviders() }: { initial?: UsageProvider[] }) {
@@ -71,6 +71,39 @@ describe('usage provider configuration', () => {
 		fireEvent.change(within(group).getByLabelText('Source'), { target: { value: 'claude' } });
 		fireEvent.change(within(group).getByLabelText('Label'), { target: { value: '' } });
 		expect(group).toHaveAccessibleName('claude');
+	});
+	it('gives each Claude provider its own profile and polling source', () => {
+		const changed = vi.fn<(value: UsageProvider[]) => void>();
+		function Spy() {
+			const [value, setValue] = useState(defaultUsageProviders());
+			return (
+				<UsageProvidersEditor
+					value={value}
+					onChange={(next) => {
+						changed(next);
+						setValue(next);
+					}}
+				/>
+			);
+		}
+		render(<Spy />);
+		const label = 'Claude profile (blank = ~/.claude, n = ~/.claude-n)';
+		expect(
+			within(screen.getByRole('group', { name: 'Codex' })).queryByLabelText(label)
+		).not.toBeInTheDocument();
+		const first = screen.getByRole('group', { name: 'Claude' });
+		fireEvent.change(within(first).getByLabelText(label), { target: { value: '1' } });
+		fireEvent.change(within(first).getByLabelText('Label'), { target: { value: 'Claude 1' } });
+		fireEvent.change(screen.getByLabelText('New usage provider'), { target: { value: 'claude' } });
+		fireEvent.click(screen.getByText('Add provider'));
+		const added = screen
+			.getAllByRole('group')
+			.filter((el) => el.tagName === 'FIELDSET')
+			.at(-1)!;
+		fireEvent.change(within(added).getByLabelText(label), { target: { value: '2' } });
+		const claudes = changed.mock.lastCall![0].filter((p) => p.source === 'claude');
+		expect(claudes.map((p) => p.account)).toEqual(['1', '2']);
+		expect(new Set(claudes.map(usageSourceKey)).size).toBe(2);
 	});
 	it('tests built-in providers and reports failures without enabling bad commands', async () => {
 		render(<Editor />);

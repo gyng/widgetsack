@@ -3,6 +3,27 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.72
+
+The AI Usage widget can track more than one Claude account. Each Claude provider can now read a
+specific Claude Code profile, so separate logins appear as separate rows with their own quotas and
+history.
+
+### Added
+
+- A **Claude profile** setting for Claude providers: blank reads `~/.claude`, and a name such as
+  `1` reads `~/.claude-1`, the directory a `CLAUDE_CONFIG_DIR` launcher uses.
+
+### Changed
+
+- Updated frontend and Rust dependencies, including React 19.3.1, Vite 8.3.5, Tauri 2.12.5 and
+  Tokio 1.54.1, and moved the Windows build to Tauri CLI 2.12.4 with a static VC runtime.
+
+### Fixed
+
+- Track observed Claude tokens separately for each profile, so adding a second profile does not
+  count that profile's earlier conversations.
+
 ## 0.0.71
 
 The new opt-in **On desktop** window layer keeps widgets visible and clickable during Show Desktop
