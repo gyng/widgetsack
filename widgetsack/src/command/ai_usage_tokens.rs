@@ -122,11 +122,24 @@ impl Tracker {
         Ok((self.total, self.since))
     }
 }
+/// Trackers keyed by activity root, so each Claude profile starts at its own EOF instead of a
+/// second profile's logs being read from offset zero (a full, unwanted backfill).
+#[derive(Default)]
+struct Trackers(HashMap<PathBuf, Tracker>);
+impl Trackers {
+    const MAX_ROOTS: usize = 16;
+    fn read(&mut self, root: &Path) -> Result<(u64, u64), String> {
+        if !self.0.contains_key(root) && self.0.len() >= Self::MAX_ROOTS {
+            return Err("Too many Claude profiles to track".into());
+        }
+        self.0.entry(root.to_path_buf()).or_default().read(root)
+    }
+}
 pub(super) async fn observed_tokens(root: PathBuf) -> Result<(u64, u64), String> {
-    static TRACKER: OnceLock<Mutex<Tracker>> = OnceLock::new();
+    static TRACKERS: OnceLock<Mutex<Trackers>> = OnceLock::new();
     tokio::task::spawn_blocking(move || {
-        TRACKER
-            .get_or_init(|| Mutex::new(Tracker::default()))
+        TRACKERS
+            .get_or_init(|| Mutex::new(Trackers::default()))
             .lock()
             .map_err(|_| "Claude token tracker unavailable".to_string())?
             .read(&root)
@@ -168,5 +181,34 @@ mod tests {
         assert_eq!(tracker.read(&dir).unwrap().0, 42);
         drop(file);
         fs::remove_dir_all(&dir).unwrap();
+    }
+    #[test]
+    fn each_profile_root_starts_at_its_own_eof() {
+        let base = std::env::temp_dir().join(format!(
+            "widgetsack-token-roots-test-{}",
+            std::process::id()
+        ));
+        let (a, b) = (base.join("a"), base.join("b"));
+        for dir in [&a, &b] {
+            fs::create_dir_all(dir).unwrap();
+            fs::write(
+                dir.join("old.jsonl"),
+                b"{\"type\":\"assistant\",\"message\":{\"id\":\"old\",\"usage\":{\"input_tokens\":999}}}\n",
+            )
+            .unwrap();
+        }
+        let mut trackers = Trackers::default();
+        assert_eq!(trackers.read(&a).unwrap().0, 0);
+        // A profile first read later must not backfill its existing history.
+        assert_eq!(trackers.read(&b).unwrap().0, 0);
+        assert_eq!(trackers.read(&b).unwrap().0, 0);
+        fs::write(
+            b.join("new.jsonl"),
+            b"{\"type\":\"assistant\",\"message\":{\"id\":\"new\",\"usage\":{\"input_tokens\":7}}}\n",
+        )
+        .unwrap();
+        assert_eq!(trackers.read(&b).unwrap().0, 7);
+        assert_eq!(trackers.read(&a).unwrap().0, 0);
+        fs::remove_dir_all(&base).unwrap();
     }
 }

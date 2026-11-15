@@ -169,6 +169,16 @@ export default function UsageProvidersEditor({
 								<input value={p.env} onChange={(e) => edit(i, { env: e.target.value })} />
 							</label>
 						)}
+						{p.source === 'claude' && (
+							<label>
+								Claude profile (blank = ~/.claude, n = ~/.claude-n)
+								<input
+									value={p.account}
+									placeholder="default"
+									onChange={(e) => edit(i, { account: e.target.value })}
+								/>
+							</label>
+						)}
 						{p.source === 'omp' && (
 							<label>
 								OMP provider id (blank = all)

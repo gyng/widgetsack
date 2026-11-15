@@ -21,7 +21,12 @@ widget-wide Behaviour settings.
   widgetsack process runs; tracking starts at EOF, includes cache reads/writes, and deduplicates
   streaming updates by message ID. It does not backfill old conversations or cover other devices.
   A separately labelled cached total includes the stats cache's computation date. Banked Claude
-  resets are not fetched.
+  resets are not fetched. **Claude profile** selects the Claude Code config directory: blank
+  reads `~/.claude`, and a name such as `1` reads `~/.claude-1` (as used by a launcher that sets
+  `CLAUDE_CONFIG_DIR`). Add one Claude provider per profile to show several accounts; each gets
+  its own quota readings, history and token tracker. Profile names allow only letters, digits,
+  hyphens and underscores. Profiles that share a linked `projects` directory report the same
+  observed tokens.
 - **OpenRouter:** set the key in the environment variable named in provider settings
   (default `OPENROUTER_API_KEY`) before starting widgetsack. Reports API-key spend/allowance;
   account balance is separate and is queried only for a management key. Dollar spend is not a
