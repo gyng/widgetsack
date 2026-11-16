@@ -3,6 +3,7 @@
 pub mod ai_usage;
 mod ai_usage_tokens;
 pub mod application;
+mod claude_oauth;
 pub mod controls;
 pub mod fonts;
 mod http;

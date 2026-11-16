@@ -37,12 +37,15 @@ fn default_timeout() -> u64 {
 struct UsageError {
     message: String,
     cache_for: Duration,
+    /// HTTP status from the provider, when the failure was an HTTP response.
+    status: Option<reqwest::StatusCode>,
 }
 impl From<String> for UsageError {
     fn from(message: String) -> Self {
         Self {
             message,
             cache_for: Duration::from_secs(60),
+            status: None,
         }
     }
 }
@@ -299,10 +302,17 @@ async fn get_json(url: &str, token: &str, claude: bool) -> Result<Value, UsageEr
                 delay.as_secs().div_ceil(60)
             ),
             cache_for: delay,
+            status: Some(response.status()),
         });
     }
     if !response.status().is_success() {
-        return Err(format!("Provider usage returned HTTP {}", response.status()).into());
+        return Err(UsageError {
+            status: Some(response.status()),
+            ..UsageError::from(format!(
+                "Provider usage returned HTTP {}",
+                response.status()
+            ))
+        });
     }
     let body = super::http::read_body_capped(response).await?;
     serde_json::from_slice(&body).map_err(|_| "Provider returned invalid usage JSON".into())
@@ -329,17 +339,17 @@ async fn fetch(request: &UsageRequest) -> Result<Value, UsageError> {
                 .map(PathBuf::from)
                 .ok_or("User profile unavailable")?;
             let root = claude_config_dir(&home, &request.account)?;
-            let raw = tokio::fs::read(root.join(".credentials.json"))
-                .await
-                .map_err(|_| {
-                    "Claude CLI credentials unavailable. Sign in to Claude Code.".to_string()
-                })?;
-            let credentials: Value = serde_json::from_slice(&raw)
-                .map_err(|_| "Invalid Claude credentials file".to_string())?;
-            let token = credentials["claudeAiOauth"]["accessToken"]
-                .as_str()
-                .ok_or("Claude subscription login not found")?;
-            let value = get_json("https://api.anthropic.com/api/oauth/usage", token, true).await?;
+            const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+            // The CLI renews tokens only while it runs; refresh an idle profile's token here.
+            let token = super::claude_oauth::access_token(&root, false).await?;
+            let value = match get_json(USAGE_URL, &token, true).await {
+                Err(e) if e.status == Some(reqwest::StatusCode::UNAUTHORIZED) => {
+                    // Revoked or rotated elsewhere despite a valid-looking expiry: refresh once.
+                    let token = super::claude_oauth::access_token(&root, true).await?;
+                    get_json(USAGE_URL, &token, true).await?
+                }
+                other => other?,
+            };
             let mut snapshot = claude_snapshot(&value);
             if let Ok((tokens, since)) =
                 super::ai_usage_tokens::observed_tokens(root.join("projects")).await
