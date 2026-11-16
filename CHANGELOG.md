@@ -3,6 +3,18 @@
 Notable changes per release. Older releases are described by their auto-generated notes on the
 [GitHub releases page](https://github.com/gyng/widgetsack/releases).
 
+## 0.0.73
+
+Claude rows in the AI Usage widget no longer go stale when a Claude Code profile hasn't been used
+for a few hours. Widgetsack now renews an expired Claude login itself, so each account keeps
+updating without opening the CLI.
+
+### Fixed
+
+- Refresh an expired Claude Code login with its stored refresh token and save it back to that
+  profile, using the CLI's own refresh locks so the two never renew the same login at once.
+- Retry the Claude usage request once with a renewed login when it is rejected as unauthorized.
+
 ## 0.0.72
 
 The AI Usage widget can track more than one Claude account. Each Claude provider can now read a

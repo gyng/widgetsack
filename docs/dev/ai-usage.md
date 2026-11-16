@@ -16,7 +16,12 @@ widget-wide Behaviour settings.
   rate limits, banked-reset count/expiry, and token activity. Window names come from duration;
   a missing short window is omitted. No reset credit is ever redeemed.
 - **Claude:** the local Claude Code OAuth credential is read only by Rust, then used for the
-  usage endpoint. Session and weekly quotas refresh separately from local token activity.
+  usage endpoint. The CLI renews its access token only while it runs, so when the stored token
+  has expired (or the endpoint answers 401) Rust refreshes it with the stored refresh token and
+  writes the rotated pair back to that profile's `.credentials.json`. It takes the CLI's own
+  refresh locks (`<config>/.oauth_refresh.lock` and `<config>.lock`) and re-reads the file inside
+  them, so it never races a CLI refresh; a running CLI reloads the file when it changes. An
+  expired or revoked refresh token still needs a fresh sign-in. Session and weekly quotas refresh separately from local token activity.
   Observed tokens count complete new assistant usage records in local CLI logs while this
   widgetsack process runs; tracking starts at EOF, includes cache reads/writes, and deduplicates
   streaming updates by message ID. It does not backfill old conversations or cover other devices.
